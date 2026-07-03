@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW expert review files now support source-backed `additionalLabels`, letting reviewers add explicit contrast/no-evidence labels for suggested candidates so match-quality corpora can cover insufficient-evidence safety cases.
 - CI now uploads a living-context match-quality readiness artifact and can block on it with `MATCH_QUALITY_REQUIRED` once an expert-labelled CODE_REVIEW corpus is available.
 - `living-context:match-quality:readiness` now emits a compact summary artifact with metrics, gate failures, and per-case proof booleans instead of full nested confidence/source reports.
 - `living-context:match-quality` can now auto-select the latest expert-labelled CODE_REVIEW corpus with `--latest-expert-corpus`, or fail with the latest draft corpus summary when no reviewed corpus exists.

@@ -106,6 +106,12 @@ export interface ExpertLabelReview {
   minimumScoreSeparation?: number;
 }
 
+export interface SupplementalExpertLabelReview extends ExpertLabelReview {
+  candidateId: string;
+  roleId: string;
+  challengeId: string;
+}
+
 export interface ApplyExpertCorpusReviewInput {
   reviewerId: string;
   reviewerRole?: string;
@@ -114,6 +120,7 @@ export interface ApplyExpertCorpusReviewInput {
   rubricVersion: string;
   reviewedCorpusId?: string;
   labels: ExpertLabelReview[];
+  additionalLabels?: SupplementalExpertLabelReview[];
   reviewedAt?: string;
 }
 
@@ -259,6 +266,56 @@ function eligibleChallengeIdsForReview(
   ])).sort();
 }
 
+function eligibleChallengeIdsForSupplementalReview(review: SupplementalExpertLabelReview): string[] {
+  if (review.eligibleChallengeIds) {
+    return Array.from(new Set(review.eligibleChallengeIds)).sort();
+  }
+  if (!isEligibleGrade(review.relevanceGrade)) return [];
+  return [review.challengeId];
+}
+
+function validateReviewShape(
+  review: ExpertLabelReview,
+  failures: string[],
+): void {
+  if (!nonEmpty(review.labelId)) {
+    failures.push('reviewed label is missing labelId');
+    return;
+  }
+  if (!nonEmpty(review.explanation)) {
+    failures.push(`reviewed label requires a human rationale: ${review.labelId}`);
+  }
+  if (
+    review.relevanceGrade === 'forbidden'
+    && (!review.guardrailViolations || review.guardrailViolations.length === 0)
+  ) {
+    failures.push(`forbidden reviewed label requires guardrailViolations: ${review.labelId}`);
+  }
+  if (review.negativeCandidateId !== undefined && !nonEmpty(review.negativeCandidateId)) {
+    failures.push(`reviewed label negativeCandidateId must be non-empty when provided: ${review.labelId}`);
+  }
+  if (
+    review.minimumScoreSeparation !== undefined
+    && (!Number.isFinite(review.minimumScoreSeparation) || review.minimumScoreSeparation < 0)
+  ) {
+    failures.push(`reviewed label minimumScoreSeparation must be a non-negative finite number: ${review.labelId}`);
+  }
+  if (review.negativeCandidateId !== undefined && review.minimumScoreSeparation === undefined) {
+    failures.push(`reviewed label with negativeCandidateId requires minimumScoreSeparation: ${review.labelId}`);
+  }
+  if (review.minimumScoreSeparation !== undefined && review.negativeCandidateId === undefined) {
+    failures.push(`reviewed label with minimumScoreSeparation requires negativeCandidateId: ${review.labelId}`);
+  }
+  if (
+    isPositiveGrade(review.relevanceGrade)
+    && (review.negativeCandidateId === undefined || review.minimumScoreSeparation === undefined)
+  ) {
+    failures.push(
+      `reviewed positive label requires contrast candidate and minimum score separation: ${review.labelId}`,
+    );
+  }
+}
+
 function validateReviewInput(
   source: EvaluationCorpus,
   input: ApplyExpertCorpusReviewInput,
@@ -271,14 +328,18 @@ function validateReviewInput(
   if (!Array.isArray(input.labels) || input.labels.length === 0) {
     failures.push('at least one reviewed label is required');
   }
+  if (input.additionalLabels !== undefined && !Array.isArray(input.additionalLabels)) {
+    failures.push('additionalLabels must be an array when provided');
+  }
 
   const sourceLabelIds = new Set(source.expertLabels.map((label) => label.labelId));
+  const candidateIds = new Set(source.candidateEvidence.map((evidence) => evidence.candidateId));
+  const roleIds = new Set(source.roleRequirements.map((role) => role.roleId));
+  const expectedPacketIds = new Set((source.expectedPackets ?? []).map((packet) => packet.challengeId));
   const reviewedLabelIds = new Set<string>();
   for (const review of input.labels ?? []) {
-    if (!nonEmpty(review.labelId)) {
-      failures.push('reviewed label is missing labelId');
-      continue;
-    }
+    validateReviewShape(review, failures);
+    if (!nonEmpty(review.labelId)) continue;
     if (reviewedLabelIds.has(review.labelId)) {
       failures.push(`duplicate reviewed label: ${review.labelId}`);
     }
@@ -286,43 +347,38 @@ function validateReviewInput(
     if (!sourceLabelIds.has(review.labelId)) {
       failures.push(`reviewed label does not exist in source corpus: ${review.labelId}`);
     }
-    if (!nonEmpty(review.explanation)) {
-      failures.push(`reviewed label requires a human rationale: ${review.labelId}`);
-    }
-    if (
-      review.relevanceGrade === 'forbidden'
-      && (!review.guardrailViolations || review.guardrailViolations.length === 0)
-    ) {
-      failures.push(`forbidden reviewed label requires guardrailViolations: ${review.labelId}`);
-    }
-    if (review.negativeCandidateId !== undefined && !nonEmpty(review.negativeCandidateId)) {
-      failures.push(`reviewed label negativeCandidateId must be non-empty when provided: ${review.labelId}`);
-    }
-    if (
-      review.minimumScoreSeparation !== undefined
-      && (!Number.isFinite(review.minimumScoreSeparation) || review.minimumScoreSeparation < 0)
-    ) {
-      failures.push(`reviewed label minimumScoreSeparation must be a non-negative finite number: ${review.labelId}`);
-    }
-    if (review.negativeCandidateId !== undefined && review.minimumScoreSeparation === undefined) {
-      failures.push(`reviewed label with negativeCandidateId requires minimumScoreSeparation: ${review.labelId}`);
-    }
-    if (review.minimumScoreSeparation !== undefined && review.negativeCandidateId === undefined) {
-      failures.push(`reviewed label with minimumScoreSeparation requires negativeCandidateId: ${review.labelId}`);
-    }
-    if (
-      isPositiveGrade(review.relevanceGrade)
-      && (review.negativeCandidateId === undefined || review.minimumScoreSeparation === undefined)
-    ) {
-      failures.push(
-        `reviewed positive label requires contrast candidate and minimum score separation: ${review.labelId}`,
-      );
-    }
   }
 
   for (const labelId of sourceLabelIds) {
     if (!reviewedLabelIds.has(labelId)) {
       failures.push(`review is missing source label: ${labelId}`);
+    }
+  }
+
+  for (const review of input.additionalLabels ?? []) {
+    validateReviewShape(review, failures);
+    if (!nonEmpty(review.labelId)) continue;
+    if (reviewedLabelIds.has(review.labelId)) {
+      failures.push(`duplicate reviewed label: ${review.labelId}`);
+    }
+    reviewedLabelIds.add(review.labelId);
+    if (sourceLabelIds.has(review.labelId)) {
+      failures.push(`additional label duplicates source label: ${review.labelId}`);
+    }
+    if (!nonEmpty(review.candidateId)) {
+      failures.push(`additional label candidateId is required: ${review.labelId}`);
+    } else if (!candidateIds.has(review.candidateId)) {
+      failures.push(`additional label references unknown candidate evidence: ${review.labelId}`);
+    }
+    if (!nonEmpty(review.roleId)) {
+      failures.push(`additional label roleId is required: ${review.labelId}`);
+    } else if (!roleIds.has(review.roleId)) {
+      failures.push(`additional label references unknown role requirements: ${review.labelId}`);
+    }
+    if (!nonEmpty(review.challengeId)) {
+      failures.push(`additional label challengeId is required: ${review.labelId}`);
+    } else if (!expectedPacketIds.has(review.challengeId)) {
+      failures.push(`additional label references unknown expected PR packet: ${review.labelId}`);
     }
   }
 
@@ -583,6 +639,45 @@ export async function applyExpertCorpusReview(
     });
   }
 
+  for (const review of input.additionalLabels ?? []) {
+    const eligibleChallengeIds = eligibleChallengeIdsForSupplementalReview(review);
+    const contentHash = await sha256(stableJson({
+      sourceCorpusId: source.corpusId,
+      labelId: review.labelId,
+      reviewerId: input.reviewerId,
+      reviewArtifactId: input.reviewArtifactId,
+      reviewArtifactVersion: input.reviewArtifactVersion,
+      rubricVersion: input.rubricVersion,
+      review,
+    }));
+    reviewedLabels.push({
+      labelId: review.labelId,
+      candidateId: review.candidateId,
+      roleId: review.roleId,
+      challengeId: review.challengeId,
+      relevanceGrade: review.relevanceGrade,
+      eligibleChallengeIds,
+      forbiddenRoles: review.forbiddenRoles,
+      guardrailViolations: review.guardrailViolations,
+      permittedStretchPaths: review.permittedStretchPaths,
+      negativeCandidateId: review.negativeCandidateId,
+      minimumScoreSeparation: review.minimumScoreSeparation,
+      explanation: review.explanation.trim(),
+      labelVersion: input.rubricVersion,
+      labeledAt: reviewedAt,
+      labeledBy: input.reviewerId,
+      labelProvenance: {
+        reviewerId: input.reviewerId,
+        reviewerRole: input.reviewerRole,
+        reviewArtifactId: input.reviewArtifactId,
+        reviewArtifactVersion: input.reviewArtifactVersion,
+        contentHash,
+        locator: `${input.reviewArtifactId}#${review.labelId}`,
+        rubricVersion: input.rubricVersion,
+      },
+    });
+  }
+
   const reviewedCorpusId = input.reviewedCorpusId
     ?? `${source.corpusId}-expert-${(await sha256(stableJson({
       sourceCorpusId: source.corpusId,
@@ -590,6 +685,7 @@ export async function applyExpertCorpusReview(
       reviewerId: input.reviewerId,
       reviewArtifactId: input.reviewArtifactId,
       labels: input.labels,
+      additionalLabels: input.additionalLabels ?? [],
     }))).slice('sha256:'.length, 'sha256:'.length + REVIEWED_CORPUS_SUFFIX_LENGTH)}`;
 
   const corpus: EvaluationCorpus = {

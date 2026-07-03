@@ -18,6 +18,7 @@ import {
   type CorpusSeederResult,
   type EvaluationCorpus,
   type ExpertLabelReview,
+  type SupplementalExpertLabelReview,
 } from '../src/lib/challengeMatching/evaluation';
 import { sha256 } from '../src/lib/repoSemanticGraph/hash';
 import { D1Client } from './crawl-repos/shared/d1Client.js';
@@ -79,6 +80,7 @@ export interface ExpertReviewFile extends ApplyExpertCorpusReviewInput {
   sourceCorpusId?: string;
   sourceCorpusHash?: string;
   labels: ExpertReviewTemplateLabel[];
+  additionalLabels?: SupplementalExpertLabelReview[];
 }
 
 export interface ExpertReviewTemplateLabel extends ExpertLabelReview {
@@ -530,6 +532,11 @@ function assertCompletedReview(input: ExpertReviewFile): void {
       failures.push(`label ${label.labelId} explanation still contains a TODO placeholder`);
     }
   }
+  for (const label of input.additionalLabels ?? []) {
+    if (isPlaceholder(label.explanation)) {
+      failures.push(`additional label ${label.labelId} explanation still contains a TODO placeholder`);
+    }
+  }
   if (failures.length > 0) {
     throw new Error(`Expert review file is incomplete: ${failures.join('; ')}`);
   }
@@ -586,6 +593,7 @@ export function buildExpertReviewTemplate(
     reviewArtifactVersion: defaults?.reviewArtifactVersion ?? 'v1',
     rubricVersion: defaults?.rubricVersion ?? 'candidate-pr-match-rubric-v1',
     labels: packet.items.map(templateReviewLabel),
+    additionalLabels: [],
   };
 }
 
@@ -642,6 +650,7 @@ export function buildExpertReviewMarkdown(
     '- Do not mark a label reviewed until candidate evidence, role requirements, and repo PR demands all make sense together.',
     '- Positive labels require a human rationale plus `negativeCandidateId` and `minimumScoreSeparation` in the JSON template.',
     '- If the repo challenge is not appropriate, change `relevanceGrade`, `eligibleChallengeIds`, and the explanation instead of rubber-stamping the draft.',
+    '- To add a no-evidence safety case, add an `additionalLabels[]` entry for a source-backed contrast candidate, role, and expected PR packet listed below.',
     '',
     '## Readiness Summary',
     '',

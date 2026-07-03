@@ -1186,6 +1186,64 @@ describe('evaluation corpus review CLI', () => {
     );
   });
 
+  it('allows reviewed corpora to add source-backed supplemental contrast labels', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-corpus-review-'));
+    const sourceCorpusPath = join(directory, 'source-corpus.json');
+    const reviewFilePath = join(directory, 'review.json');
+    const reviewedCorpusPath = join(directory, 'reviewed-corpus.json');
+    const summaryPath = join(directory, 'summary.json');
+    const source = sourceBackedSinglePacketCorpus();
+    source.expertLabels = [source.expertLabels[0]!];
+    source.metadata = {
+      ...source.metadata,
+      totalLabels: 1,
+    };
+    writeFileSync(sourceCorpusPath, JSON.stringify(source, null, 2));
+    const template = buildExpertReviewTemplate(buildCorpusReviewPacket(source));
+    writeFileSync(reviewFilePath, JSON.stringify(completedReview(template, {
+      additionalLabels: [
+        {
+          labelId: 'supplemental-negative-react-accessibility',
+          candidateId: 'candidate-negative',
+          roleId: 'role-frontend',
+          challengeId: 'challenge-react-accessibility',
+          relevanceGrade: 'irrelevant',
+          eligibleChallengeIds: [],
+          explanation:
+            'Human reviewer confirmed the contrast candidate only has unrelated data platform operations evidence, so the React accessibility PR is an insufficient-evidence match.',
+        },
+      ],
+    }), null, 2));
+
+    const exitCode = await runCorpusReviewCli([
+      '--source-corpus-file',
+      sourceCorpusPath,
+      '--review-file',
+      reviewFilePath,
+      '--reviewed-corpus',
+      reviewedCorpusPath,
+      '--json',
+      summaryPath,
+    ]);
+
+    expect(exitCode).toBe(1);
+    const reviewed = JSON.parse(await readFile(reviewedCorpusPath, 'utf8')) as EvaluationCorpus;
+    expect(reviewed.expertLabels).toHaveLength(2);
+    expect(reviewed.expertLabels[1]).toEqual(expect.objectContaining({
+      labelId: 'supplemental-negative-react-accessibility',
+      candidateId: 'candidate-negative',
+      roleId: 'role-frontend',
+      challengeId: 'challenge-react-accessibility',
+      relevanceGrade: 'irrelevant',
+      eligibleChallengeIds: [],
+      labeledBy: 'expert-reviewer-1',
+      labelProvenance: expect.objectContaining({
+        reviewArtifactId: 'expert-review-artifact-1',
+        locator: 'expert-review-artifact-1#supplemental-negative-react-accessibility',
+      }),
+    }));
+  });
+
   it('rejects completed expert reviews bound to a different source corpus hash', async () => {
     directory = await mkdtemp(join(tmpdir(), 'pipe-corpus-review-'));
     const reviewFilePath = join(directory, 'review.json');
