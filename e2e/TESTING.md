@@ -187,6 +187,12 @@ npm run smoke:code-review-assess-dev
 
 The smoke command loads `.env.local`/`.env`, so local dev basic-auth values do not need to be exported manually when they already live there. By default this uses the source-backed `mui/base-ui#973` manual override so the smoke is stable. To smoke another ready source-backed PR, add `CODE_REVIEW_SMOKE_REPO_URL=https://github.com/<owner>/<repo>` and `CODE_REVIEW_SMOKE_PR_NUMBER=<pr>`. Manual override smoke proves source-backed assess rendering, match proof, validator, assessment-fit calibration, quality gate, diff, no video-room fallback, and recruiter-visible manual match proof. It does not require candidate-to-repo or person-role-repo hyperedges because the recruiter selected the PR and PIPE must not pretend it inferred CV fit. Standalone `/assess` no longer runs candidate-to-repo matching internally; CV-only auto-match attempts should complete intake and return the profile-received email handoff until the upstream ingestion/challenge-design path assigns a source-backed PR.
 
+The unauthenticated candidate `/assess` browser smoke now opts out of Clerk
+global setup because it uses the candidate session token directly. Authenticated
+recruiter browser smokes still require the normal Clerk test environment unless
+`CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER=1` is set for candidate-boundary-only
+proof.
+
 For app-dev, recruiter setup goes through `APP_BASE`/`RECRUITER_API_BASE` so the authenticated dev app proxy can inject its internal secret, while candidate `/rpc` calls use `API_BASE`/`RPC_BASE` so the candidate bearer token is not replaced by HTTP Basic auth.
 
 Validated app-dev examples:
@@ -392,6 +398,14 @@ Latest single blocked-boundary proof on 2026-07-02 passed for interview
 `PROFILE_RECEIVED` / `profile-received`, stage `candidate-intake-queued`, no
 room link was produced, no repo/PR was assigned, and recruiter readiness stayed
 `waiting_for_source_backed_match`.
+
+Latest blocked-boundary candidate browser proof on 2026-07-03 passed for
+interview `59be7706-ac64-479c-876c-7210d9432cf4` with
+`CODE_REVIEW_SMOKE_AUTO_MATCH=1`, `CODE_REVIEW_EXPECT_BLOCKED_MATCH=1`, and
+`CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER=1`: the candidate handoff was
+`PROFILE_RECEIVED` / `profile-received`, stage `candidate-intake-queued`,
+the unauthenticated browser smoke passed without Clerk test setup, no room link
+was produced, and no matching dashboard was shown.
 
 Latest deployed `/assess` token lifecycle proof on 2026-07-03 passed via
 `npm run smoke:assess-token-lifecycle-dev`: two real app-dev CODE_REVIEW
