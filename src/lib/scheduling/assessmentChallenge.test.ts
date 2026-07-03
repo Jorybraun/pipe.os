@@ -60,7 +60,7 @@ describe('summarizeResolvedAssessmentAssignment', () => {
       setup: {
         status: 'reviewable_task_assigned',
         kind: 'auto_match',
-        source: 'matched_repo_id',
+        source: 'candidate_challenge_assignment',
         blocksPositiveAssessment: false,
         message: 'PIPE found a source-backed candidate challenge at https://github.com/mui/base-ui #973. It passed the auto-assignment quality gate. Assessment quality: USABLE 9/12.',
       },

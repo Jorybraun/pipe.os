@@ -130,7 +130,11 @@ export function summarizeAssessmentAssignment(
 ): AssessmentAssignmentSummary | null {
   if (!setup || setup.status === 'not_applicable') return null;
 
-  if (setup.source === 'matched_repo_id' || setup.kind === 'auto_match') {
+  if (
+    setup.source === 'matched_repo_id'
+    || setup.source === 'candidate_challenge_assignment'
+    || setup.kind === 'auto_match'
+  ) {
     if (setup.status === 'reviewable_task_assigned') {
       return {
         label: 'PIPE-matched challenge',
