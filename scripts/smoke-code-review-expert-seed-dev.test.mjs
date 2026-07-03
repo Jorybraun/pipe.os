@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildReviewCliArgs,
+  resolveExpertSeedOutputDir,
   validateExpertReviewMarkdown,
   validateExpertSeedPacket,
   validateExpertSeedSummary,
@@ -80,6 +81,17 @@ function readyPacket(overrides = {}) {
 }
 
 describe('CODE_REVIEW expert seed smoke contract', () => {
+  it('defaults review artifacts to a durable ignored repo-local directory', () => {
+    expect(resolveExpertSeedOutputDir({}, () => 12345, '/repo/root'))
+      .toBe('/repo/root/tmp/code-review-expert-seed/12345');
+  });
+
+  it('honors explicit expert seed output directory overrides', () => {
+    expect(resolveExpertSeedOutputDir({
+      CODE_REVIEW_EXPERT_SEED_OUTPUT_DIR: '/var/tmp/pipe-review',
+    }, () => 12345, '/repo/root')).toBe('/var/tmp/pipe-review');
+  });
+
   it('accepts a warning-free source-backed draft corpus with enough packet breadth', () => {
     expect(validateExpertSeedSummary(readySummary(), {
       minCandidates: 2,

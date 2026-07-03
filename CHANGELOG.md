@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CODE_REVIEW corpus review packets and editable templates now include suggested contrast candidates, giving reviewers concrete negative-candidate choices and a suggested minimum score separation when completing match-quality labels.
 - CODE_REVIEW expert-review exports now include a human-readable markdown packet with candidate evidence, role requirements, repo/PR demands, suggested contrast candidates, and exact JSON fields to edit before a draft corpus can become a labelled quality gate.
 - CODE_REVIEW expert-seed smoke now persists the draft evaluation corpus and validates its immutable hash, ensuring exported review artifacts can be traced back to a durable source corpus before human labelling.
+- CODE_REVIEW expert-seed smoke now writes review artifacts to an ignored repo-local `tmp/code-review-expert-seed/<timestamp>` directory by default, keeping the human labelling handoff visible after the smoke exits.
 
 ### Fixed — CODE_REVIEW assessment runtime
 
