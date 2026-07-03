@@ -597,8 +597,9 @@ describe('talent pool candidate RPC', () => {
       timezone: 'America/Vancouver',
       availability: 'Weekday afternoons after 2 PM.',
     });
-    expect((intake as { profile_r2_key: string }).profile_r2_key).toMatch(/^talent-intake\/candidate-1\//);
-    expect(storage.puts.get((intake as { profile_r2_key: string }).profile_r2_key)).toMatchObject({
+    const initialProfileKey = (intake as { profile_r2_key: string }).profile_r2_key;
+    expect(initialProfileKey).toMatch(/^talent-intake\/candidate-1\/[a-f0-9]{64}-profile\.txt$/);
+    expect(storage.puts.get(initialProfileKey)).toMatchObject({
       text: payload.resumeText,
       contentType: 'text/plain; charset=utf-8',
       customMetadata: {
@@ -747,6 +748,12 @@ describe('talent pool candidate RPC', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 8 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM challenge_design_queue').get()).toEqual({ count: 1 });
+    expect(storage.puts.size).toBe(1);
+    expect(sqlite.prepare(
+      `SELECT profile_r2_key
+         FROM talent_pool_intakes
+        WHERE candidate_id = 'candidate-1'`,
+    ).get()).toEqual({ profile_r2_key: initialProfileKey });
   });
 
   it('schedules text profile ingestion directly from submitted source text', async () => {

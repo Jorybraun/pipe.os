@@ -403,11 +403,16 @@ function safeFileName(name: string): string {
   return normalized.slice(0, 160) || 'profile';
 }
 
-async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
+async function sha256Hex(data: BufferSource): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', data);
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('');
+}
+
+async function profileTextStorageKey(candidateId: string, resumeText: string): Promise<string> {
+  const textHash = await sha256Hex(new TextEncoder().encode(resumeText));
+  return `talent-intake/${candidateId}/${textHash}-profile.txt`;
 }
 
 function normalizeProfileContentType(contentType: string, fileName: string): string {
@@ -607,7 +612,7 @@ async function persistIntake(
     sourceArtifactForPerson?: TalentPoolSourceArtifactInput;
   } = {},
 ): Promise<RolelessTalentPoolIdentity | null> {
-  const profileKey = options.profileKey ?? `talent-intake/${candidate.id}/${now.replace(/[:.]/g, '-')}.txt`;
+  const profileKey = options.profileKey ?? await profileTextStorageKey(candidate.id, input.resumeText);
   if (!options.profileKey) {
     await c.env.STORAGE.put(profileKey, input.resumeText, {
       httpMetadata: { contentType: 'text/plain; charset=utf-8' },

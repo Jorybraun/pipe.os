@@ -92,8 +92,9 @@ The audit checks this projection per submitted candidate, not only as an
 aggregate count, so a candidate with many exact-source nodes cannot mask another
 submitted candidate with no exact-source candidate-node projection.
 
-Uploaded profile files use content-hash storage keys, so replaying the same
-file reuses the same source artifact path. Each upload also creates an
+Pasted profile text and uploaded profile files use content-hash storage keys,
+so replaying the same source reuses the same source artifact path. Each upload
+also creates an
 idempotent roleless person `profile_upload` artifact version for the original
 blob with storage key, content hash, media type, byte length, and filename.
 Pasted profile text is also written to the private Talent Pool R2 source path,
