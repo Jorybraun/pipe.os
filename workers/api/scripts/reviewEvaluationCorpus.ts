@@ -52,6 +52,7 @@ export interface CorpusReviewCliOptions {
   sourceCorpusFile?: string;
   seedFromMatchRuns: boolean;
   seedLimit?: number;
+  seedSelectionPoolLimit?: number;
   seedStatusFilter?: string;
   seedRoleContextId?: string;
   seedDescription?: string;
@@ -336,6 +337,7 @@ export function parseCorpusReviewArgs(argv: string[]): CorpusReviewCliOptions | 
     throw new Error('--database-id requires --remote');
   }
   const seedLimit = positiveIntegerFor(argv, '--seed-limit');
+  const seedSelectionPoolLimit = positiveIntegerFor(argv, '--seed-selection-pool-limit');
   const options: CorpusReviewCliOptions = {
     target,
     persist: argv.includes('--persist'),
@@ -346,6 +348,7 @@ export function parseCorpusReviewArgs(argv: string[]): CorpusReviewCliOptions | 
     ...(sourceCorpusId ? { sourceCorpusId } : {}),
     ...(sourceCorpusFile ? { sourceCorpusFile } : {}),
     ...(seedLimit ? { seedLimit } : {}),
+    ...(seedSelectionPoolLimit ? { seedSelectionPoolLimit } : {}),
     ...(valueFor(argv, '--seed-status') ? { seedStatusFilter: valueFor(argv, '--seed-status')! } : {}),
     ...(valueFor(argv, '--seed-role-context-id') ? { seedRoleContextId: valueFor(argv, '--seed-role-context-id')! } : {}),
     ...(valueFor(argv, '--seed-description') ? { seedDescription: valueFor(argv, '--seed-description')! } : {}),
@@ -393,6 +396,7 @@ Options:
   --database-id <id>                 Remote D1 database id; defaults to MATCHING_EVALUATION_D1_DATABASE_ID then CLOUDFLARE_D1_DATABASE_ID
   --seed-from-match-runs              Build a draft corpus from real persisted match_runs
   --seed-limit <n>                    Match run limit for seeding (default: 50)
+  --seed-selection-pool-limit <n>     Recent match-run rows inspected for packet-diverse seeding (default: 500)
   --seed-status <status>              Match run status for seeding (default: MATCHED)
   --seed-role-context-id <id>         Optional role_context_id filter
   --seed-description <text>           Description for the seeded draft corpus
@@ -554,6 +558,7 @@ async function loadSourceCorpus(
     if (!db) throw new Error('--seed-from-match-runs requires D1 access');
     const seedResult = await seedCorpusFromMatchRuns(db as unknown as D1Database, {
       ...(options.seedLimit ? { limit: options.seedLimit } : {}),
+      ...(options.seedSelectionPoolLimit ? { selectionPoolLimit: options.seedSelectionPoolLimit } : {}),
       ...(options.seedStatusFilter ? { statusFilter: options.seedStatusFilter } : {}),
       ...(options.seedRoleContextId ? { roleContextId: options.seedRoleContextId } : {}),
       ...(options.seedDescription ? { description: options.seedDescription } : {}),

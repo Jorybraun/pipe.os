@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CODE_REVIEW CI and dev-deploy proof jobs now have explicit timeout bounds on the full jobs plus the slowest test/deploy steps, preventing reliability evidence from sitting indefinitely in an ambiguous in-progress state.
 - Draft CODE_REVIEW matching corpora now preserve human-readable repository and pull-request metadata from challenge packets, so expert review packets show the actual repo/PR context instead of only legacy internal ids.
 - Production match-quality corpora now require each expert label to include a human rationale in addition to reviewer/source provenance, preventing metadata-only labels from opening CODE_REVIEW rollout gates.
+- CODE_REVIEW corpus seeding now inspects a larger recent match-run pool and selects packet-diverse rows before applying the requested seed limit, so expert review packets do not collapse onto one dominant PR when broader source-backed challenges exist.
 
 ### Fixed — CODE_REVIEW assessment runtime
 

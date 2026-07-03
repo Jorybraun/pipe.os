@@ -920,6 +920,7 @@ describe('POST /evaluation-corpus-seed', () => {
       syntheticFixtureCount: number;
       productionReady: boolean;
       nextAction: string;
+      readinessSummary: { nextAction: string };
     };
     expect(body.persisted).toBe(true);
     expect(body.corpusId).toMatch(/^seeded-/);
@@ -929,7 +930,8 @@ describe('POST /evaluation-corpus-seed', () => {
     expect(body.expertLabelCount).toBe(0);
     expect(body.syntheticFixtureCount).toBe(0);
     expect(body.productionReady).toBe(false);
-    expect(body.nextAction).toBe('attach_expert_label_provenance');
+    expect(body.nextAction).toBe('expand_corpus_packet_breadth');
+    expect(body.readinessSummary.nextAction).toBe('expand_corpus_packet_breadth');
   });
 
   it('exports a compact review packet for a seeded draft corpus', async () => {
@@ -1032,6 +1034,7 @@ describe('POST /evaluation-corpus-seed', () => {
       productionReady: boolean;
       productionReadinessFailures: string[];
       nextAction: string;
+      readinessSummary: { nextAction: string };
     };
     expect(body.ok).toBe(true);
     expect(body.sourceCorpusId).toBe(seedBody.corpusId);
@@ -1045,9 +1048,11 @@ describe('POST /evaluation-corpus-seed', () => {
     expect(body.productionReadinessFailures).toEqual(expect.arrayContaining([
       'production corpus requires at least one insufficient-evidence or non-positive contrast label',
       'production corpus requires at least one explicit negativeCandidateId contrast label',
+      'production corpus requires at least two source-backed expected PR challenge packets',
       'positive expert label requires contrast candidate and minimum score separation: seeded-match-run-seed-1-packet-seed-1',
     ]));
-    expect(body.nextAction).toBe('complete_expert_label_review');
+    expect(body.nextAction).toBe('expand_corpus_packet_breadth');
+    expect(body.readinessSummary.nextAction).toBe('expand_corpus_packet_breadth');
 
     const rows = sqlite.prepare(
       `SELECT corpus_id, expert_label_count, corpus_json
