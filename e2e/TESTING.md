@@ -200,6 +200,7 @@ For app-dev, recruiter setup goes through `APP_BASE`/`RECRUITER_API_BASE` so the
 Validated app-dev examples:
 
 ```bash
+npm run smoke:code-review-reliability-dev
 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_SUBMIT=1 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_EXPECT_BLOCKED_MATCH=1 npm run smoke:code-review-assess-dev
@@ -208,6 +209,28 @@ npm run smoke:code-review-assess-dev:role-backed-full-submit
 ```
 
 The manual ready-assignment commands should select `https://github.com/mui/base-ui` PR `#973`, return `MATCHED`, pass the source-backed quality gate, render a Pierre diff, and avoid any video-room UI. Manual mode is expected to report `assessmentQuality: "USABLE"` because it validates the recruiter-selected source-backed PR without inferring CV fit. The blocked auto-match command should return `PROFILE_RECEIVED`, complete the candidate stage as `candidate-intake-queued`, and prove the recruiter sees assessment progress instead of a candidate-visible matching loop.
+
+Use `npm run smoke:code-review-reliability-dev` for the full app-dev reliability
+suite. It runs the blocked `PROFILE_RECEIVED` handoff, role-backed full-submit
+and scoring smoke, non-MUI Workers SDK matching matrix, and latest
+expert-labelled match-quality readiness gate. It writes lane stdout/stderr and
+summary artifacts under `tmp/code-review-reliability/`. Use
+`CODE_REVIEW_RELIABILITY_LANES=blocked-handoff,workers-sdk-matrix` for focused
+diagnosis, or `CODE_REVIEW_RELIABILITY_D1_DATABASE_ID=<d1-id>` to point the
+match-quality lane at a different CODE_REVIEW evaluation database.
+
+Latest suite proof on 2026-07-03 passed all 4 lanes: blocked handoff interview
+`7d6003b8-7070-4186-bafb-9f2036cf1991` returned `PROFILE_RECEIVED` /
+`candidate-intake-queued`; role-backed full-submit interview
+`ddfaffbc-adba-4ec5-a2a6-4734c0d75c0f` selected `mui/base-ui#973`, submitted
+review session `d96b45f5-2509-4177-8b69-869e4360096b`, persisted score `42`
+(`weak`), and exposed 4 evidence hyperedges plus a person-role-repo bridge;
+Workers SDK matrix interview `554ba3a3-c129-409a-a0fb-2d27f04349d0` selected
+`cloudflare/workers-sdk#14118` with `STRONG` quality and contrast score `2/2`;
+match-quality readiness passed corpus
+`seeded-1783074402522-3c-3r-expert-codex-supplemental-contrast` with accuracy
+`1`, false positives `0`, false negatives `0`, usable challenge rate `1`, and
+no gate failures.
 
 Set `CODE_REVIEW_SMOKE_SUBMIT=1`, or use `npm run smoke:code-review-assess-dev:role-backed-full-submit`, for the stronger end-to-end gate. That mode keeps the browser assess smoke, drives the visible candidate UI to add an inline diff comment, submits the first review round in the browser, waits for the author response/thread, then completes with `request_changes`, submits the review-session reference through `/rpc/submit-challenge-response`, verifies both `/api/v1/scheduling/interviews/:id` and `/api/v1/candidates/:id` expose the completed recruiter result, fails if scheduled detail loses transcript rounds, reviewer comments, or AI developer responses, checks the judge-example replay queue contains the review session with candidate comments, AI pushback, `human_label_queue`, and `cross_model_calibration` metadata, and polls D1 until `review_sessions.score_report`, `challenge_submissions.score_report_json`, `challenge_submissions.score`, and `assessments.score` are durable. The score-persistence check uses local `pipe-db` for localhost and remote `pipe-db-test` for app-dev; override with `CODE_REVIEW_SMOKE_D1_DATABASE` only when deliberately targeting another D1 database.
 

@@ -33,6 +33,7 @@
     "smoke:code-review-assess-dev:workers-matrix": "CODE_REVIEW_SMOKE_MATRIX_PROFILES=workers-sdk-runtime node scripts/smoke-code-review-assess-dev-matrix.mjs",
     "smoke:code-review-assess-dev:matrix": "node scripts/smoke-code-review-assess-dev-matrix.mjs",
     "smoke:code-review-assess-dev:loop": "node scripts/smoke-code-review-assess-dev-loop.mjs",
+    "smoke:code-review-reliability-dev": "node scripts/smoke-code-review-reliability-dev.mjs",
     "smoke:code-review-workspace-dev": "node scripts/smoke-code-review-workspace-dev.mjs",
     "smoke:open-source-workspace-dev": "node scripts/smoke-code-review-workspace-dev.mjs",
     "smoke:agent-devin-chat-dev": "node scripts/smoke-agent-devin-chat-dev.mjs",

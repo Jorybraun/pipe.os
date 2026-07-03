@@ -46,6 +46,7 @@ playwright/.auth/
 playwright/.auth/*.json
 tmp/code-review-smoke-runs/
 tmp/code-review-expert-seed/
+tmp/code-review-reliability/
 
 # Gemini CLI
 .gemini/

@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- Added `npm run smoke:code-review-reliability-dev`, a full app-dev reliability suite that runs the candidate-safe blocked handoff, role-backed full-submit/scoring, non-MUI Workers SDK matching, and latest expert-labelled match-quality readiness gate with stored lane artifacts.
 - Documented the latest `workers-matrix` app-dev proof that automatic CODE_REVIEW matching can select a non-MUI `cloudflare/workers-sdk` source-backed PR with a passed quality gate.
 - Added `npm run smoke:code-review-assess-dev:role-backed-full-submit` as the first-class deployed proof for automatic role-backed matching, candidate review submission, scoring persistence, and recruiter readout.
 - The deployed CODE_REVIEW recruiter smoke now enforces that the hiring-manager readout stays capped to the five decision cards and does not leak raw packet, match, session, or source identifiers.

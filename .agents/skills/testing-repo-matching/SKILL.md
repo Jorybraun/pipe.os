@@ -31,6 +31,7 @@ Manual ready-assignment smokes do not require Neo4j auto-match readiness because
 Use the manual override smoke for the stable ready-assignment path:
 
 ```bash
+npm run smoke:code-review-reliability-dev
 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_FULL_SUBMIT=1 npm run smoke:code-review-assess-dev
 npm run smoke:code-review-assess-dev:role-backed-full-submit
@@ -38,6 +39,7 @@ npm run smoke:code-review-assess-dev:workers-matrix
 ```
 
 Expected proof:
+- reliability suite runs blocked handoff, role-backed full-submit/scoring, Workers SDK non-MUI breadth, and latest expert-labelled match-quality readiness
 - delivered URL is `/assess/:token`, not a room URL
 - source-backed PR is `https://github.com/mui/base-ui` PR `973` by default
 - `matchMode` is `manual_override`
