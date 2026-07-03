@@ -96,6 +96,15 @@ export function validateExpertSeedSummary(summary, thresholds = {}) {
   }
   if (!seeded || typeof seeded !== 'object') failures.push('summary.seeded is required');
   if (!readiness || typeof readiness !== 'object') failures.push('summary.readinessSummary is required');
+  if (summary.productionReady !== false) {
+    failures.push(`productionReady must be false until expert review is completed; got ${String(summary.productionReady)}`);
+  }
+  failIfBelow(
+    failures,
+    'productionReadinessFailures',
+    arrayLength(summary.productionReadinessFailures),
+    1,
+  );
 
   if (summary.nextAction !== 'complete_expert_review') {
     failures.push(`nextAction must be complete_expert_review; got ${String(summary.nextAction)}`);
@@ -375,6 +384,8 @@ function main() {
     thresholds,
     seeded: summary.seeded ?? null,
     nextAction: summary.nextAction ?? null,
+    productionReady: summary.productionReady ?? null,
+    productionReadinessFailures: summary.productionReadinessFailures ?? null,
     readinessSummary: summary.readinessSummary ?? null,
     packetMetrics: packetValidation.metrics,
     markdownMetrics: markdownValidation.metrics,
