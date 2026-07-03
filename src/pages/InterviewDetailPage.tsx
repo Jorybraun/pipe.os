@@ -1500,8 +1500,39 @@ function codeReviewVerdictLabel(
 function codeReviewMatchIsQualityGated(match: CodeReviewMatchDetail | null): boolean {
   if (!match || match.status !== 'MATCHED') return false;
   const qualityVerdict = match.assessmentQuality?.verdict?.toUpperCase() ?? null;
-  if (!qualityVerdict) return true;
-  return qualityVerdict === 'STRONG' || qualityVerdict === 'USABLE' || qualityVerdict === 'PASSED';
+  if (qualityVerdict) {
+    return qualityVerdict === 'STRONG' || qualityVerdict === 'USABLE' || qualityVerdict === 'PASSED';
+  }
+  return codeReviewMatchHasSourceBackedBridge(match);
+}
+
+function codeReviewMatchHasSourceBackedBridge(match: CodeReviewMatchDetail): boolean {
+  const sourceBridge = match.validatorAgent?.sourceBridge ?? null;
+  if (
+    sourceBridge
+    && sourceBridge.provenanceComplete
+    && sourceBridge.repoSourceCount > 0
+    && (sourceBridge.candidateSourceCount > 0 || sourceBridge.roleSourceCount > 0)
+  ) {
+    return true;
+  }
+
+  if (match.evidenceHyperedges.some((edge) => {
+    const sourceKinds = new Set(
+      edge.nodes
+        .filter((node) => countMatchRefs([node.sourceRef]) > 0)
+        .map((node) => node.kind),
+    );
+    return sourceKinds.has('repo_challenge')
+      && (sourceKinds.has('person_evidence') || sourceKinds.has('role_source'));
+  })) {
+    return true;
+  }
+
+  return match.evidence.some((entry) =>
+    countMatchRefs(entry.challengeSourceRefs) > 0
+    && (countMatchRefs(entry.candidateSourceRefs) > 0 || countMatchRefs(entry.roleSourceRefs) > 0),
+  );
 }
 
 function codeReviewActionText(
@@ -2019,6 +2050,15 @@ function codeReviewNextStepRecommendation(
       tone: 'blocked',
     };
   }
+  const scoreValue = score?.score;
+  const scoreBand = score?.band?.toLowerCase() ?? null;
+  if (typeof scoreValue === 'number' && Number.isFinite(scoreValue) && (scoreValue < 50 || scoreBand === 'weak')) {
+    return {
+      value: 'Review assignment fairness before rejecting',
+      detail: 'Use the weak score and growth area to verify whether this reflects candidate ability, assignment fit, or missing context before rejecting.',
+      tone: 'watch',
+    };
+  }
   if (match && !codeReviewMatchIsQualityGated(match)) {
     const plannedStep = codeReviewBlockedMatchNextStep(evidencePlan);
     if (plannedStep) return plannedStep;
@@ -2042,17 +2082,8 @@ function codeReviewNextStepRecommendation(
       tone: 'neutral',
     };
   }
-  const scoreValue = score?.score;
-  const scoreBand = score?.band?.toLowerCase() ?? null;
   const manualAssignment = codeReviewAssignmentIsManualOverride({ setup, match });
   if (typeof scoreValue === 'number' && Number.isFinite(scoreValue)) {
-    if (scoreValue < 50 || scoreBand === 'weak') {
-      return {
-        value: 'Review assignment fairness before rejecting',
-        detail: 'Use the weak score and growth area to verify whether this reflects candidate ability, assignment fit, or missing context before rejecting.',
-        tone: 'watch',
-      };
-    }
     if (manualAssignment) {
       return {
         value: 'Review assignment fairness before advancing',
