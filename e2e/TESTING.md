@@ -202,17 +202,19 @@ Validated app-dev examples:
 ```bash
 npm run smoke:code-review-reliability-dev
 npm run smoke:code-review-assess-dev
+CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_SMOKE_NO_CV_BOUNDARY=1 CODE_REVIEW_EXPECT_BLOCKED_MATCH=1 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_SUBMIT=1 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_EXPECT_BLOCKED_MATCH=1 npm run smoke:code-review-assess-dev
 npm run smoke:code-review-assess-dev:role-backed
 npm run smoke:code-review-assess-dev:role-backed-full-submit
 ```
 
-The manual ready-assignment commands should select `https://github.com/mui/base-ui` PR `#973`, return `MATCHED`, pass the source-backed quality gate, render a Pierre diff, and avoid any video-room UI. Manual mode is expected to report `assessmentQuality: "USABLE"` because it validates the recruiter-selected source-backed PR without inferring CV fit. The blocked auto-match command should return `PROFILE_RECEIVED`, complete the candidate stage as `candidate-intake-queued`, and prove the recruiter sees assessment progress instead of a candidate-visible matching loop.
+The manual ready-assignment commands should select `https://github.com/mui/base-ui` PR `#973`, return `MATCHED`, pass the source-backed quality gate, render a Pierre diff, and avoid any video-room UI. Manual mode is expected to report `assessmentQuality: "USABLE"` because it validates the recruiter-selected PR without inferring CV fit. The no-CV boundary command should return `PROFILE_RECEIVED` before any resume/intake submission, with no `Upload Your CV`, `Profile & Resume`, or matching dashboard visible in `/assess`. The blocked auto-match command should return `PROFILE_RECEIVED` after intake evidence is submitted but no source-backed PR is ready, complete the candidate stage as `candidate-intake-queued`, and prove the recruiter sees assessment progress instead of a candidate-visible matching loop.
 
 Use `npm run smoke:code-review-reliability-dev` for the full app-dev reliability
 suite. It runs the manual source-backed ready assignment, including recruiter
-one-use-safe candidate-link resolution proof, blocked `PROFILE_RECEIVED` handoff, role-backed
+one-use-safe candidate-link resolution proof, fresh no-CV `PROFILE_RECEIVED` handoff,
+blocked `PROFILE_RECEIVED` handoff after submitted evidence, role-backed
 full-submit and scoring smoke, non-MUI Workers SDK matching matrix, and latest
 expert-labelled match-quality readiness gate. It writes lane stdout/stderr and
 summary artifacts under `tmp/code-review-reliability/`. Use
@@ -223,7 +225,16 @@ In isolated worktrees that already have `playwright/.auth/user.json`, set
 `PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP=1` to reuse that recruiter session without
 running the Clerk setup dependency again.
 
-Latest suite proof on 2026-07-03 passed all 5 lanes with artifact
+Latest fresh no-CV boundary app-dev proof on 2026-07-03 passed for interview
+`2ed78146-57fa-423b-902e-609513026284` via
+`CODE_REVIEW_RELIABILITY_LANES=no-cv-handoff npm run smoke:code-review-reliability-dev`.
+The candidate handoff was `PROFILE_RECEIVED` / `profile-received`, stage
+`candidate-intake-queued`, challenge count `0`, recruiter readiness was
+`waiting_for_source_backed_match`, the candidate and recruiter browser smokes
+passed, and the suite artifact was
+`tmp/code-review-reliability/2026-07-03T12-38-07-549Z-suite.summary.json`.
+
+Latest pre-no-CV-lane suite proof on 2026-07-03 passed all 5 lanes with artifact
 `tmp/code-review-reliability/2026-07-03T12-21-05-262Z-suite.summary.json`:
 manual ready-assignment interview `d76a2528-062e-4e90-991b-f940f495b387`
 served `mui/base-ui#973` with `manual_override`, `MATCHED`, validator `PASSED`,

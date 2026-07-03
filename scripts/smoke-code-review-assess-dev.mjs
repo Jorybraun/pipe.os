@@ -35,6 +35,7 @@ const SKIP_BROWSER = process.env.CODE_REVIEW_SMOKE_SKIP_BROWSER === '1';
 const SKIP_RECRUITER_BROWSER = process.env.CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER === '1';
 const VERIFY_RECRUITER_CANDIDATE_LINK = process.env.CODE_REVIEW_SMOKE_RECRUITER_CANDIDATE_LINK === '1';
 const AUTO_MATCH = process.env.CODE_REVIEW_SMOKE_AUTO_MATCH === '1';
+const NO_CV_BOUNDARY = process.env.CODE_REVIEW_SMOKE_NO_CV_BOUNDARY === '1';
 const ROLE_BACKED_EXPLICIT = process.env.CODE_REVIEW_SMOKE_ROLE_BACKED === '1';
 const SUBMIT_REVIEW = process.env.CODE_REVIEW_SMOKE_SUBMIT === '1'
   || process.env.CODE_REVIEW_SMOKE_FULL_SUBMIT === '1';
@@ -132,6 +133,9 @@ function assertEnv() {
     if (!RELATED_BOUNDARY_REPO_URL || !Number.isInteger(RELATED_BOUNDARY_PR_NUMBER) || RELATED_BOUNDARY_PR_NUMBER <= 0) {
       throw new Error('Set CODE_REVIEW_SMOKE_RELATED_BOUNDARY_REPO_URL and CODE_REVIEW_SMOKE_RELATED_BOUNDARY_PR_NUMBER to valid values.');
     }
+  }
+  if (NO_CV_BOUNDARY && (!AUTO_MATCH || REPO_URL || PR_NUMBER)) {
+    throw new Error('CODE_REVIEW_SMOKE_NO_CV_BOUNDARY=1 requires CODE_REVIEW_SMOKE_AUTO_MATCH=1 with no manual repo/PR override.');
   }
 }
 
@@ -775,6 +779,45 @@ async function getStageConfig(sessionToken) {
     headers: candidateHeaders(sessionToken),
     body: JSON.stringify({}),
   }, { basicAuth: false });
+}
+
+function assertProfileReceivedHandoff({ stageConfig, challenge }) {
+  assert(
+    stageConfig?.isComplete === true
+      && stageConfig?.stageId === 'candidate-intake-queued',
+    `Expected candidate-intake-queued complete stage config, got: ${JSON.stringify(stageConfig)}`,
+  );
+  assert(
+    stageConfig?.stageTitle === 'Profile received',
+    `Expected Profile received stage title, got: ${JSON.stringify(stageConfig)}`,
+  );
+  assert(
+    Array.isArray(stageConfig?.challenges)
+      && stageConfig.challenges.length === 0,
+    `Expected no candidate-facing intake or matching challenges, got: ${JSON.stringify(stageConfig)}`,
+  );
+  assert(
+    challenge?.type === 'PROFILE_RECEIVED',
+    `Expected PROFILE_RECEIVED handoff, got: ${JSON.stringify(challenge)}`,
+  );
+  assert(
+    challenge?.id === 'profile-received',
+    `Expected profile-received challenge id, got: ${JSON.stringify(challenge)}`,
+  );
+  assert(
+    typeof challenge?.instructions === 'string'
+      && challenge.instructions.includes('email you when your code review is ready'),
+    `Expected candidate-safe email handoff instructions, got: ${JSON.stringify(challenge)}`,
+  );
+
+  const serialized = JSON.stringify({ stageConfig, challenge });
+  assert(
+    !serialized.includes('WAITING_FOR_MATCH')
+      && !serialized.includes('Upload Your CV')
+      && !serialized.includes('Profile & Resume')
+      && !serialized.includes('Building your personalized challenge'),
+    `Candidate handoff leaked intake or matching UI state: ${serialized.slice(0, 1200)}`,
+  );
 }
 
 async function bootstrapStageConfig(sessionToken) {
@@ -1754,6 +1797,58 @@ async function main() {
         })
       : null;
 
+    if (NO_CV_BOUNDARY) {
+      const initialStageConfig = await getStageConfig(session.sessionToken);
+      const challenge = await getChallenge(session.sessionToken, 0);
+      assertProfileReceivedHandoff({ stageConfig: initialStageConfig, challenge });
+
+      const browserSmoke = runBrowserSmoke({
+        deliveredUrl: invite.deliveredUrl,
+        inviteToken: invite.inviteToken,
+        session,
+        expectedMatchProofVerdict: '',
+        expectProfileReceived: true,
+      });
+      const recruiterBrowserSmoke = await runRecruiterDetailBrowserSmoke({
+        interviewId: invite.interviewId,
+        expectedOutcome: 'blocked',
+      });
+
+      console.log(JSON.stringify({
+        ok: true,
+        interviewId: invite.interviewId,
+        roleContextId: invite.roleContextId ?? null,
+        pipelineId: invite.pipelineId ?? session.pipelineId ?? null,
+        stageId: invite.stageId ?? null,
+        emailSent: SEND_EMAIL,
+        matchMode: currentMatchMode(),
+        expectedOutcome: 'no_cv_profile_received',
+        deliveredUrl: cleanUrl(invite.deliveredUrl),
+        roomGuestUrl: cleanUrl(invite.invited?.room?.guestUrl),
+        candidateHandoff: {
+          type: challenge.type,
+          id: challenge.id,
+          title: challenge.title ?? null,
+          instructions: challenge.instructions ?? null,
+          stageId: initialStageConfig.stageId,
+          stageTitle: initialStageConfig.stageTitle ?? null,
+          isComplete: initialStageConfig.isComplete,
+          challengeCount: initialStageConfig.challenges.length,
+        },
+        browserSmoke,
+        recruiterBrowserSmoke,
+        candidateLinkProof: preIntakeCandidateLink,
+        stageConfig: {
+          initialStageId: initialStageConfig.stageId,
+          initialStageTitle: initialStageConfig.stageTitle ?? null,
+          initialIsComplete: initialStageConfig.isComplete ?? null,
+          initialCurrentIndex: initialStageConfig.currentIndex ?? null,
+          initialChallengeTypes: [],
+        },
+      }, null, 2));
+      return;
+    }
+
     await submitIntake(session.sessionToken);
     const initialStageConfig = EXPECT_BLOCKED_MATCH
       ? await getStageConfig(session.sessionToken)
@@ -1763,18 +1858,7 @@ async function main() {
       expectBlocked: EXPECT_BLOCKED_MATCH,
     });
     if (EXPECT_BLOCKED_MATCH) {
-      assert(challenge?.type === 'PROFILE_RECEIVED', `Expected PROFILE_RECEIVED handoff, got: ${JSON.stringify(challenge)}`);
-      assert(challenge?.id === 'profile-received', `Expected profile-received challenge id, got: ${JSON.stringify(challenge)}`);
-      assert(
-        typeof challenge?.instructions === 'string'
-          && challenge.instructions.includes('email you when your code review is ready'),
-        `Expected candidate-safe email handoff instructions, got: ${JSON.stringify(challenge)}`,
-      );
-      assert(
-        initialStageConfig?.isComplete === true
-          && initialStageConfig?.stageId === 'candidate-intake-queued',
-        `Expected candidate-intake-queued complete stage config, got: ${JSON.stringify(initialStageConfig)}`,
-      );
+      assertProfileReceivedHandoff({ stageConfig: initialStageConfig, challenge });
 
       const browserSmoke = runBrowserSmoke({
         deliveredUrl: invite.deliveredUrl,

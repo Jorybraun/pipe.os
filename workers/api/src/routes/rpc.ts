@@ -3097,7 +3097,10 @@ rpcAuth.post('/get-stage-config', async (c) => {
 
     // Standalone code-review interview: serve the assessment only after a
     // source-backed repo/PR assignment exists. Intake/matching stays upstream.
-    if (!needsResume && standaloneAssessment && !('interview_type' in standaloneAssessment)) {
+    if (standaloneAssessment && !('interview_type' in standaloneAssessment)) {
+      if (needsResume) {
+        return c.json(candidateIntakeQueuedComplete('Profile received'));
+      }
       const hasReadyAssignment = await hasReadyStandaloneCodeReviewAssignment(
         c.env.DB,
         candidateId,
@@ -3440,11 +3443,22 @@ rpcAuth.post('/get-challenge', async (c) => {
 
   // Pipeline-free candidate: INTAKE first, then standalone code review or dev container if invited
   if (!pipelineId) {
-    if (await candidateNeedsCvIntake(c.env.DB, candidateId)) {
+    const standaloneAssessment = await getPendingStandaloneAssessment(c.env.DB, candidateId);
+    const needsCvIntake = await candidateNeedsCvIntake(c.env.DB, candidateId);
+    if (
+      needsCvIntake
+      && standaloneAssessment
+      && !('interview_type' in standaloneAssessment)
+    ) {
+      return c.json(profileReceivedChallengeContent());
+    }
+    if (
+      needsCvIntake
+      && (!standaloneAssessment || 'interview_type' in standaloneAssessment)
+    ) {
       return c.json(INTAKE_CHALLENGE_CONTENT);
     }
 
-    const standaloneAssessment = await getPendingStandaloneAssessment(c.env.DB, candidateId);
     if (standaloneAssessment && 'interview_type' in standaloneAssessment) {
       let repoUrl = standaloneAssessment.github_repo_url;
       let prNumber = standaloneAssessment.github_pr_number;

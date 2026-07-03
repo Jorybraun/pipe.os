@@ -25,6 +25,7 @@
     "smoke:code-review-assess-dev": "node scripts/smoke-code-review-assess-dev.mjs",
     "smoke:assess-session-isolation": "playwright test e2e/assess-session-isolation.unauth.spec.ts --project=unauthenticated --reporter=line",
     "smoke:assess-token-lifecycle-dev": "node scripts/smoke-assess-token-lifecycle-dev.mjs",
+    "smoke:code-review-assess-dev:no-cv-boundary": "CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_SMOKE_NO_CV_BOUNDARY=1 CODE_REVIEW_EXPECT_BLOCKED_MATCH=1 node scripts/smoke-code-review-assess-dev.mjs",
     "smoke:code-review-assess-dev:blocked": "CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_EXPECT_BLOCKED_MATCH=1 node scripts/smoke-code-review-assess-dev.mjs",
     "smoke:code-review-assess-dev:person-boundary": "CODE_REVIEW_SMOKE_FULL_SUBMIT=1 CODE_REVIEW_SMOKE_PERSON_RELATED_BOUNDARY=1 node scripts/smoke-code-review-assess-dev.mjs",
     "smoke:code-review-assess-dev:role-backed": "CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_SMOKE_ROLE_BACKED=1 CODE_REVIEW_EXPECT_AUTOMATCH=1 node scripts/smoke-code-review-assess-dev.mjs",
