@@ -345,7 +345,8 @@ async function loadRawCapture(
   scopeSql: string,
   params: Array<string | number | null>,
 ): Promise<CandidateRawCaptureAudit> {
-  const profileKeyHash = "LOWER(substr(t.profile_r2_key, LENGTH('talent-intake/' || t.candidate_id || '/') + 1, 64))";
+  const profileKeyPrefix = "'talent-intake/' || t.candidate_id || '/'";
+  const profileKeyHash = `LOWER(substr(t.profile_r2_key, LENGTH(${profileKeyPrefix}) + 1, 64))`;
   const nonHexProfileKeyHashCharacters = [
     '0',
     '1',
@@ -365,10 +366,10 @@ async function loadRawCapture(
     'f',
   ].reduce((expression, character) => `REPLACE(${expression}, '${character}', '')`, profileKeyHash);
   const contentAddressedProfileKeyPredicate = `
-    t.profile_r2_key LIKE 'talent-intake/' || t.candidate_id || '/%'
-    AND LENGTH(substr(t.profile_r2_key, LENGTH('talent-intake/' || t.candidate_id || '/') + 1, 64)) = 64
+    substr(t.profile_r2_key, 1, LENGTH(${profileKeyPrefix})) = ${profileKeyPrefix}
+    AND LENGTH(substr(t.profile_r2_key, LENGTH(${profileKeyPrefix}) + 1, 64)) = 64
     AND LENGTH(${nonHexProfileKeyHashCharacters}) = 0
-    AND substr(t.profile_r2_key, LENGTH('talent-intake/' || t.candidate_id || '/') + 65, 1) = '-'
+    AND substr(t.profile_r2_key, LENGTH(${profileKeyPrefix}) + 65, 1) = '-'
   `;
   const rows = await client.query<RawCaptureRow>(
     `${scopeSql}
