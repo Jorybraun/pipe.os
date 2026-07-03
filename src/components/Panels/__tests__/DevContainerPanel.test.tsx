@@ -95,6 +95,48 @@ describe('DevContainerPanel assessment submission', () => {
     vi.clearAllMocks();
   });
 
+  it('keeps the source-backed task, assignment locator, evidence state, and submit action visible above the workspace', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = input.toString();
+      if (url.endsWith('/rpc/assessment/progress')) {
+        return new Response(JSON.stringify(progressResponse({
+          hasToolUsageEvidence: true,
+          hasAiInteraction: true,
+          hasTestEvidence: false,
+          hasVerificationGap: true,
+        })), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DevContainerPanel challengeId="challenge-1" />);
+
+    const statusStrip = await screen.findByTestId('assessment-workspace-status-strip');
+    expect(statusStrip).toHaveTextContent('SOURCE-BACKED TASK');
+    expect(screen.getByTestId('assessment-workspace-task-summary')).toHaveTextContent('Fix retry handling in acme/repo.');
+
+    const locator = screen.getByTestId('assessment-workspace-assignment-locator');
+    expect(locator).toHaveTextContent('https://github.com/acme/repo');
+    expect(locator).toHaveTextContent(baseCommitSha.slice(0, 12));
+    expect(locator).toHaveTextContent('pipe-assessment');
+
+    const proofPills = screen.getByTestId('assessment-workspace-proof-pills');
+    expect(proofPills).toHaveTextContent('Task packet complete');
+    expect(proofPills).toHaveTextContent('Workspace evidence');
+    expect(proofPills).toHaveTextContent('Tool activity');
+    expect(proofPills).toHaveTextContent('AI use captured');
+    expect(proofPills).toHaveTextContent('Test gap declared');
+    expect(proofPills).toHaveTextContent('Commit required');
+    expect(screen.queryByTestId('assessment-commit-panel')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('assessment-workspace-submit-work'));
+    expect(screen.getByTestId('assessment-commit-panel')).toBeInTheDocument();
+  });
+
   it('lets candidates submit source-backed commit evidence from a ready dev container', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = input.toString();
@@ -143,7 +185,7 @@ describe('DevContainerPanel assessment submission', () => {
 
     render(<DevContainerPanel challengeId="challenge-1" />);
 
-    await screen.findByText('SUBMIT COMMIT');
+    await screen.findByTestId('assessment-submit-toggle');
     fireEvent.click(screen.getByTestId('assessment-submit-toggle'));
 
     await waitFor(() => {
@@ -248,7 +290,7 @@ describe('DevContainerPanel assessment submission', () => {
 
     render(<DevContainerPanel challengeId="challenge-1" />);
 
-    await screen.findByText('SUBMIT COMMIT');
+    await screen.findByTestId('assessment-submit-toggle');
     fireEvent.click(screen.getByTestId('assessment-submit-toggle'));
     await waitFor(() => {
       expect(screen.getByTestId('assessment-workspace-finalize-submit')).not.toBeDisabled();
@@ -307,7 +349,7 @@ describe('DevContainerPanel assessment submission', () => {
 
     render(<DevContainerPanel challengeId="challenge-1" />);
 
-    await screen.findByText('SUBMIT COMMIT');
+    await screen.findByTestId('assessment-submit-toggle');
     fireEvent.click(screen.getByTestId('assessment-submit-toggle'));
     await waitFor(() => {
       expect(screen.getByTestId('assessment-workspace-finalize-submit')).not.toBeDisabled();
@@ -352,7 +394,7 @@ describe('DevContainerPanel assessment submission', () => {
 
     render(<DevContainerPanel challengeId="challenge-1" />);
 
-    await screen.findByText('SUBMIT COMMIT');
+    await screen.findByTestId('assessment-submit-toggle');
     fireEvent.click(screen.getByTestId('assessment-submit-toggle'));
 
     const blocker = await screen.findByTestId('assessment-commit-packet-blocker');

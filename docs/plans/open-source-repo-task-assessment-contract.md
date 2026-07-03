@@ -284,6 +284,10 @@ The controlling product rule remains:
   stores the commit through the repo-task assessment spine. Dirty or untracked
   worktrees are still refused so uncommitted editor changes cannot be mistaken
   for submitted work.
+- Candidate dev-container assessment workspaces now keep the source-backed
+  task packet, repo/base commit locator, evidence coverage, AI-use state, and
+  Submit Work action visible above the code workspace instead of hiding
+  assessment readiness inside a drawer.
 - Workspace finalization also attaches bounded `code_server_file_observation`
   source refs for changed files at the submitted commit. These observations are
   derived from immutable git blobs, carry blob/content hashes and safe previews

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Candidate dev-container assessments now keep the source-backed task packet, repo/base commit locator, evidence coverage, AI-use state, and Submit Work action visible above the code workspace, so the cockpit does not hide assessment readiness inside a drawer.
 - Recruiter interview lists now hydrate assessment progress only for assessment-capable interview types, keeping standard-call dashboard pages from paying unnecessary assessment-session query cost.
 - Source-backed assessment evaluation now starts as a background Worker job and returns an `EVALUATING` progress state immediately, preventing long AI evaluation calls from closing recruiter and dev-smoke connections before a report is persisted.
 - Source-backed assessment evaluation now times out slow AI calls into a conservative source-backed fallback report and cron-recovers stale `EVALUATING` sessions, so recruiter progress cannot stay stuck after a dropped Worker background task.

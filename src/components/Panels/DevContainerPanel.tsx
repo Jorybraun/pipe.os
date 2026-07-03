@@ -78,6 +78,195 @@ function isDirtyWorkspaceFinalizeError(message: string | null): boolean {
   return message?.toLowerCase().includes('commit or discard uncommitted workspace changes') ?? false;
 }
 
+function locatorText(
+  progress: CandidateAssessmentProgress | null,
+  keys: readonly string[],
+): string | null {
+  const locator = progress?.challenge?.locator;
+  if (!locator) return null;
+  for (const key of keys) {
+    const value = locator[key];
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
+function compactText(value: string | null | undefined, max = 180): string {
+  const normalized = value?.replace(/\s+/g, ' ').trim() ?? '';
+  if (!normalized) return 'Task packet loading from source evidence.';
+  return normalized.length <= max ? normalized : `${normalized.slice(0, max - 1).trimEnd()}...`;
+}
+
+function proofTone(satisfied: boolean, warning = false): 'good' | 'warn' | 'quiet' {
+  if (satisfied) return 'good';
+  return warning ? 'warn' : 'quiet';
+}
+
+function pillStyle(tone: 'good' | 'warn' | 'quiet'): CSSProperties {
+  const palette = {
+    good: {
+      border: 'rgba(74,222,128,0.38)',
+      background: 'rgba(74,222,128,0.08)',
+      color: '#86efac',
+    },
+    warn: {
+      border: 'rgba(251,191,36,0.42)',
+      background: 'rgba(251,191,36,0.09)',
+      color: '#fde68a',
+    },
+    quiet: {
+      border: 'rgba(148,163,184,0.28)',
+      background: 'rgba(148,163,184,0.08)',
+      color: 'var(--pipe-text-dim)',
+    },
+  }[tone];
+
+  return {
+    border: `1px solid ${palette.border}`,
+    background: palette.background,
+    color: palette.color,
+    padding: '5px 7px',
+    fontSize: 9,
+    letterSpacing: '0.1em',
+    fontWeight: 700,
+    whiteSpace: 'nowrap',
+  };
+}
+
+function AssessmentWorkspaceStatusStrip({
+  progress,
+  loading,
+  error,
+  onOpenSubmit,
+}: {
+  progress: CandidateAssessmentProgress | null;
+  loading: boolean;
+  error: string | null;
+  onOpenSubmit: () => void;
+}): JSX.Element {
+  const defaults = buildCandidateCommitSubmissionDefaults(progress);
+  const repositoryUrl = progress?.commit?.repositoryUrl
+    ?? defaults.repositoryUrl
+    ?? locatorText(progress, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']);
+  const baseCommitSha = progress?.commit?.baseCommitSha
+    ?? defaults.baseCommitSha
+    ?? locatorText(progress, ['baseCommitSha', 'baseCommit', 'base_commit_sha', 'base_commit']);
+  const branchName = progress?.commit?.branchName ?? defaults.branchName;
+  const packetComplete = progress?.challengePacketContract?.isComplete === true
+    || (progress?.challengePacketContract == null && progress?.hasChallengePacket === true);
+  const packetLabel = packetComplete
+    ? 'Task packet complete'
+    : progress?.hasChallengePacket
+      ? 'Task packet incomplete'
+      : 'Task packet missing';
+  const testsLabel = progress?.hasTestEvidence
+    ? 'Tests captured'
+    : progress?.hasVerificationGap
+      ? 'Test gap declared'
+      : 'Tests missing';
+  const proofItems = [
+    { label: packetLabel, tone: proofTone(packetComplete, true) },
+    { label: progress?.hasDevContainerEvidence ? 'Workspace evidence' : 'Workspace pending', tone: proofTone(progress?.hasDevContainerEvidence === true) },
+    { label: progress?.hasToolUsageEvidence ? 'Tool activity' : 'Tool activity pending', tone: proofTone(progress?.hasToolUsageEvidence === true) },
+    { label: progress?.hasAiInteraction ? 'AI use captured' : 'No AI use captured', tone: progress?.hasAiInteraction ? 'good' : 'quiet' },
+    { label: testsLabel, tone: proofTone(progress?.hasTestEvidence === true, progress?.hasVerificationGap === true) },
+    { label: progress?.hasCommitSubmission ? 'Commit submitted' : 'Commit required', tone: proofTone(progress?.hasCommitSubmission === true, true) },
+  ] as const;
+
+  return (
+    <section
+      data-testid="assessment-workspace-status-strip"
+      aria-label="Assessment workspace status"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(220px, 1.3fr) minmax(260px, 1fr) auto',
+        gap: 12,
+        alignItems: 'stretch',
+        padding: '10px 16px',
+        borderBottom: '1px solid rgba(148,163,184,0.18)',
+        background: 'linear-gradient(180deg, rgba(15,23,42,0.96), rgba(9,9,11,0.96))',
+        color: '#f8fafc',
+        fontFamily: '"Space Mono", monospace',
+      }}
+    >
+      <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 9, letterSpacing: '0.16em', color: '#fbbf24', fontWeight: 800 }}>
+            SOURCE-BACKED TASK
+          </span>
+          <span style={{ fontSize: 9, color: loading ? '#fbbf24' : error ? '#f87171' : 'var(--pipe-text-dim)' }}>
+            {loading ? 'LOADING' : error ? 'PROGRESS ERROR' : progress?.nextActionLabel ?? 'Assessment state pending'}
+          </span>
+        </div>
+        <div
+          data-testid="assessment-workspace-task-summary"
+          style={{
+            fontSize: 11,
+            lineHeight: 1.45,
+            color: '#e5e7eb',
+            overflow: 'hidden',
+          }}
+        >
+          {compactText(progress?.challenge?.exactText)}
+        </div>
+      </div>
+
+      <div
+        data-testid="assessment-workspace-assignment-locator"
+        style={{
+          display: 'grid',
+          gap: 5,
+          alignContent: 'center',
+          borderLeft: '1px solid rgba(148,163,184,0.16)',
+          paddingLeft: 12,
+          minWidth: 0,
+        }}
+      >
+        <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>
+          Repo: <strong style={{ color: '#bfdbfe' }}>{repositoryUrl || 'waiting for packet'}</strong>
+        </span>
+        <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>
+          Base: <strong style={{ color: '#bfdbfe' }}>{baseCommitSha ? shortSha(baseCommitSha) : 'waiting'}</strong>
+          {branchName ? <> / Branch: <strong style={{ color: '#bfdbfe' }}>{branchName}</strong></> : null}
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gap: 8, justifyItems: 'end', alignContent: 'center' }}>
+        <div
+          data-testid="assessment-workspace-proof-pills"
+          style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap' }}
+        >
+          {proofItems.map((item) => (
+            <span key={item.label} style={pillStyle(item.tone)}>
+              {item.label}
+            </span>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={onOpenSubmit}
+          data-testid="assessment-workspace-submit-work"
+          style={{
+            padding: '7px 12px',
+            background: 'rgba(251,191,36,0.18)',
+            border: '1px solid rgba(251,191,36,0.52)',
+            color: '#fbbf24',
+            fontSize: 10,
+            letterSpacing: '0.16em',
+            fontWeight: 800,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          {progress?.hasCommitSubmission ? 'REVIEW SUBMISSION' : 'SUBMIT WORK'}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function WorkspaceFinalizeTrustContract(): JSX.Element {
   return (
     <div
@@ -389,7 +578,7 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
                 fontFamily: 'inherit',
               }}
             >
-              SUBMIT COMMIT
+              SUBMIT WORK
             </button>
             <button
               onClick={() => void destroy()}
@@ -424,6 +613,12 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
             ⚠ SESSION ENDING SOON — save your work, the container will be destroyed in ~{remaining ?? '1:00'}.
           </div>
         )}
+        <AssessmentWorkspaceStatusStrip
+          progress={assessmentProgress}
+          loading={assessmentLoading}
+          error={assessmentError}
+          onOpenSubmit={() => setSubmitPanelOpen(true)}
+        />
         {submitPanelOpen && (
           <form
             onSubmit={(event) => void handleCommitSubmit(event)}
