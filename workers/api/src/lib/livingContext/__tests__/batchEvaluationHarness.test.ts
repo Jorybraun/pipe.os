@@ -153,15 +153,25 @@ describe('batchEvaluationHarness', () => {
 
   it('evaluates labelled source-backed candidate/challenge cases', async () => {
     const db = createMockD1(sqlite) as unknown as D1Database;
-    const cases: BatchEvaluationCandidate[] = [{
-      caseId: 'typescript-positive',
-      candidateId: 'cand-fit',
-      challengePacketId: 'packet-typescript',
-      expectedVerdict: 'strong_match',
-      expectedReasonCategory: 'aligned',
-      negativeCandidateId: 'cand-negative',
-      minimumScoreSeparation: 0.2,
-    }];
+    const cases: BatchEvaluationCandidate[] = [
+      {
+        caseId: 'typescript-positive',
+        candidateId: 'cand-fit',
+        challengePacketId: 'packet-typescript',
+        expectedVerdict: 'strong_match',
+        expectedReasonCategory: 'aligned',
+        negativeCandidateId: 'cand-negative',
+        minimumScoreSeparation: 0.2,
+      },
+      {
+        caseId: 'typescript-negative',
+        candidateId: 'cand-negative',
+        challengePacketId: 'packet-typescript',
+        expectedVerdict: 'insufficient_evidence',
+        expectedReasonCategory: 'insufficient_evidence',
+        requireCandidateEvidence: false,
+      },
+    ];
 
     const result = await runMatchQualityEvaluation(db, {
       corpusId: 'unit-labelled-corpus',
@@ -177,6 +187,9 @@ describe('batchEvaluationHarness', () => {
     expect(result.metrics.verdictAccuracy).toBe(1);
     expect(result.metrics.falsePositiveCount).toBe(0);
     expect(result.metrics.falseNegativeCount).toBe(0);
+    expect(result.metrics.negativeCaseCount).toBe(1);
+    expect(result.metrics.contrastCaseCount).toBe(1);
+    expect(result.metrics.reasonCategoryExpectationCount).toBe(2);
     expect(result.metrics.averageScoreSeparation).toBeGreaterThanOrEqual(0.2);
     expect(result.metrics.usableChallengeRate).toBe(1);
     expect(result.failedCases).toHaveLength(0);
@@ -205,6 +218,7 @@ describe('batchEvaluationHarness', () => {
         minAccuracy: 1,
         minAverageScoreSeparation: 0.2,
         minUsableChallengeRate: 1,
+        minNegativeCaseCount: 0,
       },
     });
 
@@ -248,6 +262,7 @@ describe('batchEvaluationHarness', () => {
         minAccuracy: 1,
         minAverageScoreSeparation: 0,
         minUsableChallengeRate: 1,
+        minContrastCaseCount: 0,
       },
     });
 
@@ -257,5 +272,66 @@ describe('batchEvaluationHarness', () => {
     expect(result.passed).toBe(false);
     expect(result.failedCases[0].failedReasons).toContain('reason_category_mismatch');
     expect(result.gateFailures).toContain('1 labelled case failed reason-category expectations');
+  });
+
+  it('fails the gate when the corpus has no insufficient-evidence negative case', async () => {
+    const db = createMockD1(sqlite) as unknown as D1Database;
+
+    const result = await runMatchQualityEvaluation(db, {
+      corpusId: 'missing-negative-corpus',
+      cases: [{
+        caseId: 'positive-only',
+        candidateId: 'cand-fit',
+        challengePacketId: 'packet-typescript',
+        expectedVerdict: 'strong_match',
+        expectedReasonCategory: 'aligned',
+        negativeCandidateId: 'cand-negative',
+        minimumScoreSeparation: 0.2,
+      }],
+      thresholds: {
+        minAccuracy: 1,
+        minAverageScoreSeparation: 0.2,
+        minUsableChallengeRate: 1,
+      },
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.metrics.negativeCaseCount).toBe(0);
+    expect(result.gateFailures).toContain('negative cases 0 below 1');
+  });
+
+  it('fails the gate when the corpus has no explicit contrast candidate', async () => {
+    const db = createMockD1(sqlite) as unknown as D1Database;
+
+    const result = await runMatchQualityEvaluation(db, {
+      corpusId: 'missing-contrast-corpus',
+      cases: [
+        {
+          caseId: 'positive-no-contrast',
+          candidateId: 'cand-fit',
+          challengePacketId: 'packet-typescript',
+          expectedVerdict: 'strong_match',
+          expectedReasonCategory: 'aligned',
+        },
+        {
+          caseId: 'negative-no-contrast',
+          candidateId: 'cand-negative',
+          challengePacketId: 'packet-typescript',
+          expectedVerdict: 'insufficient_evidence',
+          expectedReasonCategory: 'insufficient_evidence',
+          requireCandidateEvidence: false,
+        },
+      ],
+      thresholds: {
+        minAccuracy: 1,
+        minAverageScoreSeparation: 0,
+        minUsableChallengeRate: 1,
+      },
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.metrics.negativeCaseCount).toBe(1);
+    expect(result.metrics.contrastCaseCount).toBe(0);
+    expect(result.gateFailures).toContain('contrast cases 0 below 1');
   });
 });

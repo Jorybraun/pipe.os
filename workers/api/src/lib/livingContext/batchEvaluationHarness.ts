@@ -64,6 +64,9 @@ export interface BatchEvaluationMetrics {
   totalPairs: number;
   successfulPairs: number;
   failedPairs: number;
+  negativeCaseCount: number;
+  contrastCaseCount: number;
+  reasonCategoryExpectationCount: number;
   verdictAccuracy: number;
   falsePositiveCount: number;
   falseNegativeCount: number;
@@ -87,6 +90,9 @@ export interface MatchQualityEvaluationThresholds {
   maxFalseNegativeCount: number;
   minAverageScoreSeparation: number;
   minUsableChallengeRate: number;
+  minNegativeCaseCount: number;
+  minContrastCaseCount: number;
+  minReasonCategoryExpectationCount: number;
 }
 
 export interface MatchQualityEvaluationResult extends BatchEvaluationResult {
@@ -118,6 +124,9 @@ const DEFAULT_THRESHOLDS: MatchQualityEvaluationThresholds = {
   maxFalseNegativeCount: 0,
   minAverageScoreSeparation: 0.08,
   minUsableChallengeRate: 0.95,
+  minNegativeCaseCount: 1,
+  minContrastCaseCount: 1,
+  minReasonCategoryExpectationCount: 1,
 };
 
 function verdictCounts(): Record<MatchVerdict, number> {
@@ -369,11 +378,24 @@ export async function runBatchEvaluation(
   const falseNegativeCount = pairResults.filter((result) =>
     !isPositiveVerdict(result.computedVerdict) && isPositiveVerdict(result.expectedVerdict)
   ).length;
+  const negativeCaseCount = candidates.filter((candidate) =>
+    !isPositiveVerdict(candidate.expectedVerdict)
+  ).length;
+  const contrastCaseCount = candidates.filter((candidate) =>
+    Boolean(candidate.negativeCandidateId)
+      && candidate.minimumScoreSeparation !== undefined
+  ).length;
+  const reasonCategoryExpectationCount = candidates.filter((candidate) =>
+    candidate.expectedReasonCategory !== undefined
+  ).length;
 
   const metrics: BatchEvaluationMetrics = {
     totalPairs: candidates.length,
     successfulPairs: successfulPairs.length,
     failedPairs: pairResults.filter((result) => result.error !== null).length,
+    negativeCaseCount,
+    contrastCaseCount,
+    reasonCategoryExpectationCount,
     verdictAccuracy: successfulPairs.length > 0 ? verdictMatches / successfulPairs.length : 0,
     falsePositiveCount,
     falseNegativeCount,
@@ -427,6 +449,15 @@ export async function runMatchQualityEvaluation(
   }
   if (batch.metrics.usableChallengeRate < thresholds.minUsableChallengeRate) {
     gateFailures.push(`usable challenge rate ${batch.metrics.usableChallengeRate.toFixed(3)} below ${thresholds.minUsableChallengeRate}`);
+  }
+  if (batch.metrics.negativeCaseCount < thresholds.minNegativeCaseCount) {
+    gateFailures.push(`negative cases ${batch.metrics.negativeCaseCount} below ${thresholds.minNegativeCaseCount}`);
+  }
+  if (batch.metrics.contrastCaseCount < thresholds.minContrastCaseCount) {
+    gateFailures.push(`contrast cases ${batch.metrics.contrastCaseCount} below ${thresholds.minContrastCaseCount}`);
+  }
+  if (batch.metrics.reasonCategoryExpectationCount < thresholds.minReasonCategoryExpectationCount) {
+    gateFailures.push(`reason-category expectations ${batch.metrics.reasonCategoryExpectationCount} below ${thresholds.minReasonCategoryExpectationCount}`);
   }
   if (batch.failedCases.length > 0) {
     gateFailures.push(`${batch.failedCases.length} labelled case${batch.failedCases.length === 1 ? '' : 's'} failed`);
