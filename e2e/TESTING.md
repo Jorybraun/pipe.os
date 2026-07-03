@@ -292,11 +292,14 @@ stop the batch.
 The `workers-matrix` profile is the non-MUI automatic matching proof. It creates
 a Workers SDK runtime role/candidate pair and fails unless automatic matching
 selects a source-backed `cloudflare/workers-sdk` PR (`#14118` or `#14150`) with
-a passed quality gate. Latest app-dev proof on 2026-07-03 selected
-`cloudflare/workers-sdk#14118` for interview
-`ea6cb5e1-83fb-4fdd-a64b-ce1a9cc2b977`, returned `MATCHED`, `PASSED`,
-`STRONG`, and scored contrast separation `2/2` with a 24% lead over the next
-comparable challenge.
+a passed quality gate. Latest focused app-dev proof on 2026-07-03 passed with
+artifact
+`tmp/code-review-reliability/2026-07-03T13-33-22-247Z-suite.summary.json`,
+selected `cloudflare/workers-sdk#14118` for interview
+`4c0e17db-5193-406e-bd49-db084698603d`, returned `MATCHED`, `PASSED`,
+`STRONG`, scored contrast separation `2/2`, and proved the browser contracts
+`candidateSurfaceContract=source-backed-code-review-challenge` plus
+`recruiterReadoutContract=matched-code-review-hiring-manager-readout`.
 
 For a repeatable pilot-reliability gate with stored artifacts, use:
 
@@ -546,6 +549,14 @@ source corpus `seeded-1783071801113-4c-4r`, corpus hash
 match runs, 4 candidates, 4 roles, 4 challenges, 6 draft labels, 0 expert
 labels, 0 synthetic fixtures, 3 expected packets, no warnings, 6 editable
 expert-review items, and next action `complete_expert_review`.
+
+Latest focused match-quality readiness proof on 2026-07-03 passed with artifact
+`tmp/code-review-reliability/2026-07-03T13-33-49-456Z-suite.summary.json`
+against `pipe-db-test`: expert-labelled corpus
+`seeded-1783074402522-3c-3r-expert-codex-supplemental-contrast` evaluated 6
+pairs with verdict accuracy `1`, false positives `0`, false negatives `0`,
+average score separation `0.6503333333333333`, usable challenge rate `1`, and
+no gate failures.
 
 Latest deployed `/assess` token lifecycle proof on 2026-07-03 passed via
 `npm run smoke:assess-token-lifecycle-dev`: two real app-dev CODE_REVIEW
