@@ -122,10 +122,49 @@ export function validateExpertSeedSummary(summary, thresholds = {}) {
   if (typeof summary.reviewTemplatePath !== 'string' || summary.reviewTemplatePath.length === 0) {
     failures.push('reviewTemplatePath is required');
   }
+  if (typeof summary.reviewMarkdownPath !== 'string' || summary.reviewMarkdownPath.length === 0) {
+    failures.push('reviewMarkdownPath is required');
+  }
 
   return {
     ok: failures.length === 0,
     failures,
+  };
+}
+
+export function validateExpertReviewMarkdown(markdown, thresholds = {}) {
+  const limits = {
+    minLabels: thresholds.minLabels ?? DEFAULTS.minLabels,
+  };
+  const failures = [];
+  if (typeof markdown !== 'string' || markdown.trim().length === 0) {
+    return {
+      ok: false,
+      failures: ['review markdown must be non-empty text'],
+      metrics: { editableLabelCount: 0 },
+    };
+  }
+
+  const requiredFragments = [
+    '# CODE_REVIEW Expert Corpus Review',
+    '## Reviewer Instructions',
+    '### Candidate Evidence',
+    '### Role Requirements',
+    '### Repo / PR Challenge',
+    '### Suggested Contrast Candidates',
+    'Edit `labels[',
+  ];
+  for (const fragment of requiredFragments) {
+    if (!markdown.includes(fragment)) failures.push(`review markdown must include ${JSON.stringify(fragment)}`);
+  }
+
+  const editableLabelCount = Array.from(markdown.matchAll(/Edit `labels\[\d+\]\.explanation`/g)).length;
+  failIfBelow(failures, 'editableLabelCount', editableLabelCount, limits.minLabels);
+
+  return {
+    ok: failures.length === 0,
+    failures,
+    metrics: { editableLabelCount },
   };
 }
 
@@ -206,6 +245,8 @@ export function buildReviewCliArgs(options) {
     options.reviewPacketPath,
     '--review-template',
     options.reviewTemplatePath,
+    '--review-markdown',
+    options.reviewMarkdownPath,
     '--json',
     options.summaryPath,
   ];
@@ -248,6 +289,7 @@ function main() {
     seedDescription: process.env.CODE_REVIEW_EXPERT_SEED_DESCRIPTION || DEFAULTS.seedDescription,
     reviewPacketPath: join(outputDir, 'review-packet.json'),
     reviewTemplatePath: join(outputDir, 'review-template.json'),
+    reviewMarkdownPath: join(outputDir, 'review.md'),
     summaryPath: join(outputDir, 'summary.json'),
   };
 
@@ -280,14 +322,18 @@ function main() {
   assertReadableArtifact(options.summaryPath, 'review summary');
   assertReadableArtifact(options.reviewPacketPath, 'review packet');
   assertReadableArtifact(options.reviewTemplatePath, 'review template');
+  assertReadableArtifact(options.reviewMarkdownPath, 'review markdown');
 
   const summary = readJson(options.summaryPath);
   const packet = readJson(options.reviewPacketPath);
+  const markdown = readFileSync(options.reviewMarkdownPath, 'utf8');
   const summaryValidation = validateExpertSeedSummary(summary, thresholds);
   const packetValidation = validateExpertSeedPacket(packet, thresholds);
+  const markdownValidation = validateExpertReviewMarkdown(markdown, thresholds);
   const failures = [
     ...summaryValidation.failures,
     ...packetValidation.failures,
+    ...markdownValidation.failures,
   ];
   const proof = {
     ok: failures.length === 0,
@@ -296,11 +342,13 @@ function main() {
     summaryPath: options.summaryPath,
     reviewPacketPath: summary.reviewPacketPath ?? options.reviewPacketPath,
     reviewTemplatePath: summary.reviewTemplatePath ?? options.reviewTemplatePath,
+    reviewMarkdownPath: summary.reviewMarkdownPath ?? options.reviewMarkdownPath,
     thresholds,
     seeded: summary.seeded ?? null,
     nextAction: summary.nextAction ?? null,
     readinessSummary: summary.readinessSummary ?? null,
     packetMetrics: packetValidation.metrics,
+    markdownMetrics: markdownValidation.metrics,
     failures,
   };
 

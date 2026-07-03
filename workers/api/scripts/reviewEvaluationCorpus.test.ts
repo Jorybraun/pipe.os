@@ -7,6 +7,7 @@ import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildExpertReviewTemplate,
+  buildExpertReviewMarkdown,
   parseCorpusReviewArgs,
   runCorpusReviewCli,
   type ExpertReviewFile,
@@ -784,6 +785,37 @@ describe('evaluation corpus review CLI', () => {
     ]);
   });
 
+  it('builds a human-readable expert review markdown packet from source evidence', () => {
+    const corpus = sourceBackedSinglePacketCorpus();
+    corpus.candidateEvidence.push({
+      ...corpus.candidateEvidence[0]!,
+      candidateId: 'candidate-negative',
+      evidenceId: 'evidence-negative',
+      episodeId: 'episode-negative',
+      narrative: 'Contrast candidate has unrelated data pipeline operations evidence.',
+      concepts: ['term:data-pipeline'],
+    });
+    corpus.metadata = {
+      ...corpus.metadata,
+      totalCandidates: 2,
+    };
+    const packet = buildCorpusReviewPacket(corpus);
+    const template = buildExpertReviewTemplate(packet);
+
+    const markdown = buildExpertReviewMarkdown(packet, template);
+
+    expect(markdown).toContain('# CODE_REVIEW Expert Corpus Review');
+    expect(markdown).toContain('single-packet-source-backed-corpus');
+    expect(markdown).toContain('label-fit-positive');
+    expect(markdown).toContain('https://github.com/mui/base-ui');
+    expect(markdown).toContain('PR 973');
+    expect(markdown).toContain('Candidate owns React interaction state and accessibility regressions.');
+    expect(markdown).toContain('Fix interaction state regression');
+    expect(markdown).toContain('Fix interaction state regression in accessibility behavior.');
+    expect(markdown).toContain('candidate-negative');
+    expect(markdown).toContain('Edit `labels[0].explanation`');
+  });
+
   it('preserves expert-reviewed contrast fields in review packets and templates', () => {
     const packet = buildCorpusReviewPacket(loadFixtureCorpusWithContrast());
     const template = buildExpertReviewTemplate(packet);
@@ -849,6 +881,7 @@ describe('evaluation corpus review CLI', () => {
     directory = await mkdtemp(join(tmpdir(), 'pipe-corpus-review-'));
     const reviewPacketPath = join(directory, 'review-packet.json');
     const reviewTemplatePath = join(directory, 'review-template.json');
+    const reviewMarkdownPath = join(directory, 'review.md');
     const summaryPath = join(directory, 'summary.json');
 
     const exitCode = await runCorpusReviewCli([
@@ -858,6 +891,8 @@ describe('evaluation corpus review CLI', () => {
       reviewPacketPath,
       '--review-template',
       reviewTemplatePath,
+      '--review-markdown',
+      reviewMarkdownPath,
       '--json',
       summaryPath,
     ]);
@@ -891,8 +926,13 @@ describe('evaluation corpus review CLI', () => {
     const template = JSON.parse(await readFile(reviewTemplatePath, 'utf8')) as ExpertReviewFile;
     expect(template.sourceCorpusId).toBe('sample-corpus-v1');
     expect(template.labels[0]?.explanation).toContain('TODO');
+    const markdown = await readFile(reviewMarkdownPath, 'utf8');
+    expect(markdown).toContain('# CODE_REVIEW Expert Corpus Review');
+    expect(markdown).toContain('label-1');
+    expect(markdown).toContain('Edit `labels[0].explanation`');
     expect(JSON.parse(await readFile(summaryPath, 'utf8'))).toEqual(expect.objectContaining({
       sourceCorpusId: 'sample-corpus-v1',
+      reviewMarkdownPath,
       readinessSummary: expect.objectContaining({
         nextAction: 'fix_corpus_source_evidence',
         labelsMissingExpectedPacket: ['label-1'],
