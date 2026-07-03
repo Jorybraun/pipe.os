@@ -25,6 +25,7 @@ interface MatchRow {
   selectedPacketId: string | null;
   status: string;
   contrastScore: SqlNumber;
+  recalledPacketCount: SqlNumber;
 }
 
 interface CliOptions {
@@ -63,6 +64,7 @@ function parseOptions(args: string[]): CliOptions {
       minProductionReadyPackets: numberFor(args, '--min-production-ready-packets'),
       minProductionReadyRepos: numberFor(args, '--min-production-ready-repos'),
       maxSelectedPacketShare: numberFor(args, '--max-selected-packet-share'),
+      minCurrentBreadthMatchesForSkew: numberFor(args, '--min-current-breadth-matches-for-skew'),
     },
   };
 }
@@ -118,6 +120,7 @@ function matchFromRow(row: MatchRow): CodeReviewMatchHealthRow {
     selectedPacketId: row.selectedPacketId,
     status: row.status,
     contrastScore,
+    recalledPacketCount: row.recalledPacketCount === null ? null : toNumber(row.recalledPacketCount),
   };
 }
 
@@ -141,6 +144,7 @@ async function loadSelectedMatches(client: D1Client): Promise<CodeReviewMatchHea
             mr.role_context_id AS roleContextId,
             mr.selected_packet_id AS selectedPacketId,
             mr.status AS status,
+            json_array_length(mr.recalled_packets_json) AS recalledPacketCount,
             (
               SELECT json_extract(metric.value, '$.score')
                 FROM json_each(json_extract(ranked.value, '$.assessmentQuality.metrics')) AS metric
@@ -164,6 +168,8 @@ function printHumanSummary(audit: CodeReviewMatchHealthAudit): void {
   console.log(`productionReadyPackets: ${audit.productionReadyPacketCount}`);
   console.log(`productionReadyRepos: ${audit.productionReadyRepoCount}`);
   console.log(`selectedMatches: ${audit.selectedMatchCount}`);
+  console.log(`currentBreadthSelectedMatches: ${audit.currentBreadthSelectedMatchCount}`);
+  console.log(`staleOrNarrowSelectedMatches: ${audit.staleOrNarrowSelectedMatchCount}`);
   console.log(`roleBackedUnsafeMatches: ${audit.roleBackedUnsafeMatchCount}`);
   console.log(`topSelectedPacket: ${skew ? `${skew.packetId} (${skew.count}, ${Math.round(skew.share * 100)}%)` : 'none'}`);
   console.log(`nextAction: ${audit.nextAction}`);
