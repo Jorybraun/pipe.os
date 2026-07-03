@@ -275,6 +275,124 @@ describe('matchConfidenceScoring', () => {
 
       expect(highResult.compositeScore).toBeGreaterThan(lowResult.compositeScore);
     });
+
+    it('recognizes adjacent source-backed runtime concepts without matching unrelated frontend evidence', () => {
+      const workersEvidence = [
+        {
+          assertion_id: 'workers-1',
+          narrative: 'Debugged Uint8Array and ArrayBuffer typed-array serialization bugs in Cloudflare Workers SDK runtime persistence.',
+          concept_key: 'term:array-buffer-typed',
+          strength: 0.9,
+          evidence_level: 'primary',
+          observed_at: recentDate,
+          exact_text: 'Resolved sliced Uint8Array output dragging oversized backing ArrayBuffer into workflow storage.',
+          interaction_type: 'code_review',
+        },
+        {
+          assertion_id: 'workers-2',
+          narrative: 'Added regression tests for Workflows storage normalization and local wrangler runtime parity.',
+          concept_key: 'term:cloudflare-workers-sdk',
+          strength: 0.85,
+          evidence_level: 'primary',
+          observed_at: recentDate,
+          exact_text: 'Tests cover normalizeForStorage, workflows, wrangler, and step output persistence.',
+          interaction_type: 'assessment',
+        },
+      ];
+      const frontendEvidence = [
+        {
+          assertion_id: 'mui-1',
+          narrative: 'Reviewed React popover onOpenChange and impatient click behavior.',
+          concept_key: 'term:react-typescript-popup',
+          strength: 0.9,
+          evidence_level: 'primary',
+          observed_at: recentDate,
+          exact_text: 'Focused on hover safe polygon and active trigger ownership.',
+          interaction_type: 'code_review',
+        },
+      ];
+      const demands = [
+        {
+          id: 'workers-runtime',
+          narrative: 'Review Workflows Uint8Array storage normalization in Workers SDK',
+          weight: 1,
+          concepts: [
+            'term:uint8array',
+            'term:array-buffer-view',
+            'term:normalize-for-storage',
+            'term:workflows',
+            'term:wrangler',
+          ],
+        },
+      ];
+
+      const workersResult = scoreMatchConfidence(workersEvidence, demands, { now });
+      const frontendResult = scoreMatchConfidence(frontendEvidence, demands, { now });
+
+      expect(workersResult.demands[0]!.matchedConcepts).toEqual([
+        'term:uint8array',
+        'term:array-buffer-view',
+        'term:normalize-for-storage',
+        'term:workflows',
+        'term:wrangler',
+      ]);
+      expect(workersResult.compositeScore).toBeGreaterThanOrEqual(0.45);
+      expect(workersResult.compositeScore - frontendResult.compositeScore).toBeGreaterThanOrEqual(0.25);
+      expect(frontendResult.demands[0]!.matchedConcepts).toEqual([]);
+    });
+
+    it('discounts generated source boilerplate when scoring large PR demand concept lists', () => {
+      const evidence = [
+        {
+          assertion_id: 'workers-1',
+          narrative: 'Debugged Uint8Array and ArrayBuffer typed-array serialization bugs in workflow persistence.',
+          concept_key: 'term:array-buffer-typed',
+          strength: 0.9,
+          evidence_level: 'primary',
+          observed_at: recentDate,
+          exact_text: 'normalizeForStorage keeps sliced Uint8Array values from persisting oversized ArrayBuffers.',
+          interaction_type: 'code_review',
+        },
+      ];
+      const demands = [
+        {
+          id: 'generated-pr-demand',
+          narrative: 'Generated source demand with boilerplate and domain terms',
+          weight: 1,
+          concepts: [
+            'artifact:source',
+            'term:async',
+            'term:await',
+            'term:class',
+            'term:context',
+            'term:export',
+            'term:function',
+            'term:get',
+            'term:new',
+            'term:object',
+            'term:packages',
+            'term:src',
+            'term:string',
+            'term:type',
+            'term:uint8array',
+            'term:array-buffer-view',
+            'term:normalize-for-storage',
+            'term:workflows',
+          ],
+        },
+      ];
+
+      const result = scoreMatchConfidence(evidence, demands, { now });
+
+      expect(result.demands[0]!.matchedConcepts).toEqual([
+        'term:uint8array',
+        'term:array-buffer-view',
+        'term:normalize-for-storage',
+        'term:workflows',
+      ]);
+      expect(result.demands[0]!.missingConcepts).toEqual([]);
+      expect(result.demands[0]!.coverageRatio).toBe(1);
+    });
   });
 
   describe('computeMatchConfidence (D1 integration)', () => {

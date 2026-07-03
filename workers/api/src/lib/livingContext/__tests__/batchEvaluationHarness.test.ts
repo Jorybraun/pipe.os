@@ -127,6 +127,36 @@ function seedPacket(sqlite: BetterSqliteDb, packetId = 'packet-typescript'): voi
   `);
 }
 
+function seedCronSchedulePacket(sqlite: BetterSqliteDb, packetId = 'packet-cron-schedule'): void {
+  const packet = JSON.stringify({
+    id: packetId,
+    pullRequest: { number: 88, title: 'Send workflow schedules as cron objects' },
+    demands: [
+      {
+        id: 'demand-cron-schedules',
+        family: 'workflow-schedules',
+        narrative: 'Review wrangler workflow schedule deploy payloads with cron mapping',
+        weight: 1,
+        conceptKeys: [
+          'workflow',
+          'wrangler',
+          'cron',
+          'schedules',
+          'array.isarray-workflow.schedules-workflow.schedules-workflow.schedules-.map',
+        ],
+        sourceSpanIds: ['repo-span-cron'],
+        changedSymbolIds: ['symbol-cron'],
+      },
+    ],
+  });
+  sqlite.exec(`
+    INSERT INTO review_challenge_packets
+      (id, repo_snapshot_id, repo_id, pr_number, packet_version, source_hash, language, production_ready, quality_score, demand_families_json, packet_json)
+    VALUES
+      ('${packetId}', 'snap-1', 1, 88, '1.0.0', 'sha256:cron-packet', 'TypeScript', 1, 0.9, '["workflow-schedules"]', '${packet.replace(/'/g, "''")}')
+  `);
+}
+
 function seedFixture(sqlite: BetterSqliteDb): void {
   seedBaseSchema(sqlite);
   seedPacket(sqlite);
@@ -194,8 +224,31 @@ describe('batchEvaluationHarness', () => {
     expect(result.metrics.usableChallengeRate).toBe(1);
     expect(result.failedCases).toHaveLength(0);
     expect(result.pairResults[0].reasonCategory).toBe('aligned');
+    expect(result.pairResults[0].unifiedReport?.gaps.loaded).toBe(true);
+    expect(result.pairResults[0].unifiedReport?.gaps.errorMessage).toBeNull();
     expect(result.pairResults[0].compactReport?.candidateEvidence.length).toBeGreaterThan(0);
     expect(result.pairResults[0].compactReport?.repoEvidence.length).toBeGreaterThan(0);
+  });
+
+  it('caps adjacent repo-family evidence when a source-backed PR requires an unmatched critical signal', async () => {
+    const db = createMockD1(sqlite) as unknown as D1Database;
+    seedCronSchedulePacket(sqlite);
+    seedCandidate(sqlite, 'cand-workflows-adjacent', 'wp-workflows-adjacent');
+    seedEvidence(sqlite, 'wp-workflows-adjacent', 'workflow', 'code_review', 0.95);
+    seedEvidence(sqlite, 'wp-workflows-adjacent', 'wrangler', 'assessment', 0.9);
+
+    const result = await runBatchEvaluation(db, [{
+      caseId: 'cron-schedule-needs-review',
+      candidateId: 'cand-workflows-adjacent',
+      challengePacketId: 'packet-cron-schedule',
+      expectedVerdict: 'needs_review',
+      expectedReasonCategory: 'needs_challenge_design',
+    }]);
+
+    expect(result.pairResults[0].computedVerdict).toBe('needs_review');
+    expect(result.pairResults[0].failedReasons).toEqual([]);
+    expect(result.pairResults[0].unifiedReport?.verdict.riskFactors)
+      .toContain('Missing required cron/schedule evidence');
   });
 
   it('fails the gate when contrast separation is too flat', async () => {
