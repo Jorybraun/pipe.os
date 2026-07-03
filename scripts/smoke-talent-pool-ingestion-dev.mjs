@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -88,7 +88,7 @@ function hostnameForBase(baseUrl) {
   }
 }
 
-function inferredD1EnvironmentName() {
+function inferredEnvironmentName() {
   const hostnames = [recruiterApiBase, rpcBase, appBase].map(hostnameForBase);
   if (hostnames.some((hostname) => hostname === 'app-dev.hire-pipe.com' || hostname === 'api-dev.hire-pipe.com')) {
     return 'dev';
@@ -102,22 +102,36 @@ function inferredD1EnvironmentName() {
   return null;
 }
 
-function d1DatabaseIdForEnvironment(envName) {
+function configValueForEnvironment(envName, sectionName, propertyName) {
   const configPath = path.join(repoRoot, 'workers/api/wrangler.jsonc');
   if (!envName || !existsSync(configPath)) return null;
   const configText = readFileSync(configPath, 'utf8');
   const match = configText.match(
-    new RegExp(`"${envName}"\\s*:\\s*\\{[\\s\\S]*?"d1_databases"\\s*:\\s*\\[[\\s\\S]*?"database_id"\\s*:\\s*"([^"]+)"`),
+    new RegExp(`"${envName}"\\s*:\\s*\\{[\\s\\S]*?"${sectionName}"\\s*:\\s*\\[[\\s\\S]*?"${propertyName}"\\s*:\\s*"([^"]+)"`),
   );
   return match?.[1] ?? null;
 }
 
-const inferredD1DatabaseId = d1DatabaseIdForEnvironment(inferredD1EnvironmentName());
+const inferredEnvName = inferredEnvironmentName();
+const inferredD1DatabaseName = configValueForEnvironment(inferredEnvName, 'd1_databases', 'database_name');
+const inferredD1DatabaseId = configValueForEnvironment(inferredEnvName, 'd1_databases', 'database_id');
+const d1DatabaseName = (
+  argumentValue('--d1-database')
+  ?? process.env.TALENT_POOL_SMOKE_D1_DATABASE
+  ?? inferredD1DatabaseName
+  ?? 'pipe-db-test'
+).trim();
 const databaseId = (
   argumentValue('--d1-database-id')
   ?? process.env.TALENT_POOL_SMOKE_D1_DATABASE_ID
   ?? inferredD1DatabaseId
   ?? process.env.CLOUDFLARE_D1_DATABASE_ID
+  ?? ''
+).trim();
+const r2BucketName = (
+  argumentValue('--r2-bucket')
+  ?? process.env.TALENT_POOL_SMOKE_R2_BUCKET
+  ?? configValueForEnvironment(inferredEnvName, 'r2_buckets', 'bucket_name')
   ?? ''
 ).trim();
 
@@ -381,12 +395,139 @@ function assertCandidateDashboardSafe(body, candidateId, label) {
 }
 
 function extractJson(text) {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) {
-    throw new Error(`Audit command did not print JSON:\n${text}`);
+  const starts = [];
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === '{' || text[index] === '[') starts.push(index);
   }
-  return JSON.parse(text.slice(start, end + 1));
+  for (const start of starts) {
+    const opener = text[start];
+    const closer = opener === '[' ? ']' : '}';
+    const end = text.lastIndexOf(closer);
+    if (end <= start) continue;
+    try {
+      return JSON.parse(text.slice(start, end + 1));
+    } catch {
+      // Keep scanning; command wrappers may print bracketed logs before JSON.
+    }
+  }
+  throw new Error(`Command did not print JSON:\n${text}`);
+}
+
+function wranglerArgs(args) {
+  return [
+    '--prefix',
+    'workers/api',
+    'exec',
+    '--',
+    'wrangler',
+    ...args,
+  ];
+}
+
+function runWranglerJson(args, label) {
+  const result = spawnSync('npm', wranglerArgs(args), {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: process.env,
+  });
+  if (result.status !== 0) {
+    throw new Error(`${label} failed:\n${result.stdout}\n${result.stderr}`);
+  }
+  return extractJson(result.stdout);
+}
+
+function runWranglerBuffer(args, label) {
+  const result = spawnSync('npm', wranglerArgs(args), {
+    cwd: repoRoot,
+    env: process.env,
+  });
+  if (result.status !== 0) {
+    throw new Error(`${label} failed:\n${result.stdout?.toString('utf8') ?? ''}\n${result.stderr?.toString('utf8') ?? ''}`);
+  }
+  return result.stdout;
+}
+
+function sqlString(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function sha256Buffer(buffer) {
+  return createHash('sha256').update(buffer).digest('hex');
+}
+
+function hashPrefixFromStorageKey(storageKey) {
+  const leaf = storageKey.split('/').pop() ?? '';
+  const match = /^([a-f0-9]{64})-/i.exec(leaf);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+async function expectedSourceBytesForCurrentMode() {
+  if (uploadEvidenceExpected) {
+    const uploadFile = smokeUploadFile();
+    return Buffer.from(await uploadFile.blob.arrayBuffer());
+  }
+  return Buffer.from(profileText, 'utf8');
+}
+
+function loadProfileStorageKey(inviteToken) {
+  const rows = runWranglerJson([
+    'd1',
+    'execute',
+    d1DatabaseName,
+    '--config',
+    'workers/api/wrangler.jsonc',
+    '--env',
+    inferredEnvName ?? 'dev',
+    '--remote',
+    '--json',
+    '--command',
+    `SELECT c.id AS candidate_id, t.profile_r2_key
+       FROM candidates c
+       JOIN talent_pool_intakes t ON t.candidate_id = c.id
+      WHERE c.invite_token = ${sqlString(inviteToken)}
+      LIMIT 1`,
+  ], 'profile storage key query');
+  const first = rows?.[0]?.results?.[0];
+  const profileStorageKey = assertString(first?.profile_r2_key, 'profile_r2_key');
+  return {
+    candidateId: assertString(first?.candidate_id, 'candidate_id'),
+    profileStorageKey,
+  };
+}
+
+async function verifyRemoteSourceObject(inviteToken) {
+  if (!r2BucketName) {
+    throw new Error('Set TALENT_POOL_SMOKE_R2_BUCKET or use a known app/API environment so smoke can prove remote R2 source storage.');
+  }
+  const { profileStorageKey } = loadProfileStorageKey(inviteToken);
+  const objectBytes = runWranglerBuffer([
+    'r2',
+    'object',
+    'get',
+    `${r2BucketName}/${profileStorageKey}`,
+    '--remote',
+    '--pipe',
+  ], 'remote R2 source object fetch');
+  const expectedBytes = await expectedSourceBytesForCurrentMode();
+  const objectHash = sha256Buffer(objectBytes);
+  const expectedHash = sha256Buffer(expectedBytes);
+  const keyHash = hashPrefixFromStorageKey(profileStorageKey);
+  if (objectBytes.length !== expectedBytes.length || !objectBytes.equals(expectedBytes)) {
+    throw new Error(`Remote R2 object ${profileStorageKey} did not match the submitted source bytes.`);
+  }
+  if (keyHash !== objectHash) {
+    throw new Error(`Remote R2 object ${profileStorageKey} hash ${objectHash} does not match storage-key hash ${keyHash}.`);
+  }
+  if (objectHash !== expectedHash) {
+    throw new Error(`Remote R2 object ${profileStorageKey} hash ${objectHash} does not match expected submitted source hash ${expectedHash}.`);
+  }
+  return {
+    profileStorageKey,
+    sourceObjectBytes: objectBytes.length,
+    sourceObjectSha256: objectHash,
+    keyHashMatchesObject: true,
+    objectMatchesSubmittedSource: true,
+  };
 }
 
 function runAudit(inviteToken) {
@@ -770,6 +911,7 @@ async function main() {
   assertCandidateDashboardSafe(submittedDashboard, candidateId, 'submit-profile');
 
   const report = await pollAudit(inviteToken);
+  const sourceObjectProof = await verifyRemoteSourceObject(inviteToken);
   const recruiterReadProof = await verifyRecruiterEvidenceReads(candidateId);
   console.log(expectsEvidenceGap ? '[talent-smoke] expected evidence gap' : '[talent-smoke] ready', {
     inviteToken,
@@ -789,6 +931,7 @@ async function main() {
     documentProfileStorageKeyCount: report.rawCapture.documentProfileStorageKeyCount,
     documentProfileSourceSpanCount: report.sourceProof.documentProfileSourceSpanCount,
     profileUploadArtifactVersionCount: report.sourceProof.profileUploadArtifactVersionCount,
+    sourceObjectProof,
     talentPoolWorkspacePersonCount: report.personProjection.talentPoolWorkspacePersonCount,
     designQueueCount: report.personProjection.designQueueCount,
     recruiterReadProof,

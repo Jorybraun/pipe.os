@@ -250,17 +250,23 @@ and the `smoke:talent-pool-browser-*-dev` upload commands go one step further:
 they create a real dev Talent Pool candidate, open the public `/talent/:token`
 page in Chromium, submit pasted profile evidence, a text profile upload, a DOCX
 upload, or an unextractable PDF through the form, then reuse the same remote
-audit and recruiter/person read proofs. Browser upload smokes require the upload
-receipt artifact count to be present; the browser DOCX smoke also requires a
-document source span, while the browser PDF-gap smoke requires the explicit
+audit and recruiter/person read proofs. After the audit identifies the current
+`talent_pool_intakes.profile_r2_key`, the smokes also fetch that exact R2 object
+with Wrangler and compare its bytes to the submitted source. The fetched
+SHA-256 must match both the submitted source bytes and the content-addressed
+storage-key prefix. Browser upload smokes require the upload receipt artifact
+count to be present; the browser DOCX smoke also requires a document source
+span, while the browser PDF-gap smoke requires the explicit
 `profile_text_extraction_needed` gap with no source-less claims. If a caller
-explicitly targets `api-dev.hire-pipe.com`, direct RPC
-smokes omit dev HTTP Basic Auth for that API host while still using Basic Auth
-for app-dev candidate creation. This keeps the proof path close to candidate
-traffic but still allows direct API probes. The smokes infer the remote D1
-database id from the target app/API environment, so app-dev proofs audit the dev
-D1 database unless an explicit `--d1-database-id` or
-`TALENT_POOL_SMOKE_D1_DATABASE_ID` override is provided.
+explicitly targets `api-dev.hire-pipe.com`, direct RPC smokes omit dev HTTP
+Basic Auth for that API host while still using Basic Auth for app-dev candidate
+creation. This keeps the proof path close to candidate traffic but still allows
+direct API probes. The smokes infer the remote D1 database name/id and R2 bucket
+from the target app/API environment, so app-dev proofs audit the dev D1 database
+and `pipe-assets-test` bucket unless explicit `--d1-database`,
+`--d1-database-id`, `--r2-bucket`, `TALENT_POOL_SMOKE_D1_DATABASE`,
+`TALENT_POOL_SMOKE_D1_DATABASE_ID`, or `TALENT_POOL_SMOKE_R2_BUCKET` overrides
+are provided.
 After the ingestion audit reports ready, the smokes also verify recruiter reads
 unless `--skip-recruiter-reads` is passed: candidate living-context graph,
 unified People list, candidate source search, candidate evidence-depth, person
@@ -578,6 +584,32 @@ explicit extraction gap instead of a failed ingestion row. The audit returned
 `talentPoolWorkspacePersonCount: 1`, `designQueueCount: 1`,
 `sourceLessPositiveClaimCount: 0`,
 `sourceLessDesignQueueSuggestionCount: 0`, and `duplicateProjectedEdgeCount: 0`.
+
+Live app-dev browser source-object proof on 2026-07-03 used
+`npm run smoke:talent-pool-browser-docx-dev` and
+`npm run smoke:talent-pool-browser-pdf-gap-dev`. The DOCX smoke created invite
+token `f3ca666d-a4c7-497a-b9a6-48eac885e37a`, submitted the document through
+the public `/talent/:token` form, and returned `status: ready`,
+`candidateNodeExactSourceQuoteCount: 13`, `contextSourceRefCount: 8`,
+`documentProfileSourceSpanCount: 1`, `profileUploadArtifactVersionCount: 1`,
+`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`. It
+fetched the exact R2 key
+`talent-intake/f8edff97-d1d5-47b5-9a2d-48cf69658257/ea8594aff6a06e9392eb651d80a2b6547e406c2b243715640f1bf46523df993c-talent-smoke-20260703170044-7e47c7b4.docx`;
+the object was 749 bytes and SHA-256
+`ea8594aff6a06e9392eb651d80a2b6547e406c2b243715640f1bf46523df993c`, matching
+both the content-addressed storage-key prefix and submitted source bytes. The
+PDF-gap smoke created invite token `fe27a003-a27a-4211-8075-c7a9416a2bc8`,
+submitted an unextractable PDF through the same public page, and remained
+`status: not_ready` with `currentStep: profile_text_extraction_needed`,
+`candidateNodeCount: 0`, `documentProfileSourceSpanCount: 0`,
+`profileUploadArtifactVersionCount: 1`, `sourceLessPositiveClaimCount: 0`,
+`sourceLessDesignQueueSuggestionCount: 0`, and `duplicateProjectedEdgeCount: 0`.
+It fetched the exact R2 key
+`talent-intake/29e0ce2c-246b-4966-9dec-7152a58497d7/32ed5017fce95db1619dfd80fe7ffe1e51ec4dfb98e43e3266d265836f6ae62b-talent-smoke-20260703170205-6df8d738.pdf`;
+the object was 14 bytes and SHA-256
+`32ed5017fce95db1619dfd80fe7ffe1e51ec4dfb98e43e3266d265836f6ae62b`, again
+matching the storage-key prefix and submitted source bytes without deriving a
+positive profile claim.
 
 Remote source-span sampling proved operational context refs preserve exact
 field text:

@@ -243,6 +243,11 @@ npm run candidate-ingestion:audit -- --local --invite-token <token>
 npm run candidate-ingestion:audit -- --remote --invite-token <token>
 ```
 
+The packaged dev smokes create a real candidate, submit through the public
+Talent Pool path, run the remote audit, fetch the exact current R2 profile
+object, and require the object bytes/hash to match the submitted source and
+content-addressed storage key before recruiter/person read proofs pass.
+
 DOCX uploads are parsed from OOXML body text and use the same profile-ingestion
 and living-context projection path as PDF uploads. Legacy binary `.doc` files
 remain unsupported and should not be advertised as source-projectable evidence.
