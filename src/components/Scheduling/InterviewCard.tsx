@@ -239,6 +239,12 @@ interface AssessmentCollaborationSummary {
   tone: 'verified' | 'warning' | 'neutral';
 }
 
+interface AssessmentProcessTelemetrySummary {
+  label: string;
+  detail: string;
+  tone: 'verified' | 'warning' | 'neutral';
+}
+
 interface AssessmentProofChecklistSummary {
   required: string[];
   confidence: string[];
@@ -526,6 +532,43 @@ function assessmentCollaborationSummary(
   };
 }
 
+function assessmentProcessTelemetrySummary(
+  progress: ScheduledInterview['assessmentProgress'] | null | undefined,
+): AssessmentProcessTelemetrySummary | null {
+  if (!progress) return null;
+
+  const workspaceLaunchCount = assessmentSourceRefCount(progress, 'dev_container_workspace_launch');
+  const terminalCommandCount = assessmentSourceRefCount(progress, 'terminal_command');
+  const terminalOutputCount = assessmentSourceRefCount(progress, 'terminal_output');
+  const fileObservationCount = assessmentSourceRefCount(progress, 'code_server_file_observation');
+  const editorSaveCount = assessmentSourceRefCount(progress, 'code_editor_save');
+  const telemetryParts = [
+    sourceRefCountLabel(workspaceLaunchCount, 'workspace launch'),
+    sourceRefCountLabel(terminalCommandCount, 'terminal command'),
+    sourceRefCountLabel(terminalOutputCount, 'terminal output'),
+    sourceRefCountLabel(fileObservationCount, 'file observation'),
+    sourceRefCountLabel(editorSaveCount, 'editor save'),
+  ].filter((item): item is string => Boolean(item));
+
+  if (telemetryParts.length > 0) {
+    return {
+      label: 'Workspace telemetry captured',
+      detail: `${readableList(telemetryParts)} tied to the assessment evidence trail.`,
+      tone: 'verified',
+    };
+  }
+
+  if (progress.hasDevContainerEvidence || progress.hasToolUsageEvidence) {
+    return {
+      label: 'Workspace telemetry captured',
+      detail: 'Workspace or tool activity is present as source-backed assessment evidence.',
+      tone: 'verified',
+    };
+  }
+
+  return null;
+}
+
 function assessmentReviewArtifactSummary(
   progress: ScheduledInterview['assessmentProgress'] | null | undefined,
 ): AssessmentReviewArtifactSummary | null {
@@ -775,6 +818,7 @@ export function InterviewCard({
   const assessmentCommitTrust = assessmentCommitTrustSummary(assessmentProgress?.commit);
   const assessmentReviewArtifact = assessmentReviewArtifactSummary(assessmentProgress);
   const assessmentCollaboration = assessmentCollaborationSummary(assessmentProgress);
+  const assessmentProcessTelemetry = assessmentProcessTelemetrySummary(assessmentProgress);
   const assessmentPacketContract = assessmentPacketContractSummary(assessmentProgress?.challengePacketContract);
   const assessmentCriteriaLabel = assessmentChallenge?.successCriteria.length
     ? compactText(assessmentChallenge.successCriteria.join(' · '), 150)
@@ -1033,6 +1077,21 @@ export function InterviewCard({
                     </div>
                     <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
                       {assessmentCollaboration.detail}
+                    </div>
+                  </div>
+                </>
+              )}
+              {assessmentProcessTelemetry && (
+                <>
+                  <div style={{ fontSize: 9, color: assessmentCommitTrustColor(assessmentProcessTelemetry.tone), letterSpacing: '0.12em', fontWeight: 700 }}>
+                    PROCESS
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: assessmentCommitTrustColor(assessmentProcessTelemetry.tone), fontWeight: 700 }}>
+                      {assessmentProcessTelemetry.label}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                      {assessmentProcessTelemetry.detail}
                     </div>
                   </div>
                 </>

@@ -252,6 +252,9 @@ describe('InterviewDetailPage', () => {
             { kind: 'git_commit', count: 1 },
             { kind: 'code_diff', count: 1 },
             { kind: 'test_run', count: 1 },
+            { kind: 'dev_container_workspace_launch', count: 1 },
+            { kind: 'terminal_command', count: 1 },
+            { kind: 'code_server_file_observation', count: 6 },
             { kind: 'room_chat_message', count: 1 },
             { kind: 'meeting_session_event', count: 3 },
             { kind: 'ai_user_prompt', count: 2 },
@@ -384,6 +387,9 @@ describe('InterviewDetailPage', () => {
     expect(workPacket).toHaveTextContent('1 changed file: src/popover.ts · Modified');
     expect(workPacket).toHaveTextContent('Verification');
     expect(workPacket).toHaveTextContent('Tests captured');
+    expect(workPacket).toHaveTextContent('Process telemetry');
+    expect(workPacket).toHaveTextContent('Workspace/tool telemetry captured');
+    expect(workPacket).toHaveTextContent('1 workspace launch, 1 terminal command, and 6 file observations tied to the assessment evidence trail.');
     expect(workPacket).toHaveTextContent('Collaboration');
     expect(workPacket).toHaveTextContent('Room chat captured');
     expect(workPacket).toHaveTextContent('1 room chat message and 3 room session events tied to the assessment evidence trail.');

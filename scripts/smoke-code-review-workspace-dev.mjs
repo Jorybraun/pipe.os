@@ -457,6 +457,10 @@ function repoLabelFromUrl(rawUrl) {
   return null;
 }
 
+function sourceRefCount(rows, kind) {
+  return rows.find((row) => row.kind === kind)?.count ?? 0;
+}
+
 async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit, expectedBaseCommitSha) {
   const detail = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}`);
   const progress = detail?.interview?.assessmentProgress ?? null;
@@ -497,7 +501,16 @@ async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit,
     && snippet.exactText.trim().length > 0
   ) ?? null;
   const sourceRefTypes = new Set((progress.sourceRefCounts ?? []).map((row) => row.kind));
-  for (const requiredSourceRefType of ['git_commit', 'code_diff', 'test_run', 'meeting_session_event', 'room_chat_message']) {
+  for (const requiredSourceRefType of [
+    'git_commit',
+    'code_diff',
+    'test_run',
+    'dev_container_workspace_launch',
+    'terminal_command',
+    'code_server_file_observation',
+    'meeting_session_event',
+    'room_chat_message',
+  ]) {
     if (!sourceRefTypes.has(requiredSourceRefType)) {
       throw new Error(`Recruiter detail is missing ${requiredSourceRefType} proof for source-backed review: ${JSON.stringify(progress.sourceRefCounts)}`);
     }
@@ -629,6 +642,17 @@ async function assertRecruiterReviewerReceiptBrowser(
     await expect(receipt).toContainText('Recorded by');
     await expect(receipt).toContainText('Human reviewer');
     await expect(receipt).not.toContainText('dev-user');
+    const workPacket = page.getByTestId('interview-assessment-work-packet');
+    await expect(workPacket).toBeVisible({ timeout: 60_000 });
+    await expect(workPacket).toContainText('Process telemetry');
+    await expect(workPacket).toContainText('Workspace/tool telemetry captured');
+    await expect(workPacket).toContainText('workspace launch');
+    await expect(workPacket).toContainText('terminal command');
+    if (sourceRefCount(recruiterProjection.sourceRefCounts, 'code_server_file_observation') > 0) {
+      await expect(workPacket).toContainText('file observation');
+    }
+    await expect(workPacket).toContainText('Collaboration');
+    await expect(workPacket).toContainText('Room chat captured');
     if (!recruiterProjection.compareUrl) {
       const capturedDiff = page.getByTestId('interview-assessment-captured-diff');
       await expect(capturedDiff).toBeVisible({ timeout: 60_000 });
@@ -722,6 +746,14 @@ async function assertRecruiterListCardBrowser(
       await expect(card).toContainText('Captured diff available');
       await expect(card).toContainText('Workspace-only commit has exact code_diff source evidence ready for review.');
     }
+    await expect(card).toContainText('PROCESS');
+    await expect(card).toContainText('Workspace telemetry captured');
+    await expect(card).toContainText('terminal command');
+    if (sourceRefCount(recruiterProjection.sourceRefCounts, 'code_server_file_observation') > 0) {
+      await expect(card).toContainText('file observation');
+    }
+    await expect(card).toContainText('CHAT');
+    await expect(card).toContainText('Room chat captured');
     await expect(card).toContainText('EVAL');
     await expect(card).toContainText('Evaluated');
     await expect(card).not.toContainText('assessment-session');

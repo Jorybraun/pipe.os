@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter assessment cards and detail work packets now surface terminal, workspace-launch, and code-server file-observation source refs as process telemetry, making how the candidate worked visible alongside the final commit.
 - Recruiter assessment cards and detail dossiers now surface source-backed room chat/session evidence as candidate collaboration proof instead of hiding it inside generic evidence counts.
 - Open-source workspace dev smoke now posts accepted room chat and requires recruiter progress to retain `room_chat_message` evidence, proving candidate collaboration is source-backed alongside commits.
 - Recruiter assessment progress now preserves concrete matched-PR proof in durable assignment trust instead of reverting to generic matched-task copy.

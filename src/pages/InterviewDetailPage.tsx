@@ -1135,6 +1135,33 @@ function workspaceAssessmentCollaborationItem(progress: AssessmentProgressSnapsh
   };
 }
 
+function workspaceAssessmentProcessTelemetryItem(progress: AssessmentProgressSnapshot): WorkspaceAssessmentReadoutItem {
+  const workspaceLaunchCount = assessmentSourceRefCount(progress, 'dev_container_workspace_launch');
+  const terminalCommandCount = assessmentSourceRefCount(progress, 'terminal_command');
+  const terminalOutputCount = assessmentSourceRefCount(progress, 'terminal_output');
+  const fileObservationCount = assessmentSourceRefCount(progress, 'code_server_file_observation');
+  const editorSaveCount = assessmentSourceRefCount(progress, 'code_editor_save');
+  const telemetryParts = [
+    sourceRefCountLabel(workspaceLaunchCount, 'workspace launch'),
+    sourceRefCountLabel(terminalCommandCount, 'terminal command'),
+    sourceRefCountLabel(terminalOutputCount, 'terminal output'),
+    sourceRefCountLabel(fileObservationCount, 'file observation'),
+    sourceRefCountLabel(editorSaveCount, 'editor save'),
+  ].filter((item): item is string => Boolean(item));
+  const hasTelemetry = progress.hasDevContainerEvidence || progress.hasToolUsageEvidence || telemetryParts.length > 0;
+
+  return {
+    label: 'Process telemetry',
+    value: hasTelemetry ? 'Workspace/tool telemetry captured' : 'No workspace telemetry captured',
+    detail: hasTelemetry
+      ? telemetryParts.length > 0
+        ? `${readableList(telemetryParts)} tied to the assessment evidence trail.`
+        : 'Workspace or tool activity is present as source-backed assessment evidence.'
+      : 'Candidate terminal, workspace, and code-server activity is unobserved for this assessment session.',
+    tone: hasTelemetry ? 'positive' : 'watch',
+  };
+}
+
 function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem[] {
   if (!progress?.commit) return [];
 
@@ -1232,6 +1259,7 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
         : 'Treat implementation quality as lower-confidence until test output or a source-backed explanation is reviewed.',
       tone: progress.hasTestEvidence ? 'positive' : 'watch',
     },
+    workspaceAssessmentProcessTelemetryItem(progress),
     {
       label: 'Upstream PR',
       value: progress.commit.upstreamPullRequestUrl && progress.commit.upstreamPrConsent

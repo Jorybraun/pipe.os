@@ -201,6 +201,9 @@ describe('InterviewCard assessment progress', () => {
         evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
         sourceRefCounts: [
           { kind: 'test_run', count: 1 },
+          { kind: 'dev_container_workspace_launch', count: 1 },
+          { kind: 'terminal_command', count: 1 },
+          { kind: 'code_server_file_observation', count: 6 },
           { kind: 'room_chat_message', count: 1 },
           { kind: 'meeting_session_event', count: 2 },
         ],
@@ -284,6 +287,9 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('CHAT');
     expect(progress).toHaveTextContent('Room chat captured');
     expect(progress).toHaveTextContent('1 room chat message and 2 room session events tied to the assessment evidence trail.');
+    expect(progress).toHaveTextContent('PROCESS');
+    expect(progress).toHaveTextContent('Workspace telemetry captured');
+    expect(progress).toHaveTextContent('1 workspace launch, 1 terminal command, and 6 file observations tied to the assessment evidence trail.');
     expect(progress).toHaveTextContent('open-source/widgets');
     expect(progress).toHaveTextContent('PR #72');
     expect(progress).toHaveTextContent('BASE');
