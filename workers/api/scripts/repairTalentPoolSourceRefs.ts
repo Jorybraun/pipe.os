@@ -4,8 +4,8 @@
  *
  * This is a projection backfill only: it does not create source artifacts,
  * source spans, profile claims, or person context. It reconnects active exact
- * resume candidate nodes to current Talent Pool profile source spans that
- * already exist.
+ * resume/profile-intake candidate nodes to current Talent Pool profile source
+ * spans that already exist.
  */
 
 import dotenv from 'dotenv';
@@ -14,7 +14,9 @@ import { readdirSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  countTalentPoolProfileIntakeNodeSourceRefRepairCandidates,
   countTalentPoolResumeNodeSourceRefRepairCandidates,
+  repairTalentPoolProfileIntakeNodeSourceRefs,
   repairTalentPoolResumeNodeSourceRefs,
 } from '../src/lib/candidateDiscovery/candidateNodes';
 import { D1Client, loadD1Config } from './crawl-repos/shared/d1Client.js';
@@ -303,7 +305,12 @@ export async function repairTalentPoolSourceRefs(
   const batchSize = Math.max(1, Math.min(parsedBatchSize, 1000));
   const maxBatches = Math.max(1, Math.min(parsedMaxBatches, 1000));
   const countLimit = Math.max(1, Math.min(parsedCountLimit, 5000));
-  const beforeRepairableCount = await countTalentPoolResumeNodeSourceRefRepairCandidates(db, countLimit);
+  const countRepairable = async (): Promise<number> => {
+    const resumeCount = await countTalentPoolResumeNodeSourceRefRepairCandidates(db, countLimit);
+    const profileIntakeCount = await countTalentPoolProfileIntakeNodeSourceRefRepairCandidates(db, countLimit);
+    return resumeCount + profileIntakeCount;
+  };
+  const beforeRepairableCount = await countRepairable();
 
   if (dryRun) {
     return {
@@ -324,14 +331,19 @@ export async function repairTalentPoolSourceRefs(
   let batches = 0;
 
   for (let index = 0; index < maxBatches; index += 1) {
-    const result = await repairTalentPoolResumeNodeSourceRefs(db, batchSize);
+    const resumeResult = await repairTalentPoolResumeNodeSourceRefs(db, batchSize);
+    const profileIntakeResult = await repairTalentPoolProfileIntakeNodeSourceRefs(db, batchSize);
+    const result = {
+      scanned: resumeResult.scanned + profileIntakeResult.scanned,
+      repaired: resumeResult.repaired + profileIntakeResult.repaired,
+    };
     batches += 1;
     scanned += result.scanned;
     repaired += result.repaired;
     if (result.scanned === 0 || result.repaired === 0) break;
   }
 
-  const afterRepairableCount = await countTalentPoolResumeNodeSourceRefRepairCandidates(db, countLimit);
+  const afterRepairableCount = await countRepairable();
   return {
     dryRun,
     batchSize,

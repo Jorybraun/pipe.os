@@ -126,20 +126,21 @@ The same scheduled repair also replays text-like current profile R2 objects
 through `ensureRolelessTalentPoolIdentity` with `messageStorageKey` set to
 `talent_pool_intakes.profile_r2_key`. That refreshes historical pasted/text
 profile nodes and person context records onto the current immutable source span.
-After identity replay, repair runs `repairCandidateResumeNodeSourceRefs` so
-validated exact resume nodes can attach `source_span:<id>` refs to the current
-profile source instead of staying source-less or stale. Document blobs are not
-treated as text-profile claims by this repair; PDF/DOCX evidence still requires
-successful extraction.
+After identity replay, repair runs `repairCandidateResumeNodeSourceRefs` and
+`repairCandidateProfileIntakeNodeSourceRefs` so validated exact resume nodes and
+Talent Pool profile-receipt nodes can attach `source_span:<id>` refs to the
+current profile source instead of staying source-less or stale. Document blobs
+are not treated as text-profile claims by this repair; PDF/DOCX evidence still
+requires successful extraction.
 The scheduled repair batch orders candidates with missing resume source-span
 refs or stale profile source spans ahead of already-clean recent submissions, so
 unscoped audit debt burns down before cron spends work on healthy intakes.
 Before R2-backed identity replay, cron also runs a bounded D1-only repair over
 candidate nodes whose current profile artifact already has a covering source
 span. This is projection repair, not source creation: the raw artifact version
-and source span must already exist, and the repair only writes the missing
-`source_span:<id>` reference plus `source_span_id` property onto validated exact
-resume nodes.
+and source span must already exist, and the repair only writes or refreshes the
+`source_span:<id>` reference plus `source_span_id` property on validated exact
+resume nodes and `talent_pool_profile_intake` receipt nodes.
 Operators can run the same projection repair deliberately with
 `npm run candidate-ingestion:repair-source-refs -- --local|--remote`. Use
 `--dry-run` first to count repairable rows. The command reports bounded
@@ -831,12 +832,14 @@ Scheduled repair proof in
 that replaying a pasted/text profile reads the current R2 object, passes the
 exact `messageStorageKey` and text media type into roleless identity repair, does
 not create a fake upload receipt for pasted text, and invokes exact candidate-node
-source-ref repair after identity replay. `src/lib/candidateDiscovery/__tests__/candidateNodes.test.ts`
-also proves the D1-only bulk source-ref repair is idempotent and skips nodes
+source-ref repair after identity replay for both resume-derived nodes and
+profile-intake receipt nodes. `src/lib/candidateDiscovery/__tests__/candidateNodes.test.ts`
+also proves the D1-only bulk source-ref repair is idempotent, refreshes stale
+profile-intake receipt nodes to the current profile source span, and skips nodes
 whose current profile artifact has no matching source span.
 `scripts/repairTalentPoolSourceRefs.test.ts` proves the operator command is
-dry-run safe, writes only repairable existing-span projections, and becomes a
-no-op on replay.
+dry-run safe, writes only repairable existing-span resume/profile-intake
+projections, and becomes a no-op on replay.
 
 App-dev operator backfill proof on 2026-07-03 used
 `CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 npm --prefix workers/api run candidate-ingestion:repair-source-refs -- --remote --dry-run --count-limit 500`
@@ -849,6 +852,18 @@ then reported `scanned: 443`, `repaired: 443`, and bounded
 `stale_profile_source_count` from `41` to `34`. The scoped real pasted-profile
 audit for invite `cac8e887-67af-461a-88c2-857ccf9d4cb8` remained `ready` with
 `sourceLessPositiveClaimCount: 0` and `duplicateProjectedEdgeCount: 0`.
+Additional app-dev repair passes after Worker version
+`d7775cf6-1165-46ef-af75-ed1aedf881f9` used the same bounded command while
+cron replay created current profile source spans. The audit counters moved
+`missing_source_ref_count` to `0`. A follow-up patch extended the repair command
+to stale `talent_pool_profile_intake` receipt nodes and repaired `22` more
+historical rows; the latest direct counters are `missing_source_ref_count: 0`,
+bounded `beforeRepairableCount: 0`, and `stale_profile_source_count: 5`. The
+remaining stale rows are PDF upload keys with `current_span_count: 0`, so they
+are document extraction/artifact-receipt gaps rather than safe source-span
+projection repairs. An unscoped remote audit attempted after the repair hit D1
+CPU/time limits, so unscoped all-dev gating still needs a bounded audit mode;
+the scoped real candidate audit remained `ready`.
 
 Browser proof on 2026-07-02 uses
 `e2e/talent-pool-intake.unauth.spec.ts` with the unauthenticated Playwright
@@ -876,8 +891,11 @@ all 4 unauthenticated browser scenarios passed.
 - A design queue is not challenge readiness. A candidate should remain in
   `CHALLENGE_PREPARING` until a real assignment is backed by a production-ready
   review challenge packet with repo source refs and concept links.
-- Unscoped app-dev still contains historical pre-fix Talent Pool intakes with
-  stale or missing candidate-node source refs. New scoped browser smokes audit
-  clean; the scheduled repair/backfill path is the burn-down mechanism for old
-  rows, and unscoped audit should be treated as ready only after that debt is
-  cleared.
+- Unscoped app-dev no longer has historical missing resume source refs, and the
+  source-ref repair command reports no remaining repairable profile/resume
+  source refs. Five historical PDF profile-intake receipt nodes still point at
+  older roleless message spans because their current uploaded PDFs have no
+  extracted source spans; they need document extraction or an artifact-level
+  receipt model, not fabricated source spans. New scoped browser smokes audit
+  clean, and unscoped audit needs a bounded mode because full remote proof can
+  exceed D1 CPU limits.

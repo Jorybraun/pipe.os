@@ -20,7 +20,9 @@ import { processResumeFromR2 } from '../../enrichment/resumeIngestion';
 import { ensureRolelessTalentPoolIdentity } from '../../talentPoolIdentity';
 import { extractTextFromResumeFile } from '../../cvParser';
 import {
+  repairCandidateProfileIntakeNodeSourceRefs,
   repairCandidateResumeNodeSourceRefs,
+  repairTalentPoolProfileIntakeNodeSourceRefs,
   repairTalentPoolResumeNodeSourceRefs,
 } from '../candidateNodes';
 
@@ -61,7 +63,9 @@ vi.mock('../candidateNodes', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../candidateNodes')>();
   return {
     ...actual,
+    repairCandidateProfileIntakeNodeSourceRefs: vi.fn(async () => ({ scanned: 0, repaired: 0 })),
     repairCandidateResumeNodeSourceRefs: vi.fn(async () => ({ scanned: 0, repaired: 0 })),
+    repairTalentPoolProfileIntakeNodeSourceRefs: vi.fn(async () => ({ scanned: 0, repaired: 0 })),
     repairTalentPoolResumeNodeSourceRefs: vi.fn(async () => ({ scanned: 0, repaired: 0 })),
   };
 });
@@ -823,7 +827,10 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       failed: 0,
     });
 
-    const selectCall = db.__calls.find((call) => call.sql.includes('FROM talent_pool_intakes'))!;
+    const selectCall = db.__calls.find((call) =>
+      call.sql.includes('FROM talent_pool_intakes t')
+      && call.sql.includes('JOIN candidates c ON c.id = t.candidate_id')
+      && call.sql.includes('FROM applications app'))!;
     expect(selectCall.params[0]).toBe(2);
     expect(selectCall.sql).toContain('FROM applications app');
     expect(selectCall.sql).toContain('FROM candidate_nodes cn');
@@ -840,7 +847,11 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     expect(repairCandidateResumeNodeSourceRefs).toHaveBeenCalledTimes(2);
     expect(repairCandidateResumeNodeSourceRefs).toHaveBeenCalledWith(db, 'talent-1');
     expect(repairCandidateResumeNodeSourceRefs).toHaveBeenCalledWith(db, 'talent-2');
+    expect(repairCandidateProfileIntakeNodeSourceRefs).toHaveBeenCalledTimes(2);
+    expect(repairCandidateProfileIntakeNodeSourceRefs).toHaveBeenCalledWith(db, 'talent-1');
+    expect(repairCandidateProfileIntakeNodeSourceRefs).toHaveBeenCalledWith(db, 'talent-2');
     expect(repairTalentPoolResumeNodeSourceRefs).toHaveBeenCalledWith(db, 32);
+    expect(repairTalentPoolProfileIntakeNodeSourceRefs).toHaveBeenCalledWith(db, 32);
   });
 
   it('cron backfills missing Talent Pool upload receipt artifacts from the original R2 object', async () => {

@@ -56,9 +56,12 @@ function seedRepairFixture(db: BetterSqliteDb): void {
     INSERT INTO artifact_versions (id, storage_key, content_text)
     VALUES
       ('artifact-version-repairable', 'talent-intake/candidate-repairable/profile.txt', 'Built source-backed Talent Pool ingestion.'),
-      ('artifact-version-gap', 'talent-intake/candidate-gap/profile.txt', 'Source artifact exists but no matching source span.');
+      ('artifact-version-gap', 'talent-intake/candidate-gap/profile.txt', 'Source artifact exists but no matching source span.'),
+      ('artifact-version-old-message', NULL, 'Built source-backed Talent Pool ingestion.');
     INSERT INTO source_spans (id, artifact_version_id, char_start, char_end, exact_text)
-    VALUES ('source-span-repairable', 'artifact-version-repairable', 0, 39, 'Built source-backed Talent Pool ingestion.');
+    VALUES
+      ('source-span-repairable', 'artifact-version-repairable', 0, 39, 'Built source-backed Talent Pool ingestion.'),
+      ('source-span-old-message', 'artifact-version-old-message', 0, 39, 'Built source-backed Talent Pool ingestion.');
     INSERT INTO candidate_nodes (
       id, candidate_id, node_type, narrative_text, extracted_properties_json,
       embedding_json, source_type, source_reference, captured_at, confidence,
@@ -77,6 +80,13 @@ function seedRepairFixture(db: BetterSqliteDb): void {
       '{"source_quote":"Missing span.","source_quote_validated":true,"source_quote_char_start":0,"source_quote_char_end":13}',
       NULL, 'resume', 'resume:review-evidence:0', 100, 0.85,
       NULL, NULL, 'adr041-v1', 'candidate-node-gap'
+    ),
+    (
+      'candidate-node-profile-stale', 'candidate-repairable', 'TalentPoolProfileIntake',
+      'Candidate submitted Talent Pool profile evidence.',
+      '{"source_quote":"Built source-backed Talent Pool ingestion.","source_quote_validated":true,"source_quote_char_start":0,"source_quote_char_end":39,"source_span_id":"source-span-old-message"}',
+      NULL, 'talent_pool_profile_intake', 'source_span:source-span-old-message', 100, 1,
+      NULL, NULL, 'talent-pool-roleless-intake-v1', 'candidate-node-profile-stale'
     );
   `);
 }
@@ -114,16 +124,21 @@ describe('repairTalentPoolSourceRefs', () => {
     await expect(repairTalentPoolSourceRefs(db, { dryRun: true, batchSize: 1, maxBatches: 5 }))
       .resolves.toMatchObject({
         dryRun: true,
-        beforeRepairableCount: 1,
+        beforeRepairableCount: 2,
         scanned: 0,
         repaired: 0,
-        afterRepairableCount: 1,
+        afterRepairableCount: 2,
       });
     expect(sourceRows(sqlite)).toEqual([
       {
         id: 'candidate-node-gap',
         source_reference: 'resume:review-evidence:0',
         source_span_id: null,
+      },
+      {
+        id: 'candidate-node-profile-stale',
+        source_reference: 'source_span:source-span-old-message',
+        source_span_id: 'source-span-old-message',
       },
       {
         id: 'candidate-node-repairable',
@@ -135,9 +150,9 @@ describe('repairTalentPoolSourceRefs', () => {
     await expect(repairTalentPoolSourceRefs(db, { batchSize: 1, maxBatches: 5 }))
       .resolves.toMatchObject({
         dryRun: false,
-        beforeRepairableCount: 1,
-        scanned: 1,
-        repaired: 1,
+        beforeRepairableCount: 2,
+        scanned: 2,
+        repaired: 2,
         afterRepairableCount: 0,
       });
     expect(sourceRows(sqlite)).toEqual([
@@ -145,6 +160,11 @@ describe('repairTalentPoolSourceRefs', () => {
         id: 'candidate-node-gap',
         source_reference: 'resume:review-evidence:0',
         source_span_id: null,
+      },
+      {
+        id: 'candidate-node-profile-stale',
+        source_reference: 'source_span:source-span-repairable',
+        source_span_id: 'source-span-repairable',
       },
       {
         id: 'candidate-node-repairable',

@@ -22,6 +22,8 @@ interface ProfileSourceSpanRow {
   storage_key: string | null;
 }
 
+type TalentPoolProfileSourceNodeType = 'resume' | 'talent_pool_profile_intake';
+
 interface CandidateNodeSourceRepairRow {
   id: string;
   source_reference: string | null;
@@ -37,8 +39,9 @@ export interface CandidateNodeSourceRepairResult {
   repaired: number;
 }
 
-export async function countTalentPoolResumeNodeSourceRefRepairCandidates(
+async function countTalentPoolNodeSourceRefRepairCandidates(
   db: D1Database,
+  sourceType: TalentPoolProfileSourceNodeType,
   limit = 1000,
 ): Promise<number> {
   if (!await candidateSourceTablesReady(db)) return 0;
@@ -59,26 +62,49 @@ export async function countTalentPoolResumeNodeSourceRefRepairCandidates(
        FROM (
          SELECT cn.id
            FROM candidate_nodes cn
-           JOIN talent_pool_intakes t ON t.candidate_id = cn.candidate_id
-           JOIN candidates_with_current_spans cs ON cs.candidate_id = cn.candidate_id
+          JOIN talent_pool_intakes t ON t.candidate_id = cn.candidate_id
+          JOIN candidates_with_current_spans cs ON cs.candidate_id = cn.candidate_id
+          LEFT JOIN source_spans cited_ss ON cited_ss.id = COALESCE(
+            json_extract(cn.extracted_properties_json, '$.source_span_id'),
+            CASE
+              WHEN cn.source_reference LIKE 'source_span:%' THEN substr(cn.source_reference, 13)
+              ELSE NULL
+            END
+          )
+          LEFT JOIN artifact_versions cited_av ON cited_av.id = cited_ss.artifact_version_id
           WHERE t.submitted_at IS NOT NULL
             AND t.profile_r2_key IS NOT NULL
             AND TRIM(t.profile_r2_key) <> ''
-            AND cn.source_type = 'resume'
+            AND cn.source_type = ?1
             AND cn.superseded_at IS NULL
             AND json_extract(cn.extracted_properties_json, '$.source_quote_validated') = 1
-            AND COALESCE(json_extract(cn.extracted_properties_json, '$.source_span_id'), '') = ''
             AND (
-              cn.source_reference IS NULL
+              COALESCE(json_extract(cn.extracted_properties_json, '$.source_span_id'), '') = ''
+              OR cn.source_reference IS NULL
               OR cn.source_reference NOT LIKE 'source_span:%'
+              OR COALESCE(cited_av.storage_key, '') <> t.profile_r2_key
             )
             AND json_type(cn.extracted_properties_json, '$.source_quote_char_start') IN ('integer', 'real')
             AND json_type(cn.extracted_properties_json, '$.source_quote_char_end') IN ('integer', 'real')
-          LIMIT ?1
+          LIMIT ?2
        ) repairable`,
-  ).bind(boundedLimit).first<{ count: number | null }>();
+  ).bind(sourceType, boundedLimit).first<{ count: number | null }>();
 
   return Number(row?.count ?? 0);
+}
+
+export async function countTalentPoolResumeNodeSourceRefRepairCandidates(
+  db: D1Database,
+  limit = 1000,
+): Promise<number> {
+  return countTalentPoolNodeSourceRefRepairCandidates(db, 'resume', limit);
+}
+
+export async function countTalentPoolProfileIntakeNodeSourceRefRepairCandidates(
+  db: D1Database,
+  limit = 1000,
+): Promise<number> {
+  return countTalentPoolNodeSourceRefRepairCandidates(db, 'talent_pool_profile_intake', limit);
 }
 
 export async function insertCandidateNode(
@@ -276,44 +302,52 @@ export async function repairCandidateResumeNodeSourceRefs(
   db: D1Database,
   candidateId: string,
 ): Promise<CandidateNodeSourceRepairResult> {
+  return repairCandidateNodeSourceRefs(db, candidateId, 'resume');
+}
+
+export async function repairCandidateProfileIntakeNodeSourceRefs(
+  db: D1Database,
+  candidateId: string,
+): Promise<CandidateNodeSourceRepairResult> {
+  return repairCandidateNodeSourceRefs(db, candidateId, 'talent_pool_profile_intake');
+}
+
+async function repairCandidateNodeSourceRefs(
+  db: D1Database,
+  candidateId: string,
+  sourceType: TalentPoolProfileSourceNodeType,
+): Promise<CandidateNodeSourceRepairResult> {
   if (!await candidateSourceTablesReady(db)) return { scanned: 0, repaired: 0 };
 
   const rows = await db.prepare(
-    `SELECT id, source_reference, extracted_properties_json
-       FROM candidate_nodes
-      WHERE candidate_id = ?1
-        AND source_type = 'resume'
-        AND superseded_at IS NULL
-        AND json_extract(extracted_properties_json, '$.source_quote_validated') = 1
-        AND COALESCE(json_extract(extracted_properties_json, '$.source_span_id'), '') = ''
+    `SELECT cn.id, cn.source_reference, cn.extracted_properties_json
+       FROM candidate_nodes cn
+       JOIN talent_pool_intakes t ON t.candidate_id = cn.candidate_id
+       LEFT JOIN source_spans cited_ss ON cited_ss.id = COALESCE(
+         json_extract(cn.extracted_properties_json, '$.source_span_id'),
+         CASE
+           WHEN cn.source_reference LIKE 'source_span:%' THEN substr(cn.source_reference, 13)
+           ELSE NULL
+         END
+       )
+       LEFT JOIN artifact_versions cited_av ON cited_av.id = cited_ss.artifact_version_id
+      WHERE cn.candidate_id = ?1
+        AND cn.source_type = ?2
+        AND cn.superseded_at IS NULL
+        AND json_extract(cn.extracted_properties_json, '$.source_quote_validated') = 1
         AND (
-          source_reference IS NULL
-          OR source_reference NOT LIKE 'source_span:%'
+          COALESCE(json_extract(cn.extracted_properties_json, '$.source_span_id'), '') = ''
+          OR cn.source_reference IS NULL
+          OR cn.source_reference NOT LIKE 'source_span:%'
+          OR COALESCE(cited_av.storage_key, '') <> t.profile_r2_key
         )
-      ORDER BY captured_at ASC, id ASC`,
-  ).bind(candidateId).all<CandidateNodeSourceRepairRow>();
+      ORDER BY cn.captured_at ASC, cn.id ASC`,
+  ).bind(candidateId, sourceType).all<CandidateNodeSourceRepairRow>();
 
   let repaired = 0;
   for (const row of rows.results ?? []) {
     const properties = parseSourceProperties(row.extracted_properties_json);
     if (!properties) continue;
-    if (hasExistingSourceSpanReference(
-      {
-        candidate_id: candidateId,
-        node_type: 'Experience',
-        narrative_text: '',
-        extracted_properties_json: row.extracted_properties_json,
-        embedding_json: null,
-        source_type: 'resume',
-        source_reference: row.source_reference,
-        captured_at: 0,
-        confidence: null,
-        supersedes: null,
-        superseded_at: null,
-        decomposition_version: null,
-      },
-      properties,
-    )) continue;
 
     const charStart = finiteNumber(properties.source_quote_char_start);
     const charEnd = finiteNumber(properties.source_quote_char_end);
@@ -336,8 +370,7 @@ export async function repairCandidateResumeNodeSourceRefs(
               updated_at = unixepoch()
         WHERE id = ?3
           AND candidate_id = ?4
-          AND superseded_at IS NULL
-          AND COALESCE(json_extract(extracted_properties_json, '$.source_span_id'), '') = ''`,
+          AND superseded_at IS NULL`,
     ).bind(
       `source_span:${span.id}`,
       JSON.stringify({
@@ -355,6 +388,21 @@ export async function repairCandidateResumeNodeSourceRefs(
 
 export async function repairTalentPoolResumeNodeSourceRefs(
   db: D1Database,
+  limit = 250,
+): Promise<CandidateNodeSourceRepairResult> {
+  return repairTalentPoolNodeSourceRefs(db, 'resume', limit);
+}
+
+export async function repairTalentPoolProfileIntakeNodeSourceRefs(
+  db: D1Database,
+  limit = 250,
+): Promise<CandidateNodeSourceRepairResult> {
+  return repairTalentPoolNodeSourceRefs(db, 'talent_pool_profile_intake', limit);
+}
+
+async function repairTalentPoolNodeSourceRefs(
+  db: D1Database,
+  sourceType: TalentPoolProfileSourceNodeType,
   limit = 250,
 ): Promise<CandidateNodeSourceRepairResult> {
   if (!await candidateSourceTablesReady(db)) return { scanned: 0, repaired: 0 };
@@ -378,44 +426,36 @@ export async function repairTalentPoolResumeNodeSourceRefs(
        FROM candidate_nodes cn
        JOIN talent_pool_intakes t ON t.candidate_id = cn.candidate_id
        JOIN candidates_with_current_spans cs ON cs.candidate_id = cn.candidate_id
+       LEFT JOIN source_spans cited_ss ON cited_ss.id = COALESCE(
+         json_extract(cn.extracted_properties_json, '$.source_span_id'),
+         CASE
+           WHEN cn.source_reference LIKE 'source_span:%' THEN substr(cn.source_reference, 13)
+           ELSE NULL
+         END
+       )
+       LEFT JOIN artifact_versions cited_av ON cited_av.id = cited_ss.artifact_version_id
       WHERE t.submitted_at IS NOT NULL
         AND t.profile_r2_key IS NOT NULL
         AND TRIM(t.profile_r2_key) <> ''
-        AND cn.source_type = 'resume'
+        AND cn.source_type = ?1
         AND cn.superseded_at IS NULL
         AND json_extract(cn.extracted_properties_json, '$.source_quote_validated') = 1
-        AND COALESCE(json_extract(cn.extracted_properties_json, '$.source_span_id'), '') = ''
         AND (
-          cn.source_reference IS NULL
+          COALESCE(json_extract(cn.extracted_properties_json, '$.source_span_id'), '') = ''
+          OR cn.source_reference IS NULL
           OR cn.source_reference NOT LIKE 'source_span:%'
+          OR COALESCE(cited_av.storage_key, '') <> t.profile_r2_key
         )
         AND json_type(cn.extracted_properties_json, '$.source_quote_char_start') IN ('integer', 'real')
         AND json_type(cn.extracted_properties_json, '$.source_quote_char_end') IN ('integer', 'real')
       ORDER BY t.updated_at DESC, cn.captured_at ASC, cn.id ASC
-      LIMIT ?1`,
-  ).bind(boundedLimit).all<CandidateNodeSourceRepairCandidateRow>();
+      LIMIT ?2`,
+  ).bind(sourceType, boundedLimit).all<CandidateNodeSourceRepairCandidateRow>();
 
   let repaired = 0;
   for (const row of rows.results ?? []) {
     const properties = parseSourceProperties(row.extracted_properties_json);
     if (!properties) continue;
-    if (hasExistingSourceSpanReference(
-      {
-        candidate_id: row.candidate_id,
-        node_type: 'Experience',
-        narrative_text: '',
-        extracted_properties_json: row.extracted_properties_json,
-        embedding_json: null,
-        source_type: 'resume',
-        source_reference: row.source_reference,
-        captured_at: 0,
-        confidence: null,
-        supersedes: null,
-        superseded_at: null,
-        decomposition_version: null,
-      },
-      properties,
-    )) continue;
 
     const charStart = finiteNumber(properties.source_quote_char_start);
     const charEnd = finiteNumber(properties.source_quote_char_end);
@@ -438,8 +478,7 @@ export async function repairTalentPoolResumeNodeSourceRefs(
               updated_at = unixepoch()
         WHERE id = ?3
           AND candidate_id = ?4
-          AND superseded_at IS NULL
-          AND COALESCE(json_extract(extracted_properties_json, '$.source_span_id'), '') = ''`,
+          AND superseded_at IS NULL`,
     ).bind(
       `source_span:${span.id}`,
       JSON.stringify({

@@ -5,7 +5,9 @@ import type { CandidateNode } from '../../../types';
 import {
   embedCandidateNodes,
   insertCandidateNode,
+  repairCandidateProfileIntakeNodeSourceRefs,
   repairCandidateResumeNodeSourceRefs,
+  repairTalentPoolProfileIntakeNodeSourceRefs,
   repairTalentPoolResumeNodeSourceRefs,
   supersedeCandidateNode,
 } from '../candidateNodes';
@@ -545,5 +547,56 @@ describe('insertCandidateNode', () => {
         source_span_id: null,
       },
     ]);
+  });
+
+  it('repairs stale Talent Pool profile-intake receipt nodes to current profile source spans idempotently', async () => {
+    sqlite = new Database(':memory:');
+    createCandidateNodeSchema(sqlite);
+    createTalentPoolSourceSchema(sqlite);
+    sqlite.exec(`
+      INSERT INTO talent_pool_intakes (candidate_id, profile_r2_key, submitted_at, updated_at)
+      VALUES ('candidate-profile-stale', 'talent-intake/candidate-profile-stale/profile.txt', '2026-07-03T00:00:00.000Z', '2026-07-03T00:00:00.000Z');
+      INSERT INTO artifact_versions (id, storage_key, content_text)
+      VALUES
+        ('artifact-version-old-message', NULL, 'Submitted profile text.'),
+        ('artifact-version-current-profile', 'talent-intake/candidate-profile-stale/profile.txt', 'Submitted profile text.');
+      INSERT INTO source_spans (id, artifact_version_id, char_start, char_end, exact_text)
+      VALUES
+        ('source-span-old-message', 'artifact-version-old-message', 0, 23, 'Submitted profile text.'),
+        ('source-span-current-profile', 'artifact-version-current-profile', 0, 23, 'Submitted profile text.');
+      INSERT INTO candidate_nodes (
+        id, candidate_id, node_type, narrative_text, extracted_properties_json,
+        embedding_json, source_type, source_reference, captured_at, confidence,
+        supersedes, superseded_at, decomposition_version, ingestion_key
+      ) VALUES (
+        'candidate-node-profile-stale', 'candidate-profile-stale', 'TalentPoolProfileIntake',
+        'Candidate submitted Talent Pool profile evidence.',
+        '{"source_quote":"Submitted profile text.","source_quote_validated":true,"source_quote_char_start":0,"source_quote_char_end":23,"source_span_id":"source-span-old-message"}',
+        NULL, 'talent_pool_profile_intake', 'source_span:source-span-old-message', 100, 1,
+        NULL, NULL, 'talent-pool-roleless-intake-v1', 'candidate-profile-stale-ingestion-key'
+      );
+    `);
+    const db = new SqliteD1Database(sqlite) as unknown as D1Database;
+
+    await expect(repairCandidateProfileIntakeNodeSourceRefs(db, 'candidate-profile-stale'))
+      .resolves.toEqual({ scanned: 1, repaired: 1 });
+    await expect(repairCandidateProfileIntakeNodeSourceRefs(db, 'candidate-profile-stale'))
+      .resolves.toEqual({ scanned: 0, repaired: 0 });
+    await expect(repairTalentPoolProfileIntakeNodeSourceRefs(db, 25))
+      .resolves.toEqual({ scanned: 0, repaired: 0 });
+
+    const row = sqlite.prepare(`
+      SELECT source_reference,
+             json_extract(extracted_properties_json, '$.source_span_id') AS source_span_id
+        FROM candidate_nodes
+       WHERE id = 'candidate-node-profile-stale'
+    `).get() as {
+      source_reference: string;
+      source_span_id: string;
+    };
+    expect(row).toEqual({
+      source_reference: 'source_span:source-span-current-profile',
+      source_span_id: 'source-span-current-profile',
+    });
   });
 });

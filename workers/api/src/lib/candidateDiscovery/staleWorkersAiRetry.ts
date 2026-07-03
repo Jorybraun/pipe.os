@@ -13,7 +13,9 @@ import {
 } from '../talentPoolIdentity';
 import { recordSessionEvent } from '../telemetry/sessionEvents';
 import {
+  repairCandidateProfileIntakeNodeSourceRefs,
   repairCandidateResumeNodeSourceRefs,
+  repairTalentPoolProfileIntakeNodeSourceRefs,
   repairTalentPoolResumeNodeSourceRefs,
 } from './candidateNodes';
 import { runCandidateIngestion } from './orchestrate';
@@ -459,6 +461,7 @@ async function repairRolelessTalentPoolOperationalContext(
     now: row.submitted_at ?? row.updated_at ?? new Date().toISOString(),
   });
   await repairCandidateResumeNodeSourceRefs(env.DB, candidateId);
+  await repairCandidateProfileIntakeNodeSourceRefs(env.DB, candidateId);
   return identity;
 }
 
@@ -469,6 +472,7 @@ export async function processTalentPoolOperationalContextRepairs(
   const boundedLimit = Math.max(1, Math.min(limit, MAX_STALE_WORKERS_AI_RETRY_LIMIT));
   try {
     await repairTalentPoolResumeNodeSourceRefs(env.DB, boundedLimit * 16);
+    await repairTalentPoolProfileIntakeNodeSourceRefs(env.DB, boundedLimit * 16);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[talentPoolOperationalContextRepair] source-ref projection repair failed:', msg);
