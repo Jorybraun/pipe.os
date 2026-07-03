@@ -1639,6 +1639,10 @@ describe('InterviewDetailPage', () => {
     expect(hiringReadout).toHaveTextContent('Score validity');
     expect(hiringReadout).toHaveTextContent('Risk');
     expect(hiringReadout).toHaveTextContent('Next action');
+    const hiringReadoutCards = Array.from(hiringReadout.children[1]?.children ?? []);
+    expect(hiringReadoutCards).toHaveLength(5);
+    expect(hiringReadout).not.toHaveTextContent(/match-run|packet-1|review-session|candidate-atom|repo-demand|source-span|sourceRefId|sourceSpanId|source_ref|source-ref/i);
+    expect(hiringReadout).not.toHaveTextContent(/Evidence trace|Source proof|MATCH_PROOF|WHY_THIS_PR/i);
     expect(hiringReadout).toHaveTextContent('Candidate requested changes');
     expect(hiringReadout).toHaveTextContent('Usable with calibration');
     expect(hiringReadout).toHaveTextContent('Advance with focused probe');

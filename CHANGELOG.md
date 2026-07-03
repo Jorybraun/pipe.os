@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- Added a component regression that keeps the CODE_REVIEW hiring-manager readout capped to five decision cards and free of raw match, packet, review-session, source-span, or graph-cockpit labels.
 - The CODE_REVIEW match-quality reliability lane now fails unless the labelled corpus proof includes positive, negative, insufficient-evidence, contrast, reason-category, failed-case, source-backed PR, repo-provenance, and positive candidate-evidence coverage.
 - The default CODE_REVIEW reliability suite now includes a judge-example readiness lane that fails unless app-dev has replay-ready, labelled, calibration-ready CODE_REVIEW judge examples with candidate comments and AI pushback.
 - The default CODE_REVIEW reliability suite now includes a same-browser `/assess` token lifecycle lane, proving two real app-dev assessment links resolve to separate candidates without stale session bleed, used-link copy, or candidate-visible matching progress.
