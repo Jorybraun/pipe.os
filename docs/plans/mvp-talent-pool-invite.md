@@ -233,6 +233,7 @@ npm --prefix workers/api test -- \
   src/routes/cockpit/__tests__/candidates.rest.test.ts
 npx playwright test e2e/talent-pool-intake.unauth.spec.ts --project=unauthenticated --reporter=line
 npm run smoke:talent-pool-browser-dev
+npm run smoke:talent-pool-browser-upload-dev
 npm run smoke:talent-pool-ingestion-dev
 
 cd workers/api

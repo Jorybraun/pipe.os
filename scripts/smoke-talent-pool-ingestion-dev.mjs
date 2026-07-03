@@ -45,10 +45,17 @@ function booleanArgument(name) {
   return process.argv.includes(name);
 }
 
-const allowedSmokeModes = new Set(['submit-text', 'browser-submit-text', 'upload-text', 'upload-docx', 'upload-pdf-gap']);
+const allowedSmokeModes = new Set([
+  'submit-text',
+  'browser-submit-text',
+  'browser-upload-text',
+  'upload-text',
+  'upload-docx',
+  'upload-pdf-gap',
+]);
 const smokeMode = argumentValue('--mode') ?? process.env.TALENT_POOL_SMOKE_MODE ?? 'submit-text';
 if (!allowedSmokeModes.has(smokeMode)) {
-  throw new Error(`Unsupported --mode "${smokeMode}". Use submit-text, browser-submit-text, upload-text, upload-docx, or upload-pdf-gap.`);
+  throw new Error(`Unsupported --mode "${smokeMode}". Use submit-text, browser-submit-text, browser-upload-text, upload-text, upload-docx, or upload-pdf-gap.`);
 }
 
 const appBase = (
@@ -114,6 +121,7 @@ const databaseId = (
 
 const failOnNextActions = booleanArgument('--fail-on-next-actions');
 const expectsEvidenceGap = smokeMode === 'upload-pdf-gap';
+const uploadEvidenceExpected = smokeMode.startsWith('upload-') || smokeMode === 'browser-upload-text';
 const verifyRecruiterReads = !expectsEvidenceGap && !booleanArgument('--skip-recruiter-reads');
 const slug = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
 const runId = `${slug}-${randomUUID().slice(0, 8)}`;
@@ -245,7 +253,11 @@ function assertConfigured() {
       'Set PIPE_DEV_BASIC_AUTH_USER and PIPE_DEV_BASIC_AUTH_PASSWORD to create dev Talent Pool candidates through app-dev.',
     );
   }
-  if (smokeMode === 'browser-submit-text' && shouldSendDevBasicAuth(appBase) && !basicAuthCredentials(appBase)) {
+  if (
+    (smokeMode === 'browser-submit-text' || smokeMode === 'browser-upload-text')
+    && shouldSendDevBasicAuth(appBase)
+    && !basicAuthCredentials(appBase)
+  ) {
     throw new Error(
       'Set PIPE_DEV_BASIC_AUTH_USER and PIPE_DEV_BASIC_AUTH_PASSWORD to drive /talent/:token through app-dev.',
     );
@@ -389,7 +401,7 @@ function auditIsReady(report) {
   if (report.sourceProof?.candidateNodeExactSourceQuoteCount < 1) return false;
   if (report.sourceProof?.submittedIntakeWithoutExactCandidateNodeCount !== 0) return false;
   if (report.sourceProof?.contextSourceRefCount < 1) return false;
-  if (smokeMode.startsWith('upload-') && report.sourceProof?.profileUploadArtifactVersionCount < 1) return false;
+  if (uploadEvidenceExpected && report.sourceProof?.profileUploadArtifactVersionCount < 1) return false;
   if (smokeMode === 'upload-docx' && report.rawCapture?.documentProfileStorageKeyCount !== 1) return false;
   if (smokeMode === 'upload-docx' && report.sourceProof?.documentProfileSourceSpanCount < 1) return false;
   if (report.personProjection?.talentPoolWorkspacePersonCount !== 1) return false;
@@ -482,7 +494,15 @@ async function submitProfileThroughBrowser(inviteToken, candidateId) {
       timeout: 45_000,
     });
     await page.getByRole('heading', { name: 'Talent Pool' }).waitFor({ timeout: 30_000 });
-    await page.getByLabel('Resume or profile').fill(profileText);
+    if (smokeMode === 'browser-upload-text') {
+      await page.getByLabel('Resume file').setInputFiles({
+        name: `talent-smoke-${runId}.txt`,
+        mimeType: 'text/plain',
+        buffer: Buffer.from(profileText),
+      });
+    } else {
+      await page.getByLabel('Resume or profile').fill(profileText);
+    }
     await page.getByLabel('GitHub').fill(`https://github.com/talent-smoke-${runId}`);
     await page.getByLabel('LinkedIn').fill(`https://linkedin.com/in/talent-smoke-${runId}`);
     await page.getByLabel('Portfolio').fill(`https://talent-smoke-${runId}.example.dev`);
@@ -652,7 +672,7 @@ async function main() {
   assertCandidateDashboardSafe(initialDashboard, candidateId, 'resolve-token');
 
   const submittedDashboard = await (async () => {
-    if (smokeMode === 'browser-submit-text') {
+    if (smokeMode === 'browser-submit-text' || smokeMode === 'browser-upload-text') {
       await submitProfileThroughBrowser(inviteToken, candidateId);
       return requestJson(rpcBase, '/rpc/talent/resolve-token', {
         method: 'POST',

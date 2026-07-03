@@ -226,6 +226,7 @@ npm test -- src/lib/candidateDiscovery/__tests__/candidateNodes.test.ts src/lib/
 npm test -- src/routes/cockpit/__tests__/contacts.rest.test.ts src/routes/cockpit/__tests__/candidates.rest.test.ts src/lib/livingContext/__tests__/readModel.test.ts
 npx playwright test e2e/talent-pool-intake.unauth.spec.ts --project=unauthenticated --reporter=line
 npm run smoke:talent-pool-browser-dev
+npm run smoke:talent-pool-browser-upload-dev
 npm run smoke:talent-pool-ingestion-dev
 npm run smoke:talent-pool-upload-dev
 npm run smoke:talent-pool-docx-dev
@@ -243,10 +244,12 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 
 The packaged dev smoke commands default Talent Pool RPC submission to the
 app-dev proxy when no API base override is set. `smoke:talent-pool-browser-dev`
-goes one step further: it creates a real dev Talent Pool candidate, opens the
-public `/talent/:token` page in Chromium, submits pasted profile evidence
-through the form, then reuses the same remote audit and recruiter/person read
-proofs. If a caller explicitly targets `api-dev.hire-pipe.com`, direct RPC
+and `smoke:talent-pool-browser-upload-dev` go one step further: they create a
+real dev Talent Pool candidate, open the public `/talent/:token` page in
+Chromium, submit pasted profile evidence or a text profile upload through the
+form, then reuse the same remote audit and recruiter/person read proofs. The
+browser-upload smoke also requires the upload receipt artifact count to be
+present. If a caller explicitly targets `api-dev.hire-pipe.com`, direct RPC
 smokes omit dev HTTP Basic Auth for that API host while still using Basic Auth
 for app-dev candidate creation. This keeps the proof path close to candidate
 traffic but still allows direct API probes. The smokes infer the remote D1
