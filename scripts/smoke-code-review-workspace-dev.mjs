@@ -668,7 +668,13 @@ async function enterRoomFromPrejoinIfNeeded(page) {
   }
 }
 
-async function assertCandidateTaskBriefBrowser(guestUrl, expectedRepoUrl, expectedBaseCommitSha) {
+async function assertCandidateTaskBriefBrowser(
+  guestUrl,
+  expectedRepoUrl,
+  expectedBaseCommitSha,
+  options = {},
+) {
+  const { expectWorkspaceReady = false } = options;
   if (SKIP_CANDIDATE_BROWSER) {
     return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_CANDIDATE_BROWSER=1' };
   }
@@ -692,23 +698,50 @@ async function assertCandidateTaskBriefBrowser(guestUrl, expectedRepoUrl, expect
     });
     await enterRoomFromPrejoinIfNeeded(page);
 
+    const statusStrip = page.getByTestId('assessment-status-strip');
+    await expect(statusStrip).toBeVisible({ timeout: 60_000 });
+    await expect(statusStrip).toHaveAttribute('data-assessment-mode', 'dev_container_assessment');
+    await expect(statusStrip).toContainText('Dev-container assessment');
+
     const brief = page.getByTestId('assessment-task-brief');
     await expect(brief).toBeVisible({ timeout: 60_000 });
     await expect(brief).toContainText('Assessment task');
     await expect(brief).toContainText('Open-source implementation');
     const repoLabel = repoLabelFromUrl(expectedRepoUrl);
-    if (repoLabel) await expect(brief).toContainText(repoLabel);
+    if (repoLabel) {
+      await expect(brief).toContainText(repoLabel);
+      await expect(page.getByTestId('assessment-repo')).toContainText(repoLabel);
+    }
     if (expectedBaseCommitSha) {
       await expect(brief).toContainText(expectedBaseCommitSha.slice(0, 10));
+      await expect(page.getByTestId('assessment-base-commit')).toContainText(
+        expectedBaseCommitSha.slice(0, 8),
+      );
     }
     await expect(brief).toContainText('Task');
     await expect(brief).toContainText('Success criteria');
     await expect(brief).toContainText('Expected evidence');
+    await expect(page.getByTestId('assessment-progress-coverage')).toContainText('challenge', {
+      timeout: 60_000,
+    });
+    await expect(page.getByTestId('assessment-ai-usage-state')).toContainText(
+      /AI use captured|No AI use captured/,
+      { timeout: 60_000 },
+    );
 
     if (CHANGE_PROFILE) {
       await expect(brief).toContainText('popover');
       await expect(brief).toContainText('git_commit');
       await expect(brief).toContainText('code_diff');
+      await expect(page.getByTestId('assessment-next-action')).toContainText('popover');
+    }
+
+    if (expectWorkspaceReady) {
+      await expect(page.getByTestId('assessment-workspace-status')).toContainText('Workspace ready', {
+        timeout: 60_000,
+      });
+      await expect(page.getByTestId('assessment-open-submission')).toContainText('Submit Work');
+      await expect(page.getByTestId('standard-open-submission')).toContainText('Submit Work');
     }
 
     return { skipped: false };
@@ -922,12 +955,6 @@ async function main() {
       throw new Error(`Workspace packet base commit mismatch: ${JSON.stringify(challenge?.packet)}`);
     }
   }
-  const candidateBrowser = await assertCandidateTaskBriefBrowser(
-    invited.room.guestUrl,
-    expectedRepoUrl,
-    expectedBaseCommitSha,
-  );
-
   const readySession = await launchWorkspaceUntilReady(hostToken, roomAuthHeaders);
   if (!readySession.proxyPath) {
     throw new Error(`Ready workspace did not expose a proxy path: ${JSON.stringify(readySession)}`);
@@ -944,6 +971,12 @@ async function main() {
       `Workspace bridge image revision mismatch: expected ${EXPECTED_BRIDGE_REVISION}, got ${JSON.stringify(bridgeHealth)}`,
     );
   }
+  const candidateBrowser = await assertCandidateTaskBriefBrowser(
+    invited.room.guestUrl,
+    expectedRepoUrl,
+    expectedBaseCommitSha,
+    { expectWorkspaceReady: true },
+  );
   const finalizeResponse = await fetch(`${ROOM_BASE}${proxyBasePath}/assessment/finalize`, {
     method: 'POST',
     headers: {
@@ -1085,6 +1118,8 @@ async function main() {
     challengeSource: workspace.challenge?.source ?? null,
     candidateTaskBriefVisible: !candidateBrowser.skipped,
     candidateTaskBriefSkippedReason: candidateBrowser.skipped ? candidateBrowser.reason : null,
+    candidateAssessmentStatusVisible: !candidateBrowser.skipped,
+    candidateAssessmentStatusSkippedReason: candidateBrowser.skipped ? candidateBrowser.reason : null,
     workspaceStatus: readySession.status,
     proxyPathReady: Boolean(readySession.proxyPath),
     bridgeHealthReady: true,

@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Bot,
   ClipboardCheck,
   CheckCircle2,
   GitPullRequest,
@@ -218,6 +219,15 @@ export function AssessmentStatusStrip({
             {formatProgressToken(assessmentProgress.stage)}
           </span>
         )}
+        {mode !== 'standard_call' && assessmentProgress && (
+          <span
+            className={`assessment-status-pill is-${assessmentProgress.hasAiInteraction ? 'progress' : 'waiting'}`}
+            data-testid="assessment-ai-usage-state"
+          >
+            <Bot size={12} />
+            {assessmentProgress.hasAiInteraction ? 'AI use captured' : 'No AI use captured'}
+          </span>
+        )}
         {assessmentProgress?.readiness && (
           <span className="assessment-status-pill is-progress" data-testid="assessment-readiness">
             {assessmentProgress.readiness.isReadyForEvaluation
@@ -274,7 +284,7 @@ export function AssessmentStatusStrip({
             data-testid="assessment-open-submission"
           >
             <Upload size={13} />
-            Submit
+            Submit Work
           </button>
         )}
         {mode !== 'standard_call' && summary.expectedEvidence.length > 0 && (

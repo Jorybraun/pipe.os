@@ -143,6 +143,7 @@ describe('AssessmentStatusStrip', () => {
     expect(screen.getByTestId('assessment-base-commit').textContent).toContain('Base dddddddd');
     expect(screen.getByTestId('assessment-next-action').textContent).toContain('Fix the source-backed worker retry path.');
     expect(screen.getByText('2 evidence items')).not.toBeNull();
+    expect(screen.getByTestId('assessment-open-submission').textContent).toContain('Submit Work');
 
     fireEvent.click(screen.getByTestId('assessment-open-workspace'));
     fireEvent.click(screen.getByTestId('assessment-open-submission'));
@@ -163,8 +164,28 @@ describe('AssessmentStatusStrip', () => {
     expect(screen.getByTestId('assessment-progress-stage').textContent).toContain('Ready For Evaluation');
     expect(screen.getByTestId('assessment-readiness').textContent).toContain('Ready to evaluate');
     expect(screen.getByTestId('assessment-progress-commit').textContent).toContain('Commit cccccccc');
+    expect(screen.getByTestId('assessment-ai-usage-state').textContent).toContain('AI use captured');
     expect(screen.getByText('Start source-backed AI or human evaluation.')).not.toBeNull();
     expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain('challenge, chat, workspace, tool activity, commit, AI use, tests');
+  });
+
+  it('makes the absence of AI usage visible instead of implying it was captured', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace()}
+        assessmentProgress={{
+          ...progress,
+          hasAiInteraction: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('assessment-ai-usage-state').textContent).toContain('No AI use captured');
+    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain(
+      'challenge, chat, workspace, tool activity, commit, tests',
+    );
+    expect(screen.getByTestId('assessment-progress-coverage').textContent).not.toContain('AI use');
   });
 
   it('surfaces verification gaps in live room progress coverage', () => {
