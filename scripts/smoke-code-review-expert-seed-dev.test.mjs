@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildReviewCliArgs,
+  validateExpertSeedPacket,
   validateExpertSeedSummary,
 } from './smoke-code-review-expert-seed-dev.mjs';
 
@@ -35,6 +36,41 @@ function readySummary(overrides = {}) {
       labelsMissingRepoDemandEvidence: [],
     },
     nextAction: 'complete_expert_review',
+    ...overrides,
+  };
+}
+
+function readyPacket(overrides = {}) {
+  return {
+    items: [
+      {
+        labelId: 'label-a',
+        draft: {
+          relevanceGrade: 'borderline',
+          eligibleChallengeIds: ['packet-a'],
+        },
+        expectedPacket: { challengeId: 'packet-a', prNumber: 1 },
+        suggestedContrastCandidates: [{ candidateId: 'candidate-b' }],
+      },
+      {
+        labelId: 'label-b',
+        draft: {
+          relevanceGrade: 'relevant',
+          eligibleChallengeIds: ['packet-b'],
+        },
+        expectedPacket: { challengeId: 'packet-b', prNumber: 2 },
+        suggestedContrastCandidates: [{ candidateId: 'candidate-a' }],
+      },
+      {
+        labelId: 'label-c',
+        draft: {
+          relevanceGrade: 'highly_relevant',
+          eligibleChallengeIds: ['packet-c'],
+        },
+        expectedPacket: { challengeId: 'packet-c', prNumber: 3 },
+        suggestedContrastCandidates: [{ candidateId: 'candidate-d' }],
+      },
+    ],
     ...overrides,
   };
 }
@@ -92,6 +128,56 @@ describe('CODE_REVIEW expert seed smoke contract', () => {
     expect(result.ok).toBe(false);
     expect(result.failures).toContain('expertLabelCount must be 0 for an expert-seed smoke; got 1');
     expect(result.failures).toContain('syntheticFixtureCount must be 0; got 1');
+  });
+
+  it('accepts an expert review packet with eligible draft labels and contrast suggestions', () => {
+    expect(validateExpertSeedPacket(readyPacket(), {
+      minEligibleLabels: 3,
+    })).toEqual({
+      ok: true,
+      failures: [],
+      metrics: {
+        itemCount: 3,
+        eligibleDraftLabelCount: 3,
+        eligibleLabelsWithContrastSuggestions: 3,
+      },
+    });
+  });
+
+  it('rejects expert review packets with only irrelevant draft labels', () => {
+    const result = validateExpertSeedPacket(readyPacket({
+      items: readyPacket().items.map((item) => ({
+        ...item,
+        draft: {
+          relevanceGrade: 'irrelevant',
+          eligibleChallengeIds: [],
+        },
+      })),
+    }), {
+      minEligibleLabels: 3,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toContain('eligibleDraftLabelCount must be >= 3; got 0');
+  });
+
+  it('rejects eligible draft labels without suggested contrast candidates', () => {
+    const result = validateExpertSeedPacket(readyPacket({
+      items: [
+        {
+          ...readyPacket().items[0],
+          suggestedContrastCandidates: [],
+        },
+        ...readyPacket().items.slice(1),
+      ],
+    }), {
+      minEligibleLabels: 3,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toContain(
+      'eligible draft labels must include suggested contrast candidates; missing label-a',
+    );
   });
 
   it('builds review CLI args with remote D1, seeded draft source, and artifact exports', () => {
