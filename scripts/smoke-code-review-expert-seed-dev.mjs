@@ -11,6 +11,7 @@ const DEFAULTS = {
   minRoles: 1,
   minChallenges: 3,
   minLabels: 3,
+  minEligibleLabels: 3,
   minExpectedPackets: 3,
   seedDescription: 'CODE_REVIEW expert seed smoke',
 };
@@ -62,6 +63,10 @@ function failIfNotEmpty(failures, label, value) {
   if (!isEmptyArray(value)) {
     failures.push(`${label} must be empty; got ${Array.isArray(value) ? value.join(',') : 'missing/non-array'}`);
   }
+}
+
+function isEligibleDraftGrade(grade) {
+  return grade === 'highly_relevant' || grade === 'relevant' || grade === 'borderline';
 }
 
 export function validateExpertSeedSummary(summary, thresholds = {}) {
@@ -121,6 +126,63 @@ export function validateExpertSeedSummary(summary, thresholds = {}) {
   return {
     ok: failures.length === 0,
     failures,
+  };
+}
+
+export function validateExpertSeedPacket(packet, thresholds = {}) {
+  const limits = {
+    minEligibleLabels: thresholds.minEligibleLabels ?? DEFAULTS.minEligibleLabels,
+  };
+  const failures = [];
+  const items = Array.isArray(packet?.items) ? packet.items : [];
+  if (!packet || typeof packet !== 'object') {
+    return {
+      ok: false,
+      failures: ['review packet must be an object'],
+      metrics: { itemCount: 0, eligibleDraftLabelCount: 0, eligibleLabelsWithContrastSuggestions: 0 },
+    };
+  }
+  if (items.length === 0) failures.push('review packet must contain at least one item');
+
+  let eligibleDraftLabelCount = 0;
+  let eligibleLabelsWithContrastSuggestions = 0;
+  const labelsMissingExpectedPacket = [];
+  const eligibleLabelsMissingContrastSuggestions = [];
+
+  for (const item of items) {
+    const labelId = typeof item?.labelId === 'string' ? item.labelId : '<missing-label-id>';
+    const eligibleDraft = isEligibleDraftGrade(item?.draft?.relevanceGrade)
+      && Array.isArray(item?.draft?.eligibleChallengeIds)
+      && item.draft.eligibleChallengeIds.length > 0;
+    if (!item?.expectedPacket) labelsMissingExpectedPacket.push(labelId);
+    if (!eligibleDraft) continue;
+
+    eligibleDraftLabelCount += 1;
+    if (Array.isArray(item?.suggestedContrastCandidates) && item.suggestedContrastCandidates.length > 0) {
+      eligibleLabelsWithContrastSuggestions += 1;
+    } else {
+      eligibleLabelsMissingContrastSuggestions.push(labelId);
+    }
+  }
+
+  failIfBelow(failures, 'eligibleDraftLabelCount', eligibleDraftLabelCount, limits.minEligibleLabels);
+  if (labelsMissingExpectedPacket.length > 0) {
+    failures.push(`packet items must include expectedPacket; missing ${labelsMissingExpectedPacket.join(',')}`);
+  }
+  if (eligibleLabelsMissingContrastSuggestions.length > 0) {
+    failures.push(
+      `eligible draft labels must include suggested contrast candidates; missing ${eligibleLabelsMissingContrastSuggestions.join(',')}`,
+    );
+  }
+
+  return {
+    ok: failures.length === 0,
+    failures,
+    metrics: {
+      itemCount: items.length,
+      eligibleDraftLabelCount,
+      eligibleLabelsWithContrastSuggestions,
+    },
   };
 }
 
@@ -194,6 +256,10 @@ function main() {
     minRoles: positiveIntegerEnv('CODE_REVIEW_EXPERT_SEED_MIN_ROLES', DEFAULTS.minRoles),
     minChallenges: positiveIntegerEnv('CODE_REVIEW_EXPERT_SEED_MIN_CHALLENGES', DEFAULTS.minChallenges),
     minLabels: positiveIntegerEnv('CODE_REVIEW_EXPERT_SEED_MIN_LABELS', DEFAULTS.minLabels),
+    minEligibleLabels: positiveIntegerEnv(
+      'CODE_REVIEW_EXPERT_SEED_MIN_ELIGIBLE_LABELS',
+      DEFAULTS.minEligibleLabels,
+    ),
     minExpectedPackets: positiveIntegerEnv('CODE_REVIEW_EXPERT_SEED_MIN_PACKETS', DEFAULTS.minExpectedPackets),
   };
 
@@ -216,9 +282,15 @@ function main() {
   assertReadableArtifact(options.reviewTemplatePath, 'review template');
 
   const summary = readJson(options.summaryPath);
-  const validation = validateExpertSeedSummary(summary, thresholds);
+  const packet = readJson(options.reviewPacketPath);
+  const summaryValidation = validateExpertSeedSummary(summary, thresholds);
+  const packetValidation = validateExpertSeedPacket(packet, thresholds);
+  const failures = [
+    ...summaryValidation.failures,
+    ...packetValidation.failures,
+  ];
   const proof = {
-    ok: validation.ok,
+    ok: failures.length === 0,
     sourceCorpusId: summary.sourceCorpusId ?? null,
     outputDir,
     summaryPath: options.summaryPath,
@@ -228,11 +300,12 @@ function main() {
     seeded: summary.seeded ?? null,
     nextAction: summary.nextAction ?? null,
     readinessSummary: summary.readinessSummary ?? null,
-    failures: validation.failures,
+    packetMetrics: packetValidation.metrics,
+    failures,
   };
 
   process.stdout.write(`\n===== CODE_REVIEW expert seed smoke summary =====\n${JSON.stringify(proof, null, 2)}\n`);
-  if (!validation.ok) process.exitCode = 1;
+  if (failures.length > 0) process.exitCode = 1;
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : '';
