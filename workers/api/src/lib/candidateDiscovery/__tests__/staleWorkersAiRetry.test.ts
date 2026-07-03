@@ -854,7 +854,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     expect(repairTalentPoolProfileIntakeNodeSourceRefs).toHaveBeenCalledWith(db, 32);
   });
 
-  it('cron backfills missing Talent Pool upload receipt artifacts from the original R2 object', async () => {
+  it('cron backfills missing Talent Pool upload receipt context from the original R2 object', async () => {
     const storageKey = 'talent-intake/talent-upload/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-profile.pdf';
     const objectBytes = 'pdf bytes for immutable Talent Pool upload receipt';
     const db = fakeD1({
@@ -914,6 +914,9 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     expect(identityInput?.messageStorageKey).toBeNull();
     expect(identityInput?.sourceArtifact?.contentHash).toMatch(/^[a-f0-9]{64}$/);
     expect(repairCandidateResumeNodeSourceRefs).toHaveBeenCalledWith(db, 'talent-upload');
+    const receiptCheckCall = db.__calls.find((call) => call.sql.includes('receipt_count'))!;
+    expect(receiptCheckCall.sql).toContain("cr.record_type = 'talent_pool_profile_upload_receipt'");
+    expect(receiptCheckCall.sql).toContain("crsr.source_ref_type = 'artifact_version'");
     const scanCall = db.__calls.find((call) => call.sql.includes('FROM talent_pool_intakes'))!;
     expect(scanCall.sql).toContain('t.profile_r2_key');
   });
@@ -978,7 +981,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     expect(repairCandidateResumeNodeSourceRefs).toHaveBeenCalledWith(db, 'talent-pasted');
   });
 
-  it('cron skips Talent Pool upload receipt backfill when the profile upload artifact already exists', async () => {
+  it('cron skips Talent Pool upload receipt backfill when the artifact-version context ref already exists', async () => {
     const storageKey = 'talent-intake/talent-upload/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-profile.pdf';
     const db = fakeD1({
       all: [

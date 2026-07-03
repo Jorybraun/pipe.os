@@ -327,6 +327,13 @@ async function profileUploadReceiptExists(db: D1Database, storageKey: string): P
     `SELECT COUNT(*) AS receipt_count
        FROM artifact_versions av
        JOIN artifacts a ON a.id = av.artifact_id
+       JOIN context_records cr
+         ON cr.workspace_person_id = a.workspace_person_id
+        AND cr.record_type = 'talent_pool_profile_upload_receipt'
+       JOIN context_record_source_refs crsr
+         ON crsr.context_record_id = cr.id
+        AND crsr.source_ref_type = 'artifact_version'
+        AND crsr.source_ref_id = av.id
       WHERE av.storage_key = ?1
         AND (
           a.artifact_type = 'profile_upload'
