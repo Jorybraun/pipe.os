@@ -37,7 +37,7 @@ const CHANGE_MODE = process.env.WORKSPACE_SMOKE_CHANGE_MODE || 'mui-popover-fix'
 const TASK_ALIGNED_PROFILES = {
   'mui-popover-fix': {
     repositoryUrl: 'https://github.com/mui/base-ui',
-    matchedRepoId: 4130,
+    matchedRepoId: 973,
     expectedGithubPrNumber: 973,
     baseCommitSha: '58dff8444fa56e4444a3a1dd991c76b49cf4ab7e',
     expectedHeadCommitSha: '33e161fd46dfc287dfcde05427594db9a7225335',
@@ -227,9 +227,17 @@ function waitForWorkspaceTerminalOutput(proxyBasePath, headers, command, expecte
     });
     let output = '';
     let opened = false;
-    const timeout = setTimeout(() => {
+    let settled = false;
+    let timeout = null;
+    const settle = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      fn(value);
+    };
+    timeout = setTimeout(() => {
       ws.close();
-      reject(new Error(`Timed out waiting for terminal output "${expectedText}" after opened=${opened}. Saw:\n${output}`));
+      settle(reject, new Error(`Timed out waiting for terminal output "${expectedText}" after opened=${opened}. Saw:\n${output}`));
     }, 120_000);
 
     ws.on('open', () => {
@@ -239,20 +247,19 @@ function waitForWorkspaceTerminalOutput(proxyBasePath, headers, command, expecte
     ws.on('message', (data) => {
       output += websocketChunkText(data);
       if (!output.includes(expectedText)) return;
-      clearTimeout(timeout);
       ws.close();
-      resolve(output);
+      settle(resolve, output);
     });
     ws.on('error', (error) => {
-      clearTimeout(timeout);
-      reject(error);
+      settle(reject, error);
     });
     ws.on('unexpected-response', (_request, response) => {
-      clearTimeout(timeout);
-      reject(new Error(`Terminal WebSocket upgrade failed with HTTP ${response.statusCode}.`));
+      settle(reject, new Error(`Terminal WebSocket upgrade failed with HTTP ${response.statusCode}.`));
     });
     ws.on('close', () => {
-      clearTimeout(timeout);
+      if (!settled) {
+        settle(reject, new Error(`Terminal WebSocket closed before output "${expectedText}" after opened=${opened}. Saw:\n${output}`));
+      }
     });
   });
 }

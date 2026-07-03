@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
-- The open-source workspace dev smoke now uses the real D1 `qualified_repos.id` for the Base UI challenge instead of the upstream PR number, preventing false missing-task failures when proving the PIPE-matched lane.
+- Open-source workspace dev smoke now fails explicitly if the workspace terminal WebSocket closes before the expected commit sentinel, preventing silent hangs while proving candidate commit submission.
 - Recruiter interview detail and list cards now prefer durable matched assessment trust over stale manual setup labels, preventing PIPE-matched open-source challenges from looking like manual assignments.
 - The open-source workspace dev smoke now defaults the task-aligned assessment to the PIPE-matched review-packet lane and asserts recruiter-visible matched-assignment trust, so a green smoke proves matching instead of only manual task assignment.
 - The assessment room now auto-relaunches once for known transient dev-container start races, so hosts are not stuck manually recovering a workspace after Cloudflare reports the container is not running.
