@@ -808,6 +808,9 @@ browser proof also injects accidental internal candidate, application,
 workspace-person, person, source-span, artifact-version, assignment, challenge,
 stage, resume-key, and profile-key fields into the mocked public dashboard
 payload and asserts none of those values render in the candidate browser.
+The proof was refreshed on 2026-07-03 with
+`npx playwright test e2e/talent-pool-intake.unauth.spec.ts --project=unauthenticated --reporter=line`;
+all 4 unauthenticated browser scenarios passed.
 
 ## Current Gaps
 
