@@ -1,6 +1,5 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -37,6 +36,14 @@ function resolveDatabaseId() {
     || process.env.MATCHING_EVALUATION_D1_DATABASE_ID
     || process.env.CLOUDFLARE_D1_DATABASE_ID
     || '';
+}
+
+export function resolveExpertSeedOutputDir(env = process.env, now = Date.now, cwd = process.cwd()) {
+  return resolve(
+    cwd,
+    env.CODE_REVIEW_EXPERT_SEED_OUTPUT_DIR
+      || join('tmp', 'code-review-expert-seed', String(now())),
+  );
 }
 
 function arrayLength(value) {
@@ -280,10 +287,7 @@ function main() {
     );
   }
 
-  const outputDir = resolve(
-    process.env.CODE_REVIEW_EXPERT_SEED_OUTPUT_DIR
-      || join(tmpdir(), `code-review-expert-seed-${Date.now()}`),
-  );
+  const outputDir = resolveExpertSeedOutputDir();
   mkdirSync(outputDir, { recursive: true });
 
   const options = {
