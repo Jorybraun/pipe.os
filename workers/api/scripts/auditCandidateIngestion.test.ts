@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   auditCandidateIngestion,
@@ -20,6 +21,10 @@ class SqliteQueryClient implements QueryClient {
 
 const CONTENT_ADDRESSED_PROFILE_KEY = 'talent-intake/candidate-1/687edcc54818080206251abe464c600f3e63820374b8b20b74985f81455531b6-profile.txt';
 
+function sha256Text(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
 function createSchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE candidates (
@@ -38,6 +43,9 @@ function createSchema(db: Database.Database): void {
       linkedin_url TEXT,
       portfolio_url TEXT,
       phone_screener_consent INTEGER,
+      phone_number TEXT,
+      timezone TEXT,
+      availability TEXT,
       submitted_at TEXT
     );
     CREATE TABLE candidate_ingestion (
@@ -138,6 +146,7 @@ function createSchema(db: Database.Database): void {
       context_record_id TEXT,
       source_ref_type TEXT,
       source_ref_id TEXT,
+      source_span_id TEXT,
       evidence_role TEXT
     );
     CREATE TABLE context_record_concepts (
@@ -177,6 +186,16 @@ function createSchema(db: Database.Database): void {
 }
 
 function seedSourceBackedTalentPoolCandidate(db: Database.Database): void {
+  const operationalFields = [
+    { id: 'source-span-github', line: 'githubUrl: https://github.com/jordan' },
+    { id: 'source-span-portfolio', line: 'portfolioUrl: https://jordan.example.dev' },
+    { id: 'source-span-phone-consent', line: 'phoneScreenerConsent: true' },
+    { id: 'source-span-phone-number', line: 'phoneNumber: +15551234567' },
+    { id: 'source-span-timezone', line: 'timezone: America/Vancouver' },
+    { id: 'source-span-availability', line: 'availability: Weekday afternoons after 2 PM.' },
+  ];
+  const operationalText = operationalFields.map((field) => field.line).join('\n');
+
   db.exec(`
     INSERT INTO candidates (id, owner_id, email, invite_token, resume_s3_key, pipeline_id)
     VALUES (
@@ -189,7 +208,8 @@ function seedSourceBackedTalentPoolCandidate(db: Database.Database): void {
     );
     INSERT INTO talent_pool_intakes (
       candidate_id, profile_r2_key, profile_text_excerpt, github_url,
-      linkedin_url, portfolio_url, phone_screener_consent, submitted_at
+      linkedin_url, portfolio_url, phone_screener_consent, phone_number,
+      timezone, availability, submitted_at
     )
     VALUES (
       'candidate-1',
@@ -199,6 +219,9 @@ function seedSourceBackedTalentPoolCandidate(db: Database.Database): void {
       NULL,
       'https://jordan.example.dev',
       1,
+      '+15551234567',
+      'America/Vancouver',
+      'Weekday afternoons after 2 PM.',
       '2026-07-02T00:00:00.000Z'
     );
     INSERT INTO candidate_ingestion (candidate_id, status, current_step, error_text, candidate_searchable_profile)
@@ -244,21 +267,48 @@ function seedSourceBackedTalentPoolCandidate(db: Database.Database): void {
     );
     INSERT INTO context_records (id, workspace_person_id, record_type, predicate, narrative, polarity)
     VALUES ('context-record-1', 'workspace-person-1', 'talent_pool_profile_intake', 'submitted_profile', 'Candidate submitted source-backed Talent Pool profile evidence.', 1);
-    INSERT INTO context_record_source_refs (context_record_id, source_ref_type, source_ref_id, evidence_role)
-    VALUES ('context-record-1', 'source_span', 'source-span-1', 'source');
+    INSERT INTO context_record_source_refs (context_record_id, source_ref_type, source_ref_id, source_span_id, evidence_role)
+    VALUES ('context-record-1', 'source_span', 'source-span-1', 'source-span-1', 'source');
     INSERT INTO context_records (id, workspace_person_id, record_type, predicate, narrative, polarity)
     VALUES
       ('context-record-github', 'workspace-person-1', 'talent_pool_external_profile_ref', 'submitted_github_profile_url', 'Candidate submitted GitHub profile URL.', 1),
       ('context-record-portfolio', 'workspace-person-1', 'talent_pool_external_profile_ref', 'submitted_portfolio_url', 'Candidate submitted portfolio URL.', 1),
       ('context-record-phone', 'workspace-person-1', 'talent_pool_phone_screener_intent', 'consented_to_phone_screener', 'Candidate consented to Talent Pool phone screener.', 1);
-    INSERT INTO context_record_source_refs (context_record_id, source_ref_type, source_ref_id, evidence_role)
+    INSERT INTO context_record_source_refs (context_record_id, source_ref_type, source_ref_id, source_span_id, evidence_role)
     VALUES
-      ('context-record-github', 'source_span', 'source-span-1', 'source'),
-      ('context-record-portfolio', 'source_span', 'source-span-1', 'source'),
-      ('context-record-phone', 'source_span', 'source-span-1', 'source');
+      ('context-record-github', 'source_span', 'source-span-github', 'source-span-github', 'source'),
+      ('context-record-portfolio', 'source_span', 'source-span-portfolio', 'source-span-portfolio', 'source'),
+      ('context-record-phone', 'source_span', 'source-span-phone-consent', 'source-span-phone-consent', 'source'),
+      ('context-record-phone', 'source_span', 'source-span-phone-number', 'source-span-phone-number', 'source'),
+      ('context-record-phone', 'source_span', 'source-span-timezone', 'source-span-timezone', 'source'),
+      ('context-record-phone', 'source_span', 'source-span-availability', 'source-span-availability', 'source');
     INSERT INTO challenge_design_queue (id, candidate_id, status)
     VALUES ('queue-1', 'candidate-1', 'queued');
   `);
+
+  db.prepare(
+    `INSERT INTO interactions (id, workspace_person_id, interaction_type, external_reference, metadata_json)
+     VALUES ('interaction-operational', 'workspace-person-1', 'form_submission', 'candidate-1', '{"source":"roleless_candidate_intake","evidenceKind":"operational_intake_fields"}')`,
+  ).run();
+  db.prepare(
+    `INSERT INTO artifacts (id, workspace_person_id, interaction_id, artifact_type, logical_key, metadata_json)
+     VALUES ('artifact-operational', 'workspace-person-1', 'interaction-operational', 'form_submission', 'roleless_candidate_intake_fields', '{"source":"roleless_candidate_intake","evidenceKind":"operational_intake_fields"}')`,
+  ).run();
+  db.prepare(
+    `INSERT INTO artifact_versions (id, artifact_id, storage_key, content_text)
+     VALUES ('artifact-version-operational', 'artifact-operational', NULL, ?)`,
+  ).run(operationalText);
+
+  let charStart = 0;
+  const insertSpan = db.prepare(
+    `INSERT INTO source_spans (id, artifact_version_id, char_start, char_end, exact_text, exact_text_hash)
+     VALUES (?, 'artifact-version-operational', ?, ?, ?, ?)`,
+  );
+  for (const field of operationalFields) {
+    const charEnd = charStart + field.line.length;
+    insertSpan.run(field.id, charStart, charEnd, field.line, sha256Text(field.line));
+    charStart = charEnd + 1;
+  }
 }
 
 function challengePacketJson(): string {
@@ -385,12 +435,12 @@ describe('auditCandidateIngestion', () => {
       candidateNodeCount: 1,
       candidateNodeExactSourceQuoteCount: 1,
       submittedIntakeWithoutExactCandidateNodeCount: 0,
-      artifactVersionCount: 1,
-      sourceSpanCount: 1,
+      artifactVersionCount: 2,
+      sourceSpanCount: 7,
       sourceSpanTextMismatchCount: 0,
       sourceSpanHashMismatchCount: 0,
       profileUploadArtifactVersionCount: 0,
-      contextSourceRefCount: 4,
+      contextSourceRefCount: 7,
       candidateNodeWithoutExactSourceCount: 0,
     });
     expect(audit.personProjection).toMatchObject({
@@ -402,8 +452,10 @@ describe('auditCandidateIngestion', () => {
       contextRecordCount: 4,
       externalProfileRefContextCount: 2,
       missingExternalProfileRefContextCount: 0,
+      externalProfileRefSourceTextMismatchCount: 0,
       phoneScreenerIntentContextCount: 1,
       missingPhoneScreenerIntentContextCount: 0,
+      phoneScreenerIntentSourceTextMismatchCount: 0,
       readyChallengeAssignmentCount: 0,
       unprovenChallengeAssignmentCount: 0,
       incompleteChallengeAssignmentCount: 0,
@@ -795,6 +847,38 @@ describe('auditCandidateIngestion', () => {
     expect(audit.personProjection.missingPhoneScreenerIntentContextCount).toBe(1);
     expect(audit.failures).toContain('1 external profile ref(s) lack source-backed operational context records');
     expect(audit.failures).toContain('1 phone screener intent(s) lack source-backed operational context records');
+  });
+
+  it('flags operational contexts whose source refs do not cite exact raw field text', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.exec(`
+      UPDATE context_record_source_refs
+         SET source_ref_id = 'source-span-1',
+             source_span_id = 'source-span-1'
+       WHERE context_record_id = 'context-record-github';
+      UPDATE context_record_source_refs
+         SET source_ref_id = 'source-span-1',
+             source_span_id = 'source-span-1'
+       WHERE context_record_id = 'context-record-phone'
+         AND source_ref_id = 'source-span-phone-consent';
+    `);
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.personProjection.missingExternalProfileRefContextCount).toBe(0);
+    expect(audit.personProjection.externalProfileRefSourceTextMismatchCount).toBe(1);
+    expect(audit.personProjection.missingPhoneScreenerIntentContextCount).toBe(0);
+    expect(audit.personProjection.phoneScreenerIntentSourceTextMismatchCount).toBe(1);
+    expect(audit.failures).toContain('1 external profile ref field source ref(s) do not cite exact submitted field text');
+    expect(audit.failures).toContain('1 phone screener field source ref(s) do not cite exact submitted field text');
+    expect(audit.nextActions).toContain('Repair GitHub/LinkedIn/portfolio operational context source refs so each one cites its exact submitted field span.');
+    expect(audit.nextActions).toContain('Repair phone screener operational source refs so consent, phone number, timezone, and availability cite their exact submitted field spans.');
   });
 
   it('flags submitted profiles that lack exact-source candidate-node projection', async () => {

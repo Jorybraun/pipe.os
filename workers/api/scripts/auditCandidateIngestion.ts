@@ -103,8 +103,10 @@ export interface CandidatePersonProjectionAudit {
   contextRecordCount: number;
   externalProfileRefContextCount: number;
   missingExternalProfileRefContextCount: number;
+  externalProfileRefSourceTextMismatchCount: number;
   phoneScreenerIntentContextCount: number;
   missingPhoneScreenerIntentContextCount: number;
+  phoneScreenerIntentSourceTextMismatchCount: number;
   signalEvidenceCount: number;
   readyChallengeAssignmentCount: number;
   unprovenChallengeAssignmentCount: number;
@@ -196,8 +198,10 @@ interface ProjectionRow {
   context_record_count: number | null;
   external_profile_ref_context_count: number | null;
   missing_external_profile_ref_context_count: number | null;
+  external_profile_ref_source_text_mismatch_count: number | null;
   phone_screener_intent_context_count: number | null;
   missing_phone_screener_intent_context_count: number | null;
+  phone_screener_intent_source_text_mismatch_count: number | null;
   signal_evidence_count: number | null;
   design_queue_count: number | null;
 }
@@ -840,6 +844,91 @@ async function loadPersonProjection(
         ), 0)
           FROM audited_candidates ac
           JOIN talent_pool_intakes t ON t.candidate_id = ac.id) AS missing_external_profile_ref_context_count,
+       (SELECT COALESCE(SUM(
+          CASE
+            WHEN t.github_url IS NOT NULL
+             AND TRIM(t.github_url) <> ''
+             AND EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_external_profile_ref'
+                  AND cr.predicate = 'submitted_github_profile_url'
+             )
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                 JOIN source_spans ss
+                   ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_external_profile_ref'
+                  AND cr.predicate = 'submitted_github_profile_url'
+                  AND crsr.source_ref_type = 'source_span'
+                  AND ss.exact_text = 'githubUrl: ' || TRIM(t.github_url)
+             )
+            THEN 1 ELSE 0
+          END
+          + CASE
+            WHEN t.linkedin_url IS NOT NULL
+             AND TRIM(t.linkedin_url) <> ''
+             AND EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_external_profile_ref'
+                  AND cr.predicate = 'submitted_linkedin_profile_url'
+             )
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                 JOIN source_spans ss
+                   ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_external_profile_ref'
+                  AND cr.predicate = 'submitted_linkedin_profile_url'
+                  AND crsr.source_ref_type = 'source_span'
+                  AND ss.exact_text = 'linkedinUrl: ' || TRIM(t.linkedin_url)
+             )
+            THEN 1 ELSE 0
+          END
+          + CASE
+            WHEN t.portfolio_url IS NOT NULL
+             AND TRIM(t.portfolio_url) <> ''
+             AND EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_external_profile_ref'
+                  AND cr.predicate = 'submitted_portfolio_url'
+             )
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                 JOIN source_spans ss
+                   ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_external_profile_ref'
+                  AND cr.predicate = 'submitted_portfolio_url'
+                  AND crsr.source_ref_type = 'source_span'
+                  AND ss.exact_text = 'portfolioUrl: ' || TRIM(t.portfolio_url)
+             )
+            THEN 1 ELSE 0
+          END
+        ), 0)
+          FROM audited_candidates ac
+          JOIN talent_pool_intakes t ON t.candidate_id = ac.id) AS external_profile_ref_source_text_mismatch_count,
        (SELECT COUNT(DISTINCT cr.id)
           FROM linked_workspace_people lwp
           JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
@@ -857,6 +946,120 @@ async function loadPersonProjection(
                 AND cr.record_type = 'talent_pool_phone_screener_intent'
                 AND cr.predicate = 'consented_to_phone_screener'
            )) AS missing_phone_screener_intent_context_count,
+       (SELECT COALESCE(SUM(
+          CASE
+            WHEN t.phone_screener_consent = 1
+             AND EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_phone_screener_intent'
+                  AND cr.predicate = 'consented_to_phone_screener'
+             )
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                 JOIN source_spans ss
+                   ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_phone_screener_intent'
+                  AND cr.predicate = 'consented_to_phone_screener'
+                  AND crsr.source_ref_type = 'source_span'
+                  AND ss.exact_text = 'phoneScreenerConsent: true'
+             )
+            THEN 1 ELSE 0
+          END
+          + CASE
+            WHEN t.phone_screener_consent = 1
+             AND t.phone_number IS NOT NULL
+             AND TRIM(t.phone_number) <> ''
+             AND EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_phone_screener_intent'
+                  AND cr.predicate = 'consented_to_phone_screener'
+             )
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                 JOIN source_spans ss
+                   ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_phone_screener_intent'
+                  AND cr.predicate = 'consented_to_phone_screener'
+                  AND crsr.source_ref_type = 'source_span'
+                  AND ss.exact_text = 'phoneNumber: ' || TRIM(t.phone_number)
+             )
+            THEN 1 ELSE 0
+          END
+          + CASE
+            WHEN t.phone_screener_consent = 1
+             AND t.timezone IS NOT NULL
+             AND TRIM(t.timezone) <> ''
+             AND EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_phone_screener_intent'
+                  AND cr.predicate = 'consented_to_phone_screener'
+             )
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                 JOIN source_spans ss
+                   ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_phone_screener_intent'
+                  AND cr.predicate = 'consented_to_phone_screener'
+                  AND crsr.source_ref_type = 'source_span'
+                  AND ss.exact_text = 'timezone: ' || TRIM(t.timezone)
+             )
+            THEN 1 ELSE 0
+          END
+          + CASE
+            WHEN t.phone_screener_consent = 1
+             AND t.availability IS NOT NULL
+             AND TRIM(t.availability) <> ''
+             AND EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_phone_screener_intent'
+                  AND cr.predicate = 'consented_to_phone_screener'
+             )
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                 JOIN source_spans ss
+                   ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_phone_screener_intent'
+                  AND cr.predicate = 'consented_to_phone_screener'
+                  AND crsr.source_ref_type = 'source_span'
+                  AND ss.exact_text = 'availability: ' || TRIM(t.availability)
+             )
+            THEN 1 ELSE 0
+          END
+        ), 0)
+          FROM audited_candidates ac
+          JOIN talent_pool_intakes t ON t.candidate_id = ac.id) AS phone_screener_intent_source_text_mismatch_count,
        (SELECT COUNT(DISTINCT se.id)
           FROM linked_workspace_people lwp
           JOIN signal_evidence se ON se.workspace_person_id = lwp.workspace_person_id) AS signal_evidence_count,
@@ -877,8 +1080,10 @@ async function loadPersonProjection(
     contextRecordCount: toNumber(row?.context_record_count),
     externalProfileRefContextCount: toNumber(row?.external_profile_ref_context_count),
     missingExternalProfileRefContextCount: toNumber(row?.missing_external_profile_ref_context_count),
+    externalProfileRefSourceTextMismatchCount: toNumber(row?.external_profile_ref_source_text_mismatch_count),
     phoneScreenerIntentContextCount: toNumber(row?.phone_screener_intent_context_count),
     missingPhoneScreenerIntentContextCount: toNumber(row?.missing_phone_screener_intent_context_count),
+    phoneScreenerIntentSourceTextMismatchCount: toNumber(row?.phone_screener_intent_source_text_mismatch_count),
     signalEvidenceCount: toNumber(row?.signal_evidence_count),
     readyChallengeAssignmentCount: challengeAssignmentProofCounts.readyChallengeAssignmentCount,
     unprovenChallengeAssignmentCount: challengeAssignmentProofCounts.unprovenChallengeAssignmentCount,
@@ -1034,8 +1239,10 @@ export async function auditCandidateIngestion(
       contextRecordCount: 0,
       externalProfileRefContextCount: 0,
       missingExternalProfileRefContextCount: 0,
+      externalProfileRefSourceTextMismatchCount: 0,
       phoneScreenerIntentContextCount: 0,
       missingPhoneScreenerIntentContextCount: 0,
+      phoneScreenerIntentSourceTextMismatchCount: 0,
       signalEvidenceCount: 0,
       readyChallengeAssignmentCount: 0,
       unprovenChallengeAssignmentCount: 0,
@@ -1163,8 +1370,14 @@ export async function auditCandidateIngestion(
     ...(personProjection.missingExternalProfileRefContextCount > 0
       ? [`${personProjection.missingExternalProfileRefContextCount} external profile ref(s) lack source-backed operational context records`]
       : []),
+    ...(personProjection.externalProfileRefSourceTextMismatchCount > 0
+      ? [`${personProjection.externalProfileRefSourceTextMismatchCount} external profile ref field source ref(s) do not cite exact submitted field text`]
+      : []),
     ...(personProjection.missingPhoneScreenerIntentContextCount > 0
       ? [`${personProjection.missingPhoneScreenerIntentContextCount} phone screener intent(s) lack source-backed operational context records`]
+      : []),
+    ...(personProjection.phoneScreenerIntentSourceTextMismatchCount > 0
+      ? [`${personProjection.phoneScreenerIntentSourceTextMismatchCount} phone screener field source ref(s) do not cite exact submitted field text`]
       : []),
     ...(duplicateProjectedEdgeCount > 0
       ? [`${duplicateProjectedEdgeCount} duplicate person-projected context edge group(s) were found`]
@@ -1220,8 +1433,14 @@ export async function auditCandidateIngestion(
     ...(personProjection.missingExternalProfileRefContextCount > 0
       ? ['Project GitHub/LinkedIn/portfolio refs into operational context records with exact intake source refs.']
       : []),
+    ...(personProjection.externalProfileRefSourceTextMismatchCount > 0
+      ? ['Repair GitHub/LinkedIn/portfolio operational context source refs so each one cites its exact submitted field span.']
+      : []),
     ...(personProjection.missingPhoneScreenerIntentContextCount > 0
       ? ['Project phone screener intent as operational context with source refs instead of a default profile claim.']
+      : []),
+    ...(personProjection.phoneScreenerIntentSourceTextMismatchCount > 0
+      ? ['Repair phone screener operational source refs so consent, phone number, timezone, and availability cite their exact submitted field spans.']
       : []),
     ...(personProjection.readyChallengeAssignmentCount === 0 && personProjection.designQueueCount > 0
       ? ['Challenge readiness is correctly still a design-queue gap; do not expose a ready assessment until a source-backed assignment exists.']
@@ -1391,8 +1610,10 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  context records:       ${report.personProjection.contextRecordCount}`);
   console.log(`  profile ref contexts:  ${report.personProjection.externalProfileRefContextCount}`);
   console.log(`  profile ref gaps:      ${report.personProjection.missingExternalProfileRefContextCount}`);
+  console.log(`  profile ref source gaps: ${report.personProjection.externalProfileRefSourceTextMismatchCount}`);
   console.log(`  phone intent contexts: ${report.personProjection.phoneScreenerIntentContextCount}`);
   console.log(`  phone intent gaps:     ${report.personProjection.missingPhoneScreenerIntentContextCount}`);
+  console.log(`  phone intent source gaps: ${report.personProjection.phoneScreenerIntentSourceTextMismatchCount}`);
   console.log(`  signal evidence:       ${report.personProjection.signalEvidenceCount}`);
   console.log(`  ready assignments:     ${report.personProjection.readyChallengeAssignmentCount}`);
   console.log(`  unproven assignments:  ${report.personProjection.unprovenChallengeAssignmentCount}`);

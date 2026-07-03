@@ -181,8 +181,9 @@ one exact source span per submitted field. The projected
 `talent_pool_external_profile_ref` and `talent_pool_phone_screener_intent`
 records are operational evidence only; they do not validate the external
 profile content or derive skills/readiness. The audit verifies those projections
-by raw field predicate and source refs, so a duplicate GitHub context record
-cannot mask a missing LinkedIn, portfolio, or phone-screener intent projection.
+by raw field predicate, source refs, and exact submitted field text, so a
+duplicate GitHub context record or stale source span cannot mask a missing or
+wrong LinkedIn, portfolio, or phone-screener intent projection.
 
 By default, the command fails on an unscoped run with no Talent Pool candidates,
 missing scoped candidates, submitted intakes without storage or ingestion state,
@@ -192,7 +193,8 @@ intake profile key, profile storage keys that are not content-addressed,
 active Talent Pool person projection, missing exact source proof, missing
 exact-source candidate-node projection, PDF/DOCX profile storage keys without
 extracted source spans, raw external refs or phone intent without operational
-context records, source-less positive claims, duplicate projected edges,
+context records, operational context source refs that do not cite the exact
+submitted field text, source-less positive claims, duplicate projected edges,
 candidate nodes with no exact source quote, source spans whose exact text no
 longer matches their immutable artifact text slice or exact-text hash,
 duplicate active candidate-node evidence, candidate-node source anchor
@@ -592,6 +594,8 @@ token `f3ca666d-a4c7-497a-b9a6-48eac885e37a`, submitted the document through
 the public `/talent/:token` form, and returned `status: ready`,
 `candidateNodeExactSourceQuoteCount: 13`, `contextSourceRefCount: 8`,
 `documentProfileSourceSpanCount: 1`, `profileUploadArtifactVersionCount: 1`,
+`externalProfileRefSourceTextMismatchCount: 0`,
+`phoneScreenerIntentSourceTextMismatchCount: 0`,
 `sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`. It
 fetched the exact R2 key
 `talent-intake/f8edff97-d1d5-47b5-9a2d-48cf69658257/ea8594aff6a06e9392eb651d80a2b6547e406c2b243715640f1bf46523df993c-talent-smoke-20260703170044-7e47c7b4.docx`;
