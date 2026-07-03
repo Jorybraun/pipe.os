@@ -203,6 +203,7 @@ function summarizeSmoke(profile, parsed, durationMs) {
       ? (parsed.submissionSmoke.reviewStatusPipeline.pipeline.find((step) => step?.id === 'scoring')?.status ?? null)
       : null,
     candidateBrowserSmokeSkipped: parsed?.browserSmoke?.skipped ?? null,
+    candidateSurfaceContract: parsed?.browserSmoke?.surfaceContract ?? null,
     recruiterBrowserSmokeSkipped: parsed?.recruiterBrowserSmoke?.skipped ?? null,
     recruiterReadoutContract: parsed?.recruiterBrowserSmoke?.readoutContract ?? null,
     recruiterMatchStatus: parsed?.submissionSmoke?.recruiterResults?.codeReviewMatchStatus ?? null,

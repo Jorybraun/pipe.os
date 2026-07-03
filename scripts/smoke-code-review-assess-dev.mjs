@@ -932,7 +932,12 @@ function runBrowserSmoke({
   if (result.status !== 0) {
     throw new Error(`Playwright assess smoke failed with exit code ${result.status}`);
   }
-  return { skipped: false };
+  const surfaceContract = expectProfileReceived
+    ? 'profile-received-candidate-handoff'
+    : SUBMIT_REVIEW
+      ? 'source-backed-code-review-with-review-round'
+      : 'source-backed-code-review-challenge';
+  return { skipped: false, surfaceContract };
 }
 
 export function buildCodeReviewAssessBrowserSmokeEnv({

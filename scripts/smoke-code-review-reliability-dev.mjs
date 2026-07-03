@@ -226,6 +226,7 @@ function summarizeAssessSmoke(proof) {
     candidateHandoffStageTitle: proof?.candidateHandoff?.stageTitle ?? null,
     candidateHandoffChallengeCount: proof?.candidateHandoff?.challengeCount ?? null,
     candidateBrowserSmokeSkipped: proof?.browserSmoke?.skipped ?? null,
+    candidateSurfaceContract: proof?.browserSmoke?.surfaceContract ?? null,
     recruiterBrowserSmokeSkipped: proof?.recruiterBrowserSmoke?.skipped ?? null,
     recruiterReadoutContract: proof?.recruiterBrowserSmoke?.readoutContract ?? null,
     recruiterReadinessReady: proof?.recruiterBrowserSmoke?.readiness?.ready ?? null,
@@ -279,6 +280,7 @@ function summarizeMatrix(proof) {
     assessmentQuality: first?.assessmentQuality ?? null,
     contrastScore: first?.contrastScore ?? null,
     candidateBrowserSmokeSkipped: first?.candidateBrowserSmokeSkipped ?? null,
+    candidateSurfaceContract: first?.candidateSurfaceContract ?? null,
     recruiterBrowserSmokeSkipped: first?.recruiterBrowserSmokeSkipped ?? null,
     recruiterReadoutContract: first?.recruiterReadoutContract ?? null,
   };
@@ -346,6 +348,7 @@ export function validateLaneSummary(laneId, summary) {
       require(summary?.candidateLinkSessionStatus === 'INVITED', 'manual-ready resolved session must remain INVITED before intake');
       require(summary?.candidateLinkSetupStatus === 'reviewable_task_assigned', 'manual-ready setup status must be reviewable_task_assigned');
       require(summary?.candidateBrowserSmokeSkipped === false, 'manual-ready candidate browser smoke must run');
+      require(summary?.candidateSurfaceContract === 'source-backed-code-review-challenge', 'manual-ready candidate browser smoke must prove source-backed code-review surface');
       require(summary?.recruiterBrowserSmokeSkipped === false, 'manual-ready recruiter browser smoke must run');
       require(summary?.recruiterReadoutContract === 'matched-code-review-hiring-manager-readout', 'manual-ready recruiter smoke must prove matched hiring-manager readout contract');
       require(summary?.recruiterReadinessReady === true, 'manual-ready recruiter readiness must be proven');
@@ -360,6 +363,7 @@ export function validateLaneSummary(laneId, summary) {
       require(summary?.candidateHandoffStageTitle === 'Profile received', 'no-cv-handoff stage title must be Profile received');
       require(Number(summary?.candidateHandoffChallengeCount) === 0, 'no-cv-handoff must expose zero candidate challenges');
       require(summary?.candidateBrowserSmokeSkipped === false, 'no-cv-handoff candidate browser smoke must run');
+      require(summary?.candidateSurfaceContract === 'profile-received-candidate-handoff', 'no-cv-handoff candidate browser smoke must prove profile-received handoff surface');
       require(summary?.recruiterBrowserSmokeSkipped === false, 'no-cv-handoff recruiter browser smoke must run');
       require(summary?.recruiterReadoutContract === 'blocked-code-review-action-readout', 'no-cv-handoff recruiter smoke must prove blocked action readout contract');
       require(summary?.recruiterReadinessReady === true, 'no-cv-handoff recruiter readiness must be proven');
@@ -373,6 +377,7 @@ export function validateLaneSummary(laneId, summary) {
       require(summary?.candidateHandoffType === 'PROFILE_RECEIVED', 'blocked-handoff must return PROFILE_RECEIVED');
       require(summary?.candidateHandoffStageId === 'candidate-intake-queued', 'blocked-handoff stage must be candidate-intake-queued');
       require(summary?.candidateBrowserSmokeSkipped === false, 'blocked-handoff candidate browser smoke must run');
+      require(summary?.candidateSurfaceContract === 'profile-received-candidate-handoff', 'blocked-handoff candidate browser smoke must prove profile-received handoff surface');
       require(summary?.recruiterBrowserSmokeSkipped === false, 'blocked-handoff recruiter browser smoke must run');
       require(summary?.recruiterReadoutContract === 'blocked-code-review-action-readout', 'blocked-handoff recruiter smoke must prove blocked action readout contract');
       require(summary?.recruiterReadinessReady === true, 'blocked-handoff recruiter readiness must be proven');
@@ -387,6 +392,7 @@ export function validateLaneSummary(laneId, summary) {
       require(summary?.qualityGate === 'PASSED', 'role-backed-full-submit quality gate must pass');
       require(Boolean(summary?.assessmentQuality), 'role-backed-full-submit must report assessment quality');
       require(summary?.candidateBrowserSmokeSkipped === false, 'role-backed-full-submit candidate browser smoke must run');
+      require(summary?.candidateSurfaceContract === 'source-backed-code-review-with-review-round', 'role-backed-full-submit candidate browser smoke must prove source-backed review-round surface');
       require(summary?.recruiterBrowserSmokeSkipped === false, 'role-backed-full-submit recruiter browser smoke must run');
       require(summary?.recruiterReadoutContract === 'scored-code-review-hiring-manager-readout', 'role-backed-full-submit recruiter smoke must prove scored hiring-manager readout contract');
       require(summary?.recruiterReadinessReady === true, 'role-backed-full-submit recruiter readiness must be proven');
@@ -430,6 +436,7 @@ export function validateLaneSummary(laneId, summary) {
       require(summary?.assessmentQuality === 'STRONG', 'workers-sdk-matrix assessment quality must be STRONG');
       require(finiteNumberAtLeast(summary?.contrastScore, 1), 'workers-sdk-matrix contrast score must be at least 1');
       require(summary?.candidateBrowserSmokeSkipped === false, 'workers-sdk-matrix candidate browser smoke must run');
+      require(summary?.candidateSurfaceContract === 'source-backed-code-review-challenge', 'workers-sdk-matrix candidate browser smoke must prove source-backed code-review surface');
       require(summary?.recruiterBrowserSmokeSkipped === false, 'workers-sdk-matrix recruiter browser smoke must run');
       require(summary?.recruiterReadoutContract === 'matched-code-review-hiring-manager-readout', 'workers-sdk-matrix recruiter smoke must prove matched hiring-manager readout contract');
       break;
