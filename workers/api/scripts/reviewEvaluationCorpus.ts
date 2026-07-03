@@ -55,6 +55,7 @@ export interface CorpusReviewCliOptions {
   seedSelectionPoolLimit?: number;
   seedStatusFilter?: string;
   seedRoleContextId?: string;
+  requireRoleContext?: boolean;
   seedDescription?: string;
   persistDraft: boolean;
   reviewPacketPath?: string;
@@ -357,6 +358,7 @@ export function parseCorpusReviewArgs(argv: string[]): CorpusReviewCliOptions | 
     ...(seedSelectionPoolLimit ? { seedSelectionPoolLimit } : {}),
     ...(valueFor(argv, '--seed-status') ? { seedStatusFilter: valueFor(argv, '--seed-status')! } : {}),
     ...(valueFor(argv, '--seed-role-context-id') ? { seedRoleContextId: valueFor(argv, '--seed-role-context-id')! } : {}),
+    ...(argv.includes('--require-role-context') ? { requireRoleContext: true } : {}),
     ...(valueFor(argv, '--seed-description') ? { seedDescription: valueFor(argv, '--seed-description')! } : {}),
     ...(valueFor(argv, '--review-packet') ? { reviewPacketPath: valueFor(argv, '--review-packet')! } : {}),
     ...(valueFor(argv, '--review-template') ? { reviewTemplatePath: valueFor(argv, '--review-template')! } : {}),
@@ -405,6 +407,7 @@ Options:
   --seed-selection-pool-limit <n>     Recent match-run rows inspected for packet-diverse seeding (default: 500)
   --seed-status <status>              Match run status for seeding (default: MATCHED)
   --seed-role-context-id <id>         Optional role_context_id filter
+  --require-role-context              Seed only match runs with explicit role_context_id
   --seed-description <text>           Description for the seeded draft corpus
   --persist-draft                     Persist the seeded draft corpus before review
   --review-packet <path>              Write source-backed expert review packet
@@ -575,6 +578,7 @@ async function loadSourceCorpus(
       ...(options.seedSelectionPoolLimit ? { selectionPoolLimit: options.seedSelectionPoolLimit } : {}),
       ...(options.seedStatusFilter ? { statusFilter: options.seedStatusFilter } : {}),
       ...(options.seedRoleContextId ? { roleContextId: options.seedRoleContextId } : {}),
+      ...(options.requireRoleContext ? { requireRoleContext: true } : {}),
       ...(options.seedDescription ? { description: options.seedDescription } : {}),
     });
     return { corpus: seedResult.corpus, seedResult };
