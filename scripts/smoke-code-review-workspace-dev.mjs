@@ -37,7 +37,7 @@ const CHANGE_MODE = process.env.WORKSPACE_SMOKE_CHANGE_MODE || 'mui-popover-fix'
 const TASK_ALIGNED_PROFILES = {
   'mui-popover-fix': {
     repositoryUrl: 'https://github.com/mui/base-ui',
-    matchedRepoId: 973,
+    matchedRepoId: 4130,
     expectedGithubPrNumber: 973,
     baseCommitSha: '58dff8444fa56e4444a3a1dd991c76b49cf4ab7e',
     expectedHeadCommitSha: '33e161fd46dfc287dfcde05427594db9a7225335',
