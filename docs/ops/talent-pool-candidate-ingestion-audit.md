@@ -687,6 +687,43 @@ returned `status: ready`, `candidateNodeSourceSpanMissingCount: 0`,
 `candidateNodeSourceAnchorConflictCount: 0`,
 `sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.
 
+The same deployed app/API pair was rechecked for public document uploads on
+2026-07-03. `npm run smoke:talent-pool-browser-docx-dev` created invite token
+`4471b131-1701-4c4a-9cd8-47b8213f6067` and submitted a DOCX profile through
+the public `/talent/:token` form. The smoke returned `status: ready`,
+`candidateNodeCount: 13`, `candidateNodeExactSourceQuoteCount: 13`,
+`documentProfileStorageKeyCount: 1`, `documentProfileSourceSpanCount: 1`,
+`profileUploadArtifactVersionCount: 1`, `sourceLessPositiveClaimCount: 0`, and
+`duplicateProjectedEdgeCount: 0`; recruiter/person read proof found one unified
+People candidate row, one candidate source-search hit, one person source-search
+hit, 9 timeline entries, 9 person evidence source spans, and 5 person evidence
+context records. It fetched the exact R2 key
+`talent-intake/0de3cea4-d5c1-401f-9c07-3d32f77d199f/fade37eb68b961e368abb9390c48d4179fb3a4bdf64040b73611ddb677c9a83e-talent-smoke-20260703175148-16feac97.docx`;
+the object was 749 bytes and SHA-256
+`fade37eb68b961e368abb9390c48d4179fb3a4bdf64040b73611ddb677c9a83e`, matching
+both the content-addressed storage-key prefix and submitted source bytes. A
+direct remote dev D1 audit for the same invite returned `status: ready`,
+`candidateNodeSourceSpanMissingCount: 0`,
+`candidateNodeStaleProfileSourceCount: 0`,
+`documentProfileSourceSpanCount: 1`, `profileUploadArtifactVersionCount: 1`,
+`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.
+
+`npm run smoke:talent-pool-browser-pdf-gap-dev` created invite token
+`d04d2a4a-77d7-4994-bbe8-fcb7560f4cd1` and submitted an intentionally
+unextractable PDF through the public `/talent/:token` form. The smoke returned
+the expected explicit evidence gap: `status: not_ready`, `ingestionSteps:
+[{currentStep: "profile_text_extraction_needed", count: 1}]`,
+`candidateNodeCount: 0`, `candidateNodeExactSourceQuoteCount: 0`,
+`documentProfileStorageKeyCount: 1`, `documentProfileSourceSpanCount: 0`,
+`profileUploadArtifactVersionCount: 1`, `sourceLessPositiveClaimCount: 0`,
+`sourceLessDesignQueueSuggestionCount: 0`, and `duplicateProjectedEdgeCount:
+0`. It fetched the exact R2 key
+`talent-intake/c6e4cf05-5a12-445b-b9f3-051ab58ce752/32ed5017fce95db1619dfd80fe7ffe1e51ec4dfb98e43e3266d265836f6ae62b-talent-smoke-20260703175301-ef1ccf05.pdf`;
+the object was 14 bytes and SHA-256
+`32ed5017fce95db1619dfd80fe7ffe1e51ec4dfb98e43e3266d265836f6ae62b`, matching
+the content-addressed storage-key prefix and submitted source bytes without
+deriving any positive profile claim.
+
 Remote source-span sampling proved operational context refs preserve exact
 field text:
 
