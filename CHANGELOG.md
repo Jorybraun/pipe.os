@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Open-source workspace dev smoke now posts accepted room chat and requires recruiter progress to retain `room_chat_message` evidence, proving candidate collaboration is source-backed alongside commits.
 - Recruiter assessment progress now preserves concrete matched-PR proof in durable assignment trust instead of reverting to generic matched-task copy.
 - Candidate challenge assignment projections now count as matched setup proof when combining recruiter assignment summaries.
 - Recruiter assessment assignment summaries now preserve source-backed auto-match quality-gate proof instead of replacing matched repo challenges with generic copy.

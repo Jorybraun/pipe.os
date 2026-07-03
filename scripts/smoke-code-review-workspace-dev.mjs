@@ -497,7 +497,7 @@ async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit,
     && snippet.exactText.trim().length > 0
   ) ?? null;
   const sourceRefTypes = new Set((progress.sourceRefCounts ?? []).map((row) => row.kind));
-  for (const requiredSourceRefType of ['git_commit', 'code_diff', 'test_run']) {
+  for (const requiredSourceRefType of ['git_commit', 'code_diff', 'test_run', 'meeting_session_event', 'room_chat_message']) {
     if (!sourceRefTypes.has(requiredSourceRefType)) {
       throw new Error(`Recruiter detail is missing ${requiredSourceRefType} proof for source-backed review: ${JSON.stringify(progress.sourceRefCounts)}`);
     }
@@ -887,6 +887,57 @@ async function launchWorkspaceUntilReady(token, headers = {}) {
   throw lastError ?? new Error('Workspace did not become ready.');
 }
 
+async function recordSourceBackedRoomChatEvidence(token, headers, unique) {
+  const text = `I would verify the assigned task before changing code. workspace smoke ${unique}`;
+  const messageCreatedAt = Date.now();
+  const roomMessageId = `workspace-smoke-chat-${unique}`;
+  const clientId = `workspace-smoke-client-${unique}`;
+  const body = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/session-events`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      type: 'chat_message',
+      text,
+      actor: 'guest',
+      properties: {
+        source: 'room_chat_client_submit',
+        chatEventSource: 'browser_room_chat_panel',
+        actor: 'guest',
+        roomMessageId,
+        clientId,
+        messageCreatedAt,
+        messageLength: text.length,
+        deliveryStatus: 'accepted',
+        surface: 'standard',
+        roomPhase: 'connected',
+        durableObjectReplayExpected: true,
+      },
+    }),
+  });
+  const progress = body?.progress ?? null;
+  if (body?.captured !== true || !body?.nodeId) {
+    throw new Error(`Room chat evidence was not accepted as a source-backed session event: ${JSON.stringify(body)}`);
+  }
+  if (progress?.hasMessageEvidence !== true || progress?.hasWorkEvidence !== true) {
+    throw new Error(`Room chat evidence did not update assessment message/work proof: ${JSON.stringify(progress)}`);
+  }
+  const sourceRefTypes = new Set((progress.sourceRefCounts ?? []).map((row) => row.kind));
+  for (const requiredSourceRefType of ['meeting_session_event', 'room_chat_message']) {
+    if (!sourceRefTypes.has(requiredSourceRefType)) {
+      throw new Error(`Room chat evidence missed ${requiredSourceRefType} source ref: ${JSON.stringify(progress.sourceRefCounts)}`);
+    }
+  }
+  if (progress.latestEvent?.kind !== 'message') {
+    throw new Error(`Room chat evidence was not the latest message event: ${JSON.stringify(progress.latestEvent)}`);
+  }
+  return {
+    nodeId: body.nodeId,
+    text,
+    roomMessageId,
+    sourceRefTypes: [...sourceRefTypes].sort(),
+  };
+}
+
 async function main() {
   assertEnv();
 
@@ -1069,6 +1120,13 @@ async function main() {
     expectedBaseCommitSha,
     { expectWorkspaceReady: true },
   );
+  const guestToken = tokenFromRoomUrl(invited?.room?.guestUrl ?? '');
+  const guestRoomAuthHeaders = authHeadersFromUrl(invited?.room?.guestUrl ?? '');
+  const roomChatEvidence = await recordSourceBackedRoomChatEvidence(
+    guestToken,
+    guestRoomAuthHeaders,
+    unique,
+  );
   const finalizeResponse = await fetch(`${ROOM_BASE}${proxyBasePath}/assessment/finalize`, {
     method: 'POST',
     headers: {
@@ -1216,6 +1274,9 @@ async function main() {
     candidateTaskBriefSkippedReason: candidateBrowser.skipped ? candidateBrowser.reason : null,
     candidateAssessmentStatusVisible: !candidateBrowser.skipped,
     candidateAssessmentStatusSkippedReason: candidateBrowser.skipped ? candidateBrowser.reason : null,
+    roomChatEvidenceCaptured: true,
+    roomChatEvidenceNodeId: roomChatEvidence.nodeId,
+    roomChatEvidenceSourceRefs: roomChatEvidence.sourceRefTypes,
     workspaceStatus: readySession.status,
     proxyPathReady: Boolean(readySession.proxyPath),
     bridgeHealthReady: true,
