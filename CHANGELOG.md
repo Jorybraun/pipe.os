@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW recruiter interview detail now keeps person graph and related-interview projections out of the default blocking payload, returning the core assessment/match/score readout first while preserving an explicit `includePersonContext=1` opt-in for graph diagnostics.
 - CODE_REVIEW packet-catalog and match-quality readiness tooling can now run against remote app-dev D1 through an authenticated Wrangler session when raw Cloudflare REST API token env vars are not exported, keeping source-backed PR and labelled matching gates runnable from normal operator shells.
 - CODE_REVIEW judge-example remote verification now shares the same Wrangler D1 fallback, keeping replay/calibration readiness proof runnable from normal operator shells without raw Cloudflare REST API token env vars.
 - CODE_REVIEW candidate smokes now reject `Repo matching` and `Challenge needs attention` copy on ready and profile-received `/assess` surfaces, tightening proof that matching diagnostics stay out of the runtime.

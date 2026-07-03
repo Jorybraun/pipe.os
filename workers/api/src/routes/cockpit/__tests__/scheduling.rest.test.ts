@@ -2634,6 +2634,8 @@ describe('GET /interviews/:id detail', () => {
     const body = await response.json() as {
       interview: {
         meetingUrl: string | null;
+        livingContext: unknown;
+        relatedEvidenceInterviews: unknown[];
         codeReviewMatch: {
           status: string;
           matchRunId: string | null;
@@ -2681,6 +2683,8 @@ describe('GET /interviews/:id detail', () => {
     };
 
     expect(body.interview.meetingUrl).toBeNull();
+    expect(body.interview.livingContext).toBeNull();
+    expect(body.interview.relatedEvidenceInterviews).toEqual([]);
     expect(body.interview.codeReviewMatch).toMatchObject({
       status: 'MATCHED',
       matchRunId: 'match-run-code-review-1',
@@ -3000,7 +3004,7 @@ describe('GET /interviews/:id detail', () => {
     }]));
 
     const app = mountSchedulingApp();
-    const response = await app.request('/interviews/interview-code-review-no-assessment-table');
+    const response = await app.request('/interviews/interview-code-review-no-assessment-table?includePersonContext=1');
     expect(response.status).toBe(200);
 
     const body = await response.json() as {
@@ -3361,7 +3365,7 @@ describe('GET /interviews/:id detail', () => {
     }));
 
     const app = mountSchedulingApp();
-    const response = await app.request('/interviews/interview-code-review-related-origin');
+    const response = await app.request('/interviews/interview-code-review-related-origin?includePersonContext=1');
     expect(response.status).toBe(200);
     const body = await response.json() as {
       interview: {
