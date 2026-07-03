@@ -54,12 +54,14 @@ async function sourceRef(input: {
 async function createReadyAssessmentFixture(
   store: RepoTaskInterviewSessionStore,
   suffix: string,
+  options: { includeTestEvidence?: boolean } = {},
 ): Promise<{
   sessionId: string;
   scheduledInterviewId: string;
   requestEventId: string;
   requestSourceRef: AssessmentEvidenceSourceRefInput;
 }> {
+  const includeTestEvidence = options.includeTestEvidence ?? true;
   const repositoryUrl = 'https://github.com/mui/base-ui';
   const baseCommitSha = '58dff8444fa56e4444a3a1dd991c76b49cf4ab7e';
   const commitSha = (await sha256Hex(`commit-${suffix}`)).slice(0, 40);
@@ -139,12 +141,14 @@ async function createReadyAssessmentFixture(
           '+const PATIENT_CLICK_THRESHOLD = 300;',
         ].join('\n'),
       }),
-      await sourceRef({
-        type: 'test_run',
-        id: `verification-${suffix}`,
-        evidenceRole: 'verification_test_output',
-        exactText: '$ git diff --check HEAD~1 HEAD\nexitCode: 0',
-      }),
+      ...(includeTestEvidence
+        ? [await sourceRef({
+            type: 'test_run',
+            id: `verification-${suffix}`,
+            evidenceRole: 'verification_test_output',
+            exactText: '$ git diff --check HEAD~1 HEAD\nexitCode: 0',
+          })]
+        : []),
     ],
   });
 
@@ -425,6 +429,97 @@ describe('repo task assessment evaluator integration', () => {
       expect.objectContaining({ code: 'MODEL_RESPONSE_TIMEOUT', severity: 'warning' }),
       expect.objectContaining({ code: 'HUMAN_CORRECTNESS_REVIEW_REQUIRED', severity: 'warning' }),
     ]));
+  });
+
+  it('drops unsupported positive test claims when no test_run evidence exists', async () => {
+    const fixture = await createReadyAssessmentFixture(store, 'missing-tests', {
+      includeTestEvidence: false,
+    });
+    const aiRun = vi.fn(async () => ({
+      response: JSON.stringify({
+        summary: 'The candidate changed the popover root hook, but verification evidence is incomplete.',
+        recommendation: 'mixed_evidence_human_review',
+        claims: [
+          {
+            id: 'implementation-backed-by-diff',
+            polarity: 'positive',
+            dimension: 'implementation_correctness',
+            narrative: 'The candidate changed the popover root hook in the submitted diff.',
+            confidence: 0.72,
+            sourceRefKeys: ['code_diff'],
+          },
+          {
+            id: 'tests-look-good',
+            polarity: 'positive',
+            dimension: 'test_strategy',
+            narrative: 'The candidate verified the implementation with tests.',
+            confidence: 0.82,
+            sourceRefKeys: ['code_diff'],
+          },
+        ],
+        diagnostics: [],
+      }),
+    }));
+
+    const result = await evaluateRepoTaskAssessmentSession({
+      db,
+      store,
+      env: {
+        AI: { run: aiRun } as unknown as Ai,
+        CLOUDFLARE_AI_MODEL: '@cf/meta/llama-3.2-3b-instruct',
+      },
+      sessionId: fixture.sessionId,
+      scheduledInterviewId: fixture.scheduledInterviewId,
+      requestedBy: 'recruiter-1',
+      requestedAt: '2026-07-03T00:03:00.000Z',
+      requestEventId: fixture.requestEventId,
+      requestSourceRef: fixture.requestSourceRef,
+    });
+
+    expect(result.kind).toBe('evaluated');
+
+    const report = sqlite.prepare(
+      `SELECT id, status, output_json
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1`,
+    ).get(fixture.sessionId) as { id: string; status: string; output_json: string };
+    expect(report.status).toBe('EVALUATED');
+    const output = JSON.parse(report.output_json) as {
+      evidenceCoverage: {
+        expectedForHighConfidence: Array<{ label: string; satisfied: boolean }>;
+      };
+    };
+    expect(output.evidenceCoverage.expectedForHighConfidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'test_run', satisfied: false }),
+    ]));
+
+    const claims = sqlite.prepare(
+      `SELECT polarity, dimension, narrative
+         FROM assessment_evaluation_claims
+        WHERE report_id = ?
+        ORDER BY dimension`,
+    ).all(report.id) as Array<{ polarity: string; dimension: string; narrative: string }>;
+    expect(claims).toEqual(expect.arrayContaining([
+      expect.objectContaining({ polarity: 'positive', dimension: 'implementation_correctness' }),
+    ]));
+    expect(claims).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ dimension: 'test_strategy' }),
+    ]));
+
+    const diagnostics = sqlite.prepare(
+      `SELECT code, severity, message
+         FROM assessment_diagnostics
+        WHERE report_id = ?
+        ORDER BY code`,
+    ).all(report.id) as Array<{ code: string; severity: string; message: string }>;
+    expect(diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'MISSING_TEST_EVIDENCE', severity: 'warning' }),
+      expect.objectContaining({ code: 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE', severity: 'warning' }),
+    ]));
+    expect(diagnostics.find((diagnostic) => diagnostic.code === 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE')?.message)
+      .toContain('Positive test-strategy claims require a test_run source ref');
   });
 
   it('recovers stale running evaluation sessions from the scheduled worker path', async () => {

@@ -136,6 +136,58 @@ describe('repo task assessment evaluator output parsing', () => {
     ]));
   });
 
+  it('makes missing test evidence explicit in deterministic fallback reports', async () => {
+    const requestText = 'Recruiter requested source-backed evaluation.';
+    const fallback = buildDeterministicAssessmentFallback({
+      sessionId: 'assessment-session-no-tests',
+      requestSourceRef: {
+        sourceRefType: 'assessment_evaluation_request',
+        sourceRefId: 'request-no-tests',
+        exactText: requestText,
+        contentHash: await sha256Hex(requestText),
+      },
+      sourceRefs: [
+        await sourceRef({
+          type: 'open_source_challenge_packet',
+          id: 'challenge-no-tests',
+          role: 'assigned_challenge',
+          sequence: 1,
+          exactText: [
+            'Repo: https://github.com/mui/base-ui',
+            'Base commit: 58dff8444fa56e4444a3a1dd991c76b49cf4ab7e',
+            'Task: Fix Base UI popover impatient click handling',
+            'Success criteria:',
+            '- Change popover behavior.',
+            'Expected evidence:',
+            '- git_commit',
+            '- code_diff',
+            '- test_run',
+          ].join('\n'),
+        }),
+        await sourceRef({
+          type: 'git_commit',
+          id: '81c11363a3b6e31b34b3777fd150de7fe462c64f',
+          sequence: 2,
+          exactText: 'commit 81c11363a3b6e31b34b3777fd150de7fe462c64f\nfix popover impatient click handling',
+        }),
+        await sourceRef({
+          type: 'code_diff',
+          id: 'base..head',
+          sequence: 2,
+          exactText: 'diff --git a/packages/react/src/popover/root/usePopoverRoot.ts b/packages/react/src/popover/root/usePopoverRoot.ts\n+PATIENT_CLICK_THRESHOLD',
+        }),
+      ],
+    });
+
+    expect(fallback).not.toBeNull();
+    expect(fallback?.claims).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ dimension: 'verification' }),
+    ]));
+    expect(fallback?.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'MISSING_TEST_EVIDENCE', severity: 'warning' }),
+    ]));
+  });
+
   it('salvages complete source-cited claims from a truncated JSON response', () => {
     const output = parseAiJson(`{
   "summary": "The candidate implemented impatient click handling in the Popover component by modifying the root hook, constants, and tests.",

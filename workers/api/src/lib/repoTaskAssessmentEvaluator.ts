@@ -146,6 +146,20 @@ const EXPECTED_HIGH_CONFIDENCE_REF_GROUPS = [
     missingImpact: 'Default assessment commits do not require upstream PRs; treat upstream usefulness as unreviewed unless candidate-approved PR tracking is captured.',
   },
 ] as const;
+const TEST_EVIDENCE_SOURCE_REF_TYPES = ['test_run'] as const;
+const AI_EVIDENCE_SOURCE_REF_TYPES = [
+  'ai_user_prompt',
+  'ai_user_prompt_blocked',
+  'ai_agent_response',
+  'ai_agent_diagnostic',
+  'agent_status',
+  'agent_response',
+  'agent_diagnostic',
+  'session_chat_agent',
+  'session_chat_user',
+  'ai_chat_user',
+  'ai_chat_agent',
+] as const;
 
 function parseJsonObject(value: string | null): JsonObject {
   if (!value) return {};
@@ -498,6 +512,22 @@ function hasSuccessfulVerification(sourceRefs: readonly SessionSourceRef[]): boo
   });
 }
 
+function missingVerificationDiagnostic(
+  sourceRefs: readonly SessionSourceRef[],
+): AssessmentDiagnosticInput | null {
+  if (sourceRefsOfTypes(sourceRefs, TEST_EVIDENCE_SOURCE_REF_TYPES).length > 0) return null;
+  return diagnosticInput({
+    code: 'MISSING_TEST_EVIDENCE',
+    severity: 'warning',
+    message: 'No test_run source evidence was captured, so PIPE cannot make positive verification or test-strategy claims.',
+    retryable: false,
+    details: {
+      missingSourceRefType: 'test_run',
+      impact: 'Human review can inspect the commit and diff, but verification confidence is lower until test output is captured.',
+    },
+  });
+}
+
 export function buildDeterministicAssessmentFallback(input: {
   sessionId: string;
   sourceRefs: readonly SessionSourceRef[];
@@ -614,6 +644,7 @@ export function buildDeterministicAssessmentFallback(input: {
     recommendation: DEFAULT_RECOMMENDATION,
     claims: claims.slice(0, 6),
     diagnostics: [
+      ...[missingVerificationDiagnostic(input.sourceRefs)].filter((diagnostic): diagnostic is AssessmentDiagnosticInput => Boolean(diagnostic)),
       diagnosticInput({
         code: 'MODEL_CLAIMS_UNUSABLE',
         severity: 'warning',
@@ -1111,10 +1142,14 @@ function normalizeAiClaims(
   rawClaims: unknown,
   sourceRefByKey: ReadonlyMap<string, SessionSourceRef>,
   sessionId: string,
-): AssessmentEvaluationClaimInputCompat[] {
-  if (!Array.isArray(rawClaims)) return [];
+): {
+  claims: AssessmentEvaluationClaimInputCompat[];
+  diagnostics: AssessmentDiagnosticInput[];
+} {
+  if (!Array.isArray(rawClaims)) return { claims: [], diagnostics: [] };
 
   const claims: AssessmentEvaluationClaimInputCompat[] = [];
+  const diagnostics: AssessmentDiagnosticInput[] = [];
   rawClaims.forEach((rawClaim, index) => {
     if (rawClaim === null || typeof rawClaim !== 'object' || Array.isArray(rawClaim)) return;
     const claim = rawClaim as AiAssessmentClaim;
@@ -1127,17 +1162,92 @@ function normalizeAiClaims(
     if (polarity !== 'diagnostic' && citedRefs.length === 0) return;
     const confidence = numberValue(claim.confidence);
     const rawId = stringValue(claim.id) ?? `${dimension}-${index + 1}`;
-    claims.push({
+    const normalizedClaim: AssessmentEvaluationClaimInputCompat = {
       id: `repo_task_eval_${sessionId}_${rawId}`.replace(/[^A-Za-z0-9:_-]/g, '_'),
       polarity: polarity as AssessmentEvaluationClaimInputCompat['polarity'],
       dimension,
       narrative,
       confidence,
       sourceRefs: citedRefs,
-    });
+    };
+    const unsupportedDiagnostic = positiveClaimUnsupportedDiagnostic(normalizedClaim, citedRefs);
+    if (unsupportedDiagnostic) {
+      diagnostics.push(unsupportedDiagnostic);
+      return;
+    }
+    claims.push(normalizedClaim);
   });
 
-  return claims.slice(0, 12);
+  return {
+    claims: claims.slice(0, 12),
+    diagnostics: diagnostics.slice(0, 8),
+  };
+}
+
+function positiveClaimUnsupportedDiagnostic(
+  claim: AssessmentEvaluationClaimInputCompat,
+  citedRefs: readonly SessionSourceRef[],
+): AssessmentDiagnosticInput | null {
+  if (claim.polarity !== 'positive') return null;
+
+  const dimension = claim.dimension.toLowerCase();
+  const hasTestRunRef = citedRefs.some((ref) => ref.sourceRefType === 'test_run');
+  const hasSuccessfulTestRunRef = hasSuccessfulVerification(citedRefs);
+  if (dimension.includes('verification') && !hasSuccessfulTestRunRef) {
+    return unsupportedPositiveClaimDiagnostic(
+      claim,
+      citedRefs,
+      'Positive verification claims require a successful test_run source ref.',
+    );
+  }
+  if (dimension.includes('test') && !hasTestRunRef) {
+    return unsupportedPositiveClaimDiagnostic(
+      claim,
+      citedRefs,
+      'Positive test-strategy claims require a test_run source ref.',
+    );
+  }
+  if (dimension.includes('ai') && sourceRefsOfTypes(citedRefs, AI_EVIDENCE_SOURCE_REF_TYPES).length === 0) {
+    return unsupportedPositiveClaimDiagnostic(
+      claim,
+      citedRefs,
+      'Positive AI-use claims require real AI prompt, response, blocked-prompt, or agent diagnostic source refs.',
+    );
+  }
+  return null;
+}
+
+function unsupportedPositiveClaimDiagnostic(
+  claim: AssessmentEvaluationClaimInputCompat,
+  sourceRefs: readonly SessionSourceRef[],
+  reason: string,
+): AssessmentDiagnosticInput {
+  return diagnosticInput({
+    code: 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE',
+    severity: 'warning',
+    message: `Dropped unsupported positive ${claim.dimension} claim from the AI evaluator: ${reason}`,
+    retryable: false,
+    sourceRefs,
+    details: {
+      dimension: claim.dimension,
+      rejectedClaimId: claim.id,
+      rejectedNarrative: claim.narrative,
+    },
+  });
+}
+
+function dedupeDiagnostics(
+  diagnostics: readonly AssessmentDiagnosticInput[],
+): AssessmentDiagnosticInput[] {
+  const seen = new Set<string>();
+  const output: AssessmentDiagnosticInput[] = [];
+  for (const diagnostic of diagnostics) {
+    const key = `${diagnostic.code}:${diagnostic.severity}:${diagnostic.message}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(diagnostic);
+  }
+  return output;
 }
 
 function normalizeAiDiagnostics(
@@ -1284,10 +1394,11 @@ async function createDeterministicFallbackReport(input: {
     return null;
   }
 
-  const diagnostics = [
+  const diagnostics = dedupeDiagnostics([
     ...(input.diagnostics ?? []),
+    ...[missingVerificationDiagnostic(input.sourceRefs)].filter((diagnostic): diagnostic is AssessmentDiagnosticInput => Boolean(diagnostic)),
     ...deterministicFallback.diagnostics,
-  ];
+  ]);
   const status: EvaluationReportStatus = 'EVALUATED';
   const report = await input.store.createEvaluationReport({
     sessionId: input.sessionId,
@@ -1512,8 +1623,13 @@ export async function evaluateRepoTaskAssessmentSession(
     });
   }
 
-  const claims = normalizeAiClaims(aiOutput.claims, sourceRefByKey, input.sessionId);
-  const diagnostics = normalizeAiDiagnostics(aiOutput.diagnostics, sourceRefByKey);
+  const normalizedClaims = normalizeAiClaims(aiOutput.claims, sourceRefByKey, input.sessionId);
+  const claims = normalizedClaims.claims;
+  const diagnostics = dedupeDiagnostics([
+    ...normalizedClaims.diagnostics,
+    ...normalizeAiDiagnostics(aiOutput.diagnostics, sourceRefByKey),
+    ...[missingVerificationDiagnostic(sourceRefs)].filter((diagnostic): diagnostic is AssessmentDiagnosticInput => Boolean(diagnostic)),
+  ]);
   const normalizedRecommendation = normalizeAiRecommendation(aiOutput.recommendation);
   const groundedClaims = claims.filter((claim) => claim.polarity !== 'diagnostic');
   if (groundedClaims.length === 0) {
@@ -1577,10 +1693,10 @@ export async function evaluateRepoTaskAssessmentSession(
       diagnosticCodes: diagnostics.map((diagnostic) => diagnostic.code),
     },
     claims,
-    diagnostics: [
+    diagnostics: dedupeDiagnostics([
       ...diagnostics,
       ...normalizedRecommendation.diagnostics,
-    ],
+    ]),
   });
 
   await input.store.transitionState({
