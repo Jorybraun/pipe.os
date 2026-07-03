@@ -22,6 +22,8 @@ function readySummary(overrides = {}) {
       expectedPacketCount: 3,
       warnings: [],
     },
+    draftPersisted: true,
+    draftCorpusHash: 'sha256:draft-corpus',
     reviewPacketPath: '/tmp/review-packet.json',
     reviewTemplatePath: '/tmp/review-template.json',
     reviewMarkdownPath: '/tmp/review.md',
@@ -132,6 +134,20 @@ describe('CODE_REVIEW expert seed smoke contract', () => {
     expect(result.failures).toContain('syntheticFixtureCount must be 0; got 1');
   });
 
+  it('rejects expert seed summaries that did not persist the draft source corpus', () => {
+    const result = validateExpertSeedSummary({
+      ...readySummary(),
+      draftPersisted: false,
+      draftCorpusHash: '',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toContain(
+      'draftPersisted must be true so expert review has an immutable source corpus; got false',
+    );
+    expect(result.failures).toContain('draftCorpusHash is required');
+  });
+
   it('accepts an expert review packet with eligible draft labels and contrast suggestions', () => {
     expect(validateExpertSeedPacket(readyPacket(), {
       minEligibleLabels: 3,
@@ -235,6 +251,7 @@ describe('CODE_REVIEW expert seed smoke contract', () => {
       '250',
       '--seed-description',
       'CODE_REVIEW expert seed smoke',
+      '--persist-draft',
       '--review-packet',
       '/tmp/packet.json',
       '--review-template',
