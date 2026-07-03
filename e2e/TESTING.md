@@ -224,6 +224,15 @@ match-quality lane at a different CODE_REVIEW evaluation database.
 The suite summary validator also fails candidate/recruiter-facing lanes when
 the candidate browser smoke or recruiter browser smoke is skipped, so a green
 suite proves the app-dev UI path ran instead of only direct RPC/API checks.
+Candidate-facing lanes must also report the expected
+`candidateSurfaceContract` (`source-backed-code-review-challenge`,
+`source-backed-code-review-with-review-round`, or
+`profile-received-candidate-handoff`), and recruiter-facing lanes must report
+the expected `recruiterReadoutContract`
+(`matched-code-review-hiring-manager-readout`,
+`scored-code-review-hiring-manager-readout`, or
+`blocked-code-review-action-readout`). Treat a missing contract as a failed
+browser proof even if the child Playwright process exited zero.
 For the role-backed full-submit lane, the suite also requires completed
 recruiter and person-profile statuses, submitted profile state, a passed
 validator verdict, role-source proof, author pushback/thread evidence, remote D1
@@ -484,6 +493,15 @@ Latest blocked-boundary app-dev proof with recruiter projection fallback on
 candidate handoff was `PROFILE_RECEIVED` / `profile-received`, stage
 `candidate-intake-queued`, the candidate browser smoke passed, and recruiter API
 readiness reported `waiting_for_source_backed_match` with no repo/PR assigned.
+
+Latest focused no-CV reliability proof on 2026-07-03 passed with artifact
+`tmp/code-review-reliability/2026-07-03T13-22-36-112Z-suite.summary.json` for
+interview `fa5500d5-1256-418e-bb5e-2b0b9f1501ea`: the candidate handoff was
+`PROFILE_RECEIVED` / `candidate-intake-queued`, `candidateHandoffChallengeCount`
+was `0`, no repo/PR/review session was assigned, candidate browser proof was not
+skipped with `candidateSurfaceContract=profile-received-candidate-handoff`, and
+authenticated recruiter browser proof was not skipped with
+`recruiterReadoutContract=blocked-code-review-action-readout`.
 
 Latest full-submit person-boundary app-dev proof on 2026-07-03 passed for
 interview `e8285690-59ab-4c94-8d05-bcbcee6a2da2`, review session
