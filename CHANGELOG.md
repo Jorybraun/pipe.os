@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Candidate-ingestion audit now supports `--limit` for bounded unscoped Talent Pool checks, letting app-dev verify recent source-backed ingestion windows without running whole-database D1 proof queries.
 - Talent Pool source-ref repair now refreshes stale `talent_pool_profile_intake` receipt nodes as well as resume-derived nodes, so historical profile receipts can be reattached to current storage-keyed source spans without duplicating projected evidence.
 - Added `candidate-ingestion:repair-source-refs` to deliberately dry-run or backfill Talent Pool candidate-node source refs from existing current profile source spans, giving operators a bounded alternative to waiting for cron burn-down.
 - Scheduled Talent Pool repair now runs a bounded D1-only candidate-node projection repair for existing current profile source spans before R2-backed replay, accelerating historical source-ref burn-down without creating new source evidence.

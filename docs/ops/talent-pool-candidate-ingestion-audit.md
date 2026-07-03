@@ -146,6 +146,12 @@ Operators can run the same projection repair deliberately with
 `--dry-run` first to count repairable rows. The command reports bounded
 before/after repairable counts with `--count-limit` and is safe to repeat
 because repaired nodes leave the repairable set.
+For broad health checks on large remote D1 databases, unscoped
+`candidate-ingestion:audit` also supports `--limit <count>`. The limit selects
+the most recent Talent Pool candidates into the audited cohort and then runs the
+same source-proof, projection, duplicate-edge, and source-less-claim checks
+inside that cohort. The report records the limit in `scope.candidateLimit`, so a
+bounded audit must be read as a windowed proof, not whole-database completion.
 Background projection receives the roleless Talent Pool person identity and
 background decomposition runs with legacy candidate-node mirroring disabled, so
 it must not create `applications` or `person_roles` before a role-backed process
@@ -242,11 +248,13 @@ context records, not only roleless identity plus immutable source spans.
 ```bash
 cd workers/api
 npm run candidate-ingestion:audit -- --local
+npm run candidate-ingestion:audit -- --local --limit 5
 npm run candidate-ingestion:audit -- --local --invite-token <token>
 npm run candidate-ingestion:audit -- --local --candidate-id <candidate_id>
 npm run candidate-ingestion:audit -- --local --email <email>
 npm run candidate-ingestion:audit -- --local --invite-token <token> --require-context-records
 npm run candidate-ingestion:audit -- --remote --invite-token <token>
+npm run candidate-ingestion:audit -- --remote --limit 5
 npm run candidate-ingestion:repair-source-refs -- --local --dry-run
 npm run candidate-ingestion:repair-source-refs -- --remote --dry-run --count-limit 500
 npm test -- src/lib/__tests__/talentPoolIdentity.test.ts
@@ -273,6 +281,8 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
   npm run candidate-ingestion:audit -- --remote --invite-token <token>
 CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
   npm run candidate-ingestion:audit -- --remote --invite-token <token> --require-context-records
+CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
+  npm run candidate-ingestion:audit -- --remote --limit 5 --require-context-records
 CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
   npm run candidate-ingestion:repair-source-refs -- --remote --dry-run --count-limit 500
 ```
@@ -864,6 +874,21 @@ are document extraction/artifact-receipt gaps rather than safe source-span
 projection repairs. An unscoped remote audit attempted after the repair hit D1
 CPU/time limits, so unscoped all-dev gating still needs a bounded audit mode;
 the scoped real candidate audit remained `ready`.
+The bounded mode was then added as `candidate-ingestion:audit -- --limit
+<count>` so app-dev can run broad recent-window checks without concurrent
+whole-database proof queries exceeding D1 CPU limits.
+The 2026-07-03 app-dev bounded proof
+`CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 npm --prefix workers/api run candidate-ingestion:audit -- --remote --limit 5 --require-context-records`
+completed against the five most recent Talent Pool intakes. It reported
+`sourceLessPositiveClaimCount: 0`, `duplicateProjectedEdgeCount: 0`,
+`candidateNodeWithoutExactSourceCount: 0`,
+`candidateNodeSourceSpanMissingCount: 0`,
+`candidateNodeStaleProfileSourceCount: 0`, and exact operational person
+projection for all GitHub/LinkedIn/portfolio refs and phone screener intents.
+The same bounded window is still `not_ready` because one recent PDF/DOCX intake
+has a failed `candidate_ingestion` row at `parse_resume` and lacks exact-source
+candidate-node projection; that row needs document extraction/replay or an
+artifact-receipt-only model before the recent-window audit can become ready.
 
 Browser proof on 2026-07-02 uses
 `e2e/talent-pool-intake.unauth.spec.ts` with the unauthenticated Playwright
@@ -897,5 +922,8 @@ all 4 unauthenticated browser scenarios passed.
   older roleless message spans because their current uploaded PDFs have no
   extracted source spans; they need document extraction or an artifact-level
   receipt model, not fabricated source spans. New scoped browser smokes audit
-  clean, and unscoped audit needs a bounded mode because full remote proof can
-  exceed D1 CPU limits.
+  clean. The 2026-07-03 `--limit 5` app-dev audit proves zero source-less
+  positives and zero duplicate projected edges inside the recent window, but one
+  recent PDF/DOCX intake is still failed at `parse_resume` and lacks exact-source
+  candidate nodes. Use `--limit` for recent-window app-dev health checks because
+  full remote unscoped proof can still exceed D1 CPU limits.

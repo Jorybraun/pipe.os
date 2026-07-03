@@ -54,6 +54,7 @@ export interface CandidateIngestionAuditOptions {
   inviteToken?: string;
   email?: string;
   requireContextRecords?: boolean;
+  candidateLimit?: number;
 }
 
 export interface CandidateRawCaptureAudit {
@@ -124,6 +125,7 @@ export interface CandidateIngestionAudit {
     inviteToken: string | null;
     email: string | null;
     requireContextRecords: boolean;
+    candidateLimit: number | null;
   };
   auditedCandidateCount: number;
   missingTables: string[];
@@ -201,11 +203,7 @@ interface ProjectionRow {
   roleless_person_role_count: number | null;
   context_record_count: number | null;
   external_profile_ref_context_count: number | null;
-  missing_external_profile_ref_context_count: number | null;
-  external_profile_ref_source_text_mismatch_count: number | null;
   phone_screener_intent_context_count: number | null;
-  missing_phone_screener_intent_context_count: number | null;
-  phone_screener_intent_source_text_mismatch_count: number | null;
   signal_evidence_count: number | null;
   design_queue_count: number | null;
 }
@@ -230,6 +228,16 @@ interface ChallengeAssignmentProofCounts {
   readyChallengeAssignmentCount: number;
   unprovenChallengeAssignmentCount: number;
   incompleteChallengeAssignmentCount: number;
+}
+
+interface OperationalProjectionCounts {
+  missing: number;
+  sourceTextMismatch: number;
+}
+
+interface OperationalProjectionCountsRow {
+  missing_count: number | null;
+  source_text_mismatch_count: number | null;
 }
 
 const REQUIRED_TABLES = [
@@ -274,25 +282,92 @@ async function count(
   return toNumber(rows[0]?.count);
 }
 
-async function tableExists(client: QueryClient, tableName: string): Promise<boolean> {
+async function loadExistingTables(client: QueryClient, tableNames: string[]): Promise<Set<string>> {
+  if (tableNames.length === 0) return new Set();
+  const placeholders = tableNames.map(() => '?').join(', ');
   const rows = await client.query<{ name: string }>(
     `SELECT name
        FROM sqlite_master
       WHERE type = 'table'
-        AND name = ?`,
-    [tableName],
+        AND name IN (${placeholders})`,
+    tableNames,
   );
-  return rows.length > 0;
+  return new Set(rows.flatMap((row) => (typeof row.name === 'string' ? [row.name] : [])));
+}
+
+async function loadBoundedUnscopedCandidateIds(
+  client: QueryClient,
+  limit: number,
+): Promise<string[]> {
+  const rows = await client.query<{ id: string }>(
+    `SELECT c.id
+       FROM talent_pool_intakes t
+       JOIN candidates c ON c.id = t.candidate_id
+      ORDER BY t.submitted_at DESC, c.id DESC
+      LIMIT ?`,
+    [limit],
+  );
+  return rows.flatMap((row) => (typeof row.id === 'string' && row.id.trim() ? [row.id] : []));
 }
 
 function scoped(options: CandidateIngestionAuditOptions): boolean {
   return Boolean(options.candidateId ?? options.inviteToken ?? options.email);
 }
 
+function normalizeCandidateLimit(value: number | undefined): number | null {
+  if (value === undefined) return null;
+  if (!Number.isFinite(value)) return null;
+  const parsed = Math.floor(value);
+  if (parsed <= 0) return null;
+  return Math.min(parsed, 5000);
+}
+
 function candidateScope(options: CandidateIngestionAuditOptions): {
   cte: string;
   params: Array<string | number | null>;
+};
+function candidateScope(
+  options: CandidateIngestionAuditOptions,
+  boundedCandidateIds: string[] | null = null,
+): {
+  cte: string;
+  params: Array<string | number | null>;
 } {
+  if (boundedCandidateIds) {
+    return {
+      params: [JSON.stringify(boundedCandidateIds)],
+      cte: `
+      WITH audited_candidates AS (
+        SELECT DISTINCT value AS id
+          FROM json_each(?)
+      ),
+      linked_workspace_people AS (
+        SELECT DISTINCT ac.id AS candidate_id, wp.id AS workspace_person_id, wp.person_id
+          FROM audited_candidates ac
+          JOIN workspace_people wp
+            ON json_extract(wp.context_json, '$.talentPool.candidateId') = ac.id
+        UNION
+        SELECT DISTINCT ac.id AS candidate_id, app.workspace_person_id, wp.person_id
+          FROM audited_candidates ac
+          JOIN applications app ON app.legacy_candidate_id = ac.id
+          JOIN workspace_people wp ON wp.id = app.workspace_person_id
+      ),
+      source_artifact_versions AS (
+        SELECT DISTINCT ac.id AS candidate_id, av.id AS artifact_version_id
+          FROM audited_candidates ac
+          JOIN interactions i ON i.external_reference = ac.id
+          JOIN artifacts a ON a.interaction_id = i.id
+          JOIN artifact_versions av ON av.artifact_id = a.id
+        UNION
+        SELECT DISTINCT ac.id AS candidate_id, av.id AS artifact_version_id
+          FROM audited_candidates ac
+          JOIN talent_pool_intakes t ON t.candidate_id = ac.id
+          JOIN artifact_versions av ON av.storage_key = t.profile_r2_key
+      )
+    `,
+    };
+  }
+
   const filters: string[] = [];
   const params: Array<string | number | null> = [];
   if (options.candidateId) {
@@ -313,13 +388,17 @@ function candidateScope(options: CandidateIngestionAuditOptions): {
   return {
     params,
     cte: `
-      WITH audited_candidates AS (
-        SELECT DISTINCT c.id
+      WITH candidate_scope AS (
+        SELECT c.id, t.submitted_at
           FROM candidates c
           LEFT JOIN talent_pool_intakes t ON t.candidate_id = c.id
          WHERE 1 = 1
            ${filterSql}
            ${defaultTalentPoolFilter}
+      ),
+      audited_candidates AS (
+        SELECT DISTINCT id
+          FROM candidate_scope
       ),
       linked_workspace_people AS (
         SELECT DISTINCT ac.id AS candidate_id, wp.id AS workspace_person_id, wp.person_id
@@ -804,6 +883,170 @@ async function loadChallengeAssignmentProofCounts(
   };
 }
 
+async function loadExternalProfileRefProjectionCounts(
+  client: QueryClient,
+  scopeSql: string,
+  params: Array<string | number | null>,
+): Promise<OperationalProjectionCounts> {
+  const rows = await client.query<OperationalProjectionCountsRow>(
+    `${scopeSql},
+     expected_external_profile_refs AS (
+       SELECT ac.id AS candidate_id,
+              'submitted_github_profile_url' AS predicate,
+              'githubUrl: ' || TRIM(t.github_url) AS exact_text
+         FROM audited_candidates ac
+         JOIN talent_pool_intakes t ON t.candidate_id = ac.id
+        WHERE t.github_url IS NOT NULL
+          AND TRIM(t.github_url) <> ''
+       UNION ALL
+       SELECT ac.id AS candidate_id,
+              'submitted_linkedin_profile_url' AS predicate,
+              'linkedinUrl: ' || TRIM(t.linkedin_url) AS exact_text
+         FROM audited_candidates ac
+         JOIN talent_pool_intakes t ON t.candidate_id = ac.id
+        WHERE t.linkedin_url IS NOT NULL
+          AND TRIM(t.linkedin_url) <> ''
+       UNION ALL
+       SELECT ac.id AS candidate_id,
+              'submitted_portfolio_url' AS predicate,
+              'portfolioUrl: ' || TRIM(t.portfolio_url) AS exact_text
+         FROM audited_candidates ac
+         JOIN talent_pool_intakes t ON t.candidate_id = ac.id
+        WHERE t.portfolio_url IS NOT NULL
+          AND TRIM(t.portfolio_url) <> ''
+     )
+     SELECT
+       COUNT(CASE
+         WHEN NOT EXISTS (
+           SELECT 1
+             FROM linked_workspace_people lwp
+             JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+             JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+            WHERE lwp.candidate_id = expected_external_profile_refs.candidate_id
+              AND cr.record_type = 'talent_pool_external_profile_ref'
+              AND cr.predicate = expected_external_profile_refs.predicate
+         )
+         THEN 1
+       END) AS missing_count,
+       COUNT(CASE
+         WHEN EXISTS (
+           SELECT 1
+             FROM linked_workspace_people lwp
+             JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+             JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+            WHERE lwp.candidate_id = expected_external_profile_refs.candidate_id
+              AND cr.record_type = 'talent_pool_external_profile_ref'
+              AND cr.predicate = expected_external_profile_refs.predicate
+         )
+         AND NOT EXISTS (
+           SELECT 1
+             FROM linked_workspace_people lwp
+             JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+             JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+             JOIN source_spans ss
+               ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
+            WHERE lwp.candidate_id = expected_external_profile_refs.candidate_id
+              AND cr.record_type = 'talent_pool_external_profile_ref'
+              AND cr.predicate = expected_external_profile_refs.predicate
+              AND crsr.source_ref_type = 'source_span'
+              AND ss.exact_text = expected_external_profile_refs.exact_text
+         )
+         THEN 1
+       END) AS source_text_mismatch_count
+       FROM expected_external_profile_refs`,
+    params,
+  );
+  const row = rows[0];
+  return {
+    missing: toNumber(row?.missing_count),
+    sourceTextMismatch: toNumber(row?.source_text_mismatch_count),
+  };
+}
+
+async function loadPhoneScreenerIntentProjectionCounts(
+  client: QueryClient,
+  scopeSql: string,
+  params: Array<string | number | null>,
+): Promise<OperationalProjectionCounts> {
+  const rows = await client.query<OperationalProjectionCountsRow>(
+    `${scopeSql},
+     phone_screener_candidates AS (
+       SELECT ac.id AS candidate_id,
+              t.phone_number,
+              t.timezone,
+              t.availability
+         FROM audited_candidates ac
+         JOIN talent_pool_intakes t ON t.candidate_id = ac.id
+        WHERE t.phone_screener_consent = 1
+     ),
+     expected_phone_screener_fields AS (
+       SELECT candidate_id,
+              'phoneScreenerConsent: true' AS exact_text
+         FROM phone_screener_candidates
+       UNION ALL
+       SELECT candidate_id,
+              'phoneNumber: ' || TRIM(phone_number) AS exact_text
+         FROM phone_screener_candidates
+        WHERE phone_number IS NOT NULL
+          AND TRIM(phone_number) <> ''
+       UNION ALL
+       SELECT candidate_id,
+              'timezone: ' || TRIM(timezone) AS exact_text
+         FROM phone_screener_candidates
+        WHERE timezone IS NOT NULL
+          AND TRIM(timezone) <> ''
+       UNION ALL
+       SELECT candidate_id,
+              'availability: ' || TRIM(availability) AS exact_text
+         FROM phone_screener_candidates
+        WHERE availability IS NOT NULL
+          AND TRIM(availability) <> ''
+     )
+     SELECT
+       (SELECT COUNT(*)
+          FROM phone_screener_candidates psc
+         WHERE NOT EXISTS (
+           SELECT 1
+             FROM linked_workspace_people lwp
+             JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+             JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+            WHERE lwp.candidate_id = psc.candidate_id
+              AND cr.record_type = 'talent_pool_phone_screener_intent'
+              AND cr.predicate = 'consented_to_phone_screener'
+         )) AS missing_count,
+       (SELECT COUNT(*)
+          FROM expected_phone_screener_fields epsf
+         WHERE EXISTS (
+           SELECT 1
+             FROM linked_workspace_people lwp
+             JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+             JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+            WHERE lwp.candidate_id = epsf.candidate_id
+              AND cr.record_type = 'talent_pool_phone_screener_intent'
+              AND cr.predicate = 'consented_to_phone_screener'
+         )
+           AND NOT EXISTS (
+             SELECT 1
+               FROM linked_workspace_people lwp
+               JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+               JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+               JOIN source_spans ss
+                 ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
+              WHERE lwp.candidate_id = epsf.candidate_id
+                AND cr.record_type = 'talent_pool_phone_screener_intent'
+                AND cr.predicate = 'consented_to_phone_screener'
+                AND crsr.source_ref_type = 'source_span'
+                AND ss.exact_text = epsf.exact_text
+           )) AS source_text_mismatch_count`,
+    params,
+  );
+  const row = rows[0];
+  return {
+    missing: toNumber(row?.missing_count),
+    sourceTextMismatch: toNumber(row?.source_text_mismatch_count),
+  };
+}
+
 async function loadPersonProjection(
   client: QueryClient,
   scopeSql: string,
@@ -840,268 +1083,10 @@ async function loadPersonProjection(
           FROM linked_workspace_people lwp
           JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
          WHERE cr.record_type = 'talent_pool_external_profile_ref') AS external_profile_ref_context_count,
-       (SELECT COALESCE(SUM(
-          CASE
-            WHEN t.github_url IS NOT NULL
-             AND TRIM(t.github_url) <> ''
-             AND NOT EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_external_profile_ref'
-                  AND cr.predicate = 'submitted_github_profile_url'
-             )
-            THEN 1 ELSE 0
-          END
-          + CASE
-            WHEN t.linkedin_url IS NOT NULL
-             AND TRIM(t.linkedin_url) <> ''
-             AND NOT EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_external_profile_ref'
-                  AND cr.predicate = 'submitted_linkedin_profile_url'
-             )
-            THEN 1 ELSE 0
-          END
-          + CASE
-            WHEN t.portfolio_url IS NOT NULL
-             AND TRIM(t.portfolio_url) <> ''
-             AND NOT EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_external_profile_ref'
-                  AND cr.predicate = 'submitted_portfolio_url'
-             )
-            THEN 1 ELSE 0
-          END
-        ), 0)
-          FROM audited_candidates ac
-          JOIN talent_pool_intakes t ON t.candidate_id = ac.id) AS missing_external_profile_ref_context_count,
-       (SELECT COALESCE(SUM(
-          CASE
-            WHEN t.github_url IS NOT NULL
-             AND TRIM(t.github_url) <> ''
-             AND EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_external_profile_ref'
-                  AND cr.predicate = 'submitted_github_profile_url'
-             )
-             AND NOT EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                 JOIN source_spans ss
-                   ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_external_profile_ref'
-                  AND cr.predicate = 'submitted_github_profile_url'
-                  AND crsr.source_ref_type = 'source_span'
-                  AND ss.exact_text = 'githubUrl: ' || TRIM(t.github_url)
-             )
-            THEN 1 ELSE 0
-          END
-          + CASE
-            WHEN t.linkedin_url IS NOT NULL
-             AND TRIM(t.linkedin_url) <> ''
-             AND EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_external_profile_ref'
-                  AND cr.predicate = 'submitted_linkedin_profile_url'
-             )
-             AND NOT EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                 JOIN source_spans ss
-                   ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_external_profile_ref'
-                  AND cr.predicate = 'submitted_linkedin_profile_url'
-                  AND crsr.source_ref_type = 'source_span'
-                  AND ss.exact_text = 'linkedinUrl: ' || TRIM(t.linkedin_url)
-             )
-            THEN 1 ELSE 0
-          END
-          + CASE
-            WHEN t.portfolio_url IS NOT NULL
-             AND TRIM(t.portfolio_url) <> ''
-             AND EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_external_profile_ref'
-                  AND cr.predicate = 'submitted_portfolio_url'
-             )
-             AND NOT EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                 JOIN source_spans ss
-                   ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_external_profile_ref'
-                  AND cr.predicate = 'submitted_portfolio_url'
-                  AND crsr.source_ref_type = 'source_span'
-                  AND ss.exact_text = 'portfolioUrl: ' || TRIM(t.portfolio_url)
-             )
-            THEN 1 ELSE 0
-          END
-        ), 0)
-          FROM audited_candidates ac
-          JOIN talent_pool_intakes t ON t.candidate_id = ac.id) AS external_profile_ref_source_text_mismatch_count,
        (SELECT COUNT(DISTINCT cr.id)
           FROM linked_workspace_people lwp
           JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
          WHERE cr.record_type = 'talent_pool_phone_screener_intent') AS phone_screener_intent_context_count,
-       (SELECT COUNT(DISTINCT ac.id)
-          FROM audited_candidates ac
-          JOIN talent_pool_intakes t ON t.candidate_id = ac.id
-         WHERE t.phone_screener_consent = 1
-           AND NOT EXISTS (
-             SELECT 1
-               FROM linked_workspace_people lwp
-               JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-               JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-              WHERE lwp.candidate_id = ac.id
-                AND cr.record_type = 'talent_pool_phone_screener_intent'
-                AND cr.predicate = 'consented_to_phone_screener'
-           )) AS missing_phone_screener_intent_context_count,
-       (SELECT COALESCE(SUM(
-          CASE
-            WHEN t.phone_screener_consent = 1
-             AND EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_phone_screener_intent'
-                  AND cr.predicate = 'consented_to_phone_screener'
-             )
-             AND NOT EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                 JOIN source_spans ss
-                   ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_phone_screener_intent'
-                  AND cr.predicate = 'consented_to_phone_screener'
-                  AND crsr.source_ref_type = 'source_span'
-                  AND ss.exact_text = 'phoneScreenerConsent: true'
-             )
-            THEN 1 ELSE 0
-          END
-          + CASE
-            WHEN t.phone_screener_consent = 1
-             AND t.phone_number IS NOT NULL
-             AND TRIM(t.phone_number) <> ''
-             AND EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_phone_screener_intent'
-                  AND cr.predicate = 'consented_to_phone_screener'
-             )
-             AND NOT EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                 JOIN source_spans ss
-                   ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_phone_screener_intent'
-                  AND cr.predicate = 'consented_to_phone_screener'
-                  AND crsr.source_ref_type = 'source_span'
-                  AND ss.exact_text = 'phoneNumber: ' || TRIM(t.phone_number)
-             )
-            THEN 1 ELSE 0
-          END
-          + CASE
-            WHEN t.phone_screener_consent = 1
-             AND t.timezone IS NOT NULL
-             AND TRIM(t.timezone) <> ''
-             AND EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_phone_screener_intent'
-                  AND cr.predicate = 'consented_to_phone_screener'
-             )
-             AND NOT EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                 JOIN source_spans ss
-                   ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_phone_screener_intent'
-                  AND cr.predicate = 'consented_to_phone_screener'
-                  AND crsr.source_ref_type = 'source_span'
-                  AND ss.exact_text = 'timezone: ' || TRIM(t.timezone)
-             )
-            THEN 1 ELSE 0
-          END
-          + CASE
-            WHEN t.phone_screener_consent = 1
-             AND t.availability IS NOT NULL
-             AND TRIM(t.availability) <> ''
-             AND EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_phone_screener_intent'
-                  AND cr.predicate = 'consented_to_phone_screener'
-             )
-             AND NOT EXISTS (
-               SELECT 1
-                 FROM linked_workspace_people lwp
-                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
-                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
-                 JOIN source_spans ss
-                   ON ss.id = COALESCE(crsr.source_span_id, crsr.source_ref_id)
-                WHERE lwp.candidate_id = ac.id
-                  AND cr.record_type = 'talent_pool_phone_screener_intent'
-                  AND cr.predicate = 'consented_to_phone_screener'
-                  AND crsr.source_ref_type = 'source_span'
-                  AND ss.exact_text = 'availability: ' || TRIM(t.availability)
-             )
-            THEN 1 ELSE 0
-          END
-        ), 0)
-          FROM audited_candidates ac
-          JOIN talent_pool_intakes t ON t.candidate_id = ac.id) AS phone_screener_intent_source_text_mismatch_count,
        (SELECT COUNT(DISTINCT se.id)
           FROM linked_workspace_people lwp
           JOIN signal_evidence se ON se.workspace_person_id = lwp.workspace_person_id) AS signal_evidence_count,
@@ -1112,6 +1097,8 @@ async function loadPersonProjection(
     params,
   );
   const row = rows[0];
+  const externalProfileRefCounts = await loadExternalProfileRefProjectionCounts(client, scopeSql, params);
+  const phoneScreenerIntentCounts = await loadPhoneScreenerIntentProjectionCounts(client, scopeSql, params);
   const challengeAssignmentProofCounts = await loadChallengeAssignmentProofCounts(client, scopeSql, params);
   return {
     personCount: toNumber(row?.person_count),
@@ -1121,11 +1108,11 @@ async function loadPersonProjection(
     rolelessPersonRoleCount: toNumber(row?.roleless_person_role_count),
     contextRecordCount: toNumber(row?.context_record_count),
     externalProfileRefContextCount: toNumber(row?.external_profile_ref_context_count),
-    missingExternalProfileRefContextCount: toNumber(row?.missing_external_profile_ref_context_count),
-    externalProfileRefSourceTextMismatchCount: toNumber(row?.external_profile_ref_source_text_mismatch_count),
+    missingExternalProfileRefContextCount: externalProfileRefCounts.missing,
+    externalProfileRefSourceTextMismatchCount: externalProfileRefCounts.sourceTextMismatch,
     phoneScreenerIntentContextCount: toNumber(row?.phone_screener_intent_context_count),
-    missingPhoneScreenerIntentContextCount: toNumber(row?.missing_phone_screener_intent_context_count),
-    phoneScreenerIntentSourceTextMismatchCount: toNumber(row?.phone_screener_intent_source_text_mismatch_count),
+    missingPhoneScreenerIntentContextCount: phoneScreenerIntentCounts.missing,
+    phoneScreenerIntentSourceTextMismatchCount: phoneScreenerIntentCounts.sourceTextMismatch,
     signalEvidenceCount: toNumber(row?.signal_evidence_count),
     readyChallengeAssignmentCount: challengeAssignmentProofCounts.readyChallengeAssignmentCount,
     unprovenChallengeAssignmentCount: challengeAssignmentProofCounts.unprovenChallengeAssignmentCount,
@@ -1232,8 +1219,9 @@ export async function auditCandidateIngestion(
   options: CandidateIngestionAuditOptions = {},
 ): Promise<CandidateIngestionAudit> {
   const missingTables: string[] = [];
+  const existingTables = await loadExistingTables(client, REQUIRED_TABLES);
   for (const tableName of REQUIRED_TABLES) {
-    if (!await tableExists(client, tableName)) missingTables.push(tableName);
+    if (!existingTables.has(tableName)) missingTables.push(tableName);
   }
 
   const emptyReport = {
@@ -1302,6 +1290,7 @@ export async function auditCandidateIngestion(
       inviteToken: options.inviteToken ?? null,
       email: options.email ?? null,
       requireContextRecords: options.requireContextRecords === true,
+      candidateLimit: scoped(options) ? null : normalizeCandidateLimit(options.candidateLimit),
     },
   };
 
@@ -1320,7 +1309,11 @@ export async function auditCandidateIngestion(
     };
   }
 
-  const scopeDefinition = candidateScope(options);
+  const candidateLimit = scoped(options) ? null : normalizeCandidateLimit(options.candidateLimit);
+  const boundedCandidateIds = candidateLimit === null
+    ? null
+    : await loadBoundedUnscopedCandidateIds(client, candidateLimit);
+  const scopeDefinition = candidateScope(options, boundedCandidateIds);
   const auditedCandidateCount = await count(
     client,
     `${scopeDefinition.cte}
@@ -1540,6 +1533,7 @@ function usage(): string {
     '  --candidate-id ID         Limit audit to one candidate id',
     '  --invite-token TOKEN      Limit audit to one Talent Pool invite token',
     '  --email EMAIL             Limit audit to one candidate email',
+    '  --limit COUNT             Limit unscoped audit to the most recent Talent Pool candidates',
     '  --require-context-records Fail when submitted intakes lack person context records',
     '  --json                    Print machine-readable JSON',
     '  --help, -h                Show this help',
@@ -1579,6 +1573,15 @@ function parseArgs(argv: string[]): CliOptions {
       const value = inline ?? argv[++index];
       if (!value || value.startsWith('--')) throw new Error('--email requires a value');
       options.email = value;
+    } else if (arg === '--limit' || arg.startsWith('--limit=')) {
+      const inline = arg.match(/^--limit=(.+)$/)?.[1];
+      const value = inline ?? argv[++index];
+      if (!value || value.startsWith('--')) throw new Error('--limit requires a value');
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || Math.floor(parsed) <= 0) {
+        throw new Error('--limit requires a positive integer');
+      }
+      options.candidateLimit = Math.floor(parsed);
     } else if (arg === '--database-path' || arg.startsWith('--database-path=')) {
       const inline = arg.match(/^--database-path=(.+)$/)?.[1];
       const value = inline ?? argv[++index];
@@ -1622,6 +1625,7 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  status:                ${report.status}`);
   console.log(`  database:              ${databasePath}`);
   console.log(`  candidate scope:       ${report.scope.candidateId ?? report.scope.inviteToken ?? report.scope.email ?? 'all talent pool intakes'}`);
+  console.log(`  candidate limit:       ${report.scope.candidateLimit ?? 'none'}`);
   console.log(`  candidates audited:    ${report.auditedCandidateCount}`);
   console.log(`  source-less positives: ${report.sourceLessPositiveClaimCount}`);
   console.log(`  source-less queue hints: ${report.sourceLessDesignQueueSuggestionCount}`);
@@ -1700,6 +1704,7 @@ async function main(): Promise<void> {
       inviteToken: options.inviteToken,
       email: options.email,
       requireContextRecords: options.requireContextRecords,
+      candidateLimit: options.candidateLimit,
     });
     if (options.json) {
       console.log(JSON.stringify(report, null, 2));

@@ -468,6 +468,52 @@ describe('auditCandidateIngestion', () => {
     expect(audit.sourceLessDesignQueueSuggestionCount).toBe(0);
   });
 
+  it('can bound unscoped audits to the most recent Talent Pool candidates without weakening checks inside the window', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.exec(`
+      INSERT INTO candidates (id, owner_id, email, invite_token, resume_s3_key, pipeline_id)
+      VALUES ('candidate-old-gap', 'owner-1', 'old-gap@example.com', 'old-gap-token', NULL, NULL);
+      INSERT INTO talent_pool_intakes (
+        candidate_id, profile_r2_key, profile_text_excerpt, github_url,
+        linkedin_url, portfolio_url, phone_screener_consent, phone_number,
+        timezone, availability, submitted_at
+      )
+      VALUES (
+        'candidate-old-gap',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        0,
+        NULL,
+        NULL,
+        NULL,
+        '2026-07-01T00:00:00.000Z'
+      );
+    `);
+
+    const unbounded = await auditCandidateIngestion(new SqliteQueryClient(sqlite));
+    expect(unbounded.auditedCandidateCount).toBe(2);
+    expect(unbounded.status).toBe('not_ready');
+    expect(unbounded.scope.candidateLimit).toBeNull();
+    expect(unbounded.failures).toContain('1 submitted Talent Pool intake(s) lack a profile storage key');
+
+    const bounded = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      candidateLimit: 1,
+      requireContextRecords: true,
+    });
+    expect(bounded.status).toBe('ready');
+    expect(bounded.scope.candidateLimit).toBe(1);
+    expect(bounded.auditedCandidateCount).toBe(1);
+    expect(bounded.rawCapture.submittedIntakeCount).toBe(1);
+    expect(bounded.sourceProof.candidateNodeStaleProfileSourceCount).toBe(0);
+    expect(bounded.sourceLessPositiveClaimCount).toBe(0);
+    expect(bounded.duplicateProjectedEdgeCount).toBe(0);
+  });
+
   it('reports assignment rows without repo and PR as assessment setup gaps', async () => {
     sqlite = new Database(':memory:');
     createSchema(sqlite);
