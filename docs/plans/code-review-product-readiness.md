@@ -172,6 +172,15 @@ current app-dev data plane by setting `MATCHING_EVALUATION_D1_DATABASE_ID`
 CODE_REVIEW proof from being confused with the mostly empty production D1 while
 still using the same evaluator and frozen-corpus contract.
 
+CI also emits a living-context match-quality readiness artifact. That gate runs
+`living-context:match-quality:readiness`, which auto-selects the latest
+expert-labelled, synthetic-free corpus and fails with the latest draft corpus
+summary when no reviewed corpus exists. Missing Cloudflare credentials or D1
+configuration produce a non-blocking `not_configured` artifact by default. Set
+`MATCH_QUALITY_D1_DATABASE_ID` to point at app-dev/test D1 when needed, and set
+`MATCH_QUALITY_REQUIRED=1` only after an expert-labelled corpus is persisted and
+the team wants CI to block on the living-context quality gate.
+
 The manual override full-submit app-dev lane passed after updating the smoke to
 assert the candidate-facing product language ("a recruiter selected this PR")
 instead of the internal phrase "manual override." The passing run created

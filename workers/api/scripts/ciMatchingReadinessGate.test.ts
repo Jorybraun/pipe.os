@@ -14,6 +14,14 @@ function matchingReadinessStep(contents: string): string {
   return contents.slice(start, end);
 }
 
+function matchQualityReadinessStep(contents: string): string {
+  const start = contents.indexOf('      - name: Living-context match-quality readiness report');
+  const end = contents.indexOf('      - name: Upload living-context match-quality readiness report');
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+  return contents.slice(start, end);
+}
+
 describe('CI matching evaluation readiness gate', () => {
   it('fails CI when the configured production matching readiness gate fails', () => {
     const step = matchingReadinessStep(workflow);
@@ -48,5 +56,29 @@ describe('CI matching evaluation readiness gate', () => {
     expect(step).toContain(
       'CLOUDFLARE_D1_DATABASE_ID or MATCHING_EVALUATION_D1_DATABASE_ID',
     );
+  });
+});
+
+describe('CI living-context match-quality readiness gate', () => {
+  it('emits a living-context match-quality artifact from the latest expert corpus', () => {
+    const step = matchQualityReadinessStep(workflow);
+
+    expect(step).not.toContain('continue-on-error');
+    expect(step).toContain('MATCH_QUALITY_D1_DATABASE_ID');
+    expect(step).toContain('MATCH_QUALITY_REQUIRED');
+    expect(step).toContain('export CLOUDFLARE_D1_DATABASE_ID="$MATCH_QUALITY_D1_DATABASE_ID"');
+    expect(step).toContain('npm --silent run living-context:match-quality:readiness');
+    expect(step).toContain('match-quality-readiness.json');
+    expect(step).toContain('match-quality-readiness.txt');
+  });
+
+  it('does not block CI for match-quality readiness until explicitly required', () => {
+    const step = matchQualityReadinessStep(workflow);
+
+    expect(step).toContain('REQUIRE_MATCH_QUALITY="${MATCH_QUALITY_REQUIRED:-0}"');
+    expect(step).toContain('"status": "not_configured"');
+    expect(step).toContain('Living-context match-quality readiness is not configured; uploaded non-blocking readiness report.');
+    expect(step).toContain('Living-context match-quality readiness is required.');
+    expect(step).toContain('exit 1');
   });
 });
