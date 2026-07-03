@@ -39,7 +39,17 @@ export interface CorpusReviewPacketItem {
   candidateEvidence: ReturnType<typeof getCandidateEvidence>;
   roleRequirements: RoleRequirements | null;
   expectedPacket: ExpectedChallengePacket | null;
+  suggestedContrastCandidates: CorpusReviewContrastCandidate[];
   reviewQuestions: string[];
+}
+
+export interface CorpusReviewContrastCandidate {
+  candidateId: string;
+  evidenceCount: number;
+  reason: string;
+  labelId?: string;
+  challengeId?: string;
+  relevanceGrade?: RelevanceGrade;
 }
 
 export interface CorpusReviewReadinessSummary {
@@ -213,6 +223,75 @@ function packetHasDemandEvidence(packet: ExpectedChallengePacket | undefined): b
   );
 }
 
+function suggestedContrastCandidatesForLabel(
+  corpus: EvaluationCorpus,
+  label: ExpertLabel,
+): CorpusReviewContrastCandidate[] {
+  const evidenceCountByCandidate = new Map<string, number>();
+  for (const evidence of corpus.candidateEvidence) {
+    evidenceCountByCandidate.set(
+      evidence.candidateId,
+      (evidenceCountByCandidate.get(evidence.candidateId) ?? 0) + 1,
+    );
+  }
+
+  const suggestions = new Map<string, CorpusReviewContrastCandidate>();
+  const addSuggestion = (suggestion: CorpusReviewContrastCandidate): void => {
+    if (suggestion.candidateId === label.candidateId) return;
+    if (!suggestions.has(suggestion.candidateId)) {
+      suggestions.set(suggestion.candidateId, suggestion);
+    }
+  };
+
+  if (nonEmpty(label.negativeCandidateId)) {
+    addSuggestion({
+      candidateId: label.negativeCandidateId,
+      evidenceCount: evidenceCountByCandidate.get(label.negativeCandidateId) ?? 0,
+      reason: 'Draft label already names this negative candidate.',
+    });
+  }
+
+  const labelledSameRole = corpus.expertLabels
+    .filter((other) => other.roleId === label.roleId && other.candidateId !== label.candidateId)
+    .sort((left, right) => {
+      const leftPositive = isPositiveGrade(left.relevanceGrade) ? 1 : 0;
+      const rightPositive = isPositiveGrade(right.relevanceGrade) ? 1 : 0;
+      if (leftPositive !== rightPositive) return leftPositive - rightPositive;
+      const leftDifferentChallenge = left.challengeId === label.challengeId ? 1 : 0;
+      const rightDifferentChallenge = right.challengeId === label.challengeId ? 1 : 0;
+      if (leftDifferentChallenge !== rightDifferentChallenge) {
+        return leftDifferentChallenge - rightDifferentChallenge;
+      }
+      return left.candidateId.localeCompare(right.candidateId);
+    });
+  for (const other of labelledSameRole) {
+    const reason = !isPositiveGrade(other.relevanceGrade)
+      ? `Candidate already has a non-positive ${other.relevanceGrade} label for this role.`
+      : other.challengeId !== label.challengeId
+        ? `Candidate is labelled on a different challenge (${other.challengeId}) for this role.`
+        : 'Candidate shares this role context; use only if their source evidence should score materially lower.';
+    addSuggestion({
+      candidateId: other.candidateId,
+      evidenceCount: evidenceCountByCandidate.get(other.candidateId) ?? 0,
+      reason,
+      labelId: other.labelId,
+      challengeId: other.challengeId,
+      relevanceGrade: other.relevanceGrade,
+    });
+  }
+
+  const candidateIds = Array.from(evidenceCountByCandidate.keys()).sort();
+  for (const candidateId of candidateIds) {
+    addSuggestion({
+      candidateId,
+      evidenceCount: evidenceCountByCandidate.get(candidateId) ?? 0,
+      reason: 'Candidate has corpus evidence but no label for this role; use only if their source evidence is a materially weaker fit.',
+    });
+  }
+
+  return Array.from(suggestions.values()).slice(0, 5);
+}
+
 function buildReadinessSummary(
   corpus: EvaluationCorpus,
   productionReadinessFailures: string[],
@@ -318,6 +397,7 @@ export function buildCorpusReviewPacket(corpus: EvaluationCorpus): CorpusReviewP
       candidateEvidence: getCandidateEvidence(corpus, label.candidateId),
       roleRequirements: getRoleRequirements(corpus, label.roleId) ?? null,
       expectedPacket: getExpectedPacket(corpus, label.challengeId) ?? null,
+      suggestedContrastCandidates: suggestedContrastCandidatesForLabel(corpus, label),
       reviewQuestions: [
         'Does the candidate evidence actually support this challenge selection?',
         'Does the repo PR demand test the role-relevant skill rather than a generic adjacent skill?',

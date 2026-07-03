@@ -54,6 +54,24 @@ function loadFixtureCorpusWithContrast(): EvaluationCorpus {
   return corpus;
 }
 
+function loadFixtureCorpusWithUnlabelledContrastCandidate(): EvaluationCorpus {
+  const corpus = structuredClone(loadFixtureCorpus());
+  const fitEvidence = corpus.candidateEvidence[0]!;
+  corpus.candidateEvidence.push({
+    ...fitEvidence,
+    candidateId: 'candidate-negative',
+    evidenceId: 'evidence-negative',
+    episodeId: 'episode-negative',
+    narrative: 'Contrast candidate has unrelated data platform operations evidence.',
+    concepts: ['term:python', 'term:data-pipeline'],
+  });
+  corpus.metadata = {
+    ...corpus.metadata,
+    totalCandidates: 2,
+  };
+  return corpus;
+}
+
 function sourceBackedSinglePacketCorpus(): EvaluationCorpus {
   return {
     version: EVALUATION_CORPUS_VERSION,
@@ -775,6 +793,25 @@ describe('evaluation corpus review CLI', () => {
     expect(template.labels[0]).toEqual(expect.objectContaining({
       negativeCandidateId: 'candidate-negative',
       minimumScoreSeparation: 0.12,
+    }));
+  });
+
+  it('suggests contrast candidates in review packets and templates', () => {
+    const packet = buildCorpusReviewPacket(loadFixtureCorpusWithUnlabelledContrastCandidate());
+    const template = buildExpertReviewTemplate(packet);
+
+    expect(packet.items[0]).toEqual(expect.objectContaining({
+      suggestedContrastCandidates: [
+        expect.objectContaining({
+          candidateId: 'candidate-negative',
+          evidenceCount: 1,
+          reason: expect.stringContaining('no label for this role'),
+        }),
+      ],
+    }));
+    expect(template.labels[0]).toEqual(expect.objectContaining({
+      suggestedNegativeCandidateIds: ['candidate-negative'],
+      suggestedMinimumScoreSeparation: 0.1,
     }));
   });
 
