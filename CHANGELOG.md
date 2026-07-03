@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Resume-derived Talent Pool candidate nodes now resolve validated source quotes to the current profile source span during insertion and idempotent repair/replay, and the candidate-ingestion audit fails missing or stale candidate-node source spans.
 - Candidate-ingestion audit now fails GitHub/LinkedIn/portfolio and phone-screener operational context records whose source refs do not cite the exact submitted intake field text.
 - Talent Pool dev smokes now fetch the current remote R2 profile object and verify its bytes/hash match the submitted source and content-addressed profile key before accepting an end-to-end proof.
 - Added browser-driven Talent Pool DOCX and unextractable-PDF dev smokes so `/talent/:token` proves document extraction, upload receipt projection, and explicit missing-evidence gaps through the public page.

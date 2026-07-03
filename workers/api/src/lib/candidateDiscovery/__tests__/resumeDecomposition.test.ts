@@ -13,6 +13,7 @@ vi.mock('../candidateNodes', () => ({
     updated_at: Date.now(),
   })),
   embedCandidateNode: vi.fn(async () => Array(1024).fill(0.1)),
+  repairCandidateResumeNodeSourceRefs: vi.fn(async () => ({ scanned: 0, repaired: 0 })),
 }));
 
 vi.mock('../candidateCoverage', () => ({

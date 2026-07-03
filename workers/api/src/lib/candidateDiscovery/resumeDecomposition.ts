@@ -32,6 +32,7 @@ import type { ParsedCV } from '../cvParser';
 import {
   embedCandidateNode,
   insertCandidateNode,
+  repairCandidateResumeNodeSourceRefs,
 } from './candidateNodes';
 import { computeCandidateCoverageWithFallback } from '../neo4j/candidateGraphQueries';
 import { writeCandidateGraph } from '../neo4j/writeCandidateGraph';
@@ -1022,6 +1023,13 @@ async function writeParserOnlyNodes(
     }
   }
 
+  try {
+    await repairCandidateResumeNodeSourceRefs(_db, candidateId);
+  } catch (repairErr) {
+    const msg = repairErr instanceof Error ? repairErr.message : String(repairErr);
+    errors.push(`Source span repair failed: ${msg}`);
+  }
+
   if (candidateNodes.length > 0 && afterSourceBackedEvidence) {
     try {
       await afterSourceBackedEvidence();
@@ -1250,6 +1258,14 @@ export async function decomposeResumeToGraph(
       console.warn('[resumeDecomposition] Insert failed for', node.node_type, ':', msg);
       result.errors.push(`Insert failed for ${node.node_type}: ${msg}`);
     }
+  }
+
+  try {
+    await repairCandidateResumeNodeSourceRefs(db, candidateId);
+  } catch (repairErr) {
+    const msg = repairErr instanceof Error ? repairErr.message : String(repairErr);
+    console.warn('[resumeDecomposition] source span repair failed:', msg);
+    result.errors.push(`Source span repair failed: ${msg}`);
   }
 
   if (candidateNodes.length > 0 && input.afterSourceBackedEvidence) {

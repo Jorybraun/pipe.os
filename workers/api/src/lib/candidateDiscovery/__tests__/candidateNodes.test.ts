@@ -5,6 +5,7 @@ import type { CandidateNode } from '../../../types';
 import {
   embedCandidateNodes,
   insertCandidateNode,
+  repairCandidateResumeNodeSourceRefs,
   supersedeCandidateNode,
 } from '../candidateNodes';
 
@@ -130,6 +131,28 @@ function createCandidateNodeSchema(db: Database.Database): void {
     CREATE UNIQUE INDEX idx_candidate_nodes_ingestion_key
       ON candidate_nodes(ingestion_key)
       WHERE ingestion_key IS NOT NULL;
+  `);
+}
+
+function createTalentPoolSourceSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE talent_pool_intakes (
+      candidate_id TEXT PRIMARY KEY,
+      profile_r2_key TEXT,
+      submitted_at TEXT
+    );
+    CREATE TABLE artifact_versions (
+      id TEXT PRIMARY KEY,
+      storage_key TEXT,
+      content_text TEXT
+    );
+    CREATE TABLE source_spans (
+      id TEXT PRIMARY KEY,
+      artifact_version_id TEXT,
+      char_start INTEGER,
+      char_end INTEGER,
+      exact_text TEXT
+    );
   `);
 }
 
@@ -297,5 +320,161 @@ describe('insertCandidateNode', () => {
       'Senior Engineer at Acme Corp',
       'adr041-v1',
     ].join('\u0000'));
+  });
+
+  it('resolves exact resume candidate nodes to the current Talent Pool profile source span without changing replay identity', async () => {
+    sqlite = new Database(':memory:');
+    createCandidateNodeSchema(sqlite);
+    createTalentPoolSourceSchema(sqlite);
+    sqlite.exec(`
+      INSERT INTO talent_pool_intakes (candidate_id, profile_r2_key, submitted_at)
+      VALUES ('candidate-replay', 'talent-intake/candidate-replay/profile.txt', '2026-07-03T00:00:00.000Z');
+      INSERT INTO artifact_versions (id, storage_key, content_text)
+      VALUES ('artifact-version-profile', 'talent-intake/candidate-replay/profile.txt', 'Built source-backed Talent Pool ingestion.');
+      INSERT INTO source_spans (id, artifact_version_id, char_start, char_end, exact_text)
+      VALUES ('source-span-profile', 'artifact-version-profile', 0, 39, 'Built source-backed Talent Pool ingestion.');
+    `);
+    const db = new SqliteD1Database(sqlite) as unknown as D1Database;
+    const node: Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'> = {
+      candidate_id: 'candidate-replay',
+      node_type: 'ReviewEvidence',
+      narrative_text: 'Candidate supplied review evidence for Talent Pool ingestion.',
+      extracted_properties_json: JSON.stringify({
+        source_quote: 'Built source-backed Talent Pool ingestion.',
+        source_quote_validated: true,
+        source_quote_char_start: 0,
+        source_quote_char_end: 39,
+      }),
+      embedding_json: null,
+      source_type: 'resume',
+      source_reference: 'resume:review-evidence:0',
+      captured_at: 100,
+      confidence: 0.85,
+      supersedes: null,
+      superseded_at: null,
+      decomposition_version: 'adr041-v1',
+    };
+
+    const first = await insertCandidateNode(db, node, { mirrorLivingContext: false });
+    const second = await insertCandidateNode(db, { ...node, captured_at: 200 }, { mirrorLivingContext: false });
+
+    expect(second.id).toBe(first.id);
+    const row = sqlite.prepare(`
+      SELECT source_reference,
+             captured_at,
+             json_extract(extracted_properties_json, '$.source_span_id') AS source_span_id
+        FROM candidate_nodes
+       WHERE id = ?
+    `).get(first.id) as {
+      source_reference: string;
+      captured_at: number;
+      source_span_id: string;
+    };
+    expect(row).toEqual({
+      source_reference: 'source_span:source-span-profile',
+      captured_at: 200,
+      source_span_id: 'source-span-profile',
+    });
+  });
+
+  it('updates source references when replay sees a source span created after the first insert', async () => {
+    sqlite = new Database(':memory:');
+    createCandidateNodeSchema(sqlite);
+    const db = new SqliteD1Database(sqlite) as unknown as D1Database;
+    const node: Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'> = {
+      candidate_id: 'candidate-late-span',
+      node_type: 'ReviewEvidence',
+      narrative_text: 'Candidate supplied review evidence for late source repair.',
+      extracted_properties_json: JSON.stringify({
+        source_quote: 'Built source-backed Talent Pool ingestion.',
+        source_quote_validated: true,
+        source_quote_char_start: 0,
+        source_quote_char_end: 39,
+      }),
+      embedding_json: null,
+      source_type: 'resume',
+      source_reference: 'resume:review-evidence:0',
+      captured_at: 100,
+      confidence: 0.85,
+      supersedes: null,
+      superseded_at: null,
+      decomposition_version: 'adr041-v1',
+    };
+
+    const first = await insertCandidateNode(db, node, { mirrorLivingContext: false });
+    createTalentPoolSourceSchema(sqlite);
+    sqlite.exec(`
+      INSERT INTO talent_pool_intakes (candidate_id, profile_r2_key, submitted_at)
+      VALUES ('candidate-late-span', 'talent-intake/candidate-late-span/profile.txt', '2026-07-03T00:00:00.000Z');
+      INSERT INTO artifact_versions (id, storage_key, content_text)
+      VALUES ('artifact-version-profile', 'talent-intake/candidate-late-span/profile.txt', 'Built source-backed Talent Pool ingestion.');
+      INSERT INTO source_spans (id, artifact_version_id, char_start, char_end, exact_text)
+      VALUES ('source-span-late-profile', 'artifact-version-profile', 0, 39, 'Built source-backed Talent Pool ingestion.');
+    `);
+
+    const second = await insertCandidateNode(db, { ...node, captured_at: 200 }, { mirrorLivingContext: false });
+
+    expect(second.id).toBe(first.id);
+    const row = sqlite.prepare(`
+      SELECT source_reference,
+             captured_at,
+             json_extract(extracted_properties_json, '$.source_span_id') AS source_span_id
+        FROM candidate_nodes
+       WHERE id = ?
+    `).get(first.id) as {
+      source_reference: string;
+      captured_at: number;
+      source_span_id: string;
+    };
+    expect(row).toEqual({
+      source_reference: 'source_span:source-span-late-profile',
+      captured_at: 200,
+      source_span_id: 'source-span-late-profile',
+    });
+  });
+
+  it('repairs existing exact resume candidate nodes to current profile source spans idempotently', async () => {
+    sqlite = new Database(':memory:');
+    createCandidateNodeSchema(sqlite);
+    createTalentPoolSourceSchema(sqlite);
+    sqlite.exec(`
+      INSERT INTO talent_pool_intakes (candidate_id, profile_r2_key, submitted_at)
+      VALUES ('candidate-repair', 'talent-intake/candidate-repair/profile.txt', '2026-07-03T00:00:00.000Z');
+      INSERT INTO artifact_versions (id, storage_key, content_text)
+      VALUES ('artifact-version-profile', 'talent-intake/candidate-repair/profile.txt', 'Built source-backed Talent Pool ingestion.');
+      INSERT INTO source_spans (id, artifact_version_id, char_start, char_end, exact_text)
+      VALUES ('source-span-repair-profile', 'artifact-version-profile', 0, 39, 'Built source-backed Talent Pool ingestion.');
+      INSERT INTO candidate_nodes (
+        id, candidate_id, node_type, narrative_text, extracted_properties_json,
+        embedding_json, source_type, source_reference, captured_at, confidence,
+        supersedes, superseded_at, decomposition_version, ingestion_key
+      ) VALUES (
+        'candidate-node-repair', 'candidate-repair', 'ReviewEvidence',
+        'Candidate supplied review evidence for repair.',
+        '{"source_quote":"Built source-backed Talent Pool ingestion.","source_quote_validated":true,"source_quote_char_start":0,"source_quote_char_end":39}',
+        NULL, 'resume', 'resume:review-evidence:0', 100, 0.85,
+        NULL, NULL, 'adr041-v1', 'candidate-repair-ingestion-key'
+      );
+    `);
+    const db = new SqliteD1Database(sqlite) as unknown as D1Database;
+
+    await expect(repairCandidateResumeNodeSourceRefs(db, 'candidate-repair'))
+      .resolves.toEqual({ scanned: 1, repaired: 1 });
+    await expect(repairCandidateResumeNodeSourceRefs(db, 'candidate-repair'))
+      .resolves.toEqual({ scanned: 0, repaired: 0 });
+
+    const row = sqlite.prepare(`
+      SELECT source_reference,
+             json_extract(extracted_properties_json, '$.source_span_id') AS source_span_id
+        FROM candidate_nodes
+       WHERE id = 'candidate-node-repair'
+    `).get() as {
+      source_reference: string;
+      source_span_id: string;
+    };
+    expect(row).toEqual({
+      source_reference: 'source_span:source-span-repair-profile',
+      source_span_id: 'source-span-repair-profile',
+    });
   });
 });

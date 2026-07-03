@@ -240,7 +240,7 @@ function seedSourceBackedTalentPoolCandidate(db: Database.Database): void {
     INSERT INTO artifacts (id, workspace_person_id, interaction_id)
     VALUES ('artifact-1', 'workspace-person-1', 'interaction-1');
     INSERT INTO artifact_versions (id, artifact_id, storage_key, content_text)
-    VALUES ('artifact-version-1', 'artifact-1', NULL, 'Jordan shipped TypeScript Workers APIs.');
+    VALUES ('artifact-version-1', 'artifact-1', '${CONTENT_ADDRESSED_PROFILE_KEY}', 'Jordan shipped TypeScript Workers APIs.');
     INSERT INTO source_spans (id, artifact_version_id, char_start, char_end, exact_text, exact_text_hash)
     VALUES (
       'source-span-1',
@@ -442,6 +442,8 @@ describe('auditCandidateIngestion', () => {
       profileUploadArtifactVersionCount: 0,
       contextSourceRefCount: 7,
       candidateNodeWithoutExactSourceCount: 0,
+      candidateNodeSourceSpanMissingCount: 0,
+      candidateNodeStaleProfileSourceCount: 0,
     });
     expect(audit.personProjection).toMatchObject({
       personCount: 1,
@@ -897,6 +899,69 @@ describe('auditCandidateIngestion', () => {
     expect(audit.sourceProof.submittedIntakeWithoutExactCandidateNodeCount).toBe(1);
     expect(audit.failures).toContain('1 submitted Talent Pool intake(s) lack exact-source candidate-node projection');
     expect(audit.nextActions).toContain('Replay or repair Talent Pool profile ingestion so each submitted profile creates an exact-source candidate node.');
+  });
+
+  it('flags exact candidate nodes whose source span cannot be resolved', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.prepare(
+      `UPDATE candidate_nodes
+          SET source_reference = 'source_span:missing-source-span',
+              extracted_properties_json = '{"source_quote":"Jordan shipped TypeScript Workers APIs.","source_quote_validated":true,"source_span_id":"missing-source-span","source_quote_char_start":0,"source_quote_char_end":39}'
+        WHERE id = 'candidate-node-profile'`,
+    ).run();
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.sourceProof.candidateNodeExactSourceQuoteCount).toBe(1);
+    expect(audit.sourceProof.candidateNodeSourceSpanMissingCount).toBe(1);
+    expect(audit.sourceProof.candidateNodeStaleProfileSourceCount).toBe(0);
+    expect(audit.failures).toContain('1 exact candidate node(s) reference missing source spans');
+    expect(audit.nextActions).toContain('Repair candidate-node source references so every exact candidate node resolves to an existing source span.');
+  });
+
+  it('flags exact candidate nodes whose source span belongs to an old profile key', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.exec(`
+      INSERT INTO interactions (id, workspace_person_id, interaction_type, external_reference, metadata_json)
+      VALUES ('interaction-old-profile', 'workspace-person-1', 'message', 'candidate-1', '{"source":"roleless_candidate_intake"}');
+      INSERT INTO artifacts (id, workspace_person_id, interaction_id)
+      VALUES ('artifact-old-profile', 'workspace-person-1', 'interaction-old-profile');
+      INSERT INTO artifact_versions (id, artifact_id, storage_key, content_text)
+      VALUES ('artifact-version-old-profile', 'artifact-old-profile', 'talent-intake/candidate-1/old-profile.txt', 'Jordan shipped TypeScript Workers APIs.');
+      INSERT INTO source_spans (id, artifact_version_id, char_start, char_end, exact_text, exact_text_hash)
+      VALUES (
+        'source-span-old-profile',
+        'artifact-version-old-profile',
+        0,
+        39,
+        'Jordan shipped TypeScript Workers APIs.',
+        '687edcc54818080206251abe464c600f3e63820374b8b20b74985f81455531b6'
+      );
+      UPDATE candidate_nodes
+         SET source_reference = 'source_span:source-span-old-profile',
+             extracted_properties_json = '{"source_quote":"Jordan shipped TypeScript Workers APIs.","source_quote_validated":true,"source_span_id":"source-span-old-profile","source_quote_char_start":0,"source_quote_char_end":39}'
+       WHERE id = 'candidate-node-profile';
+    `);
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.sourceProof.candidateNodeExactSourceQuoteCount).toBe(1);
+    expect(audit.sourceProof.candidateNodeSourceSpanMissingCount).toBe(0);
+    expect(audit.sourceProof.candidateNodeStaleProfileSourceCount).toBe(1);
+    expect(audit.failures).toContain('1 exact profile/resume candidate node(s) do not cite the current Talent Pool profile source');
+    expect(audit.nextActions).toContain('Replay or repair candidate-node projection so exact profile/resume nodes cite the current Talent Pool profile storage key.');
   });
 
   it('flags submitted candidates without exact-source nodes even when another candidate has extra exact nodes', async () => {

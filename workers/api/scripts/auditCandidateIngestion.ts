@@ -83,6 +83,8 @@ export interface CandidateSourceProofAudit {
   candidateNodeExactSourceQuoteCount: number;
   submittedIntakeWithoutExactCandidateNodeCount: number;
   candidateNodeWithoutExactSourceCount: number;
+  candidateNodeSourceSpanMissingCount: number;
+  candidateNodeStaleProfileSourceCount: number;
   duplicateCandidateNodeEvidenceCount: number;
   candidateNodeSourceAnchorConflictCount: number;
   artifactVersionCount: number;
@@ -174,6 +176,8 @@ interface SourceProofRow {
   candidate_node_exact_source_quote_count: number | null;
   submitted_intake_without_exact_candidate_node_count: number | null;
   candidate_node_without_exact_source_count: number | null;
+  candidate_node_source_span_missing_count: number | null;
+  candidate_node_stale_profile_source_count: number | null;
   duplicate_candidate_node_evidence_count: number | null;
   candidate_node_source_anchor_conflict_count: number | null;
   artifact_version_count: number | null;
@@ -541,6 +545,42 @@ async function loadSourceProof(
            AND cn.source_type = 'resume'
            AND COALESCE(json_extract(cn.extracted_properties_json, '$.source_quote_validated'), 0) <> 1
            AND (cn.source_reference IS NULL OR TRIM(cn.source_reference) = '')) AS candidate_node_without_exact_source_count,
+       (SELECT COUNT(DISTINCT cn.id)
+          FROM audited_candidates ac
+          JOIN candidate_nodes cn ON cn.candidate_id = ac.id
+          LEFT JOIN source_spans ss ON ss.id = COALESCE(
+            json_extract(cn.extracted_properties_json, '$.source_span_id'),
+            CASE
+              WHEN cn.source_reference LIKE 'source_span:%'
+              THEN substr(cn.source_reference, LENGTH('source_span:') + 1)
+              ELSE NULL
+            END
+          )
+         WHERE cn.superseded_at IS NULL
+           AND COALESCE(cn.confidence, 0) > 0
+           AND json_extract(cn.extracted_properties_json, '$.source_quote_validated') = 1
+           AND ss.id IS NULL) AS candidate_node_source_span_missing_count,
+       (SELECT COUNT(DISTINCT cn.id)
+          FROM audited_candidates ac
+          JOIN talent_pool_intakes t ON t.candidate_id = ac.id
+          JOIN candidate_nodes cn ON cn.candidate_id = ac.id
+          JOIN source_spans ss ON ss.id = COALESCE(
+            json_extract(cn.extracted_properties_json, '$.source_span_id'),
+            CASE
+              WHEN cn.source_reference LIKE 'source_span:%'
+              THEN substr(cn.source_reference, LENGTH('source_span:') + 1)
+              ELSE NULL
+            END
+          )
+          JOIN artifact_versions av ON av.id = ss.artifact_version_id
+         WHERE t.submitted_at IS NOT NULL
+           AND t.profile_r2_key IS NOT NULL
+           AND TRIM(t.profile_r2_key) <> ''
+           AND cn.superseded_at IS NULL
+           AND COALESCE(cn.confidence, 0) > 0
+           AND json_extract(cn.extracted_properties_json, '$.source_quote_validated') = 1
+           AND cn.source_type IN ('resume', 'talent_pool_profile_intake')
+           AND COALESCE(av.storage_key, '') <> t.profile_r2_key) AS candidate_node_stale_profile_source_count,
        (SELECT COUNT(*) FROM (
           SELECT
             cn.candidate_id,
@@ -652,6 +692,8 @@ async function loadSourceProof(
     candidateNodeExactSourceQuoteCount: toNumber(row?.candidate_node_exact_source_quote_count),
     submittedIntakeWithoutExactCandidateNodeCount: toNumber(row?.submitted_intake_without_exact_candidate_node_count),
     candidateNodeWithoutExactSourceCount: toNumber(row?.candidate_node_without_exact_source_count),
+    candidateNodeSourceSpanMissingCount: toNumber(row?.candidate_node_source_span_missing_count),
+    candidateNodeStaleProfileSourceCount: toNumber(row?.candidate_node_stale_profile_source_count),
     duplicateCandidateNodeEvidenceCount: toNumber(row?.duplicate_candidate_node_evidence_count),
     candidateNodeSourceAnchorConflictCount: toNumber(row?.candidate_node_source_anchor_conflict_count),
     artifactVersionCount: toNumber(row?.artifact_version_count),
@@ -1220,6 +1262,8 @@ export async function auditCandidateIngestion(
       candidateNodeExactSourceQuoteCount: 0,
       submittedIntakeWithoutExactCandidateNodeCount: 0,
       candidateNodeWithoutExactSourceCount: 0,
+      candidateNodeSourceSpanMissingCount: 0,
+      candidateNodeStaleProfileSourceCount: 0,
       duplicateCandidateNodeEvidenceCount: 0,
       candidateNodeSourceAnchorConflictCount: 0,
       artifactVersionCount: 0,
@@ -1355,6 +1399,12 @@ export async function auditCandidateIngestion(
     ...(sourceProof.candidateNodeWithoutExactSourceCount > 0
       ? [`${sourceProof.candidateNodeWithoutExactSourceCount} positive candidate node(s) lack an exact validated resume source quote`]
       : []),
+    ...(sourceProof.candidateNodeSourceSpanMissingCount > 0
+      ? [`${sourceProof.candidateNodeSourceSpanMissingCount} exact candidate node(s) reference missing source spans`]
+      : []),
+    ...(sourceProof.candidateNodeStaleProfileSourceCount > 0
+      ? [`${sourceProof.candidateNodeStaleProfileSourceCount} exact profile/resume candidate node(s) do not cite the current Talent Pool profile source`]
+      : []),
     ...(sourceProof.duplicateCandidateNodeEvidenceCount > 0
       ? [`${sourceProof.duplicateCandidateNodeEvidenceCount} duplicate active candidate-node evidence group(s) were found`]
       : []),
@@ -1420,6 +1470,12 @@ export async function auditCandidateIngestion(
       : []),
     ...(sourceProof.candidateNodeWithoutExactSourceCount > 0
       ? ['Repair candidate-node decomposition so positive nodes carry validated source_quote offsets or remain non-projecting diagnostics.']
+      : []),
+    ...(sourceProof.candidateNodeSourceSpanMissingCount > 0
+      ? ['Repair candidate-node source references so every exact candidate node resolves to an existing source span.']
+      : []),
+    ...(sourceProof.candidateNodeStaleProfileSourceCount > 0
+      ? ['Replay or repair candidate-node projection so exact profile/resume nodes cite the current Talent Pool profile storage key.']
       : []),
     ...(sourceProof.duplicateCandidateNodeEvidenceCount > 0
       ? ['Replay or repair candidate-node ingestion so active source-backed evidence rows are idempotent.']
@@ -1594,6 +1650,8 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  exact node quotes:     ${report.sourceProof.candidateNodeExactSourceQuoteCount}`);
   console.log(`  submitted node gaps:   ${report.sourceProof.submittedIntakeWithoutExactCandidateNodeCount}`);
   console.log(`  node quote gaps:       ${report.sourceProof.candidateNodeWithoutExactSourceCount}`);
+  console.log(`  node span gaps:        ${report.sourceProof.candidateNodeSourceSpanMissingCount}`);
+  console.log(`  stale node sources:    ${report.sourceProof.candidateNodeStaleProfileSourceCount}`);
   console.log(`  duplicate nodes:       ${report.sourceProof.duplicateCandidateNodeEvidenceCount}`);
   console.log(`  anchor conflicts:      ${report.sourceProof.candidateNodeSourceAnchorConflictCount}`);
   console.log(`  artifact versions:     ${report.sourceProof.artifactVersionCount}`);

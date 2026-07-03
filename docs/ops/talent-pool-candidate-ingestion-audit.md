@@ -195,8 +195,10 @@ exact-source candidate-node projection, PDF/DOCX profile storage keys without
 extracted source spans, raw external refs or phone intent without operational
 context records, operational context source refs that do not cite the exact
 submitted field text, source-less positive claims, duplicate projected edges,
-candidate nodes with no exact source quote, source spans whose exact text no
-longer matches their immutable artifact text slice or exact-text hash,
+candidate nodes with no exact source quote, exact candidate nodes whose source
+span is missing or does not belong to the current Talent Pool profile source,
+source spans whose exact text no longer matches their immutable artifact text
+slice or exact-text hash,
 duplicate active candidate-node evidence, candidate-node source anchor
 conflicts, or roleless application/person-role rows.
 
@@ -639,6 +641,28 @@ the object was 14 bytes and SHA-256
 `32ed5017fce95db1619dfd80fe7ffe1e51ec4dfb98e43e3266d265836f6ae62b`, again
 matching the storage-key prefix and submitted source bytes without deriving a
 positive profile claim.
+
+After deploying Worker version `216bfae8-96e9-44a4-902e-14eeffdfa087` on
+2026-07-03, `npm run smoke:talent-pool-browser-upload-dev` created invite token
+`e45ce397-501b-40de-bd41-2409f02ee70d` and submitted a plain-text profile file
+through the public `/talent/:token` form. The smoke returned `status: ready`,
+`candidateNodeCount: 13`, `candidateNodeExactSourceQuoteCount: 13`,
+`contextSourceRefCount: 8`, `profileUploadArtifactVersionCount: 1`,
+`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`; the
+recruiter/person read proof found one unified People candidate row, one
+candidate source-search hit, one person source-search hit, 9 timeline entries,
+9 person evidence source spans, and 5 person evidence context records. It
+fetched the exact R2 key
+`talent-intake/3b1352b6-f3d2-46d8-b44c-5c131903d786/a8fd506d7b6a73acd1dc1ab553f83d2eceb5afd167805292a43ba454a47098f9-talent-smoke-20260703173300-b89b5d82.txt`;
+the object was 379 bytes and SHA-256
+`a8fd506d7b6a73acd1dc1ab553f83d2eceb5afd167805292a43ba454a47098f9`, matching
+both the content-addressed storage-key prefix and submitted source bytes. A
+direct remote dev D1 audit using
+`CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 npm --prefix workers/api run candidate-ingestion:audit -- --remote --invite-token e45ce397-501b-40de-bd41-2409f02ee70d --require-context-records`
+returned `status: ready`, `candidateNodeSourceSpanMissingCount: 0`,
+`candidateNodeStaleProfileSourceCount: 0`,
+`candidateNodeSourceAnchorConflictCount: 0`,
+`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.
 
 Remote source-span sampling proved operational context refs preserve exact
 field text:
