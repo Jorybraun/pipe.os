@@ -81,6 +81,12 @@ The verifier reports:
 - duplicate active candidate-node evidence groups
 - source-anchor conflicts where multiple structured resume facts point at the
   same exact quote offsets
+- `hardInvariantStatus`, `hardInvariantFailures`, and
+  `explicitEvidenceGapCount`, so operators can distinguish an unsafe provenance
+  violation from a safe-but-incomplete extraction gap. A report may be
+  `status: not_ready` while `hardInvariantStatus: clean` when the only blocker
+  is an explicit `profile_text_extraction_needed` document gap backed by a raw
+  upload receipt.
 
 ## Goal Coverage Map
 
@@ -1035,13 +1041,13 @@ all 4 unauthenticated browser scenarios passed.
   older roleless message spans because their current uploaded PDFs have no
   extracted source spans; newer upload paths and scheduled repair project an
   artifact-level receipt context for current uploads instead of fabricated
-  source spans. New scoped browser smokes audit clean. The 2026-07-03T21:05Z
-  post-deploy `--limit 5` app-dev audit proves zero
-  source-less positives, zero duplicate projected edges, zero failed ingestion
-  rows, zero error-text rows, zero generic submitted candidate-node gaps, four
-  embedded document-upload intakes with claim-level source spans, five
-  upload-receipt context records, and zero document rows missing extraction
-  proof inside the recent window. One
+  source spans. New scoped browser smokes audit clean. The 2026-07-03T21:16Z
+  post-deploy `--limit 5` app-dev audit reports `hardInvariantStatus: clean`,
+  `explicitEvidenceGapCount: 1`, zero source-less positives, zero duplicate
+  projected edges, zero failed ingestion rows, zero error-text rows, zero
+  generic submitted candidate-node gaps, four embedded document-upload intakes
+  with claim-level source spans, five upload-receipt context records, and zero
+  document rows missing extraction proof inside the recent window. One
   recent PDF/DOCX intake remains an explicit `profile_text_extraction_needed`
   receipt-backed evidence gap because no extracted text exists. Use `--limit`
   for recent-window app-dev health checks because full remote unscoped proof can

@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Candidate-ingestion audit now reports hard invariant status and explicit evidence-gap counts separately, so receipt-backed document extraction gaps do not hide unsafe source-less claims, duplicate projections, or provenance violations.
 - Talent Pool dev smokes and route tests now cover extractable PDF profile uploads as source-backed evidence, requiring document source spans, upload receipts, recruiter/person reads, and idempotent replay instead of proving only the unextractable-PDF gap path.
 - Scheduled candidate-ingestion retry now treats transient D1/persistence failures during source-backed Talent Pool ingestion as replayable from the original source artifact, including uploaded document profile evidence.
 - Talent Pool profile uploads now project a source-backed `talent_pool_profile_upload_receipt` person-context record that cites the raw upload `artifact_version`, giving unextractable PDF/DOCX gaps artifact-level provenance without fabricating text claims.

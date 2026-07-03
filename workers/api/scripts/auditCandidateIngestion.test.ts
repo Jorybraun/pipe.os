@@ -390,6 +390,9 @@ describe('auditCandidateIngestion', () => {
     const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite));
 
     expect(audit.status).toBe('not_ready');
+    expect(audit.hardInvariantStatus).toBe('not_evaluated');
+    expect(audit.explicitEvidenceGapCount).toBe(0);
+    expect(audit.hardInvariantFailures).toEqual([]);
     expect(audit.missingTables).toContain('candidates');
     expect(audit.failures[0]).toContain('missing candidate-ingestion tables');
   });
@@ -401,6 +404,9 @@ describe('auditCandidateIngestion', () => {
     const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite));
 
     expect(audit.status).toBe('not_ready');
+    expect(audit.hardInvariantStatus).toBe('not_evaluated');
+    expect(audit.explicitEvidenceGapCount).toBe(0);
+    expect(audit.hardInvariantFailures).toEqual([]);
     expect(audit.auditedCandidateCount).toBe(0);
     expect(audit.failures).toContain('no Talent Pool candidates were found to audit');
     expect(audit.nextActions).toContain('Submit at least one Talent Pool candidate through /talent/:token before expecting audit proof.');
@@ -417,6 +423,9 @@ describe('auditCandidateIngestion', () => {
     });
 
     expect(audit.status).toBe('ready');
+    expect(audit.hardInvariantStatus).toBe('clean');
+    expect(audit.explicitEvidenceGapCount).toBe(0);
+    expect(audit.hardInvariantFailures).toEqual([]);
     expect(audit.auditedCandidateCount).toBe(1);
     expect(audit.rawCapture).toMatchObject({
       submittedIntakeCount: 1,
@@ -835,6 +844,13 @@ describe('auditCandidateIngestion', () => {
     });
 
     expect(audit.status).toBe('not_ready');
+    expect(audit.hardInvariantStatus).toBe('violated');
+    expect(audit.hardInvariantFailures).toEqual(expect.arrayContaining([
+      '1 duplicate person-projected context edge group(s) were found',
+      '1 positive person-context claim(s) have no source refs or source spans',
+      '1 positive candidate node(s) lack an exact validated resume source quote',
+      '1 roleless Talent Pool candidate(s) have application rows before a role-backed process exists',
+    ]));
     expect(audit.duplicateProjectedEdgeCount).toBe(1);
     expect(audit.sourceLessPositiveClaimCount).toBe(1);
     expect(audit.sourceProof.candidateNodeWithoutExactSourceCount).toBe(1);
@@ -1080,6 +1096,7 @@ describe('auditCandidateIngestion', () => {
     sqlite = new Database(':memory:');
     createSchema(sqlite);
     seedSourceBackedTalentPoolCandidate(sqlite);
+    const contentAddressedPdfKey = 'talent-intake/candidate-1/687edcc54818080206251abe464c600f3e63820374b8b20b74985f81455531b6-profile.pdf';
     sqlite.exec(`
       DELETE FROM candidate_nodes WHERE candidate_id = 'candidate-1';
       DELETE FROM signal_evidence;
@@ -1090,14 +1107,14 @@ describe('auditCandidateIngestion', () => {
     `);
     sqlite.prepare(
       `UPDATE talent_pool_intakes
-          SET profile_r2_key = 'talent-intake/candidate-1/profile.pdf'
+          SET profile_r2_key = ?
         WHERE candidate_id = 'candidate-1'`,
-    ).run();
+    ).run(contentAddressedPdfKey);
     sqlite.prepare(
       `UPDATE candidates
-          SET resume_s3_key = 'talent-intake/candidate-1/profile.pdf'
+          SET resume_s3_key = ?
         WHERE id = 'candidate-1'`,
-    ).run();
+    ).run(contentAddressedPdfKey);
     sqlite.prepare(
       `UPDATE candidate_ingestion
           SET current_step = 'profile_text_extraction_needed'
@@ -1109,7 +1126,7 @@ describe('auditCandidateIngestion', () => {
       INSERT INTO artifacts (id, workspace_person_id, interaction_id, artifact_type, logical_key, metadata_json)
       VALUES ('artifact-upload', 'workspace-person-1', 'interaction-upload', 'profile_upload', 'roleless_candidate_profile_upload', '{"evidenceKind":"profile_upload_source"}');
       INSERT INTO artifact_versions (id, artifact_id, storage_key, content_text)
-      VALUES ('artifact-version-upload', 'artifact-upload', 'talent-intake/candidate-1/profile.pdf', NULL);
+      VALUES ('artifact-version-upload', 'artifact-upload', '${contentAddressedPdfKey}', NULL);
       INSERT INTO context_records (id, workspace_person_id, record_type, predicate, narrative, polarity)
       VALUES (
         'context-record-upload-receipt',
@@ -1129,6 +1146,9 @@ describe('auditCandidateIngestion', () => {
     });
 
     expect(audit.status).toBe('not_ready');
+    expect(audit.hardInvariantStatus).toBe('clean');
+    expect(audit.explicitEvidenceGapCount).toBe(1);
+    expect(audit.hardInvariantFailures).toEqual([]);
     expect(audit.rawCapture.documentProfileStorageKeyCount).toBe(1);
     expect(audit.ingestionState.steps).toEqual([
       { currentStep: 'profile_text_extraction_needed', count: 1 },
@@ -1179,6 +1199,9 @@ describe('auditCandidateIngestion', () => {
     });
 
     expect(audit.status).toBe('not_ready');
+    expect(audit.hardInvariantStatus).toBe('violated');
+    expect(audit.explicitEvidenceGapCount).toBe(0);
+    expect(audit.hardInvariantFailures).toContain('1 PDF/DOCX Talent Pool profile upload(s) have neither extracted source spans nor an explicit profile_text_extraction_needed upload receipt gap');
     expect(audit.sourceProof.documentProfileSourceSpanCount).toBe(0);
     expect(audit.sourceProof.documentProfileExtractionGapCount).toBe(0);
     expect(audit.sourceProof.documentProfileMissingExtractionProofCount).toBe(1);

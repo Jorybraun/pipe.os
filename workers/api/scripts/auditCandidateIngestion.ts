@@ -122,6 +122,7 @@ export interface CandidatePersonProjectionAudit {
 
 export interface CandidateIngestionAudit {
   status: 'ready' | 'not_ready';
+  hardInvariantStatus: 'clean' | 'violated' | 'not_evaluated';
   checkedAt: string;
   scope: {
     candidateId: string | null;
@@ -139,6 +140,8 @@ export interface CandidateIngestionAudit {
   sourceLessPositiveClaimCount: number;
   sourceLessDesignQueueSuggestionCount: number;
   duplicateProjectedEdgeCount: number;
+  explicitEvidenceGapCount: number;
+  hardInvariantFailures: string[];
   failures: string[];
   nextActions: string[];
 }
@@ -1461,6 +1464,9 @@ export async function auditCandidateIngestion(
       sourceLessPositiveClaimCount: 0,
       sourceLessDesignQueueSuggestionCount: 0,
       duplicateProjectedEdgeCount: 0,
+      explicitEvidenceGapCount: 0,
+      hardInvariantStatus: 'not_evaluated',
+      hardInvariantFailures: [],
       failures: [`missing candidate-ingestion tables: ${missingTables.join(', ')}`],
       nextActions: ['Apply Talent Pool, living-context, and context-record migrations before auditing candidate ingestion.'],
     };
@@ -1596,6 +1602,16 @@ export async function auditCandidateIngestion(
       : []),
   ];
 
+  const explicitEvidenceGapCount = sourceProof.documentProfileExtractionGapCount;
+  const hardInvariantFailures = auditedCandidateCount === 0
+    ? []
+    : failures.filter((failure) =>
+      !failure.includes('are explicit profile_text_extraction_needed evidence gaps with raw upload receipts and no extracted profile text')
+    );
+  const hardInvariantStatus = auditedCandidateCount === 0
+    ? 'not_evaluated'
+    : hardInvariantFailures.length === 0 ? 'clean' : 'violated';
+
   const nextActions = [
     ...(auditedCandidateCount === 0 && !scoped(options)
       ? ['Submit at least one Talent Pool candidate through /talent/:token before expecting audit proof.']
@@ -1671,6 +1687,7 @@ export async function auditCandidateIngestion(
   return {
     ...base,
     status: failures.length === 0 ? 'ready' : 'not_ready',
+    hardInvariantStatus,
     auditedCandidateCount,
     missingTables,
     rawCapture,
@@ -1680,6 +1697,8 @@ export async function auditCandidateIngestion(
     sourceLessPositiveClaimCount,
     sourceLessDesignQueueSuggestionCount,
     duplicateProjectedEdgeCount,
+    explicitEvidenceGapCount,
+    hardInvariantFailures,
     failures,
     nextActions: [...new Set(nextActions)],
   };
@@ -1786,6 +1805,8 @@ function openLocalDatabase(databasePath?: string): { database: LocalSqliteDataba
 function printHuman(report: CandidateIngestionAudit, databasePath: string): void {
   console.log('candidate ingestion audit');
   console.log(`  status:                ${report.status}`);
+  console.log(`  hard invariants:       ${report.hardInvariantStatus}`);
+  console.log(`  explicit evidence gaps: ${report.explicitEvidenceGapCount}`);
   console.log(`  database:              ${databasePath}`);
   console.log(`  candidate scope:       ${report.scope.candidateId ?? report.scope.inviteToken ?? report.scope.email ?? 'all talent pool intakes'}`);
   console.log(`  candidate limit:       ${report.scope.candidateLimit ?? 'none'}`);
