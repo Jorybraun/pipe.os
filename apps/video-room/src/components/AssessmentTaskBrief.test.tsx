@@ -359,6 +359,50 @@ describe('AssessmentTaskBrief', () => {
     expect(submission.textContent).not.toContain('strong_evidence_to_advance');
   });
 
+  it('shows evaluator diagnostics instead of hiding an unavailable AI evaluator state', () => {
+    render(
+      <AssessmentTaskBrief
+        packet={packet}
+        workspace={workspace}
+        progress={{
+          ...progress,
+          stage: 'NEEDS_ATTENTION',
+          nextAction: 'RESOLVE_DIAGNOSTIC',
+          nextActionLabel: 'Resolve the blocking diagnostic before continuing.',
+          evaluation: {
+            status: 'AI_DEVELOPER_UNAVAILABLE',
+            summary: 'Workers AI is not configured for source-backed repo-task evaluation.',
+            recommendation: 'insufficient_evidence',
+            createdAt: '2026-06-29T22:03:00.000Z',
+            diagnostics: [
+              {
+                id: 'diagnostic-ai-unavailable',
+                code: 'AI_DEVELOPER_UNAVAILABLE',
+                severity: 'blocking',
+                message: 'Workers AI is not configured for source-backed repo-task evaluation.',
+                sourceRefCount: 1,
+                sourceRefTypes: ['assessment_evaluation_request'],
+              },
+            ],
+          },
+        }}
+        workspaceReady
+      />,
+    );
+
+    const submission = screen.getByTestId('assessment-task-brief-submission');
+    expect(submission.textContent).toContain('Evaluation needs attention');
+    expect(submission.textContent).toContain('Workers AI is not configured for source-backed repo-task evaluation.');
+    expect(submission.textContent).not.toContain('Assessment report ready');
+
+    const diagnostics = screen.getByTestId('assessment-task-brief-diagnostics');
+    expect(diagnostics.textContent).toContain('Evaluator cautions');
+    expect(diagnostics.textContent).toContain('Blocking: AI Developer Unavailable');
+    expect(diagnostics.textContent).toContain('Workers AI is not configured for source-backed repo-task evaluation.');
+    expect(diagnostics.textContent).toContain('1 source ref: Assessment Evaluation Request');
+    expect(diagnostics.textContent).not.toContain('diagnostic-ai-unavailable');
+  });
+
   it('shows exactly which challenge packet fields are missing', () => {
     render(
       <AssessmentTaskBrief

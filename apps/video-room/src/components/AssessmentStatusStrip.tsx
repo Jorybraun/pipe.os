@@ -107,6 +107,10 @@ function formatProgressToken(value: string | null | undefined): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function formatDiagnosticCode(value: string): string {
+  return formatProgressToken(value).replace(/\bAi\b/g, 'AI');
+}
+
 function shortSha(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed.slice(0, 8) : null;
@@ -135,6 +139,15 @@ function assessmentProgressEvidenceLabels(progress: RoomAssessmentProgressSnapsh
     progress.hasTestEvidence ? 'tests' : null,
     progress.hasVerificationGap ? 'verification gap' : null,
   ].filter(Boolean).join(', ') || 'no evidence yet';
+}
+
+function evaluationDiagnosticTone(
+  diagnostic: NonNullable<NonNullable<RoomAssessmentProgressSnapshot['evaluation']>['diagnostics']>[number],
+): 'blocked' | 'waiting' | 'progress' {
+  const severity = diagnostic.severity.toLowerCase();
+  if (severity === 'blocking' || severity === 'error') return 'blocked';
+  if (severity === 'warning') return 'waiting';
+  return 'progress';
 }
 
 export function AssessmentStatusStrip({
@@ -184,6 +197,7 @@ export function AssessmentStatusStrip({
       : 'Use video, chat, and recording');
   const progressCommitSha = shortSha(assessmentProgress?.commit?.commitSha ?? null);
   const aiUse = assessmentProgress ? summarizeAssessmentAiUse(assessmentProgress) : null;
+  const primaryEvaluationDiagnostic = assessmentProgress?.evaluation?.diagnostics?.[0] ?? null;
 
   return (
     <section
@@ -244,6 +258,16 @@ export function AssessmentStatusStrip({
             Commit {progressCommitSha}
           </span>
         )}
+        {primaryEvaluationDiagnostic && (
+          <span
+            className={`assessment-status-pill is-${evaluationDiagnosticTone(primaryEvaluationDiagnostic)}`}
+            data-testid="assessment-evaluation-diagnostic"
+            title={primaryEvaluationDiagnostic.message}
+          >
+            <AlertTriangle size={12} />
+            {formatDiagnosticCode(primaryEvaluationDiagnostic.code)}
+          </span>
+        )}
       </div>
 
       {(summary.task || challengeNeedsAttention) && (
@@ -252,6 +276,12 @@ export function AssessmentStatusStrip({
           <span data-testid="assessment-next-action">
             {summary.task ?? workspace?.challenge.message ?? 'Challenge needs attention'}
           </span>
+        </div>
+      )}
+      {primaryEvaluationDiagnostic && (
+        <div className="assessment-status-detail is-diagnostic" data-testid="assessment-evaluation-diagnostic-detail">
+          <AlertTriangle size={13} />
+          <span>{primaryEvaluationDiagnostic.message}</span>
         </div>
       )}
 

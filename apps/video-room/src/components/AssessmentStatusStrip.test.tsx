@@ -258,6 +258,46 @@ describe('AssessmentStatusStrip', () => {
     expect(coverage.textContent).not.toContain('tests');
   });
 
+  it('surfaces evaluation diagnostics in the room status strip', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace()}
+        assessmentProgress={{
+          ...progress,
+          stage: 'NEEDS_ATTENTION',
+          nextAction: 'RESOLVE_DIAGNOSTIC',
+          nextActionLabel: 'Resolve the blocking diagnostic before continuing.',
+          evaluation: {
+            status: 'AI_DEVELOPER_UNAVAILABLE',
+            summary: 'Workers AI is not configured for source-backed repo-task evaluation.',
+            recommendation: 'insufficient_evidence',
+            createdAt: '2026-06-29T22:03:00.000Z',
+            diagnostics: [
+              {
+                id: 'diagnostic-ai-unavailable',
+                code: 'AI_DEVELOPER_UNAVAILABLE',
+                severity: 'blocking',
+                message: 'Workers AI is not configured for source-backed repo-task evaluation.',
+                sourceRefCount: 1,
+                sourceRefTypes: ['assessment_evaluation_request'],
+              },
+            ],
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('assessment-progress-stage').textContent).toContain('Needs Attention');
+    expect(screen.getByTestId('assessment-evaluation-diagnostic').textContent).toContain('AI Developer Unavailable');
+    expect(screen.getByTestId('assessment-evaluation-diagnostic').getAttribute('title')).toBe(
+      'Workers AI is not configured for source-backed repo-task evaluation.',
+    );
+    expect(screen.getByTestId('assessment-evaluation-diagnostic-detail').textContent).toContain(
+      'Workers AI is not configured for source-backed repo-task evaluation.',
+    );
+  });
+
   it('shows a launch action when the host can start the controlled workspace', () => {
     const onLaunchWorkspace = vi.fn();
     render(

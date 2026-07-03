@@ -2016,6 +2016,10 @@ button:focus-visible {
   color: rgba(244, 248, 255, 0.72);
 }
 
+.assessment-status-detail.is-diagnostic {
+  color: #fecaca;
+}
+
 .assessment-status-detail span {
   min-width: 0;
   overflow: hidden;
@@ -3125,6 +3129,7 @@ button:focus-visible {
 
 .assessment-task-brief-step,
 .assessment-task-brief-proof,
+.assessment-task-brief-diagnostics,
 .assessment-task-brief-contract,
 .assessment-task-brief-empty {
   padding: 12px;
@@ -3135,6 +3140,7 @@ button:focus-visible {
 
 .assessment-task-brief-step strong,
 .assessment-task-brief-proof strong,
+.assessment-task-brief-diagnostics strong,
 .assessment-task-brief-contract strong {
   display: block;
   margin-bottom: 5px;
@@ -3260,6 +3266,67 @@ button:focus-visible {
   font-size: 11px;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.assessment-task-brief-diagnostics {
+  display: grid;
+  gap: 10px;
+  border-color: rgba(248, 113, 113, 0.32);
+  background: rgba(127, 29, 29, 0.18);
+}
+
+.assessment-task-brief-diagnostics-header {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.assessment-task-brief-diagnostics-header svg {
+  color: #fca5a5;
+}
+
+.assessment-task-brief-diagnostics-header strong {
+  color: #fecaca;
+  margin-bottom: 0;
+}
+
+.assessment-task-brief-diagnostics-header p {
+  margin: 4px 0 0;
+  color: rgba(254, 226, 226, 0.78);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.assessment-task-brief-diagnostics ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assessment-task-brief-diagnostics li {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.22);
+  border-radius: 6px;
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.assessment-task-brief-diagnostics li span {
+  color: #fecaca;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.assessment-task-brief-diagnostics li small {
+  color: rgba(254, 226, 226, 0.76);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .assessment-task-brief-proof {

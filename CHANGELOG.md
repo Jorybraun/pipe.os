@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Candidate assessment rooms now surface source-backed evaluator diagnostics, including unavailable AI evaluators, instead of hiding blocked evaluation states behind generic progress copy.
 - Candidate assessment rooms now distinguish real agent responses, blocked AI prompts, bridge traces, and no AI evidence in the cockpit instead of flattening every case into generic AI-use captured copy.
 - Recruiter interview cards now flag whether submitted assessment work has a review artifact, distinguishing external GitHub commits from source-backed captured workspace diffs and missing diff proof.
 - Open-source workspace dev smoke now fails if a workspace-only commit lacks a recruiter-visible captured `code_diff` panel, keeping the reviewable-diff path covered when no GitHub compare URL exists.

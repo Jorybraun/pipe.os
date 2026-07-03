@@ -179,6 +179,15 @@ export interface RoomAssessmentReadinessSnapshot {
   confidence: RoomAssessmentReadinessItem[];
 }
 
+export interface RoomAssessmentEvaluationDiagnostic {
+  id: string;
+  code: string;
+  severity: string;
+  message: string;
+  sourceRefCount: number;
+  sourceRefTypes: string[];
+}
+
 export interface RoomAssessmentChallengePacketContract {
   schemaVersion: 'challenge-packet-contract-v1';
   isComplete: boolean;
@@ -235,6 +244,7 @@ export interface RoomAssessmentProgressSnapshot {
     recommendation?: string | null;
     createdAt: string;
     evidenceCoverage?: unknown;
+    diagnostics?: RoomAssessmentEvaluationDiagnostic[];
     claims?: Array<{
       id: string;
       polarity: string;

@@ -1,4 +1,4 @@
-import { CheckCircle2, CircleDashed, ClipboardCheck, GitBranch, ShieldCheck, SquareTerminal, Upload } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CircleDashed, ClipboardCheck, GitBranch, ShieldCheck, SquareTerminal, Upload } from 'lucide-react';
 import { summarizeChallengePacket } from '../lib/challengePacketSummary';
 import { summarizeAssessmentAiUse } from '../lib/aiUseSummary';
 import type { RoomAssessmentProgressSnapshot, RoomWorkspace, RoomWorkspaceChallengePacket } from '../types';
@@ -44,8 +44,41 @@ interface SubmissionStatus {
   tone: 'ready' | 'review' | 'submitted';
 }
 
+type EvaluationDiagnostic = NonNullable<NonNullable<RoomAssessmentProgressSnapshot['evaluation']>['diagnostics']>[number];
+
+function sentenceCaseToken(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return 'Unknown';
+  return trimmed
+    .replace(/[_-]+/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .replace(/\bAi\b/g, 'AI');
+}
+
+function diagnosticSourceSummary(diagnostic: EvaluationDiagnostic): string {
+  const sourceTypes = diagnostic.sourceRefTypes.length > 0
+    ? diagnostic.sourceRefTypes.map(sentenceCaseToken).join(', ')
+    : 'No source refs listed';
+  const countLabel = diagnostic.sourceRefCount === 1 ? 'source ref' : 'source refs';
+  return `${diagnostic.sourceRefCount} ${countLabel}: ${sourceTypes}`;
+}
+
+function primaryEvaluationDiagnostic(progress: RoomAssessmentProgressSnapshot): EvaluationDiagnostic | null {
+  return progress.evaluation?.diagnostics?.[0] ?? null;
+}
+
 function submissionStatus(progress: RoomAssessmentProgressSnapshot): SubmissionStatus | null {
   if (!progress.hasCommitSubmission || !progress.commit?.commitSha) return null;
+
+  const diagnostic = primaryEvaluationDiagnostic(progress);
+  if (diagnostic && progress.evaluation?.status !== 'EVALUATED') {
+    return {
+      label: 'Evaluation needs attention',
+      detail: diagnostic.message || progress.evaluation?.summary || progress.nextActionLabel,
+      tone: 'review',
+    };
+  }
 
   if (progress.evaluation?.status === 'EVALUATED') {
     return {
@@ -168,6 +201,7 @@ export function AssessmentTaskBrief({
     : progress?.hasVerificationGap
       ? 'Verification gap captured'
       : 'No test evidence captured';
+  const evaluationDiagnostics = progress?.evaluation?.diagnostics?.slice(0, 3) ?? [];
   const canOpenSubmission = workspaceReady && !challengeSetupStep;
   const hasContract = Boolean(
     summary.task
@@ -268,6 +302,33 @@ export function AssessmentTaskBrief({
             <dt>Verification</dt>
             <dd>{submittedVerification}</dd>
           </dl>
+        </section>
+      )}
+
+      {evaluationDiagnostics.length > 0 && (
+        <section
+          className="assessment-task-brief-diagnostics"
+          data-testid="assessment-task-brief-diagnostics"
+          aria-label="Evaluator diagnostics"
+        >
+          <div className="assessment-task-brief-diagnostics-header">
+            <AlertTriangle size={15} />
+            <div>
+              <strong>Evaluator cautions</strong>
+              <p>PIPE is showing the real evaluator state. These cautions must be resolved or reviewed before treating the assessment as a hiring signal.</p>
+            </div>
+          </div>
+          <ul>
+            {evaluationDiagnostics.map((diagnostic) => (
+              <li key={diagnostic.id}>
+                <span>
+                  {sentenceCaseToken(diagnostic.severity)}: {sentenceCaseToken(diagnostic.code)}
+                </span>
+                <small>{diagnostic.message}</small>
+                <small>{diagnosticSourceSummary(diagnostic)}</small>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 
