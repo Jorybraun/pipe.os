@@ -33,6 +33,7 @@ Use the manual override smoke for the stable ready-assignment path:
 ```bash
 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_FULL_SUBMIT=1 npm run smoke:code-review-assess-dev
+npm run smoke:code-review-assess-dev:role-backed-full-submit
 ```
 
 Expected proof:
@@ -44,6 +45,7 @@ Expected proof:
 - `assessmentQuality` is `USABLE`
 - candidate browser renders the Pierre diff without video-room fallback
 - full-submit mode persists review score and recruiter/person readout
+- role-backed full-submit mode proves automatic match, source-backed PR proof, candidate submission, scoring persistence, and recruiter readout in one app-dev run
 
 ### Blocked/no-assignment standalone CODE_REVIEW
 

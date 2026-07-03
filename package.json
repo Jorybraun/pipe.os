@@ -28,6 +28,7 @@
     "smoke:code-review-assess-dev:blocked": "CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_EXPECT_BLOCKED_MATCH=1 node scripts/smoke-code-review-assess-dev.mjs",
     "smoke:code-review-assess-dev:person-boundary": "CODE_REVIEW_SMOKE_FULL_SUBMIT=1 CODE_REVIEW_SMOKE_PERSON_RELATED_BOUNDARY=1 node scripts/smoke-code-review-assess-dev.mjs",
     "smoke:code-review-assess-dev:role-backed": "CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_SMOKE_ROLE_BACKED=1 CODE_REVIEW_EXPECT_AUTOMATCH=1 node scripts/smoke-code-review-assess-dev.mjs",
+    "smoke:code-review-assess-dev:role-backed-full-submit": "CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_SMOKE_ROLE_BACKED=1 CODE_REVIEW_EXPECT_AUTOMATCH=1 CODE_REVIEW_SMOKE_FULL_SUBMIT=1 node scripts/smoke-code-review-assess-dev.mjs",
     "smoke:code-review-expert-seed-dev": "node scripts/smoke-code-review-expert-seed-dev.mjs",
     "smoke:code-review-assess-dev:workers-matrix": "CODE_REVIEW_SMOKE_MATRIX_PROFILES=workers-sdk-runtime node scripts/smoke-code-review-assess-dev-matrix.mjs",
     "smoke:code-review-assess-dev:matrix": "node scripts/smoke-code-review-assess-dev-matrix.mjs",
