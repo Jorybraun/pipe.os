@@ -227,6 +227,8 @@ npm test -- src/routes/cockpit/__tests__/contacts.rest.test.ts src/routes/cockpi
 npx playwright test e2e/talent-pool-intake.unauth.spec.ts --project=unauthenticated --reporter=line
 npm run smoke:talent-pool-browser-dev
 npm run smoke:talent-pool-browser-upload-dev
+npm run smoke:talent-pool-browser-docx-dev
+npm run smoke:talent-pool-browser-pdf-gap-dev
 npm run smoke:talent-pool-ingestion-dev
 npm run smoke:talent-pool-upload-dev
 npm run smoke:talent-pool-docx-dev
@@ -244,12 +246,15 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 
 The packaged dev smoke commands default Talent Pool RPC submission to the
 app-dev proxy when no API base override is set. `smoke:talent-pool-browser-dev`
-and `smoke:talent-pool-browser-upload-dev` go one step further: they create a
-real dev Talent Pool candidate, open the public `/talent/:token` page in
-Chromium, submit pasted profile evidence or a text profile upload through the
-form, then reuse the same remote audit and recruiter/person read proofs. The
-browser-upload smoke also requires the upload receipt artifact count to be
-present. If a caller explicitly targets `api-dev.hire-pipe.com`, direct RPC
+and the `smoke:talent-pool-browser-*-dev` upload commands go one step further:
+they create a real dev Talent Pool candidate, open the public `/talent/:token`
+page in Chromium, submit pasted profile evidence, a text profile upload, a DOCX
+upload, or an unextractable PDF through the form, then reuse the same remote
+audit and recruiter/person read proofs. Browser upload smokes require the upload
+receipt artifact count to be present; the browser DOCX smoke also requires a
+document source span, while the browser PDF-gap smoke requires the explicit
+`profile_text_extraction_needed` gap with no source-less claims. If a caller
+explicitly targets `api-dev.hire-pipe.com`, direct RPC
 smokes omit dev HTTP Basic Auth for that API host while still using Basic Auth
 for app-dev candidate creation. This keeps the proof path close to candidate
 traffic but still allows direct API probes. The smokes infer the remote D1

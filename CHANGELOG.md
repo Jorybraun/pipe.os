@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Added browser-driven Talent Pool DOCX and unextractable-PDF dev smokes so `/talent/:token` proves document extraction, upload receipt projection, and explicit missing-evidence gaps through the public page.
 - Added `smoke:talent-pool-browser-upload-dev` to submit a real Talent Pool text upload through `/talent/:token` in Chromium and require the remote audit to see the upload receipt plus source-backed person projection.
 - Added `smoke:talent-pool-browser-dev` to create a real dev Talent Pool candidate, submit pasted profile evidence through `/talent/:token` in Chromium, and then run the remote candidate-ingestion audit plus recruiter/person read proofs.
 - Talent Pool R2 profile objects now stamp whether the raw source came from pasted text or an uploaded file, and scheduled upload-receipt repair skips pasted text keys instead of inventing file-upload evidence during replay.

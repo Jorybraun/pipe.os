@@ -49,13 +49,15 @@ const allowedSmokeModes = new Set([
   'submit-text',
   'browser-submit-text',
   'browser-upload-text',
+  'browser-upload-docx',
+  'browser-upload-pdf-gap',
   'upload-text',
   'upload-docx',
   'upload-pdf-gap',
 ]);
 const smokeMode = argumentValue('--mode') ?? process.env.TALENT_POOL_SMOKE_MODE ?? 'submit-text';
 if (!allowedSmokeModes.has(smokeMode)) {
-  throw new Error(`Unsupported --mode "${smokeMode}". Use submit-text, browser-submit-text, browser-upload-text, upload-text, upload-docx, or upload-pdf-gap.`);
+  throw new Error(`Unsupported --mode "${smokeMode}". Use submit-text, browser-submit-text, browser-upload-text, browser-upload-docx, browser-upload-pdf-gap, upload-text, upload-docx, or upload-pdf-gap.`);
 }
 
 const appBase = (
@@ -120,8 +122,9 @@ const databaseId = (
 ).trim();
 
 const failOnNextActions = booleanArgument('--fail-on-next-actions');
-const expectsEvidenceGap = smokeMode === 'upload-pdf-gap';
-const uploadEvidenceExpected = smokeMode.startsWith('upload-') || smokeMode === 'browser-upload-text';
+const browserUploadModes = new Set(['browser-upload-text', 'browser-upload-docx', 'browser-upload-pdf-gap']);
+const expectsEvidenceGap = smokeMode === 'upload-pdf-gap' || smokeMode === 'browser-upload-pdf-gap';
+const uploadEvidenceExpected = smokeMode.startsWith('upload-') || browserUploadModes.has(smokeMode);
 const verifyRecruiterReads = !expectsEvidenceGap && !booleanArgument('--skip-recruiter-reads');
 const slug = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
 const runId = `${slug}-${randomUUID().slice(0, 8)}`;
@@ -186,14 +189,14 @@ function buildStoredDocx(documentXml) {
 }
 
 function smokeUploadFile() {
-  if (smokeMode === 'upload-pdf-gap') {
+  if (smokeMode === 'upload-pdf-gap' || smokeMode === 'browser-upload-pdf-gap') {
     return {
       blob: new Blob(['not a real pdf'], { type: 'application/pdf' }),
       fileName: `talent-smoke-${runId}.pdf`,
     };
   }
 
-  if (smokeMode === 'upload-docx') {
+  if (smokeMode === 'upload-docx' || smokeMode === 'browser-upload-docx') {
     const paragraphs = [
       `Talent Pool live ${smokeMode} smoke proof ${runId}.`,
       'Recently implemented source-backed candidate evidence ingestion for public Talent Pool DOCX profile uploads.',
@@ -254,7 +257,7 @@ function assertConfigured() {
     );
   }
   if (
-    (smokeMode === 'browser-submit-text' || smokeMode === 'browser-upload-text')
+    (smokeMode === 'browser-submit-text' || browserUploadModes.has(smokeMode))
     && shouldSendDevBasicAuth(appBase)
     && !basicAuthCredentials(appBase)
   ) {
@@ -264,8 +267,39 @@ function assertConfigured() {
   }
 }
 
+function isTransientResponseStatus(status) {
+  return [408, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524].includes(status);
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function fetchWithRetry(url, init, label) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(url, init);
+      if (!isTransientResponseStatus(response.status) || attempt === 3) return response;
+      const body = await response.text().catch(() => '');
+      lastError = new Error(`${label} returned transient ${response.status}: ${body.slice(0, 300)}`);
+    } catch (err) {
+      lastError = err;
+      if (attempt === 3) break;
+    }
+    console.warn('[talent-smoke] retrying transient fetch failure', {
+      label,
+      attempt,
+      error: errorMessage(lastError),
+    });
+    await sleep(750 * attempt);
+  }
+  throw new Error(`${label} fetch failed after retries: ${errorMessage(lastError)}`);
+}
+
 async function requestJson(baseUrl, pathname, options = {}) {
-  const response = await fetch(`${baseUrl}${pathname}`, {
+  const url = `${baseUrl}${pathname}`;
+  const response = await fetchWithRetry(url, {
     method: options.method ?? 'GET',
     headers: {
       ...basicAuthHeader(baseUrl),
@@ -273,7 +307,7 @@ async function requestJson(baseUrl, pathname, options = {}) {
       ...(options.headers ?? {}),
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  }, `${options.method ?? 'GET'} ${url}`);
   const text = await response.text();
   let body = null;
   if (text) {
@@ -290,13 +324,14 @@ async function requestJson(baseUrl, pathname, options = {}) {
 }
 
 async function requestMultipart(baseUrl, pathname, formData) {
-  const response = await fetch(`${baseUrl}${pathname}`, {
+  const url = `${baseUrl}${pathname}`;
+  const response = await fetchWithRetry(url, {
     method: 'POST',
     headers: {
       ...basicAuthHeader(baseUrl),
     },
     body: formData,
-  });
+  }, `POST ${url}`);
   const text = await response.text();
   let body = null;
   if (text) {
@@ -402,8 +437,14 @@ function auditIsReady(report) {
   if (report.sourceProof?.submittedIntakeWithoutExactCandidateNodeCount !== 0) return false;
   if (report.sourceProof?.contextSourceRefCount < 1) return false;
   if (uploadEvidenceExpected && report.sourceProof?.profileUploadArtifactVersionCount < 1) return false;
-  if (smokeMode === 'upload-docx' && report.rawCapture?.documentProfileStorageKeyCount !== 1) return false;
-  if (smokeMode === 'upload-docx' && report.sourceProof?.documentProfileSourceSpanCount < 1) return false;
+  if (
+    (smokeMode === 'upload-docx' || smokeMode === 'browser-upload-docx')
+    && report.rawCapture?.documentProfileStorageKeyCount !== 1
+  ) return false;
+  if (
+    (smokeMode === 'upload-docx' || smokeMode === 'browser-upload-docx')
+    && report.sourceProof?.documentProfileSourceSpanCount < 1
+  ) return false;
   if (report.personProjection?.talentPoolWorkspacePersonCount !== 1) return false;
   if (report.sourceLessPositiveClaimCount !== 0) return false;
   if (report.duplicateProjectedEdgeCount !== 0) return false;
@@ -494,11 +535,13 @@ async function submitProfileThroughBrowser(inviteToken, candidateId) {
       timeout: 45_000,
     });
     await page.getByRole('heading', { name: 'Talent Pool' }).waitFor({ timeout: 30_000 });
-    if (smokeMode === 'browser-upload-text') {
+    if (browserUploadModes.has(smokeMode)) {
+      const uploadFile = smokeUploadFile();
+      const buffer = Buffer.from(await uploadFile.blob.arrayBuffer());
       await page.getByLabel('Resume file').setInputFiles({
-        name: `talent-smoke-${runId}.txt`,
-        mimeType: 'text/plain',
-        buffer: Buffer.from(profileText),
+        name: uploadFile.fileName,
+        mimeType: uploadFile.blob.type || 'application/octet-stream',
+        buffer,
       });
     } else {
       await page.getByLabel('Resume or profile').fill(profileText);
@@ -533,7 +576,7 @@ async function submitProfileThroughBrowser(inviteToken, candidateId) {
 }
 
 function recruiterReadNeedle() {
-  if (smokeMode === 'upload-docx') return 'DOCX text is intentionally unique';
+  if (smokeMode === 'upload-docx' || smokeMode === 'browser-upload-docx') return 'DOCX text is intentionally unique';
   return 'source spans can be audited back';
 }
 
@@ -672,7 +715,7 @@ async function main() {
   assertCandidateDashboardSafe(initialDashboard, candidateId, 'resolve-token');
 
   const submittedDashboard = await (async () => {
-    if (smokeMode === 'browser-submit-text' || smokeMode === 'browser-upload-text') {
+    if (smokeMode === 'browser-submit-text' || browserUploadModes.has(smokeMode)) {
       await submitProfileThroughBrowser(inviteToken, candidateId);
       return requestJson(rpcBase, '/rpc/talent/resolve-token', {
         method: 'POST',
@@ -755,6 +798,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('[talent-smoke] failed:', error instanceof Error ? error.message : String(error));
+  console.error('[talent-smoke] failed:', error instanceof Error ? (error.stack ?? error.message) : String(error));
   process.exit(1);
 });
