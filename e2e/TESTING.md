@@ -215,6 +215,7 @@ To run the stronger app-dev gate across multiple realistic candidate profiles, u
 
 ```bash
 npm run smoke:code-review-assess-dev:matrix
+npm run smoke:code-review-assess-dev:workers-matrix
 ```
 
 The matrix creates fresh CODE_REVIEW invites for realistic CV-only profiles and
@@ -227,6 +228,15 @@ been separated from the CODE_REVIEW runtime. Use
 to run a subset, `CODE_REVIEW_SMOKE_MATRIX_REPEAT=2` for repeated runs, and
 `CODE_REVIEW_SMOKE_MATRIX_STOP_ON_FAILURE=1` when you want the first failure to
 stop the batch.
+
+The `workers-matrix` profile is the non-MUI automatic matching proof. It creates
+a Workers SDK runtime role/candidate pair and fails unless automatic matching
+selects a source-backed `cloudflare/workers-sdk` PR (`#14118` or `#14150`) with
+a passed quality gate. Latest app-dev proof on 2026-07-03 selected
+`cloudflare/workers-sdk#14118` for interview
+`ea6cb5e1-83fb-4fdd-a64b-ce1a9cc2b977`, returned `MATCHED`, `PASSED`,
+`STRONG`, and scored contrast separation `2/2` with a 24% lead over the next
+comparable challenge.
 
 For a repeatable pilot-reliability gate with stored artifacts, use:
 

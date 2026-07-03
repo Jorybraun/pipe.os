@@ -34,6 +34,7 @@ Use the manual override smoke for the stable ready-assignment path:
 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_FULL_SUBMIT=1 npm run smoke:code-review-assess-dev
 npm run smoke:code-review-assess-dev:role-backed-full-submit
+npm run smoke:code-review-assess-dev:workers-matrix
 ```
 
 Expected proof:
@@ -46,6 +47,7 @@ Expected proof:
 - candidate browser renders the Pierre diff without video-room fallback
 - full-submit mode persists review score and recruiter/person readout
 - role-backed full-submit mode proves automatic match, source-backed PR proof, candidate submission, scoring persistence, and recruiter readout in one app-dev run
+- workers matrix mode must select a source-backed non-MUI `cloudflare/workers-sdk` PR for a Workers SDK runtime profile
 
 ### Blocked/no-assignment standalone CODE_REVIEW
 
