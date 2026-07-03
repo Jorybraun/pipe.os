@@ -19,6 +19,7 @@ import { runCandidateIngestion } from '../orchestrate';
 import { processResumeFromR2 } from '../../enrichment/resumeIngestion';
 import { ensureRolelessTalentPoolIdentity } from '../../talentPoolIdentity';
 import { extractTextFromResumeFile } from '../../cvParser';
+import { repairCandidateResumeNodeSourceRefs } from '../candidateNodes';
 
 vi.mock('../orchestrate', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../orchestrate')>();
@@ -52,6 +53,14 @@ vi.mock('../../talentPoolIdentity', () => ({
     workspacePersonId: 'workspace-person-1',
   })),
 }));
+
+vi.mock('../candidateNodes', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../candidateNodes')>();
+  return {
+    ...actual,
+    repairCandidateResumeNodeSourceRefs: vi.fn(async () => ({ scanned: 0, repaired: 0 })),
+  };
+});
 
 interface PreparedCall {
   sql: string;
@@ -117,6 +126,7 @@ function fakeStorage(
       : ({
           text: async () => text,
           arrayBuffer: async () => new TextEncoder().encode(text).buffer,
+          size: new TextEncoder().encode(text).byteLength,
           httpMetadata: { contentType },
           customMetadata,
         })),
@@ -252,6 +262,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
         owner_id: 'owner-1',
         name: 'Talent Candidate',
         email: 'talent@example.com',
+        profile_r2_key: 'talent-intake/talent-candidate-1/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-profile.txt',
         github_url: 'https://github.com/talent-candidate',
         linkedin_url: 'https://linkedin.com/in/talent-candidate',
         portfolio_url: 'https://talent.example.dev',
@@ -292,8 +303,13 @@ describe('stale Workers AI candidate-ingestion retry', () => {
         timezone: 'America/Vancouver',
         availability: 'Weekday afternoons after 2 PM.',
       },
+      message: expect.stringContaining('source-backed hiring assessments'),
+      messageStorageKey: profileStorageKey,
+      messageMediaType: 'text/plain',
+      projectMessageAsProfileEvidence: true,
       now: '2026-07-02T18:22:39.331Z',
     }));
+    expect(repairCandidateResumeNodeSourceRefs).toHaveBeenCalledWith(db, 'talent-candidate-1');
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       env,
       db,
@@ -814,6 +830,9 @@ describe('stale Workers AI candidate-ingestion retry', () => {
         phoneScreenerConsent: true,
       }),
     }));
+    expect(repairCandidateResumeNodeSourceRefs).toHaveBeenCalledTimes(2);
+    expect(repairCandidateResumeNodeSourceRefs).toHaveBeenCalledWith(db, 'talent-1');
+    expect(repairCandidateResumeNodeSourceRefs).toHaveBeenCalledWith(db, 'talent-2');
   });
 
   it('cron backfills missing Talent Pool upload receipt artifacts from the original R2 object', async () => {
@@ -872,13 +891,17 @@ describe('stale Workers AI candidate-ingestion retry', () => {
         extractedTextAvailable: true,
       },
     });
+    expect(identityInput?.message).toBeUndefined();
+    expect(identityInput?.messageStorageKey).toBeNull();
     expect(identityInput?.sourceArtifact?.contentHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(repairCandidateResumeNodeSourceRefs).toHaveBeenCalledWith(db, 'talent-upload');
     const scanCall = db.__calls.find((call) => call.sql.includes('FROM talent_pool_intakes'))!;
     expect(scanCall.sql).toContain('t.profile_r2_key');
   });
 
-  it('cron does not turn pasted Talent Pool profile text into an upload receipt', async () => {
+  it('cron replays pasted Talent Pool profile text as source-backed profile evidence, not an upload receipt', async () => {
     const storageKey = 'talent-intake/talent-pasted/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-profile.txt';
+    const pastedProfileText = 'Pasted profile text is raw source evidence for a senior TypeScript engineer shipping deterministic ingestion replay.';
     const db = fakeD1({
       all: [
         { candidate_id: 'talent-pasted' },
@@ -904,7 +927,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       },
     });
     const storage = fakeStorage(
-      'Pasted profile text is raw source evidence, not a file-upload receipt.',
+      pastedProfileText,
       'text/plain;charset=utf-8',
       {
         source: 'talent_pool_intake',
@@ -927,8 +950,13 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       candidateId: 'talent-pasted',
       name: 'Pasted Candidate',
       email: 'pasted@example.com',
+      message: pastedProfileText,
+      messageStorageKey: storageKey,
+      messageMediaType: 'text/plain',
+      projectMessageAsProfileEvidence: true,
     });
     expect(identityInput?.sourceArtifact).toBeUndefined();
+    expect(repairCandidateResumeNodeSourceRefs).toHaveBeenCalledWith(db, 'talent-pasted');
   });
 
   it('cron skips Talent Pool upload receipt backfill when the profile upload artifact already exists', async () => {

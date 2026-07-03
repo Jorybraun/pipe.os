@@ -12,6 +12,7 @@ import {
   type TalentPoolSourceArtifactInput,
 } from '../talentPoolIdentity';
 import { recordSessionEvent } from '../telemetry/sessionEvents';
+import { repairCandidateResumeNodeSourceRefs } from './candidateNodes';
 import { runCandidateIngestion } from './orchestrate';
 import { markIngestionFailed } from './persist';
 
@@ -24,6 +25,7 @@ const DOCUMENT_RETRY_DISCOVERY_TIMEOUT_MS = 18_000;
 const DOCUMENT_RETRY_DISCOVERY_MAX_ATTEMPTS = 2;
 const DOCUMENT_RETRY_MAX_NODE_EMBEDDINGS = 0;
 const DOCUMENT_RETRY_MAX_PARSER_ONLY_NODES = 12;
+const MAX_TALENT_POOL_PROFILE_TEXT_REPAIR_BYTES = 512 * 1024;
 const TALENT_POOL_PASTED_PROFILE_SOURCE_KIND = 'pasted_profile_text';
 const TALENT_POOL_UPLOADED_PROFILE_SOURCE_KIND = 'uploaded_profile_file';
 const RETRYABLE_STALLED_INGESTION_STEPS = new Set([
@@ -112,6 +114,12 @@ interface TalentPoolOperationalRetryRow {
   availability: string | null;
   submitted_at: string | null;
   updated_at: string | null;
+}
+
+interface TalentPoolProfileMessageSource {
+  message: string;
+  storageKey: string;
+  mediaType: string;
 }
 
 export interface StaleWorkersAIRetryResult {
@@ -355,6 +363,45 @@ async function buildMissingTalentPoolProfileUploadSourceArtifact(
   };
 }
 
+function isTalentPoolProfileTextSource(input: {
+  storageKey: string;
+  mediaType: string;
+  sourceKind: string | null;
+}): boolean {
+  if (input.sourceKind === TALENT_POOL_PASTED_PROFILE_SOURCE_KIND) return true;
+  if (isDocumentSourceKey(input.storageKey)) return false;
+  return input.mediaType.startsWith('text/')
+    || input.storageKey.toLowerCase().endsWith('.txt');
+}
+
+async function buildTalentPoolProfileMessageSource(
+  env: Env,
+  row: TalentPoolOperationalRetryRow,
+): Promise<TalentPoolProfileMessageSource | undefined> {
+  const storageKey = row.profile_r2_key?.trim();
+  if (!storageKey || !env.STORAGE) return undefined;
+  if (isDocumentSourceKey(storageKey)) return undefined;
+
+  const object = await env.STORAGE.get(storageKey);
+  if (!object) return undefined;
+
+  const mediaType = normalizeTalentPoolArtifactContentType(object.httpMetadata?.contentType, storageKey);
+  const sourceKind = sourceKindFromCustomMetadata(object.customMetadata);
+  if (!isTalentPoolProfileTextSource({ storageKey, mediaType, sourceKind })) return undefined;
+  if (typeof object.size === 'number' && object.size > MAX_TALENT_POOL_PROFILE_TEXT_REPAIR_BYTES) {
+    return undefined;
+  }
+
+  const message = (await object.text()).trim();
+  if (message.length < 20) return undefined;
+
+  return {
+    message,
+    storageKey,
+    mediaType,
+  };
+}
+
 async function repairRolelessTalentPoolOperationalContext(
   env: Env,
   candidateId: string,
@@ -384,13 +431,18 @@ async function repairRolelessTalentPoolOperationalContext(
   const email = row?.email?.trim() || null;
   if (!row || !ownerId) return null;
   const sourceArtifact = await buildMissingTalentPoolProfileUploadSourceArtifact(env, row);
+  const profileMessageSource = await buildTalentPoolProfileMessageSource(env, row);
 
-  return await ensureRolelessTalentPoolIdentity({
+  const identity = await ensureRolelessTalentPoolIdentity({
     db: env.DB,
     userId: ownerId,
     candidateId,
     name: row.name?.trim() || email || 'Talent Pool Candidate',
     email,
+    message: profileMessageSource?.message,
+    messageStorageKey: profileMessageSource?.storageKey ?? null,
+    messageMediaType: profileMessageSource?.mediaType ?? null,
+    projectMessageAsProfileEvidence: profileMessageSource ? true : undefined,
     operationalContext: {
       githubUrl: row.github_url,
       linkedinUrl: row.linkedin_url,
@@ -403,6 +455,8 @@ async function repairRolelessTalentPoolOperationalContext(
     sourceArtifact,
     now: row.submitted_at ?? row.updated_at ?? new Date().toISOString(),
   });
+  await repairCandidateResumeNodeSourceRefs(env.DB, candidateId);
+  return identity;
 }
 
 export async function processTalentPoolOperationalContextRepairs(
