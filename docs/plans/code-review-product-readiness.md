@@ -177,7 +177,10 @@ CI also emits a living-context match-quality readiness artifact. That gate runs
 expert-labelled, synthetic-free corpus and fails with the latest draft corpus
 summary when no reviewed corpus exists. The readiness artifact uses
 `--summary-json` by default: metrics, thresholds, gate failures, and per-case
-verdict/provenance booleans only. Use the lower-level
+verdict/provenance booleans only. The gate distinguishes broad non-positive
+labels from true `insufficient_evidence` labels; at least one explicit
+insufficient-evidence case is required so challenge-design/`needs_review`
+examples cannot stand in for sparse-profile safety proof. Use the lower-level
 `living-context:match-quality -- --json` path when a developer needs full
 confidence reports and source spans for debugging. Missing Cloudflare
 credentials or D1 configuration produce a non-blocking `not_configured`
