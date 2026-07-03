@@ -196,6 +196,7 @@ npm run candidate-ingestion:audit -- --local --candidate-id <candidate_id>
 npm run candidate-ingestion:audit -- --local --email <email>
 npm run candidate-ingestion:audit -- --local --invite-token <token> --require-context-records
 npm run candidate-ingestion:audit -- --remote --invite-token <token>
+npm test -- src/lib/__tests__/talentPoolIdentity.test.ts
 npm test -- src/routes/__tests__/talentPool.test.ts src/lib/candidateDiscovery/__tests__/staleWorkersAiRetry.test.ts
 npm test -- src/lib/livingContext/__tests__/compatibility.test.ts src/lib/livingContext/__tests__/candidateComparison.test.ts src/lib/livingContext/__tests__/evidenceReadiness.test.ts src/lib/livingContext/__tests__/matchConfidenceScoring.test.ts
 npm test -- src/lib/candidateDiscovery/__tests__/candidateNodes.test.ts src/lib/candidateDiscovery/__tests__/resumeDecomposition.test.ts scripts/auditCandidateIngestion.test.ts
@@ -487,6 +488,16 @@ assert raw R2 capture metadata for plain text, DOCX, and unextractable PDF
 files, proving the immutable file artifact is retained even when no profile
 claims may be derived. The app-dev invite returned `CHALLENGE_PREPARING` with
 zero ready challenges and no serialized internal id values.
+
+Direct roleless person projection proof in
+`src/lib/__tests__/talentPoolIdentity.test.ts` replays the same submitted
+message, profile-upload receipt, and operational intake facts through
+`ensureRolelessTalentPoolIdentity`, then replays a cron/backfill-shaped
+upload-receipt repair without message text. The test proves people,
+workspace_people, interactions, artifacts, artifact_versions, source spans,
+context records, source refs, and the compatibility candidate node stay
+idempotent; duplicate projected edges remain zero; and stale roleless
+application/person-role bridges are removed.
 
 Browser proof on 2026-07-02 uses
 `e2e/talent-pool-intake.unauth.spec.ts` with the unauthenticated Playwright
