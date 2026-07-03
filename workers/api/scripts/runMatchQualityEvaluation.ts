@@ -234,6 +234,7 @@ async function main(): Promise<void> {
     } else {
       console.log(`${result.passed ? 'PASS' : 'FAIL'} ${result.corpusId}`);
       console.log(`accuracy=${result.metrics.verdictAccuracy.toFixed(3)} usable=${result.metrics.usableChallengeRate.toFixed(3)} separation=${result.metrics.averageScoreSeparation.toFixed(3)}`);
+      console.log(`negativeCases=${result.metrics.negativeCaseCount} contrastCases=${result.metrics.contrastCaseCount} reasonCategoryExpectations=${result.metrics.reasonCategoryExpectationCount}`);
       for (const failure of result.gateFailures) console.log(`- ${failure}`);
     }
 
