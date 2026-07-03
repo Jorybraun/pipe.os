@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Unauthenticated CODE_REVIEW assess browser smokes can now skip Clerk global setup, letting clean worktrees prove the candidate `/assess` handoff without requiring recruiter-auth test secrets.
 - CODE_REVIEW full-submit app-dev smoke now verifies durable assessment evidence and source-backed evaluation claims against remote D1 instead of skipping evidence proof outside localhost.
 - CODE_REVIEW expert-seed smoke now requires a CODE_REVIEW evaluation D1 override instead of falling back to the generic app D1, preventing false red seed runs against databases without match evidence.
 - CODE_REVIEW expert-review packets now bound candidate evidence, repo demands, source refs, long text spans, and generated source-path concepts, keeping operator review artifacts readable while preserving the immutable corpus as source truth.

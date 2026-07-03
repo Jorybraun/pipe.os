@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildCodeReviewAssessBrowserSmokeEnv,
   resolveAppDevBasicAuth,
   resolveCodeReviewSmokeD1Target,
 } from './smoke-code-review-assess-dev.mjs';
+import { shouldSkipClerkGlobalSetup } from '../e2e/global.setup.ts';
 
 describe('CODE_REVIEW assess smoke app-dev Basic Auth resolution', () => {
   it('prefers app-dev-specific credentials over generic dev credentials', () => {
@@ -72,5 +74,40 @@ describe('CODE_REVIEW assess smoke app-dev Basic Auth resolution', () => {
       databaseName: 'pipe-db-custom',
       label: 'remote',
     });
+  });
+
+  it('marks unauthenticated assess browser smokes as not needing Clerk setup', () => {
+    expect(buildCodeReviewAssessBrowserSmokeEnv({
+      baseEnv: {},
+      appBase: 'https://app-dev.hire-pipe.com',
+      apiBase: 'https://api-dev.hire-pipe.com',
+      videoRoomBase: 'https://room-dev.hire-pipe.com',
+      deliveredUrl: 'https://app-dev.hire-pipe.com/assess/invite-token',
+      inviteToken: 'invite-token',
+      session: {
+        id: 'candidate-id',
+        sessionToken: 'candidate-session-token',
+        pipelineId: null,
+        status: 'IN_PROGRESS',
+        name: 'Smoke Candidate',
+      },
+      expectedMatchProofVerdict: 'PASSED',
+      expectProfileReceived: false,
+      expectAutomatch: '0',
+      expectManualOverride: '1',
+      requireHyperedges: '0',
+      submitReview: false,
+    })).toMatchObject({
+      PIPE_SKIP_CLERK_GLOBAL_SETUP: '1',
+      CODE_REVIEW_ASSESS_TOKEN: 'https://app-dev.hire-pipe.com/assess/invite-token',
+      CODE_REVIEW_SESSION_TOKEN: 'candidate-session-token',
+    });
+  });
+
+  it('keeps Clerk setup enabled unless an unauthenticated smoke opts out', () => {
+    expect(shouldSkipClerkGlobalSetup({})).toBe(false);
+    expect(shouldSkipClerkGlobalSetup({
+      PIPE_SKIP_CLERK_GLOBAL_SETUP: '1',
+    })).toBe(true);
   });
 });

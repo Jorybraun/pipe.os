@@ -721,12 +721,6 @@ function runBrowserSmoke({
 }) {
   if (SKIP_BROWSER) return { skipped: true };
 
-  const candidate = JSON.stringify({
-    id: session.id,
-    pipelineId: session.pipelineId ?? null,
-    status: session.status ?? 'IN_PROGRESS',
-    name: session.name ?? 'CODE_REVIEW Smoke Candidate',
-  });
   const result = spawnSync(
     'npx',
     [
@@ -739,22 +733,21 @@ function runBrowserSmoke({
     {
       cwd: process.cwd(),
       stdio: 'inherit',
-      env: {
-        ...process.env,
-        APP_BASE,
-        API_BASE,
-        VIDEO_ROOM_BASE,
-        CODE_REVIEW_ASSESS_TOKEN: deliveredUrl,
-        CODE_REVIEW_SESSION_TOKEN: session.sessionToken,
-        CODE_REVIEW_SESSION_INVITE_TOKEN: inviteToken,
-        CODE_REVIEW_SESSION_CANDIDATE_JSON: candidate,
-        CODE_REVIEW_EXPECT_AUTOMATCH: EXPECT_AUTOMATCH,
-        CODE_REVIEW_EXPECT_MANUAL_OVERRIDE: REPO_URL && PR_NUMBER ? '1' : '0',
-        CODE_REVIEW_EXPECT_PROFILE_RECEIVED: expectProfileReceived ? '1' : '0',
-        CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT: expectedMatchProofVerdict,
-        CODE_REVIEW_REQUIRE_HYPEREDGES: REPO_URL && PR_NUMBER ? '0' : '1',
-        CODE_REVIEW_BROWSER_SUBMIT_ROUND: SUBMIT_REVIEW ? '1' : '0',
-      },
+      env: buildCodeReviewAssessBrowserSmokeEnv({
+        baseEnv: process.env,
+        appBase: APP_BASE,
+        apiBase: API_BASE,
+        videoRoomBase: VIDEO_ROOM_BASE,
+        deliveredUrl,
+        inviteToken,
+        session,
+        expectedMatchProofVerdict,
+        expectProfileReceived,
+        expectAutomatch: EXPECT_AUTOMATCH,
+        expectManualOverride: REPO_URL && PR_NUMBER ? '1' : '0',
+        requireHyperedges: REPO_URL && PR_NUMBER ? '0' : '1',
+        submitReview: SUBMIT_REVIEW,
+      }),
     },
   );
   if (result.error) throw result.error;
@@ -762,6 +755,47 @@ function runBrowserSmoke({
     throw new Error(`Playwright assess smoke failed with exit code ${result.status}`);
   }
   return { skipped: false };
+}
+
+export function buildCodeReviewAssessBrowserSmokeEnv({
+  baseEnv,
+  appBase,
+  apiBase,
+  videoRoomBase,
+  deliveredUrl,
+  inviteToken,
+  session,
+  expectedMatchProofVerdict,
+  expectProfileReceived = false,
+  expectAutomatch,
+  expectManualOverride,
+  requireHyperedges,
+  submitReview,
+}) {
+  const candidate = JSON.stringify({
+    id: session.id,
+    pipelineId: session.pipelineId ?? null,
+    status: session.status ?? 'IN_PROGRESS',
+    name: session.name ?? 'CODE_REVIEW Smoke Candidate',
+  });
+
+  return {
+    ...baseEnv,
+    APP_BASE: appBase,
+    API_BASE: apiBase,
+    VIDEO_ROOM_BASE: videoRoomBase,
+    PIPE_SKIP_CLERK_GLOBAL_SETUP: '1',
+    CODE_REVIEW_ASSESS_TOKEN: deliveredUrl,
+    CODE_REVIEW_SESSION_TOKEN: session.sessionToken,
+    CODE_REVIEW_SESSION_INVITE_TOKEN: inviteToken,
+    CODE_REVIEW_SESSION_CANDIDATE_JSON: candidate,
+    CODE_REVIEW_EXPECT_AUTOMATCH: expectAutomatch,
+    CODE_REVIEW_EXPECT_MANUAL_OVERRIDE: expectManualOverride,
+    CODE_REVIEW_EXPECT_PROFILE_RECEIVED: expectProfileReceived ? '1' : '0',
+    CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT: expectedMatchProofVerdict,
+    CODE_REVIEW_REQUIRE_HYPEREDGES: requireHyperedges,
+    CODE_REVIEW_BROWSER_SUBMIT_ROUND: submitReview ? '1' : '0',
+  };
 }
 
 function recruiterDetailReady(interview, {
