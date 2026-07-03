@@ -425,6 +425,8 @@ describe('GET /interviews/:id detail', () => {
         pipeline_id TEXT,
         stage_id TEXT,
         owner_id TEXT NOT NULL,
+        title TEXT,
+        description TEXT,
         interview_type TEXT,
         meeting_type TEXT,
         status TEXT,
@@ -7196,6 +7198,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         pipeline_id TEXT,
         stage_id TEXT,
         owner_id TEXT NOT NULL,
+        title TEXT,
+        description TEXT,
         interview_type TEXT,
         meeting_type TEXT,
         status TEXT,
@@ -8015,6 +8019,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     const body = await response.json() as {
       interview: {
         id: string;
+        title: string | null;
+        description: string | null;
         assessmentProgress: {
           stage: string;
           nextAction: string;
@@ -8042,6 +8048,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       };
     };
 
+    expect(body.interview.title).toBe('Fix the failing assessment evaluator start state');
+    expect(body.interview.description).toBe('Reproduce the failing start-evaluation path, make the smallest production-ready fix, and preserve source-backed assessment evidence.');
     expect(body.interview.githubPrNumber).toBeNull();
     expect(body.interview.assessmentSetup).toMatchObject({
       status: 'reviewable_task_assigned',
@@ -8099,6 +8107,19 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       baseCommitSha,
     });
     expect(JSON.parse(session?.metadata_json ?? '{}')).not.toHaveProperty('githubPrNumber');
+
+    const interviewRow = sqlite!.prepare(
+      `SELECT title, description
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(body.interview.id) as {
+      title: string | null;
+      description: string | null;
+    } | undefined;
+    expect(interviewRow).toMatchObject({
+      title: 'Fix the failing assessment evaluator start state',
+      description: 'Reproduce the failing start-evaluation path, make the smallest production-ready fix, and preserve source-backed assessment evidence.',
+    });
 
     const sourceRef = sqlite!.prepare(
       `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role,

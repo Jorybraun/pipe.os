@@ -648,6 +648,10 @@ export function InterviewCard({
   const modeLabel = interview.interviewType
     ? INTERVIEW_TYPE_LABELS[interview.interviewType] ?? interview.interviewType
     : 'Interview';
+  const interviewTitle = interview.title?.trim() || null;
+  const interviewDescription = interview.description?.trim() || null;
+  const primaryLabel = interviewTitle ?? candidateName;
+  const secondaryIdentity = interviewTitle ? candidateName : null;
   const provider = interview.meetingSchedulingProvider ?? interview.schedulingProvider ?? null;
   const providerEventId = providerEventLabel(interview.meetingExternalEventId ?? interview.externalEventId);
   const roleContext = pipelineTitle && pipelineTitle !== 'Talent Pool'
@@ -737,7 +741,7 @@ export function InterviewCard({
         data-interview-id={interview.id}
         data-interview-type={interview.interviewType ?? ''}
         data-candidate-email={candidateEmail ?? ''}
-        aria-label={`Open ${candidateName} interview details`}
+        aria-label={`Open ${primaryLabel} interview details`}
         tabIndex={0}
         onClick={() => navigate(`/interviews/${interview.id}`)}
         onKeyDown={(event) => {
@@ -775,10 +779,10 @@ export function InterviewCard({
           </div>
         </div>
 
-        {/* Center: person + interview mode + optional role context */}
+        {/* Center: assessment title/person + interview mode + optional role context */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-            {candidateName}
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{primaryLabel}</span>
             {guestWaiting && (
               <span
                 style={{
@@ -802,12 +806,22 @@ export function InterviewCard({
               </span>
             )}
           </div>
+          {secondaryIdentity && (
+            <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 4, overflowWrap: 'anywhere' }}>
+              {secondaryIdentity}
+            </div>
+          )}
           <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', letterSpacing: '0.05em', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>
             {roleContext ? `${modeLabel} · ${roleContext}` : modeLabel}
           </div>
           {candidateEmail && (
             <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
               {candidateEmail}
+            </div>
+          )}
+          {interviewDescription && (
+            <div style={{ marginTop: 5, fontSize: 10, lineHeight: 1.45, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', overflowWrap: 'anywhere' }}>
+              {compactText(interviewDescription, 180)}
             </div>
           )}
           {provider && providerEventId && (

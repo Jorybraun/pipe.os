@@ -583,6 +583,8 @@ const createInterviewSchema = z.object({
   candidateId: z.string().min(1).optional(),
   pipelineId: z.string().optional(),
   stageId: z.string().optional(),
+  title: z.string().trim().min(1).max(240).optional(),
+  description: z.string().trim().min(1).max(5000).optional(),
   recipientName: z.string().trim().min(1).max(200).optional(),
   recipientEmail: z.string().trim().email().optional(),
   meetingType: z.enum(['DIRECT_VIDEO_CALL', 'SCREENING_INTERVIEW']).optional(),
@@ -4468,6 +4470,30 @@ interface MatchedOpenSourceChallengePacket {
   demandFamilies: string[];
 }
 
+function normalizeScheduledInterviewCopy(input: {
+  title?: string;
+  description?: string;
+  interviewType: string;
+  challengeTitle?: string;
+  challengeInstructions?: string;
+  matchedOpenSourceChallengePacket?: MatchedOpenSourceChallengePacket | null;
+}): { title: string | null; description: string | null } {
+  const title = input.title?.trim()
+    || (input.interviewType === 'OPEN_SOURCE_BUG_FIX'
+      ? input.challengeTitle?.trim()
+        || input.matchedOpenSourceChallengePacket?.title.trim()
+        || null
+      : null);
+  const description = input.description?.trim()
+    || (input.interviewType === 'OPEN_SOURCE_BUG_FIX'
+      ? input.challengeInstructions?.trim()
+        || input.matchedOpenSourceChallengePacket?.instructions.trim()
+        || null
+      : null);
+
+  return { title, description };
+}
+
 function hasManualOpenSourceChallengePacket(input: {
   interviewType: string;
   githubRepoUrl: string | null | undefined;
@@ -6378,6 +6404,7 @@ schedulingAuth.get('/interviews', async (c) => {
   const result = await db
     .prepare(
       `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id,
+              si.title, si.description,
               si.interview_type, si.meeting_type, si.status,
               si.scheduled_at, si.meeting_url, si.scheduling_provider,
               si.scheduling_url, si.external_event_id, si.recruiter_notes,
@@ -6429,6 +6456,8 @@ schedulingAuth.get('/interviews', async (c) => {
       candidate_id: string | null;
       pipeline_id: string | null;
       stage_id: string | null;
+      title: string | null;
+      description: string | null;
       interview_type: string | null;
       meeting_type: string | null;
       status: string;
@@ -6502,6 +6531,8 @@ schedulingAuth.get('/interviews', async (c) => {
       candidateId: r.candidate_id,
       pipelineId: r.pipeline_id,
       stageId: r.stage_id,
+      title: r.title,
+      description: r.description,
       interviewType: r.interview_type,
       meetingType: r.meeting_type,
       status: r.status,
@@ -6591,6 +6622,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
   const interview = await db
     .prepare(
       `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id,
+              si.title, si.description,
               si.interview_type, si.meeting_type, si.status,
               si.scheduled_at, si.meeting_url, si.scheduling_provider,
               si.scheduling_url, si.external_event_id, si.recruiter_notes,
@@ -6625,6 +6657,8 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       candidate_id: string | null;
       pipeline_id: string | null;
       stage_id: string | null;
+      title: string | null;
+      description: string | null;
       interview_type: string | null;
       meeting_type: string | null;
       status: string;
@@ -6857,6 +6891,8 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       contactId: interview.recipient_contact_id,
       pipelineId: interview.pipeline_id,
       stageId: interview.stage_id,
+      title: interview.title,
+      description: interview.description,
       interviewType: interview.interview_type ?? 'VIDEO',
       meetingType: interview.meeting_type,
       status: interview.status,
@@ -7219,6 +7255,8 @@ schedulingAuth.post('/interviews', async (c) => {
     candidateId,
     pipelineId,
     stageId,
+    title,
+    description,
     recipientName,
     recipientEmail,
     meetingType,
@@ -7338,6 +7376,14 @@ schedulingAuth.post('/interviews', async (c) => {
     githubPrNumber: effectiveGithubPrNumber,
     manualOpenSourceChallengePacket: hasManualOpenSourceTaskPacket,
   });
+  const interviewCopy = normalizeScheduledInterviewCopy({
+    title,
+    description,
+    interviewType: effectiveInterviewType,
+    challengeTitle,
+    challengeInstructions,
+    matchedOpenSourceChallengePacket,
+  });
   const contactId = !candidateId && recipientName && recipientEmail
     ? await ensureRecipientContact(db, userId, { name: recipientName, email: recipientEmail })
     : null;
@@ -7347,14 +7393,16 @@ schedulingAuth.post('/interviews', async (c) => {
     .prepare(
       `INSERT INTO scheduled_interviews
        (id, candidate_id, pipeline_id, stage_id, owner_id, status,
+        title, description,
         interview_type, meeting_type, scheduled_at, scheduling_provider,
         scheduling_url, recipient_name, recipient_email, sync_source,
         matched_repo_id, github_repo_url, github_pr_number,
         recruiter_notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id, candidateId ?? null, pipelineId ?? null, stageId ?? null, userId,
+      interviewCopy.title, interviewCopy.description,
       effectiveInterviewType, effectiveMeetingType, scheduledAt ?? null,
       schedulingProvider ?? null, sanitizedSchedulingUrl,
       recipientName ?? null, recipientEmail?.trim().toLowerCase() ?? null,
@@ -7415,6 +7463,8 @@ schedulingAuth.post('/interviews', async (c) => {
       contactId,
       pipelineId: pipelineId ?? null,
       stageId: stageId ?? null,
+      title: interviewCopy.title,
+      description: interviewCopy.description,
       recipientName: recipientName ?? null,
       recipientEmail: recipientEmail?.trim().toLowerCase() ?? null,
       meetingType: effectiveMeetingType,

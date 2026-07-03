@@ -239,6 +239,8 @@ describe('InterviewCard assessment progress', () => {
       id: 'interview-setup-task',
       createdAt: '2026-06-23T00:00:00.000Z',
       updatedAt: '2026-06-23T00:20:00.000Z',
+      title: 'Fix reconnect ordering in the event stream',
+      description: 'Candidate must isolate the reconnect ordering bug, commit a focused fix, and submit source-backed evidence.',
       status: 'INVITED',
       interviewType: 'OPEN_SOURCE_BUG_FIX',
       meetingType: 'DIRECT_VIDEO_CALL',
@@ -310,6 +312,9 @@ describe('InterviewCard assessment progress', () => {
     });
 
     const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(screen.getByText('Fix reconnect ordering in the event stream')).toBeInTheDocument();
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+    expect(screen.getByText(/Candidate must isolate the reconnect ordering bug/)).toBeInTheDocument();
     expect(progress).toHaveTextContent('Challenge ready');
     expect(progress).toHaveTextContent('ASSIGNMENT');
     expect(progress).toHaveTextContent('Manual task assignment');

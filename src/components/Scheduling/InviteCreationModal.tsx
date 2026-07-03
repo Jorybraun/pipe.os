@@ -12,6 +12,8 @@ import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 const CREATE_INVITE_STATUS_TEXT = 'Creating interview and preparing invite delivery...';
 
 interface InviteCreationData {
+  title?: string;
+  description?: string;
   recipientName: string;
   recipientEmail: string;
   meetingType: MeetingType;
@@ -357,6 +359,8 @@ export function InviteCreationModal({
           inviteData.githubPrNumber = parsedPrNumber;
         }
         if (interviewType === 'OPEN_SOURCE_BUG_FIX') {
+          inviteData.title = challengeTitle.trim();
+          inviteData.description = challengeInstructions.trim();
           inviteData.challengeBaseCommitSha = challengeBaseCommitSha.trim();
           inviteData.challengeTitle = challengeTitle.trim();
           inviteData.challengeInstructions = challengeInstructions.trim();

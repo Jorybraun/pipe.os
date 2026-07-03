@@ -308,6 +308,8 @@ export interface ScheduledInterview {
   readonly id: string;
   readonly createdAt: string;
   readonly updatedAt: string;
+  title?: string | null;
+  description?: string | null;
   candidateId?: string | null;
   contactId?: string | null;
   pipelineId?: string | null;

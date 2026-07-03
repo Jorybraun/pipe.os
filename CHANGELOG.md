@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Open-source assessment invites now persist and project recruiter-facing title and description copy from the assigned challenge packet, so repeated candidate meetings are legible in list/detail views.
 - Assessment progress now shows a reviewable evaluated report when a report has persisted but the async session state is still `EVALUATING`, preventing stale “evaluation running” UI after background completion.
 - Candidate assessment cockpit smoke now scopes duplicate status-strip checks to the main room header, avoiding false failures when the video PiP mirrors the same assessment status.
 - Open-source workspace dev smoke now verifies the candidate-visible assessment cockpit after the workspace is ready, including repo/base commit, AI-use state, evidence coverage, and Submit Work.

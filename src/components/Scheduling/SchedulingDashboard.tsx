@@ -827,6 +827,8 @@ export function SchedulingDashboard(): JSX.Element {
         initialInterviewType={invitePrefill.interviewType}
         initialRecruiterNotes={invitePrefill.recruiterNotes}
         onCreateInvite={async (data: {
+          title?: string;
+          description?: string;
           recipientName: string;
           recipientEmail: string;
           meetingType: MeetingType;

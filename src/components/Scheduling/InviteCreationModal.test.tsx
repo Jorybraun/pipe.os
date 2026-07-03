@@ -197,6 +197,8 @@ describe('InviteCreationModal open-source challenge packets', () => {
 
     await waitFor(() => expect(onCreateInvite).toHaveBeenCalledTimes(1));
     expect(onCreateInvite).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Fix event ordering in the transcript stream',
+      description: 'Investigate and fix transcript segments arriving out of order after reconnect.',
       recipientName: 'Ada Lovelace',
       recipientEmail: 'ada@example.com',
       meetingType: 'DIRECT_VIDEO_CALL',
