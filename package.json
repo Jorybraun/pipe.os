@@ -34,6 +34,7 @@
     "smoke:open-source-workspace-dev": "node scripts/smoke-code-review-workspace-dev.mjs",
     "smoke:agent-devin-chat-dev": "node scripts/smoke-agent-devin-chat-dev.mjs",
     "smoke:talent-pool-ingestion-dev": "node scripts/smoke-talent-pool-ingestion-dev.mjs",
+    "smoke:talent-pool-browser-dev": "node scripts/smoke-talent-pool-ingestion-dev.mjs --mode=browser-submit-text",
     "smoke:talent-pool-upload-dev": "node scripts/smoke-talent-pool-ingestion-dev.mjs --mode=upload-text",
     "smoke:talent-pool-docx-dev": "node scripts/smoke-talent-pool-ingestion-dev.mjs --mode=upload-docx",
     "smoke:talent-pool-pdf-gap-dev": "node scripts/smoke-talent-pool-ingestion-dev.mjs --mode=upload-pdf-gap",

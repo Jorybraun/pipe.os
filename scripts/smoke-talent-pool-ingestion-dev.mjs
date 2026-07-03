@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { chromium } from 'playwright';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -44,10 +45,10 @@ function booleanArgument(name) {
   return process.argv.includes(name);
 }
 
-const allowedSmokeModes = new Set(['submit-text', 'upload-text', 'upload-docx', 'upload-pdf-gap']);
+const allowedSmokeModes = new Set(['submit-text', 'browser-submit-text', 'upload-text', 'upload-docx', 'upload-pdf-gap']);
 const smokeMode = argumentValue('--mode') ?? process.env.TALENT_POOL_SMOKE_MODE ?? 'submit-text';
 if (!allowedSmokeModes.has(smokeMode)) {
-  throw new Error(`Unsupported --mode "${smokeMode}". Use submit-text, upload-text, upload-docx, or upload-pdf-gap.`);
+  throw new Error(`Unsupported --mode "${smokeMode}". Use submit-text, browser-submit-text, upload-text, upload-docx, or upload-pdf-gap.`);
 }
 
 const appBase = (
@@ -219,7 +220,13 @@ function shouldSendDevBasicAuth(baseUrl) {
 }
 
 function basicAuthHeader(baseUrl) {
-  if (!shouldSendDevBasicAuth(baseUrl)) return {};
+  const credentials = basicAuthCredentials(baseUrl);
+  if (!credentials) return {};
+  return { Authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}` };
+}
+
+function basicAuthCredentials(baseUrl) {
+  if (!shouldSendDevBasicAuth(baseUrl)) return null;
   const user = process.env.PIPE_DEV_BASIC_AUTH_USER
     ?? process.env.DEV_BASIC_AUTH_USER
     ?? process.env.VIDEO_ROOM_DEV_AUTH_USER
@@ -228,16 +235,19 @@ function basicAuthHeader(baseUrl) {
     ?? process.env.DEV_BASIC_AUTH_PASSWORD
     ?? process.env.VIDEO_ROOM_DEV_AUTH_PASSWORD
     ?? '';
-  if (!user || !password) return {};
-  return { Authorization: `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}` };
+  if (!user || !password) return null;
+  return { username: user, password };
 }
 
 function assertConfigured() {
-  if (!shouldSendDevBasicAuth(recruiterApiBase)) return;
-  const headers = basicAuthHeader(recruiterApiBase);
-  if (!headers.Authorization) {
+  if (shouldSendDevBasicAuth(recruiterApiBase) && !basicAuthCredentials(recruiterApiBase)) {
     throw new Error(
       'Set PIPE_DEV_BASIC_AUTH_USER and PIPE_DEV_BASIC_AUTH_PASSWORD to create dev Talent Pool candidates through app-dev.',
+    );
+  }
+  if (smokeMode === 'browser-submit-text' && shouldSendDevBasicAuth(appBase) && !basicAuthCredentials(appBase)) {
+    throw new Error(
+      'Set PIPE_DEV_BASIC_AUTH_USER and PIPE_DEV_BASIC_AUTH_PASSWORD to drive /talent/:token through app-dev.',
     );
   }
 }
@@ -459,6 +469,49 @@ async function pollAudit(inviteToken) {
   throw new Error(`Audit did not reach expected state:\n${JSON.stringify(lastReport, null, 2)}`);
 }
 
+async function submitProfileThroughBrowser(inviteToken, candidateId) {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const credentials = basicAuthCredentials(appBase);
+    const context = await browser.newContext({
+      ...(credentials ? { httpCredentials: credentials } : {}),
+    });
+    const page = await context.newPage();
+    await page.goto(`${appBase}/talent/${encodeURIComponent(inviteToken)}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 45_000,
+    });
+    await page.getByRole('heading', { name: 'Talent Pool' }).waitFor({ timeout: 30_000 });
+    await page.getByLabel('Resume or profile').fill(profileText);
+    await page.getByLabel('GitHub').fill(`https://github.com/talent-smoke-${runId}`);
+    await page.getByLabel('LinkedIn').fill(`https://linkedin.com/in/talent-smoke-${runId}`);
+    await page.getByLabel('Portfolio').fill(`https://talent-smoke-${runId}.example.dev`);
+    await page.getByLabel('Open to a short phone screen').check();
+    await page.getByLabel('Phone number').fill('+15551234567');
+    await page.getByLabel('Timezone').fill('America/Vancouver');
+    await page.getByLabel('Availability').fill('Weekday afternoons after 2 PM.');
+    await page.getByRole('button', { name: /Submit profile/i }).click();
+    await page.getByRole('heading', { name: 'Profile received' }).waitFor({ timeout: 45_000 });
+    const bodyText = await page.locator('body').innerText();
+    const forbiddenTerms = [
+      candidateId,
+      'WAITING_FOR_MATCH',
+      'Repo matching',
+      'workspace-person',
+      'source_span',
+      'artifact_version',
+      'profile_r2_key',
+      'resume_s3_key',
+    ];
+    const leakedTerm = forbiddenTerms.find((term) => term && bodyText.includes(term));
+    if (leakedTerm) {
+      throw new Error(`/talent/:token browser page exposed internal or stale status text "${leakedTerm}".`);
+    }
+  } finally {
+    await browser.close();
+  }
+}
+
 function recruiterReadNeedle() {
   if (smokeMode === 'upload-docx') return 'DOCX text is intentionally unique';
   return 'source spans can be audited back';
@@ -598,10 +651,20 @@ async function main() {
   }
   assertCandidateDashboardSafe(initialDashboard, candidateId, 'resolve-token');
 
-  const submittedDashboard = smokeMode === 'upload-text'
-    || smokeMode === 'upload-docx'
-    || smokeMode === 'upload-pdf-gap'
-    ? await (async () => {
+  const submittedDashboard = await (async () => {
+    if (smokeMode === 'browser-submit-text') {
+      await submitProfileThroughBrowser(inviteToken, candidateId);
+      return requestJson(rpcBase, '/rpc/talent/resolve-token', {
+        method: 'POST',
+        body: { inviteToken },
+      });
+    }
+
+    if (
+      smokeMode === 'upload-text'
+      || smokeMode === 'upload-docx'
+      || smokeMode === 'upload-pdf-gap'
+    ) {
         const uploadFile = smokeUploadFile();
         const formData = new FormData();
         formData.set('inviteToken', inviteToken);
@@ -618,8 +681,9 @@ async function main() {
         formData.set('timezone', 'America/Vancouver');
         formData.set('availability', 'Weekday afternoons after 2 PM.');
         return requestMultipart(rpcBase, '/rpc/talent/upload-profile', formData);
-      })()
-    : await requestJson(rpcBase, '/rpc/talent/submit-profile', {
+    }
+
+    return requestJson(rpcBase, '/rpc/talent/submit-profile', {
         method: 'POST',
         body: {
           inviteToken,
@@ -633,6 +697,7 @@ async function main() {
           availability: 'Weekday afternoons after 2 PM.',
         },
       });
+  })();
   if (submittedDashboard?.status !== 'CHALLENGE_PREPARING') {
     throw new Error(`Expected CHALLENGE_PREPARING after submit, got ${submittedDashboard?.status}`);
   }

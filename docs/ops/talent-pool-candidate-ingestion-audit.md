@@ -225,6 +225,7 @@ npm test -- src/lib/livingContext/__tests__/compatibility.test.ts src/lib/living
 npm test -- src/lib/candidateDiscovery/__tests__/candidateNodes.test.ts src/lib/candidateDiscovery/__tests__/resumeDecomposition.test.ts scripts/auditCandidateIngestion.test.ts
 npm test -- src/routes/cockpit/__tests__/contacts.rest.test.ts src/routes/cockpit/__tests__/candidates.rest.test.ts src/lib/livingContext/__tests__/readModel.test.ts
 npx playwright test e2e/talent-pool-intake.unauth.spec.ts --project=unauthenticated --reporter=line
+npm run smoke:talent-pool-browser-dev
 npm run smoke:talent-pool-ingestion-dev
 npm run smoke:talent-pool-upload-dev
 npm run smoke:talent-pool-docx-dev
@@ -241,13 +242,17 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 ```
 
 The packaged dev smoke commands default Talent Pool RPC submission to the
-app-dev proxy when no API base override is set. If a caller explicitly targets
-`api-dev.hire-pipe.com`, the smoke omits dev HTTP Basic Auth for that API host
-while still using Basic Auth for app-dev candidate creation. This keeps the
-proof path close to candidate traffic but still allows direct API probes. The
-smokes infer the remote D1 database id from the target app/API environment, so
-app-dev proofs audit the dev D1 database unless an explicit `--d1-database-id`
-or `TALENT_POOL_SMOKE_D1_DATABASE_ID` override is provided.
+app-dev proxy when no API base override is set. `smoke:talent-pool-browser-dev`
+goes one step further: it creates a real dev Talent Pool candidate, opens the
+public `/talent/:token` page in Chromium, submits pasted profile evidence
+through the form, then reuses the same remote audit and recruiter/person read
+proofs. If a caller explicitly targets `api-dev.hire-pipe.com`, direct RPC
+smokes omit dev HTTP Basic Auth for that API host while still using Basic Auth
+for app-dev candidate creation. This keeps the proof path close to candidate
+traffic but still allows direct API probes. The smokes infer the remote D1
+database id from the target app/API environment, so app-dev proofs audit the dev
+D1 database unless an explicit `--d1-database-id` or
+`TALENT_POOL_SMOKE_D1_DATABASE_ID` override is provided.
 After the ingestion audit reports ready, the smokes also verify recruiter reads
 unless `--skip-recruiter-reads` is passed: candidate living-context graph,
 unified People list, candidate source search, candidate evidence-depth, person
