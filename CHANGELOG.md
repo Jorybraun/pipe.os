@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Interview scheduling
 
 - Recruiter interview list/detail assessment setup now explains when role-backed CODE_REVIEW matching found a source-backed PR but withheld automatic assignment because the match quality gate failed, so AI ingestion no longer looks silently stuck at the generic profile-received handoff.
+- Open-source assessment setup now retries transient GitHub base-commit verification failures before rejecting a manual challenge packet, reducing false `SERVICE_UNAVAILABLE` failures during real assessment creation.
 - Scheduled interview invite delivery now returns the room or assessment link immediately and queues provider email sending in the Worker background, removing slow email-provider latency from the create modal's critical path.
 - New interview creation now keeps a visible pending state, blocks accidental modal dismissal while submitting, surfaces create failures without clearing form input, stops waiting on the list refresh before showing success, and returns a recoverable message when invite delivery is slow.
 - Scheduling live-update hooks now cap retained SSE notification history and clear toast timers on unmount, preventing the interviews route from growing browser memory indefinitely during noisy dev sessions.

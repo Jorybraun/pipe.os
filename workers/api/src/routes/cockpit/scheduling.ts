@@ -501,6 +501,8 @@ type GitHubCommitVerificationResult =
   | { ok: true }
   | { ok: false; reason: 'not_found' | 'unavailable'; status?: number };
 
+const GITHUB_COMMIT_VERIFY_MAX_ATTEMPTS = 3;
+
 async function verifyGitHubCommitReachable(input: {
   repositoryUrl: string;
   commitSha: string;
@@ -519,22 +521,30 @@ async function verifyGitHubCommitReachable(input: {
     headers.Authorization = `Bearer ${input.githubToken}`;
   }
 
-  let response: Response;
-  try {
-    const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${input.commitSha.toLowerCase()}`;
-    response = await fetch(
-      url,
-      { headers },
-    );
-  } catch {
-    return { ok: false, reason: 'unavailable' };
+  const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${input.commitSha.toLowerCase()}`;
+  let lastUnavailableStatus: number | undefined;
+  for (let attempt = 1; attempt <= GITHUB_COMMIT_VERIFY_MAX_ATTEMPTS; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(
+        url,
+        { headers },
+      );
+    } catch {
+      if (attempt === GITHUB_COMMIT_VERIFY_MAX_ATTEMPTS) {
+        return { ok: false, reason: 'unavailable' };
+      }
+      continue;
+    }
+
+    if (response.ok) return { ok: true };
+    if (response.status === 404 || response.status === 422) {
+      return { ok: false, reason: 'not_found', status: response.status };
+    }
+    lastUnavailableStatus = response.status;
   }
 
-  if (response.ok) return { ok: true };
-  if (response.status === 404 || response.status === 422) {
-    return { ok: false, reason: 'not_found', status: response.status };
-  }
-  return { ok: false, reason: 'unavailable', status: response.status };
+  return { ok: false, reason: 'unavailable', status: lastUnavailableStatus };
 }
 
 const createInterviewSchema = z.object({

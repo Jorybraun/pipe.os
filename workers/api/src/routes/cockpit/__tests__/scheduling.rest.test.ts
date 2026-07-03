@@ -8049,6 +8049,69 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(candidateProfileRef?.exact_text).toContain('Email: ada@example.com');
   });
 
+  it('retries transient GitHub base-commit verification before creating an open-source challenge packet', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+    const baseCommitSha = '1234567890abcdef1234567890abcdef12345678';
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'Service unavailable' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sha: baseCommitSha }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Grace Hopper',
+        recipientEmail: 'grace.retry@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/hash-pipe/open-source-task',
+        challengeBaseCommitSha: baseCommitSha,
+        challengeTitle: 'Fix transient assessment setup verification',
+        challengeInstructions: 'Keep the challenge source-backed while tolerating temporary GitHub API failure.',
+        challengeSuccessCriteria: [
+          'A transient GitHub 503 does not prevent a valid source-backed challenge from being created.',
+        ],
+        challengeExpectedEvidence: [
+          'git_commit source ref for the submitted commit',
+          'code_diff source ref for the candidate patch',
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const body = await response.json() as {
+      interview: {
+        assessmentSetup: {
+          status: string;
+          kind: string;
+        };
+        assessmentProgress: {
+          challenge: {
+            sourceRefType: string;
+            locator: { baseCommitSha?: string };
+          } | null;
+        } | null;
+      };
+    };
+    expect(body.interview.assessmentSetup).toMatchObject({
+      status: 'reviewable_task_assigned',
+      kind: 'manual_open_source_task',
+    });
+    expect(body.interview.assessmentProgress?.challenge).toMatchObject({
+      sourceRefType: 'open_source_challenge_packet',
+      locator: { baseCommitSha },
+    });
+  });
+
   it('rejects manual open-source challenge packets when the base commit is not reachable in the repo', async () => {
     seedDevContainerFixture();
     const app = mountSchedulingApp();
