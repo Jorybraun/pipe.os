@@ -12,6 +12,9 @@ const packet: RoomWorkspaceChallengePacket = {
     'Repo: https://github.com/pipe/source-backed-worker',
     'Base commit: dddddddddddddddddddddddddddddddddddddddd',
     'Task: Fix the source-backed worker retry path.',
+    'Match proof:',
+    '- Review packet quality 92% from source-backed repo analysis.',
+    '- 2 source-backed repo demands in the selected PR packet.',
     'Success criteria:',
     '- Retry order remains deterministic',
     '- Existing worker tests pass',
@@ -47,6 +50,9 @@ describe('ChallengePacketPanel', () => {
     const contract = screen.getByTestId('challenge-packet-contract');
     expect(contract.textContent).toContain('Task');
     expect(contract.textContent).toContain('Fix the source-backed worker retry path.');
+    expect(contract.textContent).toContain('Match proof');
+    expect(contract.textContent).toContain('Review packet quality 92% from source-backed repo analysis.');
+    expect(contract.textContent).toContain('2 source-backed repo demands in the selected PR packet.');
     expect(contract.textContent).toContain('Success criteria');
     expect(contract.textContent).toContain('Retry order remains deterministic');
     expect(contract.textContent).toContain('Existing worker tests pass');

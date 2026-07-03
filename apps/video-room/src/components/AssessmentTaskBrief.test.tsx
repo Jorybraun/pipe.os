@@ -12,6 +12,9 @@ const packet: RoomWorkspaceChallengePacket = {
     'Repo: https://github.com/pipe/source-backed-worker',
     'Base commit: dddddddddddddddddddddddddddddddddddddddd',
     'Task: Fix the source-backed worker retry path.',
+    'Match proof:',
+    '- Review packet quality 92% from source-backed repo analysis.',
+    '- 2 source-backed repo demands in the selected PR packet.',
     'Success criteria:',
     '- Retry order remains deterministic',
     '- Existing worker tests pass',
@@ -169,6 +172,9 @@ describe('AssessmentTaskBrief', () => {
     expect(briefText).toContain('pipe-assessment/retry-path');
     expect(briefText).toContain('Required challenge, work, commit, and source evidence are captured.');
     expect(briefText).toContain('Fix the source-backed worker retry path.');
+    expect(briefText).toContain('Match proof');
+    expect(briefText).toContain('Review packet quality 92% from source-backed repo analysis.');
+    expect(briefText).toContain('2 source-backed repo demands in the selected PR packet.');
     expect(briefText).toContain('Retry order remains deterministic');
     expect(briefText).toContain('Existing worker tests pass');
     expect(briefText).toContain('Commit SHA on assessment branch');

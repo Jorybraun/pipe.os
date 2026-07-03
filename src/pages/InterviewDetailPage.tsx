@@ -540,6 +540,7 @@ interface AssessmentChallengeContract {
   repositoryUrl: string | null;
   baseCommitSha: string | null;
   task: string | null;
+  matchProof: string[];
   successCriteria: string[];
   expectedEvidence: string[];
 }
@@ -559,11 +560,12 @@ function parseAssessmentChallengeContract(challenge: AssessmentProgressSnapshot[
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  let section: 'successCriteria' | 'expectedEvidence' | null = null;
+  let section: 'matchProof' | 'successCriteria' | 'expectedEvidence' | null = null;
   const contract: AssessmentChallengeContract = {
     repositoryUrl: summary?.repositoryUrl ?? firstLocatorString(challenge.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']),
     baseCommitSha: summary?.baseCommitSha ?? firstLocatorString(challenge.locator, ['baseCommitSha', 'baseCommit']),
     task: summary?.task ?? null,
+    matchProof: [...(summary?.matchProof ?? [])],
     successCriteria: [...(summary?.successCriteria ?? [])],
     expectedEvidence: [...(summary?.expectedEvidence ?? [])],
   };
@@ -597,6 +599,10 @@ function parseAssessmentChallengeContract(challenge: AssessmentProgressSnapshot[
       section = 'successCriteria';
       continue;
     }
+    if (/^match proof\s*:?\s*$/i.test(line)) {
+      section = 'matchProof';
+      continue;
+    }
     if (/^expected evidence\s*:?\s*$/i.test(line)) {
       section = 'expectedEvidence';
       continue;
@@ -613,6 +619,7 @@ function parseAssessmentChallengeContract(challenge: AssessmentProgressSnapshot[
   return contract.repositoryUrl
     || contract.baseCommitSha
     || contract.task
+    || contract.matchProof.length > 0
     || contract.successCriteria.length > 0
     || contract.expectedEvidence.length > 0
     ? contract
@@ -4304,6 +4311,16 @@ export default function InterviewDetailPage(): JSX.Element {
                       <div style={ASSESSMENT_CHALLENGE_SECTION}>
                         <span style={FIELD_LABEL}>Task</span>
                         <p style={ASSESSMENT_CHALLENGE_TEXT}>{assessmentChallengeContract.task}</p>
+                      </div>
+                    )}
+                    {assessmentChallengeContract.matchProof.length > 0 && (
+                      <div style={ASSESSMENT_CHALLENGE_SECTION}>
+                        <span style={FIELD_LABEL}>Match proof</span>
+                        <ul style={ASSESSMENT_CHALLENGE_LIST}>
+                          {assessmentChallengeContract.matchProof.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
                       </div>
                     )}
                     {assessmentChallengeContract.successCriteria.length > 0 && (

@@ -3328,6 +3328,7 @@ interface ScheduledAssessmentChallengeSummary {
   githubPrNumber: number | null;
   baseCommitSha: string | null;
   task: string | null;
+  matchProof: string[];
   successCriteria: string[];
   expectedEvidence: string[];
 }
@@ -3901,6 +3902,7 @@ function scheduledAssessmentChallengeSummary(
     githubPrNumber: scheduledAssessmentChallengePrNumber(challenge),
     baseCommitSha: scheduledAssessmentChallengeBaseCommitSha(challenge),
     task: scheduledAssessmentChallengeLineValue(challenge.exactText, ['Task', 'Title']),
+    matchProof: scheduledAssessmentChallengeSectionItems(challenge.exactText, ['Match proof']),
     successCriteria: [
       ...scheduledAssessmentChallengeSectionItems(challenge.exactText, ['Success criteria']),
       ...(scheduledAssessmentChallengeLineValue(challenge.exactText, ['Success'])
@@ -4658,6 +4660,23 @@ function matchedPacketVerificationCommand(): string {
   return 'git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD';
 }
 
+function matchedPacketMatchProof(input: MatchedOpenSourceChallengePacket): string[] {
+  const demandCount = Math.max(0, input.demandCount);
+  const demandLabel = demandCount === 1 ? 'demand' : 'demands';
+  const families = input.demandFamilies
+    .map(demandFamilyLabel)
+    .filter(Boolean)
+    .slice(0, 4);
+  return [
+    ...(typeof input.qualityScore === 'number' && Number.isFinite(input.qualityScore)
+      ? [`Review packet quality ${Math.round(input.qualityScore * 100)}% from source-backed repo analysis.`]
+      : []),
+    `${demandCount} source-backed repo ${demandLabel} in the selected PR packet.`,
+    ...(families.length > 0 ? [`Demand families: ${families.join(', ')}.`] : []),
+    'Matched packet passed repo source-span and concept evidence checks before assignment.',
+  ];
+}
+
 function materializeMatchedOpenSourcePacket(
   row: {
     id: string;
@@ -4801,6 +4820,8 @@ function buildMatchedOpenSourceChallengeExactText(
     `Task: ${input.title}`,
     `Instructions: ${input.instructions}`,
     `Verification command: ${input.verificationCommand}`,
+    'Match proof:',
+    ...matchedPacketMatchProof(input).map((proof) => `- ${proof}`),
     'Success criteria:',
     ...input.successCriteria.map((criterion) => `- ${criterion}`),
     'Expected evidence:',

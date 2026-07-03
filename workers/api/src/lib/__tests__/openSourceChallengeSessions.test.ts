@@ -234,6 +234,10 @@ describe('open-source challenge sessions', () => {
       },
     });
     expect(JSON.stringify(eventCalls[0])).toContain('Expected evidence:');
+    expect(JSON.stringify(eventCalls[0])).toContain('Match proof:');
+    expect(JSON.stringify(eventCalls[0])).toContain('Review packet quality 91% from source-backed repo analysis.');
+    expect(JSON.stringify(eventCalls[0])).toContain('1 source-backed repo demand in the selected PR packet.');
+    expect(JSON.stringify(eventCalls[0])).toContain('Demand families: runtime reliability.');
     expect(eventCalls[0]).toMatchObject({
       sourceRefs: [expect.objectContaining({
         sourceRefType: 'review_challenge_packet',

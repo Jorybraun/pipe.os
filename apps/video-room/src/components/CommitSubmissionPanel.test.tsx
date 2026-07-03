@@ -27,6 +27,9 @@ const richPacket: RoomWorkspaceChallengePacket = {
     'Repo: https://github.com/pipe/source-backed-worker',
     `Base commit: ${'d'.repeat(40)}`,
     'Task: Fix the source-backed worker retry path.',
+    'Match proof:',
+    '- Review packet quality 92% from source-backed repo analysis.',
+    '- 2 source-backed repo demands in the selected PR packet.',
     'Success criteria:',
     '- Retry order remains deterministic',
     '- Existing worker tests pass',
@@ -129,6 +132,9 @@ describe('CommitSubmissionPanel', () => {
     expect(completion.textContent).toContain('PR');
     expect(completion.textContent).toContain('#144');
     expect(completion.textContent).toContain('Fix the source-backed worker retry path.');
+    expect(completion.textContent).toContain('Match proof');
+    expect(completion.textContent).toContain('Review packet quality 92% from source-backed repo analysis.');
+    expect(completion.textContent).toContain('2 source-backed repo demands in the selected PR packet.');
     expect(completion.textContent).toContain('Retry order remains deterministic');
     expect(completion.textContent).toContain('Commit SHA on assessment branch');
 

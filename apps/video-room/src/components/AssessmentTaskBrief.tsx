@@ -205,6 +205,7 @@ export function AssessmentTaskBrief({
   const canOpenSubmission = workspaceReady && !challengeSetupStep;
   const hasContract = Boolean(
     summary.task
+    || summary.matchProof.length > 0
     || summary.successCriteria.length > 0
     || summary.expectedEvidence.length > 0,
   );
@@ -368,6 +369,14 @@ export function AssessmentTaskBrief({
             <section>
               <strong>Task</strong>
               <p>{summary.task}</p>
+            </section>
+          )}
+          {summary.matchProof.length > 0 && (
+            <section>
+              <strong>Match proof</strong>
+              <ul>
+                {summary.matchProof.map((item) => <li key={item}>{item}</li>)}
+              </ul>
             </section>
           )}
           {summary.successCriteria.length > 0 && (

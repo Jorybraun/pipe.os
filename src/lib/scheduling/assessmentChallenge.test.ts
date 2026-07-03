@@ -109,6 +109,7 @@ describe('summarizeAssessmentChallenge', () => {
       },
       summary: {
         task: 'Fix Base UI popover impatient click handling',
+        matchProof: ['Review packet quality 92% from source-backed repo analysis.'],
         successCriteria: ['Regression is fixed without weakening normal click behavior.'],
         expectedEvidence: ['Commit diff plus targeted test or explicit verification note.'],
       },
@@ -119,6 +120,7 @@ describe('summarizeAssessmentChallenge', () => {
       githubPrNumber: 973,
       baseCommitSha: '1111111111111111111111111111111111111111',
       task: 'Fix Base UI popover impatient click handling',
+      matchProof: ['Review packet quality 92% from source-backed repo analysis.'],
       successCriteria: ['Regression is fixed without weakening normal click behavior.'],
       expectedEvidence: ['Commit diff plus targeted test or explicit verification note.'],
     });

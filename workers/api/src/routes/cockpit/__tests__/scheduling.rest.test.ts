@@ -2611,6 +2611,7 @@ describe('GET /interviews/:id detail', () => {
                 githubPrNumber: number | null;
                 baseCommitSha: string | null;
                 task: string | null;
+                matchProof: string[];
                 successCriteria: string[];
                 expectedEvidence: string[];
               };
@@ -2656,6 +2657,7 @@ describe('GET /interviews/:id detail', () => {
           githubPrNumber: null,
           baseCommitSha,
           task: 'fix the assessment list progress regression.',
+          matchProof: [],
           successCriteria: ['commit a focused patch with tests.'],
           expectedEvidence: [
             'git commit SHA on a pipe-assessment branch',
@@ -7965,6 +7967,10 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     });
     expect(body.interview.assessmentProgress?.challenge?.exactText).toContain(`Pull request: #${packet.githubPrNumber}`);
     expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Verification command: git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Match proof:');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Review packet quality 92% from source-backed repo analysis.');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('1 source-backed repo demand in the selected PR packet.');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Demand families: retry logic.');
     expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Repair retry scheduling so terminal events are emitted exactly once.');
 
     const row = sqlite!.prepare(
@@ -8005,6 +8011,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       content_hash: packet.sourceHash,
     });
     expect(sourceRef?.exact_text).toContain(packet.repositoryUrl);
+    expect(sourceRef?.exact_text).toContain('Match proof:');
+    expect(sourceRef?.exact_text).toContain('Review packet quality 92% from source-backed repo analysis.');
   });
 
   it('creates a source-backed open-source challenge packet without requiring a PR number', async () => {

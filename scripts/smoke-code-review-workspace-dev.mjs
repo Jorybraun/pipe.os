@@ -793,7 +793,7 @@ async function assertCandidateTaskBriefBrowser(
   expectedBaseCommitSha,
   options = {},
 ) {
-  const { expectWorkspaceReady = false } = options;
+  const { expectMatchedChallenge = false, expectWorkspaceReady = false } = options;
   if (SKIP_CANDIDATE_BROWSER) {
     return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_CANDIDATE_BROWSER=1' };
   }
@@ -839,6 +839,11 @@ async function assertCandidateTaskBriefBrowser(
       );
     }
     await expect(brief).toContainText('Task');
+    if (expectMatchedChallenge) {
+      await expect(brief).toContainText('Match proof');
+      await expect(brief).toContainText('Review packet quality');
+      await expect(brief).toContainText('source-backed repo demand');
+    }
     await expect(brief).toContainText('Success criteria');
     await expect(brief).toContainText('Expected evidence');
     await expect(assessmentHeader.getByTestId('assessment-progress-coverage')).toContainText('challenge', {
@@ -1053,6 +1058,17 @@ async function main() {
       if (missingTerms.length > 0) {
         throw new Error(`Task-aligned challenge packet missed expected terms ${missingTerms.join(', ')}: ${challengeText}`);
       }
+      if (useMatchedRepo) {
+        const missingMatchProofTerms = [
+          'Match proof:',
+          'Review packet quality',
+          'source-backed repo demand',
+          'Demand families',
+        ].filter((term) => !challengeText.includes(term));
+        if (missingMatchProofTerms.length > 0) {
+          throw new Error(`Task-aligned matched challenge packet missed match proof terms ${missingMatchProofTerms.join(', ')}: ${challengeText}`);
+        }
+      }
       const locator = challenge?.locator ?? {};
       const locatorBaseCommitSha = typeof locator.baseCommitSha === 'string'
         ? locator.baseCommitSha.toLowerCase()
@@ -1150,7 +1166,7 @@ async function main() {
     invited.room.guestUrl,
     expectedRepoUrl,
     expectedBaseCommitSha,
-    { expectWorkspaceReady: true },
+    { expectMatchedChallenge: useMatchedRepo, expectWorkspaceReady: true },
   );
   const guestToken = tokenFromRoomUrl(invited?.room?.guestUrl ?? '');
   const guestRoomAuthHeaders = authHeadersFromUrl(invited?.room?.guestUrl ?? '');

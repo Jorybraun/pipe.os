@@ -293,6 +293,9 @@ describe('InterviewDetailPage', () => {
               'Repo: https://github.com/open-source/widgets',
               'Base commit: 1111111111111111111111111111111111111111',
               'Task: Fix the popover cleanup regression.',
+              'Match proof:',
+              '- Review packet quality 92% from source-backed repo analysis.',
+              '- 2 source-backed repo demands in the selected PR packet.',
               'Success criteria:',
               '- Keep hover-open behavior intact.',
               '- Add a regression test for impatient trigger clicks.',
@@ -404,6 +407,9 @@ describe('InterviewDetailPage', () => {
     expect(contract).toHaveTextContent('Base 1111111111');
     expect(contract).toHaveTextContent('Task');
     expect(contract).toHaveTextContent('Fix the popover cleanup regression.');
+    expect(contract).toHaveTextContent('Match proof');
+    expect(contract).toHaveTextContent('Review packet quality 92% from source-backed repo analysis.');
+    expect(contract).toHaveTextContent('2 source-backed repo demands in the selected PR packet.');
     expect(contract).toHaveTextContent('Success criteria');
     expect(contract).toHaveTextContent('Keep hover-open behavior intact.');
     expect(contract).toHaveTextContent('Add a regression test for impatient trigger clicks.');

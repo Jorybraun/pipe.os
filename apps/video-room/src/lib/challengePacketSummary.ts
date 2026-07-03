@@ -2,6 +2,7 @@ import type { RoomWorkspaceChallengePacket } from '../types';
 
 export interface ChallengePacketContract {
   task: string | null;
+  matchProof: string[];
   successCriteria: string[];
   expectedEvidence: string[];
 }
@@ -45,9 +46,10 @@ export function parseChallengePacketContract(exactText: string): ChallengePacket
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  let section: 'successCriteria' | 'expectedEvidence' | null = null;
+  let section: 'matchProof' | 'successCriteria' | 'expectedEvidence' | null = null;
   const contract: ChallengePacketContract = {
     task: null,
+    matchProof: [],
     successCriteria: [],
     expectedEvidence: [],
   };
@@ -67,6 +69,10 @@ export function parseChallengePacketContract(exactText: string): ChallengePacket
     }
     if (/^success criteria\s*:?\s*$/i.test(line)) {
       section = 'successCriteria';
+      continue;
+    }
+    if (/^match proof\s*:?\s*$/i.test(line)) {
+      section = 'matchProof';
       continue;
     }
     if (/^expected evidence\s*:?\s*$/i.test(line)) {
@@ -90,9 +96,10 @@ export function summarizeChallengePacket(packet: RoomWorkspaceChallengePacket | 
     ? parseChallengePacketContract(packet.exactText)
     : {
         task: null,
+        matchProof: [],
         successCriteria: [],
         expectedEvidence: [],
-  };
+      };
   const locator = packet?.locator ?? {};
 
   return {

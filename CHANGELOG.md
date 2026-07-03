@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- PIPE-matched open-source challenge packets now expose source-backed match proof in recruiter detail, candidate task brief, packet panel, submit panel, list summaries, and dev smokes, making the selected repo task explain why it was chosen without exposing internal identifiers.
 - Agent bridge status and diagnostic evidence such as Devin `auth_needed`, quota, or auth failures now count as AI transparency without being mislabeled as AI assistance, and the Devin smoke verifies recruiter progress captures the real blocked bridge state.
 - Devin bridge smoke now creates a source-backed open-source assessment packet by default, so auth/status evidence is verified against a real assessment session instead of a generic container-only meeting.
 - Real agent bridge replies now persist as `ai_agent_response` assessment evidence, and recruiter/candidate AI summaries count both current and legacy agent bridge refs so Devin usage remains observable without fake replies.
