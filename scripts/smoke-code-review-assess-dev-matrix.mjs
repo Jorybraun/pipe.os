@@ -202,6 +202,7 @@ function summarizeSmoke(profile, parsed, durationMs) {
     reviewPipelineScoringStatus: Array.isArray(parsed?.submissionSmoke?.reviewStatusPipeline?.pipeline)
       ? (parsed.submissionSmoke.reviewStatusPipeline.pipeline.find((step) => step?.id === 'scoring')?.status ?? null)
       : null,
+    candidateBrowserSmokeSkipped: parsed?.browserSmoke?.skipped ?? null,
     recruiterBrowserSmokeSkipped: parsed?.recruiterBrowserSmoke?.skipped ?? null,
     recruiterMatchStatus: parsed?.submissionSmoke?.recruiterResults?.codeReviewMatchStatus ?? null,
     evidenceHyperedgeCount: parsed?.submissionSmoke?.recruiterResults?.evidenceHyperedgeCount ?? null,

@@ -221,30 +221,34 @@ summary artifacts under `tmp/code-review-reliability/`. Use
 `CODE_REVIEW_RELIABILITY_LANES=manual-ready,blocked-handoff,workers-sdk-matrix` for focused
 diagnosis, or `CODE_REVIEW_RELIABILITY_D1_DATABASE_ID=<d1-id>` to point the
 match-quality lane at a different CODE_REVIEW evaluation database.
+The suite summary validator also fails candidate/recruiter-facing lanes when
+the candidate browser smoke or recruiter browser smoke is skipped, so a green
+suite proves the app-dev UI path ran instead of only direct RPC/API checks.
 In isolated worktrees that already have `playwright/.auth/user.json`, set
 `PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP=1` to reuse that recruiter session without
 running the Clerk setup dependency again.
 
 Latest full suite proof on 2026-07-03 passed all 6 lanes with artifact
-`tmp/code-review-reliability/2026-07-03T12-47-05-031Z-suite.summary.json`:
-manual ready-assignment interview `fd9a8b6a-c460-436c-ad7e-ca91028a6d73`
+`tmp/code-review-reliability/2026-07-03T12-59-30-715Z-suite.summary.json`:
+manual ready-assignment interview `d6613974-69a4-4e0d-bf5d-55597a40cb7a`
 served `mui/base-ui#973` with `manual_override`, `MATCHED`, validator `PASSED`,
 `USABLE` assessment quality, and pre-intake candidate-link proof
 `state=active`, `sessionStatus=INVITED`; fresh no-CV handoff interview
-`659e4405-6c2b-441a-bf6f-30882defe65f` returned `PROFILE_RECEIVED` /
+`eeda3137-abe7-43c3-bbe1-79e9b113b844` returned `PROFILE_RECEIVED` /
 `candidate-intake-queued` before any resume submission; blocked handoff
-interview `aef917fe-c79f-4768-847a-e11c844514e8` returned
+interview `6544d653-4e32-4d49-9004-0b1fde387413` returned
 `PROFILE_RECEIVED` / `candidate-intake-queued` after intake evidence with no
 source-backed PR ready; role-backed full-submit interview
-`c6873ec4-9c29-41da-94be-80ee80a84994` selected `mui/base-ui#973`, submitted
-review session `6afb7fbd-f4a0-43bb-9f4b-8e60203c3f0c`, persisted score `47`
-(`adequate`), and exposed 4 evidence hyperedges plus a person-role-repo bridge;
-Workers SDK matrix interview `81aa9639-e1ec-4314-b2ea-a29cde0acc8e` selected
+`0fb0fc14-06e8-4c37-8a3d-1a54fb2797a3` selected `mui/base-ui#973`, submitted
+review session `4f0caf0a-015b-45e0-8a78-6d4b14d228f0`, persisted score `88`
+(`strong`), and exposed 4 evidence hyperedges plus a person-role-repo bridge;
+Workers SDK matrix interview `46c2fe45-ff4b-4a45-8632-807cc4b634fb` selected
 `cloudflare/workers-sdk#14118` with `STRONG` quality and contrast score `2/2`;
 match-quality readiness passed corpus
 `seeded-1783074402522-3c-3r-expert-codex-supplemental-contrast` with accuracy
 `1`, false positives `0`, false negatives `0`, usable challenge rate `1`, and
-no gate failures.
+no gate failures. Every candidate/recruiter-facing lane reported
+`candidateBrowserSmokeSkipped=false` and `recruiterBrowserSmokeSkipped=false`.
 
 Set `CODE_REVIEW_SMOKE_SUBMIT=1`, or use `npm run smoke:code-review-assess-dev:role-backed-full-submit`, for the stronger end-to-end gate. That mode keeps the browser assess smoke, drives the visible candidate UI to add an inline diff comment, submits the first review round in the browser, waits for the author response/thread, then completes with `request_changes`, submits the review-session reference through `/rpc/submit-challenge-response`, verifies both `/api/v1/scheduling/interviews/:id` and `/api/v1/candidates/:id` expose the completed recruiter result, fails if scheduled detail loses transcript rounds, reviewer comments, or AI developer responses, checks the judge-example replay queue contains the review session with candidate comments, AI pushback, `human_label_queue`, and `cross_model_calibration` metadata, and polls D1 until `review_sessions.score_report`, `challenge_submissions.score_report_json`, `challenge_submissions.score`, and `assessments.score` are durable. The score-persistence check uses local `pipe-db` for localhost and remote `pipe-db-test` for app-dev; override with `CODE_REVIEW_SMOKE_D1_DATABASE` only when deliberately targeting another D1 database.
 

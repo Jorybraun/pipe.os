@@ -90,6 +90,14 @@ describe('CODE_REVIEW reliability suite contract', () => {
         sessionStatus: 'INVITED',
         setupStatus: 'reviewable_task_assigned',
       },
+      browserSmoke: { skipped: false },
+      recruiterBrowserSmoke: {
+        skipped: false,
+        readiness: {
+          ready: true,
+          assessmentSetupStatus: 'reviewable_task_assigned',
+        },
+      },
     }, null, 2));
 
     expect(manualReady).toMatchObject({
@@ -106,6 +114,10 @@ describe('CODE_REVIEW reliability suite contract', () => {
         candidateLinkState: 'active',
         candidateLinkSessionStatus: 'INVITED',
         candidateLinkSetupStatus: 'reviewable_task_assigned',
+        candidateBrowserSmokeSkipped: false,
+        recruiterBrowserSmokeSkipped: false,
+        recruiterReadinessReady: true,
+        recruiterAssessmentSetupStatus: 'reviewable_task_assigned',
       },
     });
 
@@ -116,6 +128,16 @@ describe('CODE_REVIEW reliability suite contract', () => {
       candidateHandoff: {
         type: 'PROFILE_RECEIVED',
         stageId: 'candidate-intake-queued',
+        stageTitle: 'Profile received',
+        challengeCount: 0,
+      },
+      browserSmoke: { skipped: false },
+      recruiterBrowserSmoke: {
+        skipped: false,
+        readiness: {
+          ready: true,
+          assessmentSetupStatus: 'waiting_for_source_backed_match',
+        },
       },
     }, null, 2));
 
@@ -127,6 +149,12 @@ describe('CODE_REVIEW reliability suite contract', () => {
         matchMode: 'auto_match',
         candidateHandoffType: 'PROFILE_RECEIVED',
         candidateHandoffStageId: 'candidate-intake-queued',
+        candidateHandoffStageTitle: 'Profile received',
+        candidateHandoffChallengeCount: 0,
+        candidateBrowserSmokeSkipped: false,
+        recruiterBrowserSmokeSkipped: false,
+        recruiterReadinessReady: true,
+        recruiterAssessmentSetupStatus: 'waiting_for_source_backed_match',
       },
     });
 
@@ -139,6 +167,14 @@ describe('CODE_REVIEW reliability suite contract', () => {
       matchStatus: 'MATCHED',
       qualityGate: 'PASSED',
       assessmentQuality: 'STRONG',
+      browserSmoke: { skipped: false },
+      recruiterBrowserSmoke: {
+        skipped: false,
+        readiness: {
+          ready: true,
+          assessmentSetupStatus: 'reviewable_task_assigned',
+        },
+      },
       submissionSmoke: {
         reviewSessionId: 'review-session-1',
         scorePersistence: {
@@ -162,6 +198,10 @@ describe('CODE_REVIEW reliability suite contract', () => {
       reviewSessionId: 'review-session-1',
       reviewScore: 71,
       scoreStatus: 'scored',
+      candidateBrowserSmokeSkipped: false,
+      recruiterBrowserSmokeSkipped: false,
+      recruiterReadinessReady: true,
+      recruiterAssessmentSetupStatus: 'reviewable_task_assigned',
       evidenceHyperedgeCount: 4,
       personRoleRepoHyperedge: true,
     });
@@ -185,6 +225,8 @@ describe('CODE_REVIEW reliability suite contract', () => {
           qualityGate: 'PASSED',
           assessmentQuality: 'STRONG',
           contrastScore: 2,
+          candidateBrowserSmokeSkipped: false,
+          recruiterBrowserSmokeSkipped: false,
         }],
       }, null, 2),
     ].join('\n');
@@ -198,6 +240,8 @@ describe('CODE_REVIEW reliability suite contract', () => {
       repoUrl: 'https://github.com/cloudflare/workers-sdk',
       prNumber: 14118,
       contrastScore: 2,
+      candidateBrowserSmokeSkipped: false,
+      recruiterBrowserSmokeSkipped: false,
     });
 
     expect(summarizeLaneProof('match-quality', JSON.stringify({
@@ -236,6 +280,10 @@ describe('CODE_REVIEW reliability suite contract', () => {
       candidateLinkState: 'active',
       candidateLinkSessionStatus: 'INVITED',
       candidateLinkSetupStatus: 'reviewable_task_assigned',
+      candidateBrowserSmokeSkipped: false,
+      recruiterBrowserSmokeSkipped: false,
+      recruiterReadinessReady: true,
+      recruiterAssessmentSetupStatus: 'reviewable_task_assigned',
     })).toEqual({ ok: true, failures: [] });
 
     expect(validateLaneSummary('no-cv-handoff', {
@@ -245,6 +293,12 @@ describe('CODE_REVIEW reliability suite contract', () => {
       prNumber: null,
       candidateHandoffType: 'PROFILE_RECEIVED',
       candidateHandoffStageId: 'candidate-intake-queued',
+      candidateHandoffStageTitle: 'Profile received',
+      candidateHandoffChallengeCount: 0,
+      candidateBrowserSmokeSkipped: false,
+      recruiterBrowserSmokeSkipped: false,
+      recruiterReadinessReady: true,
+      recruiterAssessmentSetupStatus: 'waiting_for_source_backed_match',
       reviewSessionId: null,
     })).toEqual({ ok: true, failures: [] });
 
@@ -255,6 +309,10 @@ describe('CODE_REVIEW reliability suite contract', () => {
       prNumber: null,
       candidateHandoffType: 'PROFILE_RECEIVED',
       candidateHandoffStageId: 'candidate-intake-queued',
+      candidateBrowserSmokeSkipped: false,
+      recruiterBrowserSmokeSkipped: false,
+      recruiterReadinessReady: true,
+      recruiterAssessmentSetupStatus: 'waiting_for_source_backed_match',
       reviewSessionId: null,
     })).toEqual({ ok: true, failures: [] });
 
@@ -266,6 +324,10 @@ describe('CODE_REVIEW reliability suite contract', () => {
       matchStatus: 'MATCHED',
       qualityGate: 'PASSED',
       assessmentQuality: 'STRONG',
+      candidateBrowserSmokeSkipped: false,
+      recruiterBrowserSmokeSkipped: false,
+      recruiterReadinessReady: true,
+      recruiterAssessmentSetupStatus: 'reviewable_task_assigned',
       reviewSessionId: 'review-session-1',
       reviewScore: 47,
       reviewBand: 'adequate',
@@ -283,6 +345,8 @@ describe('CODE_REVIEW reliability suite contract', () => {
       qualityGate: 'PASSED',
       assessmentQuality: 'STRONG',
       contrastScore: 2,
+      candidateBrowserSmokeSkipped: false,
+      recruiterBrowserSmokeSkipped: false,
     })).toEqual({ ok: true, failures: [] });
 
     expect(validateLaneSummary('match-quality-readiness', {
@@ -305,12 +369,15 @@ describe('CODE_REVIEW reliability suite contract', () => {
       prNumber: 973,
       candidateHandoffType: null,
       candidateHandoffStageId: null,
+      candidateBrowserSmokeSkipped: true,
+      recruiterBrowserSmokeSkipped: false,
       reviewSessionId: null,
     })).toMatchObject({
       ok: false,
       failures: expect.arrayContaining([
         'no-cv-handoff must return PROFILE_RECEIVED',
         'no-cv-handoff stage must be candidate-intake-queued',
+        'no-cv-handoff candidate browser smoke must run',
         'no-cv-handoff must not assign a repo',
         'no-cv-handoff must not assign a PR',
       ]),
@@ -325,6 +392,8 @@ describe('CODE_REVIEW reliability suite contract', () => {
       qualityGate: 'PASSED',
       assessmentQuality: 'STRONG',
       contrastScore: 2,
+      candidateBrowserSmokeSkipped: false,
+      recruiterBrowserSmokeSkipped: false,
     })).toMatchObject({
       ok: false,
       failures: expect.arrayContaining([
