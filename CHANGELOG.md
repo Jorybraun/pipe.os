@@ -103,6 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- Candidate CODE_REVIEW challenge pages now render a candidate-safe source-backed task packet with repository, base commit, task, success criteria, expected evidence, constraints, and missing packet fields without exposing internal packet or source-span ids.
 - Added an internal living-context match-quality evaluation gate with compact match reports, labelled contrast cases, source-backed PR checks, and decision-weighted rematch exclusions, harvesting PR #171 backend primitives without exposing graph cockpit or matching diagnostics to candidates.
 - The internal match-quality evaluation CLI can now run against frozen `evaluation_corpora` rows via `--corpus-id` as well as compact JSON files, adapting existing candidate-role-challenge labels into the CODE_REVIEW packet-quality gate.
 - CI matching-evaluation readiness can now target a dedicated D1 database and rollout stage via `MATCHING_EVALUATION_D1_DATABASE_ID` and `MATCHING_EVALUATION_STAGE`, keeping app-dev CODE_REVIEW quality proof separate from the mostly empty production D1 while preserving the same frozen-corpus gate.

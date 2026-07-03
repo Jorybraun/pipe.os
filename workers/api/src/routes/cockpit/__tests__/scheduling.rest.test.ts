@@ -1090,6 +1090,126 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('explains quality-gated role-backed CODE_REVIEW matches before assignment', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      UPDATE scheduled_interviews
+         SET interview_type = 'CODE_REVIEW',
+             stage_id = 'stage-1',
+             matched_repo_id = NULL,
+             github_repo_url = NULL,
+             github_pr_number = NULL
+       WHERE id = 'interview-1'
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO qualified_repos (id, github_url)
+      VALUES (973, 'https://github.com/mui/base-ui')
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO review_challenge_packets (
+        id, repo_snapshot_id, repo_id, pr_number, production_ready,
+        quality_score, packet_json, updated_at
+      ) VALUES (
+        'packet-near-tie-973', 'snapshot-base-ui', 973, 973, 1,
+        0.91, '{}', 1
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-near-tie-973', 'candidate-1', 'role-context:role-1:source-backed:simple-jd-v1',
+        'MATCHED', ?, 'packet-near-tie-973', '{}', '2026-06-22T17:46:01.000Z'
+      )
+    `).run(JSON.stringify([{
+      rank: 1,
+      challengeId: 'packet-near-tie-973',
+      repoId: '973',
+      prNumber: 973,
+      score: 0.537,
+      alignedDemandCount: 6,
+      stretchCount: 0,
+      provenanceComplete: true,
+      eligible: true,
+      assessmentQuality: {
+        verdict: 'USABLE',
+        score: 9,
+        maxScore: 12,
+        metrics: [{
+          id: 'contrast_separation',
+          label: 'Contrast separation',
+          score: 0,
+          maxScore: 2,
+          reason: 'The selected challenge leads the next comparable challenge by 2%.',
+        }],
+      },
+      validatorAgent: {
+        agentName: 'source_backed_match_validator',
+        agentVersion: 'v1',
+        mode: 'deterministic',
+        verdict: 'PASSED',
+        rationale: 'Selected PR #973 from source-backed candidate, role, and repo evidence.',
+        checks: [],
+        sourceBridge: {
+          prNumber: 973,
+          candidateSourceCount: 6,
+          repoSourceCount: 28,
+          roleSourceCount: 1,
+          alignedDemandCount: 6,
+          stretchCount: 0,
+          provenanceComplete: true,
+        },
+      },
+      alignments: [],
+      rejectionReasons: [],
+    }]));
+
+    const app = mountSchedulingApp();
+    const detailResponse = await app.request('/interviews/interview-1');
+    expect(detailResponse.status).toBe(200);
+    const detail = await detailResponse.json() as {
+      interview: {
+        assessmentSetup: {
+          status: string;
+          kind: string;
+          source: string;
+          blocksPositiveAssessment: boolean;
+          message: string | null;
+          nextActionLabel: string | null;
+        };
+      };
+    };
+
+    expect(detail.interview.assessmentSetup).toMatchObject({
+      status: 'waiting_for_source_backed_match',
+      kind: 'auto_match',
+      source: 'candidate_id',
+      blocksPositiveAssessment: true,
+    });
+    expect(detail.interview.assessmentSetup.message).toContain('PIPE found a source-backed candidate challenge');
+    expect(detail.interview.assessmentSetup.message).toContain('https://github.com/mui/base-ui #973');
+    expect(detail.interview.assessmentSetup.message).toContain('auto-assignment quality gate');
+    expect(detail.interview.assessmentSetup.message).toContain('Assessment quality: USABLE 9/12.');
+    expect(detail.interview.assessmentSetup.message).toContain('leads the next comparable challenge by 2%');
+    expect(detail.interview.assessmentSetup.nextActionLabel).toContain('Review the latest match run');
+
+    const listResponse = await app.request('/interviews');
+    expect(listResponse.status).toBe(200);
+    const list = await listResponse.json() as {
+      interviews: Array<{
+        id: string;
+        assessmentSetup: {
+          message: string | null;
+          nextActionLabel: string | null;
+        };
+      }>;
+    };
+    const listed = list.interviews.find((item) => item.id === 'interview-1');
+    expect(listed?.assessmentSetup.message).toContain('https://github.com/mui/base-ui #973');
+    expect(listed?.assessmentSetup.nextActionLabel).toContain('Review the latest match run');
+  });
+
   it('keeps a delivered assessment link active when a claimed prefix exists before the candidate starts', async () => {
     seedInterviewDetailFixture();
     const db = createMockD1(sqlite!);

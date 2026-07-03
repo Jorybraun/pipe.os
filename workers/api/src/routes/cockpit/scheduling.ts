@@ -275,6 +275,18 @@ interface ScheduledAssessmentSetupProjection {
   lastDeliveredUrlMessage?: string | null;
 }
 
+interface ScheduledPendingMatchDiagnostic {
+  matchRunId: string;
+  status: string;
+  selectedPacketId: string | null;
+  githubRepoUrl: string | null;
+  githubPrNumber: number | null;
+  assessmentQualityVerdict: string | null;
+  assessmentQualityScore: string | null;
+  contrastScore: number | null;
+  contrastReason: string | null;
+}
+
 interface WorkspaceSessionProjection {
   status: string;
   errorMessage: string | null;
@@ -311,6 +323,7 @@ function buildScheduledAssessmentSetup(input: {
   githubPrNumber: number | null | undefined;
   matchedRepoSource?: Extract<ScheduledAssessmentSetupSource, 'matched_repo_id' | 'candidate_challenge_assignment'> | undefined;
   manualOpenSourceChallengePacket?: boolean | undefined;
+  pendingMatchDiagnostic?: ScheduledPendingMatchDiagnostic | null | undefined;
   lastDeliveredUrl?: string | null | undefined;
   lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null | undefined;
   lastDeliveredUrlMessage?: string | null | undefined;
@@ -406,6 +419,40 @@ function buildScheduledAssessmentSetup(input: {
       message: 'This contact-first assessment invite has no candidate evidence yet. PIPE must ingest source-backed resume, transcript, chat, or interview evidence before selecting a PR task.',
       nextAction: 'COLLECT_CANDIDATE_EVIDENCE',
       nextActionLabel: 'Send the intake link or schedule a context call that captures source-backed examples of the candidate’s real engineering work.',
+      lastDeliveredUrl,
+      lastDeliveredUrlState,
+      lastDeliveredUrlMessage,
+    };
+  }
+
+  if (input.pendingMatchDiagnostic) {
+    const diagnostic = input.pendingMatchDiagnostic;
+    const candidate = [
+      diagnostic.githubRepoUrl,
+      diagnostic.githubPrNumber ? `#${diagnostic.githubPrNumber}` : null,
+    ].filter(Boolean).join(' ');
+    const quality = [
+      diagnostic.assessmentQualityVerdict,
+      diagnostic.assessmentQualityScore,
+    ].filter(Boolean).join(' ');
+    const contrast = diagnostic.contrastReason
+      ?? (diagnostic.contrastScore !== null
+        ? `Contrast score ${diagnostic.contrastScore}.`
+        : null);
+    return {
+      status: 'waiting_for_source_backed_match',
+      kind: 'auto_match',
+      source: 'candidate_id',
+      blocksPositiveAssessment: true,
+      message: [
+        candidate
+          ? `PIPE found a source-backed candidate challenge (${candidate}) but held back automatic assignment because the match did not pass the auto-assignment quality gate.`
+          : 'PIPE found a source-backed candidate challenge but held back automatic assignment because the match did not pass the auto-assignment quality gate.',
+        quality ? `Assessment quality: ${quality}.` : null,
+        contrast,
+      ].filter(Boolean).join(' '),
+      nextAction: 'RERUN_OR_ENRICH_MATCHING',
+      nextActionLabel: 'Review the latest match run, add differentiating role or candidate evidence, or manually assign a source-backed PR once approved.',
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -2416,6 +2463,96 @@ async function loadLatestCandidateMatchRun(
       ORDER BY created_at DESC, id DESC
       LIMIT 1`,
   ).bind(candidateId).first<{ id: string; status: string; created_at: string | null }>();
+}
+
+function assessmentQualityScoreLabel(quality: ScheduledCodeReviewAssessmentQuality | null): string | null {
+  if (!quality) return null;
+  return `${quality.score}/${quality.maxScore}`;
+}
+
+function contrastMetricFor(
+  quality: ScheduledCodeReviewAssessmentQuality | null,
+): ScheduledCodeReviewQualityMetric | null {
+  return quality?.metrics.find((metric) => metric.id === 'contrast_separation') ?? null;
+}
+
+function pendingMatchDiagnosticFromRow(row: {
+  id: string;
+  status: string;
+  selected_packet_id: string | null;
+  ranked_results_json: string | null;
+  github_url: string | null;
+  pr_number: number | null;
+}): ScheduledPendingMatchDiagnostic | null {
+  const ranked = parseScheduledCodeReviewRankedResults(row.ranked_results_json);
+  const selected = row.selected_packet_id
+    ? ranked.find((entry) => entry.challengeId === row.selected_packet_id)
+    : ranked.find((entry) => entry.rank === 1) ?? ranked[0];
+  if (!selected) return null;
+  const contrast = contrastMetricFor(selected.assessmentQuality);
+  return {
+    matchRunId: row.id,
+    status: row.status,
+    selectedPacketId: row.selected_packet_id,
+    githubRepoUrl: row.github_url,
+    githubPrNumber: row.pr_number ?? selected.prNumber,
+    assessmentQualityVerdict: selected.assessmentQuality?.verdict ?? null,
+    assessmentQualityScore: assessmentQualityScoreLabel(selected.assessmentQuality),
+    contrastScore: contrast?.score ?? null,
+    contrastReason: contrast?.reason ?? null,
+  };
+}
+
+async function loadPendingCodeReviewMatchDiagnosticsByCandidateIds(
+  db: D1Database,
+  candidateIds: string[],
+): Promise<Map<string, ScheduledPendingMatchDiagnostic>> {
+  const uniqueCandidateIds = [...new Set(candidateIds.filter((id) => id.trim().length > 0))];
+  const diagnostics = new Map<string, ScheduledPendingMatchDiagnostic>();
+  if (uniqueCandidateIds.length === 0) return diagnostics;
+  if (
+    !await tableExists(db, 'match_runs')
+    || !await tableExists(db, 'review_challenge_packets')
+    || !await tableExists(db, 'qualified_repos')
+  ) {
+    return diagnostics;
+  }
+
+  const placeholders = uniqueCandidateIds.map((_, index) => `?${index + 1}`).join(', ');
+  const rows = await db.prepare(
+    `SELECT mr.candidate_id,
+            mr.id,
+            mr.status,
+            mr.selected_packet_id,
+            mr.ranked_results_json,
+            rcp.pr_number,
+            qr.github_url
+       FROM match_runs mr
+       LEFT JOIN review_challenge_packets rcp ON rcp.id = mr.selected_packet_id
+       LEFT JOIN qualified_repos qr ON qr.id = rcp.repo_id
+      WHERE mr.candidate_id IN (${placeholders})
+        AND mr.id = (
+          SELECT latest.id
+            FROM match_runs latest
+           WHERE latest.candidate_id = mr.candidate_id
+           ORDER BY latest.created_at DESC, latest.id DESC
+           LIMIT 1
+        )`,
+  ).bind(...uniqueCandidateIds).all<{
+    candidate_id: string;
+    id: string;
+    status: string;
+    selected_packet_id: string | null;
+    ranked_results_json: string | null;
+    pr_number: number | null;
+    github_url: string | null;
+  }>();
+
+  for (const row of rows.results ?? []) {
+    const diagnostic = pendingMatchDiagnosticFromRow(row);
+    if (diagnostic) diagnostics.set(row.candidate_id, diagnostic);
+  }
+  return diagnostics;
 }
 
 function evidenceRefreshAlreadyTried(
@@ -6289,12 +6426,19 @@ schedulingAuth.get('/interviews', async (c) => {
     db,
     rows.map((row) => row.id),
   );
+  const pendingMatchDiagnosticsByCandidateId = await loadPendingCodeReviewMatchDiagnosticsByCandidateIds(
+    db,
+    rows.flatMap((row) => row.candidate_id ? [row.candidate_id] : []),
+  );
 
   const interviews = rows.map((r) => {
     const assessmentProgress = assessmentProgressByInterviewId.get(r.id) ?? null;
     const matchedRepoId = r.matched_repo_id ?? r.assignment_repo_id;
     const githubRepoUrl = r.github_repo_url ?? r.assignment_github_repo_url;
     const githubPrNumber = r.github_pr_number ?? r.assignment_github_pr_number;
+    const pendingMatchDiagnostic = !matchedRepoId && r.candidate_id
+      ? pendingMatchDiagnosticsByCandidateId.get(r.candidate_id) ?? null
+      : null;
     const matchedRepoSource = r.matched_repo_id != null
       ? 'matched_repo_id'
       : r.assignment_repo_id != null
@@ -6332,6 +6476,7 @@ schedulingAuth.get('/interviews', async (c) => {
         githubPrNumber,
         matchedRepoSource,
         manualOpenSourceChallengePacket: assessmentProgress?.hasChallengePacket === true,
+        pendingMatchDiagnostic,
       }),
       assessmentProgress,
       completedAt: r.completed_at,
@@ -6623,6 +6768,12 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     assessmentInviteLinkPromise,
     null,
   );
+  const pendingMatchDiagnosticPromise = effectiveMatchedRepoId
+    ? Promise.resolve(null)
+    : interview.candidate_id
+      ? loadPendingCodeReviewMatchDiagnosticsByCandidateIds(db, [interview.candidate_id])
+        .then((diagnostics) => diagnostics.get(interview.candidate_id!) ?? null)
+      : Promise.resolve(null);
 
   const [
     transcriptArtifact,
@@ -6633,6 +6784,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     codeReviewScore,
     assessmentProgress,
     assessmentInviteLink,
+    pendingMatchDiagnostic,
   ] = await Promise.all([
     transcriptArtifactPromise,
     linkedMeetingPromise,
@@ -6642,6 +6794,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     codeReviewScorePromise,
     assessmentProgressPromise,
     safeAssessmentInviteLinkPromise,
+    pendingMatchDiagnosticPromise,
   ]);
 
   return c.json({
@@ -6682,6 +6835,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         githubPrNumber: effectiveGithubPrNumber,
         matchedRepoSource: effectiveMatchedRepoSource,
         manualOpenSourceChallengePacket: assessmentProgress?.hasChallengePacket === true,
+        pendingMatchDiagnostic,
         lastDeliveredUrl: assessmentInviteLink?.url ?? null,
         lastDeliveredUrlState: assessmentInviteLink?.state ?? null,
         lastDeliveredUrlMessage: assessmentInviteLink?.message ?? null,

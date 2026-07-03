@@ -249,6 +249,38 @@ candidate-node projection from invite/upload placeholders. It also requires one
 per-candidate exact-node gap and the scoped `candidate_ingestion.current_step` to be
 `profile_text_extraction_needed`.
 
+Latest app-dev all-mode proof on 2026-07-02 local time, checked at
+2026-07-03T00:41Z through 2026-07-03T00:44Z, ran after a clean HEAD deploy of
+Worker version `b35f6fff-cd35-4d6b-afae-96ea15c59c15`:
+
+- `npm run smoke:talent-pool-ingestion-dev` submitted pasted profile text for
+  invite token `c178f84e-3e51-4615-89e0-48ad8f4a1c92` and returned
+  `status: ready`, `candidateNodeExactSourceQuoteCount: 13`,
+  `submittedIntakeWithoutExactCandidateNodeCount: 0`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`.
+- `npm run smoke:talent-pool-upload-dev` submitted a multipart text profile for
+  invite token `42b77800-1c86-47fb-a706-079fd6a9fda0` and returned
+  `status: ready`, `profileUploadArtifactVersionCount: 1`,
+  `submittedIntakeWithoutExactCandidateNodeCount: 0`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`.
+- `npm run smoke:talent-pool-docx-dev` submitted a multipart DOCX profile for
+  invite token `68fa2bce-5292-458c-9099-6fcf299e5fb8` and returned
+  `status: ready`, `documentProfileSourceSpanCount: 1`,
+  `profileUploadArtifactVersionCount: 1`,
+  `submittedIntakeWithoutExactCandidateNodeCount: 0`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`.
+- `npm run smoke:talent-pool-pdf-gap-dev` submitted an intentionally invalid
+  PDF for invite token `ea58c041-cf56-4786-a60d-82fedca6591c` and returned
+  `status: not_ready`, `ingestionSteps:
+  [{currentStep: "profile_text_extraction_needed", count: 1}]`,
+  `profileUploadArtifactVersionCount: 1`,
+  `submittedIntakeWithoutExactCandidateNodeCount: 1`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`.
+
 Latest app-dev all-mode bounded proof on 2026-07-02 local time, checked at
 2026-07-03T00:05Z and 2026-07-03T00:06Z, ran after deploying Worker version
 `c0df3dcb-d5e9-4c54-bb79-271ec8f04c20`:
