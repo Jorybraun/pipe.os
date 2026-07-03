@@ -681,6 +681,13 @@ describe('talent pool candidate RPC', () => {
     ).get() as { source_reference: string; source_span_id: string };
     expect(profileNodeRef.source_reference).toBe(`source_span:${profileNodeRef.source_span_id}`);
     expect(sqlite.prepare(
+      `SELECT av.storage_key
+         FROM source_spans ss
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+        WHERE ss.id = ?
+        LIMIT 1`,
+    ).get(profileNodeRef.source_span_id)).toEqual({ storage_key: initialProfileKey });
+    expect(sqlite.prepare(
       `SELECT COUNT(*) AS count
          FROM context_records
         WHERE record_type = 'talent_pool_external_profile_ref'`,

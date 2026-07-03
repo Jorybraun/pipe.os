@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Pasted Talent Pool profile evidence now attaches its person/source-span artifact version to the same content-addressed profile key stored on the intake, keeping pasted profile claims repairable through the current raw source pointer.
 - Resume-derived Talent Pool candidate nodes now resolve validated source quotes to the current profile source span during insertion and idempotent repair/replay, and the candidate-ingestion audit fails missing or stale candidate-node source spans.
 - Candidate-ingestion audit now fails GitHub/LinkedIn/portfolio and phone-screener operational context records whose source refs do not cite the exact submitted intake field text.
 - Talent Pool dev smokes now fetch the current remote R2 profile object and verify its bytes/hash match the submitted source and content-addressed profile key before accepting an end-to-end proof.

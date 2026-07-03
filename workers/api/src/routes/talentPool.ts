@@ -700,8 +700,8 @@ async function persistIntake(
     name: candidate.name?.trim() || candidateEmail || 'Talent Pool Candidate',
     email: candidateEmail,
     message: sourceTextForPerson,
-    messageStorageKey: options.profileKey && sourceTextForPerson ? profileKey : null,
-    messageMediaType: options.profileKey && sourceTextForPerson
+    messageStorageKey: sourceTextForPerson ? profileKey : null,
+    messageMediaType: sourceTextForPerson
       ? options.sourceMediaTypeForPerson ?? 'text/plain'
       : null,
     sourceArtifact: options.sourceArtifactForPerson,
