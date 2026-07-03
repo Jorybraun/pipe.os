@@ -73,7 +73,8 @@ function setupRemoteShapedCrawlerDb(): BetterSqliteDb {
     INSERT INTO qualified_repos (id, github_url, full_name)
     VALUES
       (4130, 'https://github.com/mui/base-ui', 'mui/base-ui'),
-      (2883, 'https://github.com/cloudflare/workers-sdk', 'cloudflare/workers-sdk');
+      (2883, 'https://github.com/cloudflare/workers-sdk', 'cloudflare/workers-sdk'),
+      (9001, 'https://github.com/vercel/swr', 'vercel/swr');
   `);
   return sqlite;
 }
@@ -103,6 +104,8 @@ describe('seed-live-review-packet-input.sql', () => {
       { full_name: 'mui/base-ui', repo_id: 4130, pr_number: 973 },
       { full_name: 'mui/base-ui', repo_id: 4130, pr_number: 5095 },
       { full_name: 'mui/base-ui', repo_id: 4130, pr_number: 5110 },
+      { full_name: 'vercel/swr', repo_id: 9001, pr_number: 4212 },
+      { full_name: 'vercel/swr', repo_id: 9001, pr_number: 4271 },
     ]);
   });
 });
