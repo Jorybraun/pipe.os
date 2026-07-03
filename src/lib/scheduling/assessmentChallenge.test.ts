@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { summarizeResolvedAssessmentAssignment } from './assessmentChallenge';
+import {
+  summarizeAssessmentChallenge,
+  summarizeResolvedAssessmentAssignment,
+} from './assessmentChallenge';
 import type { AssessmentProgressSnapshot, AssessmentSetupProjection } from './types';
 
 const manualSetup: AssessmentSetupProjection = {
@@ -46,6 +49,33 @@ describe('summarizeResolvedAssessmentAssignment', () => {
       label: 'Manual task assignment',
       detail: 'A concrete open-source task packet was assigned by the recruiter.',
       tone: 'manual',
+    });
+  });
+});
+
+describe('summarizeAssessmentChallenge', () => {
+  it('uses list-safe challenge summaries when full packet source text is omitted', () => {
+    const summary = summarizeAssessmentChallenge({
+      exactText: null,
+      locator: {
+        repositoryUrl: 'https://github.com/mui/base-ui',
+        baseCommitSha: '1111111111111111111111111111111111111111',
+        githubPrNumber: 973,
+      },
+      summary: {
+        task: 'Fix Base UI popover impatient click handling',
+        successCriteria: ['Regression is fixed without weakening normal click behavior.'],
+        expectedEvidence: ['Commit diff plus targeted test or explicit verification note.'],
+      },
+    });
+
+    expect(summary).toEqual({
+      repositoryUrl: 'https://github.com/mui/base-ui',
+      githubPrNumber: 973,
+      baseCommitSha: '1111111111111111111111111111111111111111',
+      task: 'Fix Base UI popover impatient click handling',
+      successCriteria: ['Regression is fixed without weakening normal click behavior.'],
+      expectedEvidence: ['Commit diff plus targeted test or explicit verification note.'],
     });
   });
 });

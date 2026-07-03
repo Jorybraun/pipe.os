@@ -546,22 +546,20 @@ function normalizePacketListItem(line: string): string {
     .trim();
 }
 
-function parseAssessmentChallengeContract(challenge: {
-  exactText: string;
-  locator: Record<string, unknown>;
-} | null | undefined): AssessmentChallengeContract | null {
+function parseAssessmentChallengeContract(challenge: AssessmentProgressSnapshot['challenge'] | null | undefined): AssessmentChallengeContract | null {
   if (!challenge) return null;
-  const lines = challenge.exactText
+  const summary = challenge.summary;
+  const lines = (challenge.exactText ?? '')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
   let section: 'successCriteria' | 'expectedEvidence' | null = null;
   const contract: AssessmentChallengeContract = {
-    repositoryUrl: firstLocatorString(challenge.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']),
-    baseCommitSha: firstLocatorString(challenge.locator, ['baseCommitSha', 'baseCommit']),
-    task: null,
-    successCriteria: [],
-    expectedEvidence: [],
+    repositoryUrl: summary?.repositoryUrl ?? firstLocatorString(challenge.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']),
+    baseCommitSha: summary?.baseCommitSha ?? firstLocatorString(challenge.locator, ['baseCommitSha', 'baseCommit']),
+    task: summary?.task ?? null,
+    successCriteria: [...(summary?.successCriteria ?? [])],
+    expectedEvidence: [...(summary?.expectedEvidence ?? [])],
   };
 
   for (const line of lines) {
@@ -603,7 +601,7 @@ function parseAssessmentChallengeContract(challenge: {
     }
     if (!section) continue;
     const item = normalizePacketListItem(line);
-    if (item.length > 0) contract[section].push(item);
+    if (item.length > 0 && !contract[section].includes(item)) contract[section].push(item);
   }
 
   return contract.repositoryUrl
@@ -615,12 +613,14 @@ function parseAssessmentChallengeContract(challenge: {
     : null;
 }
 
-function assessmentChallengeSummary(challenge: {
-  exactText: string;
-  sourceRefType: string;
-} | null | undefined): string | null {
+function assessmentChallengeSummary(challenge: AssessmentProgressSnapshot['challenge'] | null | undefined): string | null {
   if (!challenge) return null;
-  const lines = challenge.exactText
+  const summarized = challenge.summary?.task
+    ?? challenge.summary?.successCriteria?.[0]
+    ?? challenge.summary?.expectedEvidence?.[0]
+    ?? null;
+  if (summarized) return compactEvidenceText(summarized);
+  const lines = (challenge.exactText ?? '')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);

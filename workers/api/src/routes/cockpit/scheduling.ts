@@ -3214,10 +3214,10 @@ async function loadScheduledAssessmentProgress(
 async function loadScheduledAssessmentProgressByInterviewIds(
   db: D1Database,
   interviewIds: readonly string[],
-): Promise<Map<string, AssessmentProgressSnapshot>> {
+): Promise<Map<string, ScheduledAssessmentListProgressSnapshot>> {
   const maxD1QueryVariables = 90;
   const uniqueInterviewIds = [...new Set(interviewIds)].filter((id) => id.length > 0);
-  const progressByInterviewId = new Map<string, AssessmentProgressSnapshot>();
+  const progressByInterviewId = new Map<string, ScheduledAssessmentListProgressSnapshot>();
   if (uniqueInterviewIds.length === 0) return progressByInterviewId;
 
   if (!await hasScheduledAssessmentProgressSchema(db)) {
@@ -3291,7 +3291,9 @@ async function loadScheduledAssessmentProgressByInterviewIds(
           evaluation: evaluationBySessionId.get(session.id) ?? null,
           humanDecision: humanDecisionBySessionId.get(session.id) ?? null,
         });
-        if (session.interviewId) progressByInterviewId.set(session.interviewId, progress);
+        if (session.interviewId) {
+          progressByInterviewId.set(session.interviewId, slimScheduledAssessmentListProgress(progress));
+        }
       } catch (error) {
         console.error('[scheduling/listAssessmentProgress] failed to load assessment progress:', {
           interviewId: session.interviewId,
@@ -3303,6 +3305,22 @@ async function loadScheduledAssessmentProgressByInterviewIds(
   }
   return progressByInterviewId;
 }
+
+interface ScheduledAssessmentChallengeSummary {
+  repositoryUrl: string | null;
+  githubPrNumber: number | null;
+  baseCommitSha: string | null;
+  task: string | null;
+  successCriteria: string[];
+  expectedEvidence: string[];
+}
+
+type ScheduledAssessmentListProgressSnapshot = Omit<AssessmentProgressSnapshot, 'challenge'> & {
+  challenge: (Omit<NonNullable<AssessmentProgressSnapshot['challenge']>, 'exactText'> & {
+    exactText: null;
+    summary: ScheduledAssessmentChallengeSummary;
+  }) | null;
+};
 
 type ScheduledAssessmentListSession = AssessmentProgressSnapshot['session'];
 type ScheduledAssessmentListSessionRow = {
@@ -3838,6 +3856,44 @@ function stripScheduledAssessmentChallengeMeta(
   };
 }
 
+function slimScheduledAssessmentListProgress(
+  progress: AssessmentProgressSnapshot,
+): ScheduledAssessmentListProgressSnapshot {
+  if (!progress.challenge) {
+    return {
+      ...progress,
+      challenge: null,
+    };
+  }
+
+  return {
+    ...progress,
+    challenge: {
+      ...progress.challenge,
+      exactText: null,
+      summary: scheduledAssessmentChallengeSummary(progress.challenge),
+    },
+  };
+}
+
+function scheduledAssessmentChallengeSummary(
+  challenge: NonNullable<AssessmentProgressSnapshot['challenge']>,
+): ScheduledAssessmentChallengeSummary {
+  return {
+    repositoryUrl: scheduledAssessmentChallengeRepositoryUrl(challenge),
+    githubPrNumber: scheduledAssessmentChallengePrNumber(challenge),
+    baseCommitSha: scheduledAssessmentChallengeBaseCommitSha(challenge),
+    task: scheduledAssessmentChallengeLineValue(challenge.exactText, ['Task', 'Title']),
+    successCriteria: [
+      ...scheduledAssessmentChallengeSectionItems(challenge.exactText, ['Success criteria']),
+      ...(scheduledAssessmentChallengeLineValue(challenge.exactText, ['Success'])
+        ? [scheduledAssessmentChallengeLineValue(challenge.exactText, ['Success']) as string]
+        : []),
+    ],
+    expectedEvidence: scheduledAssessmentChallengeSectionItems(challenge.exactText, ['Expected evidence']),
+  };
+}
+
 function scheduledAssessmentHasKind(
   counts: readonly ScheduledAssessmentListCount[],
   kinds: readonly string[],
@@ -4331,14 +4387,40 @@ function scheduledAssessmentChallengeBaseCommitSha(
     ?? scheduledAssessmentChallengeLineValue(challenge.exactText, ['Base commit', 'Base commit SHA', 'Base']);
 }
 
+function scheduledAssessmentChallengePrNumber(
+  challenge: NonNullable<AssessmentProgressSnapshot['challenge']>,
+): number | null {
+  return scheduledAssessmentLocatorNumber(challenge.locator, 'githubPrNumber')
+    ?? scheduledAssessmentLocatorNumber(challenge.locator, 'prNumber')
+    ?? scheduledAssessmentLocatorNumber(challenge.locator, 'pullRequestNumber')
+    ?? scheduledAssessmentChallengeLineNumber(challenge.exactText, ['Pull request', 'PR']);
+}
+
 function scheduledAssessmentLocatorString(locator: Record<string, unknown>, key: string): string | null {
   return optionalString(locator[key]) ?? null;
+}
+
+function scheduledAssessmentLocatorNumber(locator: Record<string, unknown>, key: string): number | null {
+  const value = locator[key];
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value.trim().replace(/^#/, ''), 10);
+    if (Number.isInteger(parsed) && parsed > 0) return parsed;
+  }
+  return null;
 }
 
 function scheduledAssessmentChallengeLineValue(exactText: string, labels: readonly string[]): string | null {
   const escapedLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const match = exactText.match(new RegExp(`^\\s*(?:${escapedLabels.join('|')})\\s*:\\s*(.+)$`, 'im'));
   return match?.[1]?.trim() || null;
+}
+
+function scheduledAssessmentChallengeLineNumber(exactText: string, labels: readonly string[]): number | null {
+  const value = scheduledAssessmentChallengeLineValue(exactText, labels);
+  if (!value) return null;
+  const parsed = Number.parseInt(value.trim().replace(/^#/, ''), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function scheduledAssessmentChallengeSectionItems(exactText: string, labels: readonly string[]): string[] {

@@ -167,6 +167,15 @@ export interface AssessmentProgressChallengePacketContract {
   hasExpectedEvidence: boolean;
 }
 
+export interface AssessmentProgressChallengeSummary {
+  repositoryUrl: string | null;
+  githubPrNumber: number | null;
+  baseCommitSha: string | null;
+  task: string | null;
+  successCriteria: string[];
+  expectedEvidence: string[];
+}
+
 export interface AssessmentProgressSnapshot {
   session: {
     id: string;
@@ -210,8 +219,9 @@ export interface AssessmentProgressSnapshot {
     sourceRefType: string;
     sourceRefId: string;
     evidenceRole: string;
-    exactText: string;
+    exactText: string | null;
     locator: Record<string, unknown>;
+    summary?: AssessmentProgressChallengeSummary;
   } | null;
   latestEvent: {
     id: string;

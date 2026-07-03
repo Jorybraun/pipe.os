@@ -2604,6 +2604,17 @@ describe('GET /interviews/:id detail', () => {
             nextAction: string;
             hasChallengePacket: boolean;
             hasCommitSubmission: boolean;
+            challenge: {
+              exactText: string | null;
+              summary: {
+                repositoryUrl: string | null;
+                githubPrNumber: number | null;
+                baseCommitSha: string | null;
+                task: string | null;
+                successCriteria: string[];
+                expectedEvidence: string[];
+              };
+            } | null;
             commit: { commitSha: string | null; branchName: string | null } | null;
           } | null;
         }>;
@@ -2638,6 +2649,22 @@ describe('GET /interviews/:id detail', () => {
           branchName: 'pipe-assessment/list-progress',
         },
       });
+      expect(interview?.assessmentProgress?.challenge).toMatchObject({
+        exactText: null,
+        summary: {
+          repositoryUrl: 'https://github.com/open-source/widgets',
+          githubPrNumber: null,
+          baseCommitSha,
+          task: 'fix the assessment list progress regression.',
+          successCriteria: ['commit a focused patch with tests.'],
+          expectedEvidence: [
+            'git commit SHA on a pipe-assessment branch',
+            'code diff for the list progress fix',
+            'test output or verification note',
+          ],
+        },
+      });
+      expect(JSON.stringify(interview?.assessmentProgress)).not.toContain('Expected evidence:');
       const corruptInterview = body.interviews.find((item) => item.id === 'interview-list-corrupt-progress');
       expect(corruptInterview?.assessmentProgress).toBeNull();
       expect(errorSpy).toHaveBeenCalledWith(

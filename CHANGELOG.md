@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter interview lists now return summary-only assessment challenge packets while preserving exact source text for detail/progress reads, reducing first-page dashboard payload without losing provenance.
 - Candidate workspace finalization now accepts explicit verification commands and missing-test notes from both assessment cockpit surfaces, keeping test evidence or verification gaps source-backed at submit time.
 - Open-source workspace dev smoke now fails explicitly if the workspace terminal WebSocket closes before the expected commit sentinel, preventing silent hangs while proving candidate commit submission.
 - Recruiter interview detail and list cards now prefer durable matched assessment trust over stale manual setup labels, preventing PIPE-matched open-source challenges from looking like manual assignments.

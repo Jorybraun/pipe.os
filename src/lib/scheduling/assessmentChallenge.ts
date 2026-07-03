@@ -1,8 +1,9 @@
 import type { AssessmentProgressSnapshot, AssessmentSetupProjection } from './types';
 
 export interface AssessmentChallengeSource {
-  exactText: string;
+  exactText?: string | null;
   locator: Record<string, unknown>;
+  summary?: Partial<AssessmentChallengeSummary> | null;
 }
 
 export interface AssessmentChallengeSummary {
@@ -71,17 +72,25 @@ export function summarizeAssessmentChallenge(
   challenge: AssessmentChallengeSource | null | undefined,
 ): AssessmentChallengeSummary | null {
   if (!challenge) return null;
-  const lines = challenge.exactText
+  const summaryInput = challenge.summary ?? {};
+  const lines = (challenge.exactText ?? '')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
   const summary: AssessmentChallengeSummary = {
-    repositoryUrl: locatorString(challenge.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']),
-    githubPrNumber: locatorNumber(challenge.locator, ['githubPrNumber', 'prNumber']),
-    baseCommitSha: locatorString(challenge.locator, ['baseCommitSha', 'baseCommit']),
-    task: null,
-    successCriteria: collectSectionItems(lines, 'success criteria'),
-    expectedEvidence: collectSectionItems(lines, 'expected evidence'),
+    repositoryUrl: summaryInput.repositoryUrl
+      ?? locatorString(challenge.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']),
+    githubPrNumber: summaryInput.githubPrNumber
+      ?? locatorNumber(challenge.locator, ['githubPrNumber', 'prNumber']),
+    baseCommitSha: summaryInput.baseCommitSha
+      ?? locatorString(challenge.locator, ['baseCommitSha', 'baseCommit']),
+    task: summaryInput.task ?? null,
+    successCriteria: summaryInput.successCriteria?.length
+      ? [...summaryInput.successCriteria]
+      : collectSectionItems(lines, 'success criteria'),
+    expectedEvidence: summaryInput.expectedEvidence?.length
+      ? [...summaryInput.expectedEvidence]
+      : collectSectionItems(lines, 'expected evidence'),
   };
 
   for (const line of lines) {
