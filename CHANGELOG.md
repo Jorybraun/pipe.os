@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Candidate-ingestion audit now reports an unscoped zero-candidate run as `not_ready`, preventing empty local/dev data from satisfying ingestion proof gates.
 - Candidate-ingestion audit now checks exact-source candidate-node projection per submitted Talent Pool candidate, so one richly parsed candidate cannot hide another candidate with no source-backed node.
 - Talent Pool dev smokes now require and print the per-candidate exact-node gap count from the ingestion audit.
+- Candidate-ingestion audit now verifies GitHub, LinkedIn, portfolio, and phone-screener operational context by raw intake field predicate with source refs instead of accepting aggregate context-record counts.
 - Scheduled candidate-ingestion repair now prioritizes recent document-backed and Talent Pool intake retries before stale text-smoke failures, so real uploaded candidates do not sit behind old AI discovery debris.
 - Candidate document PDF/DOCX retries now reuse pre-extracted source text and bounded parser-only decomposition before AI discovery, preventing uploaded-resume repairs from stalling in full decomposition before the AI/fallback step.
 - Email-less Talent Pool profile submissions and document retries now still project into canonical `people` / `workspace_people` rows using a deterministic candidate-keyed identity, so ingested candidates appear in the unified person graph without fabricating applications or person roles.

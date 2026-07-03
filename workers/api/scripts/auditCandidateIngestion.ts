@@ -100,7 +100,9 @@ export interface CandidatePersonProjectionAudit {
   rolelessPersonRoleCount: number;
   contextRecordCount: number;
   externalProfileRefContextCount: number;
+  missingExternalProfileRefContextCount: number;
   phoneScreenerIntentContextCount: number;
+  missingPhoneScreenerIntentContextCount: number;
   signalEvidenceCount: number;
   readyChallengeAssignmentCount: number;
   unprovenChallengeAssignmentCount: number;
@@ -189,7 +191,9 @@ interface ProjectionRow {
   roleless_person_role_count: number | null;
   context_record_count: number | null;
   external_profile_ref_context_count: number | null;
+  missing_external_profile_ref_context_count: number | null;
   phone_screener_intent_context_count: number | null;
+  missing_phone_screener_intent_context_count: number | null;
   signal_evidence_count: number | null;
   design_queue_count: number | null;
 }
@@ -746,10 +750,69 @@ async function loadPersonProjection(
           FROM linked_workspace_people lwp
           JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
          WHERE cr.record_type = 'talent_pool_external_profile_ref') AS external_profile_ref_context_count,
+       (SELECT COALESCE(SUM(
+          CASE
+            WHEN t.github_url IS NOT NULL
+             AND TRIM(t.github_url) <> ''
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_external_profile_ref'
+                  AND cr.predicate = 'submitted_github_profile_url'
+             )
+            THEN 1 ELSE 0
+          END
+          + CASE
+            WHEN t.linkedin_url IS NOT NULL
+             AND TRIM(t.linkedin_url) <> ''
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_external_profile_ref'
+                  AND cr.predicate = 'submitted_linkedin_profile_url'
+             )
+            THEN 1 ELSE 0
+          END
+          + CASE
+            WHEN t.portfolio_url IS NOT NULL
+             AND TRIM(t.portfolio_url) <> ''
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+                 JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                WHERE lwp.candidate_id = ac.id
+                  AND cr.record_type = 'talent_pool_external_profile_ref'
+                  AND cr.predicate = 'submitted_portfolio_url'
+             )
+            THEN 1 ELSE 0
+          END
+        ), 0)
+          FROM audited_candidates ac
+          JOIN talent_pool_intakes t ON t.candidate_id = ac.id) AS missing_external_profile_ref_context_count,
        (SELECT COUNT(DISTINCT cr.id)
           FROM linked_workspace_people lwp
           JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
          WHERE cr.record_type = 'talent_pool_phone_screener_intent') AS phone_screener_intent_context_count,
+       (SELECT COUNT(DISTINCT ac.id)
+          FROM audited_candidates ac
+          JOIN talent_pool_intakes t ON t.candidate_id = ac.id
+         WHERE t.phone_screener_consent = 1
+           AND NOT EXISTS (
+             SELECT 1
+               FROM linked_workspace_people lwp
+               JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+               JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+              WHERE lwp.candidate_id = ac.id
+                AND cr.record_type = 'talent_pool_phone_screener_intent'
+                AND cr.predicate = 'consented_to_phone_screener'
+           )) AS missing_phone_screener_intent_context_count,
        (SELECT COUNT(DISTINCT se.id)
           FROM linked_workspace_people lwp
           JOIN signal_evidence se ON se.workspace_person_id = lwp.workspace_person_id) AS signal_evidence_count,
@@ -769,7 +832,9 @@ async function loadPersonProjection(
     rolelessPersonRoleCount: toNumber(row?.roleless_person_role_count),
     contextRecordCount: toNumber(row?.context_record_count),
     externalProfileRefContextCount: toNumber(row?.external_profile_ref_context_count),
+    missingExternalProfileRefContextCount: toNumber(row?.missing_external_profile_ref_context_count),
     phoneScreenerIntentContextCount: toNumber(row?.phone_screener_intent_context_count),
+    missingPhoneScreenerIntentContextCount: toNumber(row?.missing_phone_screener_intent_context_count),
     signalEvidenceCount: toNumber(row?.signal_evidence_count),
     readyChallengeAssignmentCount: challengeAssignmentProofCounts.readyChallengeAssignmentCount,
     unprovenChallengeAssignmentCount: challengeAssignmentProofCounts.unprovenChallengeAssignmentCount,
@@ -922,7 +987,9 @@ export async function auditCandidateIngestion(
       rolelessPersonRoleCount: 0,
       contextRecordCount: 0,
       externalProfileRefContextCount: 0,
+      missingExternalProfileRefContextCount: 0,
       phoneScreenerIntentContextCount: 0,
+      missingPhoneScreenerIntentContextCount: 0,
       signalEvidenceCount: 0,
       readyChallengeAssignmentCount: 0,
       unprovenChallengeAssignmentCount: 0,
@@ -1044,11 +1111,11 @@ export async function auditCandidateIngestion(
     ...(sourceLessDesignQueueSuggestionCount > 0
       ? [`${sourceLessDesignQueueSuggestionCount} design-queue repo-family suggestion(s) lack extracted PDF/DOCX source spans`]
       : []),
-    ...(rawCapture.externalProfileRefCount > personProjection.externalProfileRefContextCount
-      ? [`${rawCapture.externalProfileRefCount - personProjection.externalProfileRefContextCount} external profile ref(s) lack source-backed operational context records`]
+    ...(personProjection.missingExternalProfileRefContextCount > 0
+      ? [`${personProjection.missingExternalProfileRefContextCount} external profile ref(s) lack source-backed operational context records`]
       : []),
-    ...(rawCapture.phoneScreenerIntentCount > personProjection.phoneScreenerIntentContextCount
-      ? [`${rawCapture.phoneScreenerIntentCount - personProjection.phoneScreenerIntentContextCount} phone screener intent(s) lack source-backed operational context records`]
+    ...(personProjection.missingPhoneScreenerIntentContextCount > 0
+      ? [`${personProjection.missingPhoneScreenerIntentContextCount} phone screener intent(s) lack source-backed operational context records`]
       : []),
     ...(duplicateProjectedEdgeCount > 0
       ? [`${duplicateProjectedEdgeCount} duplicate person-projected context edge group(s) were found`]
@@ -1098,10 +1165,10 @@ export async function auditCandidateIngestion(
     ...(sourceLessDesignQueueSuggestionCount > 0
       ? ['Clear suggested repo families and keep challenge design in a missing-evidence state until PDF/DOCX profile extraction creates exact source spans.']
       : []),
-    ...(rawCapture.externalProfileRefCount > personProjection.externalProfileRefContextCount
+    ...(personProjection.missingExternalProfileRefContextCount > 0
       ? ['Project GitHub/LinkedIn/portfolio refs into operational context records with exact intake source refs.']
       : []),
-    ...(rawCapture.phoneScreenerIntentCount > personProjection.phoneScreenerIntentContextCount
+    ...(personProjection.missingPhoneScreenerIntentContextCount > 0
       ? ['Project phone screener intent as operational context with source refs instead of a default profile claim.']
       : []),
     ...(personProjection.readyChallengeAssignmentCount === 0 && personProjection.designQueueCount > 0
@@ -1269,7 +1336,9 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  workspace people:      ${report.personProjection.workspacePersonCount}`);
   console.log(`  context records:       ${report.personProjection.contextRecordCount}`);
   console.log(`  profile ref contexts:  ${report.personProjection.externalProfileRefContextCount}`);
+  console.log(`  profile ref gaps:      ${report.personProjection.missingExternalProfileRefContextCount}`);
   console.log(`  phone intent contexts: ${report.personProjection.phoneScreenerIntentContextCount}`);
+  console.log(`  phone intent gaps:     ${report.personProjection.missingPhoneScreenerIntentContextCount}`);
   console.log(`  signal evidence:       ${report.personProjection.signalEvidenceCount}`);
   console.log(`  ready assignments:     ${report.personProjection.readyChallengeAssignmentCount}`);
   console.log(`  unproven assignments:  ${report.personProjection.unprovenChallengeAssignmentCount}`);

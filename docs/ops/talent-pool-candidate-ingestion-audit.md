@@ -167,7 +167,9 @@ availability fields are stored as a normalized operational intake artifact with
 one exact source span per submitted field. The projected
 `talent_pool_external_profile_ref` and `talent_pool_phone_screener_intent`
 records are operational evidence only; they do not validate the external
-profile content or derive skills/readiness.
+profile content or derive skills/readiness. The audit verifies those projections
+by raw field predicate and source refs, so a duplicate GitHub context record
+cannot mask a missing LinkedIn, portfolio, or phone-screener intent projection.
 
 By default, the command fails on an unscoped run with no Talent Pool candidates,
 missing scoped candidates, submitted intakes without storage or ingestion state,

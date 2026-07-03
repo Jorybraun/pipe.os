@@ -397,7 +397,9 @@ describe('auditCandidateIngestion', () => {
       rolelessPersonRoleCount: 0,
       contextRecordCount: 4,
       externalProfileRefContextCount: 2,
+      missingExternalProfileRefContextCount: 0,
       phoneScreenerIntentContextCount: 1,
+      missingPhoneScreenerIntentContextCount: 0,
       readyChallengeAssignmentCount: 0,
       unprovenChallengeAssignmentCount: 0,
       incompleteChallengeAssignmentCount: 0,
@@ -728,8 +730,39 @@ describe('auditCandidateIngestion', () => {
 
     expect(audit.status).toBe('not_ready');
     expect(audit.personProjection.externalProfileRefContextCount).toBe(0);
+    expect(audit.personProjection.missingExternalProfileRefContextCount).toBe(2);
     expect(audit.personProjection.phoneScreenerIntentContextCount).toBe(0);
+    expect(audit.personProjection.missingPhoneScreenerIntentContextCount).toBe(1);
     expect(audit.failures).toContain('2 external profile ref(s) lack source-backed operational context records');
+    expect(audit.failures).toContain('1 phone screener intent(s) lack source-backed operational context records');
+  });
+
+  it('flags operational contexts whose predicates do not match the raw intake fields', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.exec(`
+      UPDATE context_records
+         SET predicate = 'submitted_github_profile_url'
+       WHERE id = 'context-record-portfolio';
+      UPDATE context_records
+         SET predicate = 'submitted_phone_number'
+       WHERE id = 'context-record-phone';
+    `);
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.rawCapture.externalProfileRefCount).toBe(2);
+    expect(audit.personProjection.externalProfileRefContextCount).toBe(2);
+    expect(audit.personProjection.missingExternalProfileRefContextCount).toBe(1);
+    expect(audit.rawCapture.phoneScreenerIntentCount).toBe(1);
+    expect(audit.personProjection.phoneScreenerIntentContextCount).toBe(1);
+    expect(audit.personProjection.missingPhoneScreenerIntentContextCount).toBe(1);
+    expect(audit.failures).toContain('1 external profile ref(s) lack source-backed operational context records');
     expect(audit.failures).toContain('1 phone screener intent(s) lack source-backed operational context records');
   });
 
