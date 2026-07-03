@@ -18,6 +18,7 @@ import { D1Client } from './crawl-repos/shared/d1Client.js';
 import {
   evaluationCorpusLabelCounts,
   loadCorpus as loadFrozenEvaluationCorpus,
+  productionCorpusFailures,
   type EvaluationCorpus,
   type RelevanceGrade,
 } from '../src/lib/challengeMatching/evaluation';
@@ -76,6 +77,7 @@ interface StoredCorpusGateInput {
   expertLabelCount: number;
   syntheticFixtureCount: number;
   allowDraftCorpus: boolean;
+  productionReadinessFailures?: string[];
 }
 
 export interface CliOptions {
@@ -245,11 +247,25 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-function remoteD1(databaseId: string | undefined): D1Database {
-  const resolvedDatabaseId = databaseId ?? process.env['CLOUDFLARE_D1_DATABASE_ID'] ?? '';
+export function resolveRemoteDatabaseId(
+  databaseId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const resolvedDatabaseId = databaseId
+    ?? env['MATCHING_EVALUATION_D1_DATABASE_ID']
+    ?? env['CLOUDFLARE_D1_DATABASE_ID']
+    ?? '';
   if (!resolvedDatabaseId) {
-    throw new Error('Missing required D1 database id; set CLOUDFLARE_D1_DATABASE_ID or pass --database-id.');
+    throw new Error(
+      'Missing required D1 database id; set MATCHING_EVALUATION_D1_DATABASE_ID, '
+      + 'CLOUDFLARE_D1_DATABASE_ID, or pass --database-id.',
+    );
   }
+  return resolvedDatabaseId;
+}
+
+function remoteD1(databaseId: string | undefined): D1Database {
+  const resolvedDatabaseId = resolveRemoteDatabaseId(databaseId);
   return new RemoteD1(new D1Client({
     accountId: requiredEnv('CLOUDFLARE_ACCOUNT_ID'),
     apiToken: requiredEnv('CLOUDFLARE_API_TOKEN'),
@@ -334,6 +350,11 @@ export function assertStoredCorpusCanRunMatchQualityGate(input: StoredCorpusGate
       `${input.corpusId} has ${input.syntheticFixtureCount} synthetic fixture labels; use an expert-labelled corpus for the match-quality gate`,
     );
   }
+  if (input.productionReadinessFailures && input.productionReadinessFailures.length > 0) {
+    throw new Error(
+      `${input.corpusId} is not production-ready for the match-quality gate: ${input.productionReadinessFailures.join('; ')}`,
+    );
+  }
 }
 
 function loadCorpusFile(path: string): MatchQualityCorpusFile {
@@ -371,6 +392,7 @@ async function loadStoredCorpus(
     expertLabelCount: counts.expertLabelCount,
     syntheticFixtureCount: counts.syntheticFixtureCount,
     allowDraftCorpus: options.allowDraftCorpus,
+    productionReadinessFailures: productionCorpusFailures(evaluationCorpus),
   });
   return matchQualityCasesFromEvaluationCorpus(evaluationCorpus);
 }
