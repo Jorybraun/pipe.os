@@ -200,6 +200,14 @@ function validateReviewInput(
     if (review.minimumScoreSeparation !== undefined && review.negativeCandidateId === undefined) {
       failures.push(`reviewed label with minimumScoreSeparation requires negativeCandidateId: ${review.labelId}`);
     }
+    if (
+      isPositiveGrade(review.relevanceGrade)
+      && (review.negativeCandidateId === undefined || review.minimumScoreSeparation === undefined)
+    ) {
+      failures.push(
+        `reviewed positive label requires contrast candidate and minimum score separation: ${review.labelId}`,
+      );
+    }
   }
 
   for (const labelId of sourceLabelIds) {
