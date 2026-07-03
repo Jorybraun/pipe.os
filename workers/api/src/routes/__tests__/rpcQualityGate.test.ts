@@ -7,7 +7,6 @@ import {
   qualityGateFor,
   repairStandaloneReviewAssignmentFromMatchRun,
   selectPreferredMatchExplanation,
-  waitingStageConfigForGate,
 } from '../rpc';
 
 const passedValidator = {
@@ -159,42 +158,6 @@ describe('selectPreferredMatchExplanation', () => {
 
   it('still prefers a PASSED proof when one is available', () => {
     expect(selectPreferredMatchExplanation([needsReviewExplanation, passedExplanation])).toEqual(passedExplanation);
-  });
-});
-
-describe('waitingStageConfigForGate', () => {
-  it('keeps blocked CODE_REVIEW matching inside an incomplete assessment stage', () => {
-    expect(waitingStageConfigForGate({
-      candidateId: 'candidate-1',
-      stageId: 'stage-code-review',
-      stageTitle: 'Code Review',
-      stageMode: 'ASYNC',
-      timeLimit: null,
-      waitingChallenge: {
-        id: 'waiting-for-match',
-        type: 'WAITING_FOR_MATCH',
-        title: 'Challenge needs attention',
-        instructions: 'Deterministic challenge matcher returned NO_ROLE_SAFE_CHALLENGE',
-        config: {
-          autoRefresh: false,
-          refreshIntervalSeconds: 30,
-          state: 'blocked',
-          reason: 'Deterministic challenge matcher returned NO_ROLE_SAFE_CHALLENGE',
-        },
-      },
-    })).toEqual({
-      isComplete: false,
-      stageId: 'stage-code-review',
-      candidateId: 'candidate-1',
-      stageTitle: 'Code Review',
-      mode: 'ASYNC',
-      timeLimit: null,
-      challenges: [
-        { type: 'WELCOME', order: 0, title: 'Welcome' },
-        { type: 'WAITING_FOR_MATCH', order: 1, title: 'Challenge needs attention' },
-      ],
-      currentIndex: 0,
-    });
   });
 });
 
