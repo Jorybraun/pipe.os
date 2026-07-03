@@ -14,6 +14,10 @@ interface EvaluationResultRow {
   synthetic_fixture_count: number;
 }
 
+interface EvaluationCorpusRow {
+  corpus_json: string;
+}
+
 export interface EvaluationReadinessOptions {
   corpusId: string;
   /**
@@ -48,10 +52,21 @@ function finiteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function corpusProductionFailures(corpusJson: string): string[] {
+  try {
+    return productionCorpusFailures(loadCorpus(corpusJson));
+  } catch (error) {
+    return [
+      `Stored evaluation corpus is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    ];
+  }
+}
+
 export async function checkLatestProductionEvaluation(
   db: D1Database,
   options: EvaluationReadinessOptions,
 ): Promise<EvaluationReadinessReport> {
+  const stage = options.stage ?? 'production';
   const row = await db.prepare(
     `SELECT r.id, r.corpus_id, r.metrics_json, c.corpus_json, r.result_json, r.passed, r.created_at,
             c.expert_label_count, c.synthetic_fixture_count
@@ -63,15 +78,27 @@ export async function checkLatestProductionEvaluation(
   ).bind(options.corpusId).first<EvaluationResultRow>();
 
   if (!row) {
+    const failures = [`No persisted evaluation result found for corpus ${options.corpusId}`];
+    if (stage === 'canary' || stage === 'production') {
+      const corpusRow = await db.prepare(
+        `SELECT corpus_json
+           FROM evaluation_corpora
+          WHERE corpus_id = ?1
+          LIMIT 1`,
+      ).bind(options.corpusId).first<EvaluationCorpusRow>();
+      if (corpusRow) {
+        failures.push(...corpusProductionFailures(corpusRow.corpus_json));
+      }
+    }
     return {
       ready: false,
       corpusId: options.corpusId,
       evaluationResultId: null,
       createdAt: null,
-      failures: [`No persisted evaluation result found for corpus ${options.corpusId}`],
+      failures,
       warnings: [],
       metrics: null,
-      stage: options.stage ?? 'production',
+      stage,
     };
   }
 
@@ -80,16 +107,7 @@ export async function checkLatestProductionEvaluation(
   const failures: string[] = [];
   const warnings = [...(result.warnings ?? [])];
   const thresholds = result.thresholds;
-  let corpusProductionFailures: string[];
-  try {
-    corpusProductionFailures = productionCorpusFailures(loadCorpus(row.corpus_json));
-  } catch (error) {
-    corpusProductionFailures = [
-      `Stored evaluation corpus is invalid: ${error instanceof Error ? error.message : String(error)}`,
-    ];
-  }
-
-  const stage = options.stage ?? 'production';
+  const corpusFailures = corpusProductionFailures(row.corpus_json);
   const stageThresholds = STAGED_ROLLOUT_THRESHOLDS[stage];
 
   if (row.passed !== 1 || result.passed !== true) {
@@ -142,7 +160,7 @@ export async function checkLatestProductionEvaluation(
     failures.push('Corpus synthetic fixture count does not match persisted metrics');
   }
   if (stage === 'canary' || stage === 'production') {
-    failures.push(...corpusProductionFailures);
+    failures.push(...corpusFailures);
   }
   if (Number.isFinite(stageThresholds.maxGuardrailViolations)
     && metrics.guardrailViolationCount > stageThresholds.maxGuardrailViolations

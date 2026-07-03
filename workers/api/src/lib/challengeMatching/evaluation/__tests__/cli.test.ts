@@ -155,6 +155,14 @@ function writeExpertCorpusFixture(directory: string): string {
   return corpusPath;
 }
 
+function onePacketExpertCorpusJson(): string {
+  const corpus = JSON.parse(expertCorpusJson()) as EvaluationCorpus;
+  corpus.corpusId = 'expert-corpus-one-packet';
+  corpus.expectedPackets = corpus.expectedPackets?.slice(0, 1);
+  corpus.metadata.totalExpectedPackets = corpus.expectedPackets?.length ?? 0;
+  return JSON.stringify(corpus);
+}
+
 function sourceRef(overrides?: Partial<Record<string, unknown>>) {
   const artifactId = typeof overrides?.artifactId === 'string' ? overrides.artifactId : 'artifact-1';
   return {
@@ -620,6 +628,38 @@ describe('matching evaluation CLI', () => {
       expect.arrayContaining([
         'production rollout requires at least one expert label',
         'production rollout requires zero synthetic fixture labels',
+      ]),
+    );
+  });
+
+  it('reports corpus production failures even before an evaluation result is persisted', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const jsonPath = join(directory, 'readiness.json');
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    insertEvaluationCorpus(sqlite, onePacketExpertCorpusJson());
+    sqlite.close();
+
+    const exitCode = await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--corpus-id',
+      'expert-corpus-one-packet',
+      '--check-latest-production-pass',
+      '--json',
+      jsonPath,
+    ]);
+
+    expect(exitCode).toBe(1);
+    const readiness = JSON.parse(await readFile(jsonPath, 'utf8'));
+    expect(readiness.ready).toBe(false);
+    expect(readiness.metrics).toBeNull();
+    expect(readiness.failures).toEqual(
+      expect.arrayContaining([
+        'No persisted evaluation result found for corpus expert-corpus-one-packet',
+        'production corpus requires at least two source-backed expected PR challenge packets',
       ]),
     );
   });

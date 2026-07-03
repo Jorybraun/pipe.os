@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW matching-evaluation readiness now reports stored corpus production-readiness failures even before a persisted evaluation result exists, giving operators the real next repair step instead of only saying no result was found.
 - CODE_REVIEW production corpus readiness now rejects one-packet labelled corpora, requiring at least two source-backed expected PR challenge packets before automatic matching proof can be treated as production-ready.
 - CODE_REVIEW matching evaluations now enforce each positive expert label's contrast-candidate score separation and fail rollout acceptance when any individual label evaluation fails, preventing near-tie opposing CVs from passing on aggregate metrics alone.
 - CODE_REVIEW production corpus readiness now requires at least one `highly_relevant` or `relevant` expert label, preventing all-negative corpora from passing as useful matcher quality gates.
