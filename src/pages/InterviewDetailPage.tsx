@@ -3503,6 +3503,9 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentWorkspaceDiffSummary = !assessmentCommitCompareUrl && assessmentDiffSourceRefCount > 0
     ? compactEvidenceText(assessmentSubmittedDiffSnippet?.exactText ?? '', 220)
     : null;
+  const assessmentCapturedDiffText = !assessmentCommitCompareUrl
+    ? assessmentSubmittedDiffSnippet?.exactText.trim() || null
+    : null;
   const assessmentEvaluationClaims = assessmentProgress?.evaluation?.claims
     ?.filter((claim) => claim.sourceRefCount > 0)
     .slice(0, 3) ?? [];
@@ -4286,6 +4289,20 @@ export default function InterviewDetailPage(): JSX.Element {
                       ? `Stored in the assessment evidence trail: ${assessmentWorkspaceDiffSummary}`
                       : 'Stored as immutable code_diff source evidence for this workspace-only commit.'}
                   </span>
+                </div>
+              )}
+              {assessmentCapturedDiffText && (
+                <div
+                  data-testid="interview-assessment-captured-diff"
+                  style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}
+                >
+                  <span style={FIELD_LABEL}>Captured diff</span>
+                  <div style={{ ...FIELD_VALUE, display: 'grid', gap: 8 }}>
+                    <strong style={{ color: 'var(--pipe-text)' }}>
+                      Captured source-backed diff
+                    </strong>
+                    <pre style={ASSESSMENT_CAPTURED_DIFF_CODE}>{assessmentCapturedDiffText}</pre>
+                  </div>
                 </div>
               )}
               {(assessmentProgress.commit?.integrity?.label ?? assessmentProgress.commit?.submissionSourceLabel) && (
@@ -5806,6 +5823,21 @@ const ASSESSMENT_CLAIM_NARRATIVE: CSSProperties = {
   fontSize: 12,
   lineHeight: 1.55,
   overflowWrap: 'anywhere',
+};
+
+const ASSESSMENT_CAPTURED_DIFF_CODE: CSSProperties = {
+  margin: 0,
+  maxHeight: 360,
+  overflow: 'auto',
+  padding: 12,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'rgba(0,0,0,0.28)',
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 11,
+  lineHeight: 1.45,
+  whiteSpace: 'pre',
 };
 
 const ASSESSMENT_CLAIM_SOURCES: CSSProperties = {

@@ -412,7 +412,16 @@ describe('InterviewDetailPage', () => {
     expect(progress).not.toHaveTextContent('challenge-packet-popover');
   });
 
-  it('does not invent a GitHub compare link for workspace-only commits', async () => {
+  it('shows the full captured diff for workspace-only commits without inventing a GitHub compare link', async () => {
+    const capturedDiff = [
+      'diff --git a/src/popover.ts b/src/popover.ts',
+      '--- a/src/popover.ts',
+      '+++ b/src/popover.ts',
+      '@@ -42,6 +42,7 @@ export function cleanupPopover() {',
+      '+  cleanupStaleHandler();',
+      '+  FULL_DIFF_SENTINEL_REVIEW_THIS_LINE();',
+      '}',
+    ].join('\n');
     const progress: NonNullable<ScheduledInterviewDetail['assessmentProgress']> = {
       session: {
         id: 'assessment-session-workspace-only',
@@ -450,7 +459,7 @@ describe('InterviewDetailPage', () => {
         eventKind: 'commit_submission',
         sourceRefType: 'code_diff',
         evidenceRole: 'submitted_diff',
-        exactText: 'diff --git a/src/popover.ts b/src/popover.ts',
+        exactText: capturedDiff,
         occurredAt: '2026-06-23T00:18:00.000Z',
       }],
       challenge: {
@@ -512,6 +521,9 @@ describe('InterviewDetailPage', () => {
     expect(progressPanel).toHaveTextContent('Stored in the assessment evidence trail: diff --git a/src/popover.ts b/src/popover.ts');
     expect(progressPanel).toHaveTextContent('Diff evidence');
     expect(screen.queryByRole('link', { name: 'Compare base to submitted commit' })).toBeNull();
+    const capturedDiffPanel = screen.getByTestId('interview-assessment-captured-diff');
+    expect(capturedDiffPanel).toHaveTextContent('Captured source-backed diff');
+    expect(capturedDiffPanel).toHaveTextContent('FULL_DIFF_SENTINEL_REVIEW_THIS_LINE');
   });
 
   it('treats missing AI bridge evidence as unobserved instead of absent in the work packet', async () => {
