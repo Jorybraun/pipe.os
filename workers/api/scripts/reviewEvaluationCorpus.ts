@@ -646,6 +646,7 @@ export function buildExpertReviewMarkdown(
     '## Readiness Summary',
     '',
     `- Draft labels needing human review: ${bulletList(packet.readinessSummary.labelsNeedingHumanReview)}`,
+    `- Insufficient-evidence labels: ${packet.readinessSummary.insufficientEvidenceLabelCount}`,
     `- Missing candidate evidence: ${bulletList(packet.readinessSummary.labelsMissingCandidateEvidence)}`,
     `- Missing role requirements: ${bulletList(packet.readinessSummary.labelsMissingRoleRequirements)}`,
     `- Missing expected PR packet: ${bulletList(packet.readinessSummary.labelsMissingExpectedPacket)}`,

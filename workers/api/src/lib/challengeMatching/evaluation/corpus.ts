@@ -70,6 +70,10 @@ function positiveLabel(label: ExpertLabel): boolean {
   return label.relevanceGrade === 'highly_relevant' || label.relevanceGrade === 'relevant';
 }
 
+function insufficientEvidenceLabel(label: ExpertLabel): boolean {
+  return label.relevanceGrade === 'irrelevant' || label.relevanceGrade === 'forbidden';
+}
+
 export function validateCorpus(corpus: EvaluationCorpus): void {
   const failures: string[] = [];
   if (!corpus || typeof corpus !== 'object') {
@@ -313,7 +317,7 @@ export function productionCorpusFailures(corpus: EvaluationCorpus): string[] {
     failures.push('production corpus requires at least one expert-reviewed label with reviewer/source provenance');
   }
   const positiveLabels = expertBackedLabels.filter(positiveLabel);
-  const negativeLabels = expertBackedLabels.filter((label) => !positiveLabel(label));
+  const insufficientEvidenceLabels = expertBackedLabels.filter(insufficientEvidenceLabel);
   const contrastLabels = expertBackedLabels.filter((label) =>
     nonEmptyString(label.negativeCandidateId)
       && label.minimumScoreSeparation !== undefined
@@ -321,8 +325,8 @@ export function productionCorpusFailures(corpus: EvaluationCorpus): string[] {
   if (positiveLabels.length === 0) {
     failures.push('production corpus requires at least one highly_relevant or relevant positive expert label');
   }
-  if (negativeLabels.length === 0) {
-    failures.push('production corpus requires at least one insufficient-evidence or non-positive contrast label');
+  if (insufficientEvidenceLabels.length === 0) {
+    failures.push('production corpus requires at least one irrelevant or forbidden insufficient-evidence expert label');
   }
   if (contrastLabels.length === 0) {
     failures.push('production corpus requires at least one explicit negativeCandidateId contrast label');

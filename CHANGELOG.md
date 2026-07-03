@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW production corpus readiness now requires at least one true irrelevant/forbidden insufficient-evidence expert label and surfaces that count in review packets, preventing borderline/challenge-design labels from being mistaken for no-evidence safety proof.
 - The living-context CODE_REVIEW match-quality gate now separately counts true `insufficient_evidence` labels, so `needs_review`/challenge-design cases no longer satisfy the required no-evidence safety case by themselves.
 - `living-context:match-quality` now enforces frozen-corpus production-readiness failures before running the batch gate, so expert-labelled but malformed corpora cannot bypass packet breadth, positive/negative label, contrast, or provenance requirements.
 - `living-context:match-quality:readiness` now prefers `MATCHING_EVALUATION_D1_DATABASE_ID` over the generic app D1 id when no `--database-id` flag is passed, keeping CODE_REVIEW quality proof pointed at the evaluation database by default.

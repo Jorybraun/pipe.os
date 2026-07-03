@@ -1064,6 +1064,7 @@ describe('evaluation corpus review CLI', () => {
       labelsMissingExpectedPacket: [],
       labelsMissingRepoDemandEvidence: [],
       negativeLabelCount: 1,
+      insufficientEvidenceLabelCount: 1,
       contrastLabelCount: 1,
     }));
   });
@@ -1230,12 +1231,13 @@ describe('evaluation corpus review CLI', () => {
       reviewedCorpusId: 'sample-corpus-v1-expert-reviewed',
       productionReady: false,
       productionReadinessFailures: expect.arrayContaining([
-        'production corpus requires at least one insufficient-evidence or non-positive contrast label',
+        'production corpus requires at least one irrelevant or forbidden insufficient-evidence expert label',
         'production corpus requires at least two source-backed expected PR challenge packets',
       ]),
       readinessSummary: expect.objectContaining({
         nextAction: 'fix_corpus_source_evidence',
         labelsNeedingHumanReview: [],
+        insufficientEvidenceLabelCount: 0,
         labelsMissingContrastCandidate: [],
         labelsMissingExpectedPacket: ['label-1'],
         labelsMissingRepoDemandEvidence: ['label-1'],
