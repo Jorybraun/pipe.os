@@ -6464,9 +6464,12 @@ schedulingAuth.get('/interviews', async (c) => {
     }>();
 
   const rows = result.results ?? [];
+  const assessmentInterviewIds = rows
+    .filter((row) => isWorkspaceAssessmentInterviewType(row.interview_type))
+    .map((row) => row.id);
   const assessmentProgressByInterviewId = await loadScheduledAssessmentProgressByInterviewIds(
     db,
-    rows.map((row) => row.id),
+    assessmentInterviewIds,
   );
   const pendingMatchDiagnosticsByCandidateId = await loadPendingCodeReviewMatchDiagnosticsByCandidateIds(
     db,

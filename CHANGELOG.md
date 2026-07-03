@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter interview lists now hydrate assessment progress only for assessment-capable interview types, keeping standard-call dashboard pages from paying unnecessary assessment-session query cost.
 - Recruiter interview list/detail assessment setup now explains when role-backed CODE_REVIEW matching found a source-backed PR but withheld automatic assignment because the match quality gate failed, so AI ingestion no longer looks silently stuck at the generic profile-received handoff.
 - Manual open-source assessment setup now falls back to GitHub's public commit page when commit API verification is temporarily unavailable, preserving valid source-backed challenge creation while still rejecting missing commits.
 - Open-source assessment setup now retries transient GitHub base-commit verification failures before rejecting a manual challenge packet, reducing false `SERVICE_UNAVAILABLE` failures during real assessment creation.

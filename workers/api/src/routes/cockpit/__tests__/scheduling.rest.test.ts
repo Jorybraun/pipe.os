@@ -2559,6 +2559,12 @@ describe('GET /interviews/:id detail', () => {
         query.includes('GROUP BY e.session_id, sr.source_ref_type'))).toBe(true);
       expect(observedQueries.some((query) =>
         query.includes('sr.exact_text IS NOT NULL'))).toBe(false);
+      const sessionLookupQuery = observedQueries.find((query) =>
+        query.includes('FROM assessment_sessions')
+        && query.includes('WHERE interview_id IN'));
+      expect(sessionLookupQuery).toBeTruthy();
+      expect(sessionLookupQuery).toContain('WHERE interview_id IN (?1, ?2)');
+      expect(sessionLookupQuery).not.toContain('?3');
     } finally {
       errorSpy.mockRestore();
     }
