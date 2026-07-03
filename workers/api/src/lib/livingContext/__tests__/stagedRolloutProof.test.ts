@@ -89,6 +89,7 @@ function expertSourceRef(
 
 function expertCorpus(): EvaluationCorpus {
   const candidateId = 'candidate-rollout-1';
+  const negativeCandidateId = 'candidate-rollout-negative';
   const roleId = 'role-backend-eng';
   const challengeId = 'challenge-queue-system';
   const repoId = 'repo-42';
@@ -117,6 +118,25 @@ function expertCorpus(): EvaluationCorpus {
             'candidate-transcript',
             'v1',
             'I designed a distributed task queue with at-least-once delivery and dead-letter handling for our order processing system.',
+          ),
+        ],
+      },
+      {
+        candidateId: negativeCandidateId,
+        evidenceId: 'evidence-rollout-negative-1',
+        episodeId: 'episode-rollout-interview-negative-1',
+        narrative: 'Operated Python analytics notebooks without queue ownership or PR review experience.',
+        concepts: ['term:python', 'term:analytics-notebooks'],
+        problems: ['report generation'],
+        mechanisms: ['notebook automation'],
+        domains: ['analytics'],
+        ownershipActions: ['operated'],
+        evidenceReferences: [
+          expertSourceRef(
+            'candidate-evidence-negative-1',
+            'candidate-transcript-negative',
+            'v1',
+            'I mostly operated Python analytics notebooks and did not own queue processing systems.',
           ),
         ],
       },
@@ -149,6 +169,8 @@ function expertCorpus(): EvaluationCorpus {
         challengeId,
         relevanceGrade: 'highly_relevant',
         eligibleChallengeIds: [challengeId],
+        negativeCandidateId,
+        minimumScoreSeparation: 0.25,
         explanation:
           'The candidate has source-backed distributed queue ownership and the challenge packet '
           + 'tests the same queue reliability, dead-letter, and source-backed PR review demands.',
@@ -162,6 +184,29 @@ function expertCorpus(): EvaluationCorpus {
           reviewArtifactVersion: 'v1',
           contentHash: 'sha256:review-rollout-1-v1',
           locator: 'expert-review:rollout-proof-1',
+          rubricVersion: 'candidate-pr-match-rubric-v1',
+        },
+      },
+      {
+        labelId: 'expert-label-rollout-negative-1',
+        candidateId: negativeCandidateId,
+        roleId,
+        challengeId,
+        relevanceGrade: 'irrelevant',
+        eligibleChallengeIds: [],
+        explanation:
+          'The contrast candidate has source-backed analytics notebook operations but no queue '
+          + 'ownership or PR-review evidence, so this queue challenge should not be assigned.',
+        labelVersion: '1.0.0',
+        labeledAt: '2026-06-28T11:05:00Z',
+        labeledBy: 'expert-reviewer-senior',
+        labelProvenance: {
+          reviewerId: 'expert-reviewer-senior',
+          reviewerRole: 'principal-engineer',
+          reviewArtifactId: 'review-artifact-rollout-negative-1',
+          reviewArtifactVersion: 'v1',
+          contentHash: 'sha256:review-rollout-negative-1-v1',
+          locator: 'expert-review:rollout-proof-negative-1',
           rubricVersion: 'candidate-pr-match-rubric-v1',
         },
       },
@@ -189,8 +234,8 @@ function expertCorpus(): EvaluationCorpus {
       },
     ],
     metadata: {
-      totalLabels: 1,
-      totalCandidates: 1,
+      totalLabels: 2,
+      totalCandidates: 2,
       totalRoles: 1,
       totalChallenges: 1,
       syntheticFixtureCount: 0,
@@ -283,11 +328,33 @@ function matchRun(runId: string): PersistedMatchRun {
   };
 }
 
+function negativeMatchRun(runId: string): PersistedMatchRun {
+  const corpus = expertCorpus();
+  const label = corpus.expertLabels[1]!;
+
+  return {
+    matchRunId: runId,
+    candidateId: label.candidateId,
+    roleId: label.roleId,
+    candidateSnapshotId: 'snapshot-rollout-negative-v1',
+    policyVersion: 'candidate-pr-v1',
+    modelVersion: null,
+    status: 'NO_MATCH',
+    rankedChallenges: [],
+  };
+}
+
 function passingMetrics(): EvaluationMetrics {
   const corpus = expertCorpus();
   const primaryRun = matchRun('run-primary');
   const comparisonRun = matchRun('run-comparison');
-  return evaluateMatchRuns(corpus, [primaryRun], [comparisonRun]);
+  const negativeRun = negativeMatchRun('run-primary-negative');
+  const negativeComparisonRun = negativeMatchRun('run-comparison-negative');
+  return evaluateMatchRuns(
+    corpus,
+    [primaryRun, negativeRun],
+    [comparisonRun, negativeComparisonRun],
+  );
 }
 
 describe('Staged rollout proof — criterion #8', () => {
@@ -317,7 +384,7 @@ describe('Staged rollout proof — criterion #8', () => {
   it('expert corpus produces passing evaluation metrics at all stages', () => {
     const metrics = passingMetrics();
 
-    expect(metrics.expertLabelCount).toBe(1);
+    expect(metrics.expertLabelCount).toBe(2);
     expect(metrics.syntheticFixtureCount).toBe(0);
     expect(metrics.recallAt50).toBe(1);
     expect(metrics.precisionAt3).toBe(1);

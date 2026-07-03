@@ -664,7 +664,7 @@ describe('evaluation corpus review CLI', () => {
     ])).rejects.toThrow('Expert review file is incomplete');
   });
 
-  it('applies a completed expert review and writes a production-ready corpus', async () => {
+  it('applies a completed expert review and keeps the corpus blocked until source and contrast evidence are complete', async () => {
     directory = await mkdtemp(join(tmpdir(), 'pipe-corpus-review-'));
     const reviewFilePath = join(directory, 'review.json');
     const reviewedCorpusPath = join(directory, 'reviewed-corpus.json');
@@ -683,7 +683,7 @@ describe('evaluation corpus review CLI', () => {
       summaryPath,
     ]);
 
-    expect(exitCode).toBe(0);
+    expect(exitCode).toBe(1);
     const reviewed = JSON.parse(await readFile(reviewedCorpusPath, 'utf8')) as EvaluationCorpus;
     expect(reviewed.corpusId).toBe('sample-corpus-v1-expert-reviewed');
     expect(reviewed.metadata.syntheticFixtureCount).toBe(0);
@@ -696,14 +696,19 @@ describe('evaluation corpus review CLI', () => {
     }));
     expect(JSON.parse(await readFile(summaryPath, 'utf8'))).toEqual(expect.objectContaining({
       reviewedCorpusId: 'sample-corpus-v1-expert-reviewed',
-      productionReady: true,
+      productionReady: false,
+      productionReadinessFailures: expect.arrayContaining([
+        'production corpus requires at least one insufficient-evidence or non-positive contrast label',
+        'production corpus requires at least one explicit negativeCandidateId contrast label',
+        'positive expert label requires contrast candidate and minimum score separation: label-1',
+      ]),
       readinessSummary: expect.objectContaining({
         nextAction: 'fix_corpus_source_evidence',
         labelsNeedingHumanReview: [],
         labelsMissingExpectedPacket: ['label-1'],
         labelsMissingRepoDemandEvidence: ['label-1'],
       }),
-      nextAction: 'fix_corpus_source_evidence',
+      nextAction: 'complete_expert_review',
     }));
   });
 
@@ -744,12 +749,13 @@ describe('evaluation corpus review CLI', () => {
       secondSummaryPath,
     ]);
 
-    expect(firstExit).toBe(0);
-    expect(secondExit).toBe(0);
+    expect(firstExit).toBe(1);
+    expect(secondExit).toBe(1);
     expect(JSON.parse(await readFile(firstSummaryPath, 'utf8'))).toEqual(expect.objectContaining({
       persisted: true,
       expertLabelCount: 1,
       syntheticFixtureCount: 0,
+      productionReady: false,
     }));
     expect(JSON.parse(await readFile(secondSummaryPath, 'utf8'))).toEqual(expect.objectContaining({
       persisted: false,

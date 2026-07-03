@@ -66,6 +66,10 @@ function roleSourceComplete(reference: RoleRequirements['sourceReferences'][numb
     && nonEmptyString(reference.contentHash);
 }
 
+function positiveLabel(label: ExpertLabel): boolean {
+  return label.relevanceGrade === 'highly_relevant' || label.relevanceGrade === 'relevant';
+}
+
 export function validateCorpus(corpus: EvaluationCorpus): void {
   const failures: string[] = [];
   if (!corpus || typeof corpus !== 'object') {
@@ -298,6 +302,17 @@ export function productionCorpusFailures(corpus: EvaluationCorpus): string[] {
   if (corpus.expertLabels.length === 0) {
     failures.push('production corpus requires at least one expert label');
   }
+  const negativeLabels = corpus.expertLabels.filter((label) => !positiveLabel(label));
+  const contrastLabels = corpus.expertLabels.filter((label) =>
+    nonEmptyString(label.negativeCandidateId)
+      && label.minimumScoreSeparation !== undefined
+  );
+  if (negativeLabels.length === 0) {
+    failures.push('production corpus requires at least one insufficient-evidence or non-positive contrast label');
+  }
+  if (contrastLabels.length === 0) {
+    failures.push('production corpus requires at least one explicit negativeCandidateId contrast label');
+  }
   const syntheticLabels = corpus.expertLabels.filter(
     (label) => label.labeledBy === 'synthetic-fixture',
   );
@@ -309,6 +324,15 @@ export function productionCorpusFailures(corpus: EvaluationCorpus): string[] {
     const provenance = label.labelProvenance;
     if (!label.explanation || label.explanation.trim().length === 0) {
       failures.push(`expert label requires a human rationale: ${label.labelId}`);
+    }
+    if (
+      positiveLabel(label)
+      && (
+        !nonEmptyString(label.negativeCandidateId)
+        || label.minimumScoreSeparation === undefined
+      )
+    ) {
+      failures.push(`positive expert label requires contrast candidate and minimum score separation: ${label.labelId}`);
     }
     if (!provenance) {
       failures.push(`expert label is missing reviewer/source provenance: ${label.labelId}`);

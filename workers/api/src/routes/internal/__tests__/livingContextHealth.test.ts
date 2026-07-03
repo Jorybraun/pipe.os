@@ -1041,9 +1041,13 @@ describe('POST /evaluation-corpus-seed', () => {
     expect(body.persisted).toBe(true);
     expect(body.expertLabelCount).toBe(1);
     expect(body.syntheticFixtureCount).toBe(0);
-    expect(body.productionReady).toBe(true);
-    expect(body.productionReadinessFailures).toEqual([]);
-    expect(body.nextAction).toBe('run_evaluation');
+    expect(body.productionReady).toBe(false);
+    expect(body.productionReadinessFailures).toEqual(expect.arrayContaining([
+      'production corpus requires at least one insufficient-evidence or non-positive contrast label',
+      'production corpus requires at least one explicit negativeCandidateId contrast label',
+      'positive expert label requires contrast candidate and minimum score separation: seeded-match-run-seed-1-packet-seed-1',
+    ]));
+    expect(body.nextAction).toBe('complete_expert_label_review');
 
     const rows = sqlite.prepare(
       `SELECT corpus_id, expert_label_count, corpus_json
@@ -1120,7 +1124,7 @@ describe('POST /evaluation-corpus-seed', () => {
     expect(body.corpusHash).toMatch(/^[a-f0-9]{64}$/);
     expect(body.persisted).toBe(false);
     expect(body.dryRun).toBe(true);
-    expect(body.productionReady).toBe(true);
+    expect(body.productionReady).toBe(false);
 
     const reviewedRow = sqlite.prepare(
       `SELECT corpus_id FROM evaluation_corpora WHERE corpus_id = 'reviewed-dry-run-corpus-1'`,
