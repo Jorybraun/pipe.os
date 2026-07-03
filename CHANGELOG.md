@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Interview detail pages now lead open-source assessment dossiers with the assigned task title, candidate identity, and objective description instead of burying the challenge under a generic person-name header.
 - Open-source assessment invites now persist and project recruiter-facing title and description copy from the assigned challenge packet, so repeated candidate meetings are legible in list/detail views.
 - Assessment progress now shows a reviewable evaluated report when a report has persisted but the async session state is still `EVALUATING`, preventing stale “evaluation running” UI after background completion.
 - Candidate assessment cockpit smoke now scopes duplicate status-strip checks to the main room header, avoiding false failures when the video PiP mirrors the same assessment status.

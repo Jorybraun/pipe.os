@@ -201,6 +201,8 @@ describe('InterviewDetailPage', () => {
   it('shows source-backed assessment progress and next action for open-source workspaces', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
+        title: 'Fix Base UI popover impatient click handling',
+        description: 'Investigate the hover-open popover trigger behavior and submit a focused regression fix.',
         interviewType: 'OPEN_SOURCE_BUG_FIX',
         githubRepoUrl: 'https://github.com/open-source/widgets',
         assessmentSetup: {
@@ -338,6 +340,13 @@ describe('InterviewDetailPage', () => {
     renderDetail();
     await flushAsyncUpdates();
 
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'Fix Base UI popover impatient click handling',
+    );
+    expect(screen.getByText(/Ada Candidate · ada@example\.com · Talent Pool · OPEN_SOURCE_BUG_FIX/)).toBeTruthy();
+    expect(screen.getByTestId('interview-detail-objective')).toHaveTextContent(
+      'Investigate the hover-open popover trigger behavior and submit a focused regression fix.',
+    );
     const progress = screen.getByTestId('interview-assessment-progress');
     expect(progress).toHaveTextContent('Assessment progress');
     expect(progress).toHaveTextContent('Ready for evaluation');

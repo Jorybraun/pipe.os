@@ -3280,6 +3280,15 @@ export default function InterviewDetailPage(): JSX.Element {
   const personEmail = interview.candidateEmail ?? interview.recipientEmail ?? null;
   const roleTitle = interview.pipelineTitle ?? 'Talent Pool';
   const stageTitle = interview.stageTitle ?? interview.interviewType ?? 'Interview';
+  const detailTitle = interview.title?.trim() || null;
+  const detailDescription = interview.description?.trim() || null;
+  const pageTitle = detailTitle ?? personName;
+  const personIdentity = personEmail && personEmail !== personName
+    ? `${personName} · ${personEmail}`
+    : personName;
+  const headerSubtitle = detailTitle
+    ? `${personIdentity} · ${roleTitle} · ${stageTitle}`
+    : `${roleTitle} · ${stageTitle}`;
   const rawTranscriptStatus =
     interview.linkedMeeting?.transcriptStatus
     ?? interview.transcriptArtifact?.status
@@ -3759,10 +3768,15 @@ export default function InterviewDetailPage(): JSX.Element {
           </button>
           <div>
             <div style={EYEBROW}>INTERVIEW</div>
-            <h1 style={TITLE}>{personName}</h1>
+            <h1 style={TITLE}>{pageTitle}</h1>
             <div style={SUBTITLE}>
-              {roleTitle} · {stageTitle}
+              {headerSubtitle}
             </div>
+            {detailDescription && (
+              <div data-testid="interview-detail-objective" style={HEADER_OBJECTIVE}>
+                {detailDescription}
+              </div>
+            )}
           </div>
           <StatusBadge status={displayStatus} />
         </div>
@@ -3789,7 +3803,7 @@ export default function InterviewDetailPage(): JSX.Element {
               <Video size={15} />
               Room
             </div>
-            <h2 style={ROOM_TITLE}>{interview.linkedMeeting?.title ?? `${personName} interview`}</h2>
+            <h2 style={ROOM_TITLE}>{interview.linkedMeeting?.title ?? detailTitle ?? `${personName} interview`}</h2>
             <div style={ROOM_LINK_TEXT}>
               {guestRoomUrl
                 ? 'Guest and host join the same meeting with different secure links.'
@@ -5960,6 +5974,14 @@ const EYEBROW: CSSProperties = recruiterEyebrowStyle;
 const TITLE: CSSProperties = recruiterTitleStyle;
 
 const SUBTITLE: CSSProperties = recruiterSubtitleStyle;
+
+const HEADER_OBJECTIVE: CSSProperties = {
+  marginTop: 10,
+  maxWidth: 760,
+  color: 'var(--pipe-text-dim)',
+  fontSize: 13,
+  lineHeight: 1.6,
+};
 
 const ACTION_ROW: CSSProperties = {
   display: 'flex',
