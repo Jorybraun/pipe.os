@@ -947,6 +947,89 @@ describe('evaluation corpus review CLI', () => {
     }));
   });
 
+  it('bounds source-backed review packets so expert review stays readable', () => {
+    const corpus = sourceBackedSinglePacketCorpus();
+    const fitEvidence = corpus.candidateEvidence[0]!;
+    const contrastEvidence = corpus.candidateEvidence[1]!;
+    corpus.candidateEvidence = [
+      ...Array.from({ length: 7 }, (_, index) => ({
+        ...fitEvidence,
+        evidenceId: `evidence-fit-react-${index}`,
+        narrative:
+          'Candidate evidence includes a useful React accessibility signal, but this deliberately long narrative repeats implementation context '.repeat(4),
+        concepts: [
+          'term:react',
+          'term:accessibility',
+          'term:packages-react-src-popover-root-usepopoverroot-ts',
+          'term:.changeset-green-buses-wait.md',
+          'term:export-default-async-function-fetch-request-env-context-return-router-handle-request-request-env-context',
+          `term:generated-source-path-segment-${index}`,
+        ],
+        evidenceReferences: [
+          ...fitEvidence.evidenceReferences,
+          {
+            ...fitEvidence.evidenceReferences[0]!,
+            sourceRefId: `resume-fit-extra-${index}-1`,
+            exactText: 'Very long exact source text for expert review. '.repeat(20),
+          },
+          {
+            ...fitEvidence.evidenceReferences[0]!,
+            sourceRefId: `resume-fit-extra-${index}-2`,
+            exactText: 'Another long exact source text for expert review. '.repeat(20),
+          },
+        ],
+      })),
+      contrastEvidence,
+    ];
+    corpus.roleRequirements[0] = {
+      ...corpus.roleRequirements[0]!,
+      relevantConcepts: [
+        'term:react',
+        'term:packages-react-src-popover-root-usepopoverroot-ts',
+        'term:accessibility',
+        'term:export-default-async-function-fetch-request-env-context-return-router-handle-request-request-env-context',
+      ],
+    };
+    corpus.expectedPackets![0] = {
+      ...corpus.expectedPackets![0]!,
+      demands: Array.from({ length: 7 }, (_, index) => ({
+        demandId: `demand-react-accessibility-${index}`,
+        concepts: [
+          'term:react',
+          'term:accessibility',
+          'term:packages-react-src-popover-root-usepopoverroot-ts',
+        ],
+        sourceRefs: [
+          ...corpus.expectedPackets![0]!.demands![0]!.sourceRefs,
+          {
+            ...corpus.expectedPackets![0]!.demands![0]!.sourceRefs[0]!,
+            sourceRefId: `repo-demand-extra-${index}-1`,
+            exactText: 'Long repo diff source text. '.repeat(20),
+          },
+          {
+            ...corpus.expectedPackets![0]!.demands![0]!.sourceRefs[0]!,
+            sourceRefId: `repo-demand-extra-${index}-2`,
+            exactText: 'Another long repo diff source text. '.repeat(20),
+          },
+        ],
+      })),
+    };
+
+    const packet = buildCorpusReviewPacket(corpus);
+    const item = packet.items[0]!;
+
+    expect(item.candidateEvidence).toHaveLength(5);
+    expect(item.candidateEvidence[0]!.narrative.length).toBeLessThanOrEqual(240);
+    expect(item.candidateEvidence[0]!.concepts).toEqual(['term:react', 'term:accessibility']);
+    expect(item.candidateEvidence[0]!.evidenceReferences).toHaveLength(2);
+    expect(item.candidateEvidence[0]!.evidenceReferences[0]!.exactText!.length).toBeLessThanOrEqual(280);
+    expect(item.roleRequirements!.relevantConcepts).toEqual(['term:react', 'term:accessibility']);
+    expect(item.expectedPacket!.demands).toHaveLength(5);
+    expect(item.expectedPacket!.demands![0]!.concepts).toEqual(['term:react', 'term:accessibility']);
+    expect(item.expectedPacket!.demands![0]!.sourceRefs).toHaveLength(2);
+    expect(item.expectedPacket!.demands![0]!.sourceRefs[0]!.exactText!.length).toBeLessThanOrEqual(280);
+  });
+
   it('suggests contrast candidates in review packets and templates', () => {
     const packet = buildCorpusReviewPacket(loadFixtureCorpusWithUnlabelledContrastCandidate());
     const template = buildExpertReviewTemplate(packet);

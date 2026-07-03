@@ -1046,10 +1046,7 @@ describe('POST /evaluation-corpus-seed', () => {
     expect(body.corpusHash).toMatch(/^[a-f0-9]{64}$/);
     expect(body.reviewPacket.productionReady).toBe(false);
     expect(body.reviewPacket.productionReadinessFailures).toContain(
-      'expert label is missing reviewer/source provenance: seeded-match-run-seed-1-packet-seed-1',
-    );
-    expect(body.reviewPacket.productionReadinessFailures).toContain(
-      'expert label is missing reviewer/source provenance: seeded-match-run-seed-negative-packet-seed-1',
+      'production corpus contains 2 draft corpus-seeder label(s); complete expert review before production evaluation',
     );
     expect(body.reviewPacket.items).toHaveLength(2);
     expect(body.reviewPacket.items[0]!.draft.labeledBy).toBe('corpus-seeder');

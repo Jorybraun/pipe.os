@@ -8,8 +8,11 @@ import {
   validateCorpus,
 } from './corpus';
 import type {
+  CandidatePersonEvidence,
+  EvidenceReference,
   EvaluationCorpus,
   ExpectedChallengePacket,
+  ExpectedDemandReference,
   ExpertLabel,
   GuardrailViolation,
   RelevanceGrade,
@@ -19,6 +22,13 @@ import type {
 import { sha256, stableJson } from '../../repoSemanticGraph/hash';
 
 const REVIEWED_CORPUS_SUFFIX_LENGTH = 12;
+const MAX_REVIEW_CANDIDATE_EVIDENCE = 5;
+const MAX_REVIEW_ROLE_SOURCE_REFS = 5;
+const MAX_REVIEW_PACKET_DEMANDS = 5;
+const MAX_REVIEW_SOURCE_REFS = 2;
+const MAX_REVIEW_CONCEPTS = 8;
+const MAX_REVIEW_NARRATIVE_CHARS = 240;
+const MAX_REVIEW_EXACT_TEXT_CHARS = 280;
 const PACKET_BREADTH_FAILURE =
   'production corpus requires at least two source-backed expected PR challenge packets';
 
@@ -116,6 +126,105 @@ export interface ApplyExpertCorpusReviewResult {
 
 function nonEmpty(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function truncateForReview(value: string | undefined, limit: number): string | undefined {
+  if (value === undefined) return undefined;
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= limit) return normalized;
+  return `${normalized.slice(0, Math.max(0, limit - 3)).trimEnd()}...`;
+}
+
+function conceptBody(value: string): string {
+  const trimmed = value.trim();
+  const separatorIndex = trimmed.indexOf(':');
+  return separatorIndex >= 0 ? trimmed.slice(separatorIndex + 1) : trimmed;
+}
+
+function isHumanReviewConcept(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+  const body = conceptBody(trimmed).toLowerCase();
+  const hyphenCount = (body.match(/-/g) ?? []).length;
+  return !(
+    body.length > 64
+    || hyphenCount >= 5
+    || body.includes('/')
+    || body.includes('\\')
+    || body.includes('.changeset')
+    || body.startsWith('packages-')
+    || body.startsWith('apps-')
+    || body.startsWith('generated-')
+    || body.includes('source-path')
+    || /\.(c|m)?tsx?\b/.test(body)
+    || /\.(c|m)?jsx?\b/.test(body)
+    || /\.(md|json|ya?ml|css|scss)\b/.test(body)
+  );
+}
+
+function compactConcepts(concepts: string[] | undefined): string[] {
+  const unique = new Set<string>();
+  for (const concept of concepts ?? []) {
+    const trimmed = concept.trim();
+    if (!isHumanReviewConcept(trimmed)) continue;
+    unique.add(trimmed);
+    if (unique.size >= MAX_REVIEW_CONCEPTS) break;
+  }
+  return Array.from(unique);
+}
+
+function compactEvidenceReferences(references: EvidenceReference[]): EvidenceReference[] {
+  return references.slice(0, MAX_REVIEW_SOURCE_REFS).map((reference) => ({
+    ...reference,
+    exactText: truncateForReview(reference.exactText, MAX_REVIEW_EXACT_TEXT_CHARS),
+  }));
+}
+
+function compactCandidateEvidence(evidence: CandidatePersonEvidence[]): CandidatePersonEvidence[] {
+  return evidence.slice(0, MAX_REVIEW_CANDIDATE_EVIDENCE).map((item) => ({
+    ...item,
+    narrative: truncateForReview(item.narrative, MAX_REVIEW_NARRATIVE_CHARS) ?? '',
+    concepts: compactConcepts(item.concepts),
+    evidenceReferences: compactEvidenceReferences(item.evidenceReferences),
+  }));
+}
+
+function compactRoleSourceReferences(
+  references: RoleRequirements['sourceReferences'],
+): RoleRequirements['sourceReferences'] {
+  return references.slice(0, MAX_REVIEW_ROLE_SOURCE_REFS).map((reference) => ({
+    ...reference,
+    conceptKeys: compactConcepts(reference.conceptKeys),
+    exactText: truncateForReview(reference.exactText, MAX_REVIEW_EXACT_TEXT_CHARS),
+  }));
+}
+
+function compactRoleRequirements(role: RoleRequirements | undefined): RoleRequirements | null {
+  if (!role) return null;
+  return {
+    ...role,
+    relevantConcepts: compactConcepts(role.relevantConcepts),
+    genericConcepts: compactConcepts(role.genericConcepts),
+    requiredConcepts: compactConcepts(role.requiredConcepts),
+    forbiddenConcepts: compactConcepts(role.forbiddenConcepts),
+    sourceReferences: compactRoleSourceReferences(role.sourceReferences),
+  };
+}
+
+function compactExpectedDemand(demand: ExpectedDemandReference): ExpectedDemandReference {
+  return {
+    ...demand,
+    concepts: compactConcepts(demand.concepts),
+    sourceRefs: compactEvidenceReferences(demand.sourceRefs),
+  };
+}
+
+function compactExpectedPacket(packet: ExpectedChallengePacket | undefined): ExpectedChallengePacket | null {
+  if (!packet) return null;
+  return {
+    ...packet,
+    demands: packet.demands?.slice(0, MAX_REVIEW_PACKET_DEMANDS).map(compactExpectedDemand),
+  };
 }
 
 function isEligibleGrade(grade: RelevanceGrade): boolean {
@@ -402,9 +511,9 @@ export function buildCorpusReviewPacket(corpus: EvaluationCorpus): CorpusReviewP
         labeledBy: label.labeledBy,
         labelVersion: label.labelVersion,
       },
-      candidateEvidence: getCandidateEvidence(corpus, label.candidateId),
-      roleRequirements: getRoleRequirements(corpus, label.roleId) ?? null,
-      expectedPacket: getExpectedPacket(corpus, label.challengeId) ?? null,
+      candidateEvidence: compactCandidateEvidence(getCandidateEvidence(corpus, label.candidateId)),
+      roleRequirements: compactRoleRequirements(getRoleRequirements(corpus, label.roleId)),
+      expectedPacket: compactExpectedPacket(getExpectedPacket(corpus, label.challengeId)),
       suggestedContrastCandidates: suggestedContrastCandidatesForLabel(corpus, label),
       reviewQuestions: [
         'Does the candidate evidence actually support this challenge selection?',

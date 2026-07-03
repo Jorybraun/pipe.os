@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW expert-review packets now bound candidate evidence, repo demands, source refs, long text spans, and generated source-path concepts, keeping operator review artifacts readable while preserving the immutable corpus as source truth.
 - Removed the unused backend stage-config helper/test that preserved the obsolete CODE_REVIEW `WAITING_FOR_MATCH` candidate stage shape, leaving the runtime boundary centered on ready code reviews or `PROFILE_RECEIVED`.
 - Recruiter CODE_REVIEW readouts no longer treat a bare `MATCHED` packet as a safe assignment unless it has a passing assessment-quality verdict or concrete source-backed candidate/role-to-repo proof; weak completed reviews still route to assignment-fairness calibration before rejection.
 - CODE_REVIEW match-quality scoring now uses conservative semantic concept matching for adjacent source-backed evidence, filters generated source-path fragments out of scoreable demand concepts, parses packet `conceptKeys` in gap analysis, and maps borderline expert labels to challenge-design review reasons, letting the app-dev expert-reviewed corpus pass with discriminating Workers/MUI verdicts.
