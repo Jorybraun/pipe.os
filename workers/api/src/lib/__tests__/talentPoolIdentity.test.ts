@@ -129,8 +129,8 @@ describe('ensureRolelessTalentPoolIdentity', () => {
     expect(tableCount(sqlite, 'artifacts')).toBe(3);
     expect(tableCount(sqlite, 'artifact_versions')).toBe(3);
     expect(tableCount(sqlite, 'source_spans')).toBe(8);
-    expect(tableCount(sqlite, 'context_records')).toBe(5);
-    expect(tableCount(sqlite, 'context_record_source_refs')).toBe(8);
+    expect(tableCount(sqlite, 'context_records')).toBe(6);
+    expect(tableCount(sqlite, 'context_record_source_refs')).toBe(9);
     expect(tableCount(sqlite, 'candidate_nodes')).toBe(1);
     expect(duplicateProjectedEdgeCount(sqlite)).toBe(0);
 
@@ -179,8 +179,8 @@ describe('ensureRolelessTalentPoolIdentity', () => {
     expect(tableCount(sqlite, 'artifacts')).toBe(3);
     expect(tableCount(sqlite, 'artifact_versions')).toBe(3);
     expect(tableCount(sqlite, 'source_spans')).toBe(8);
-    expect(tableCount(sqlite, 'context_records')).toBe(5);
-    expect(tableCount(sqlite, 'context_record_source_refs')).toBe(8);
+    expect(tableCount(sqlite, 'context_records')).toBe(6);
+    expect(tableCount(sqlite, 'context_record_source_refs')).toBe(9);
     expect(tableCount(sqlite, 'candidate_nodes')).toBe(1);
     expect(duplicateProjectedEdgeCount(sqlite)).toBe(0);
 
@@ -202,8 +202,8 @@ describe('ensureRolelessTalentPoolIdentity', () => {
     expect(tableCount(sqlite, 'artifacts')).toBe(3);
     expect(tableCount(sqlite, 'artifact_versions')).toBe(3);
     expect(tableCount(sqlite, 'source_spans')).toBe(8);
-    expect(tableCount(sqlite, 'context_records')).toBe(5);
-    expect(tableCount(sqlite, 'context_record_source_refs')).toBe(8);
+    expect(tableCount(sqlite, 'context_records')).toBe(6);
+    expect(tableCount(sqlite, 'context_record_source_refs')).toBe(9);
     expect(tableCount(sqlite, 'candidate_nodes')).toBe(1);
     expect(duplicateProjectedEdgeCount(sqlite)).toBe(0);
     expect(sqlite.prepare(
@@ -212,5 +212,16 @@ describe('ensureRolelessTalentPoolIdentity', () => {
         WHERE storage_key = ?
           AND json_extract(metadata_json, '$.evidenceKind') = 'profile_upload_source'`,
     ).get(storageKey)).toEqual({ count: 1 });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records cr
+         JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+         JOIN artifact_versions av ON av.id = crsr.source_ref_id
+        WHERE cr.record_type = 'talent_pool_profile_upload_receipt'
+          AND crsr.source_ref_type = 'artifact_version'
+          AND crsr.evidence_role = 'source_artifact'
+          AND crsr.content_hash = ?
+          AND av.storage_key = ?`,
+    ).get(sourceArtifact.contentHash, storageKey)).toEqual({ count: 1 });
   });
 });

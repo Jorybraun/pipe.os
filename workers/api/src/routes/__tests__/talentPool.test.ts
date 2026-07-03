@@ -1083,6 +1083,19 @@ describe('talent pool candidate RPC', () => {
       storage_key: intake.profile_r2_key,
     });
     expect(sqlite.prepare(
+      `SELECT cr.record_type, cr.predicate, crsr.source_ref_type, av.storage_key
+         FROM context_records cr
+         JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+         JOIN artifact_versions av ON av.id = crsr.source_ref_id
+        WHERE cr.record_type = 'talent_pool_profile_upload_receipt'
+        LIMIT 1`,
+    ).get()).toEqual({
+      record_type: 'talent_pool_profile_upload_receipt',
+      predicate: 'received_profile_upload_artifact',
+      source_ref_type: 'artifact_version',
+      storage_key: intake.profile_r2_key,
+    });
+    expect(sqlite.prepare(
       `SELECT cn.node_type, av.storage_key
          FROM candidate_nodes cn
          JOIN source_spans ss ON cn.source_reference = 'source_span:' || ss.id
@@ -1124,8 +1137,8 @@ describe('talent pool candidate RPC', () => {
       source_quote_validated: 1,
       source_quote: uploadedText,
     });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 2 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 3 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 3 });
   });
 
   it('projects extracted DOCX uploads into source-backed person evidence idempotently', async () => {
@@ -1300,8 +1313,17 @@ describe('talent pool candidate RPC', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifact_versions').get()).toEqual({ count: 2 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records cr
+         JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+         JOIN artifact_versions av ON av.id = crsr.source_ref_id
+        WHERE cr.record_type = 'talent_pool_profile_upload_receipt'
+          AND crsr.source_ref_type = 'artifact_version'
+          AND av.storage_key = ?`,
+    ).get(storedKey)).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM challenge_design_queue').get()).toEqual({ count: 1 });
   });
 
@@ -1423,7 +1445,20 @@ describe('talent pool candidate RPC', () => {
     });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 0 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare(
+      `SELECT cr.record_type, cr.predicate, crsr.source_ref_type, av.storage_key
+         FROM context_records cr
+         JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+         JOIN artifact_versions av ON av.id = crsr.source_ref_id
+        WHERE cr.record_type = 'talent_pool_profile_upload_receipt'
+        LIMIT 1`,
+    ).get()).toEqual({
+      record_type: 'talent_pool_profile_upload_receipt',
+      predicate: 'received_profile_upload_artifact',
+      source_ref_type: 'artifact_version',
+      storage_key: storedKey,
+    });
 
     const replayFormData = new FormData();
     replayFormData.set('inviteToken', 'invite-token');
@@ -1442,7 +1477,7 @@ describe('talent pool candidate RPC', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifact_versions').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 0 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 1 });
   });
 
   it('keeps PR-backed assignments preparing until a source-backed challenge packet exists', async () => {

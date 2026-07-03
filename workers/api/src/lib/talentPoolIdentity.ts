@@ -540,6 +540,7 @@ async function persistRolelessMessageArtifact(input: {
 }
 
 async function persistRolelessSourceArtifact(input: {
+  db: D1Database;
   store: LivingContextStore;
   workspacePersonId: string;
   candidateId: string;
@@ -578,7 +579,7 @@ async function persistRolelessSourceArtifact(input: {
       storageKey,
     },
   });
-  await input.store.createArtifactVersion({
+  const version = await input.store.createArtifactVersion({
     ingestionKey: `${baseKey}:version:1`,
     artifactId: artifact.id,
     versionNumber: 1,
@@ -587,6 +588,62 @@ async function persistRolelessSourceArtifact(input: {
     storageKey,
     byteLength: sourceArtifact.byteLength,
     metadata,
+  });
+
+  if (!await contextRecordTablesReady(input.db)) return;
+
+  await input.store.upsertContextRecord({
+    ingestionKey: `${baseKey}:context-record:profile-upload-receipt`,
+    workspacePersonId: input.workspacePersonId,
+    interactionId: interaction.id,
+    recordType: 'talent_pool_profile_upload_receipt',
+    predicate: 'received_profile_upload_artifact',
+    narrative: 'Candidate uploaded a Talent Pool profile or resume artifact.',
+    qualifiers: {
+      source: 'roleless_candidate_intake',
+      roleless: true,
+      evidenceKind: 'profile_upload_source',
+      storageKey,
+      mediaType: sourceArtifact.mediaType,
+      byteLength: sourceArtifact.byteLength,
+      contentHash: sourceArtifact.contentHash,
+      extractedTextAvailable: sourceArtifact.extractedTextAvailable === true,
+      ...(sourceArtifact.originalFileName ? { originalFileName: sourceArtifact.originalFileName } : {}),
+    },
+    confidence: 1,
+    polarity: 1,
+    extractionVersion: 'talent-pool-roleless-upload-receipt-v1',
+    observedAt: input.now,
+    sources: [{
+      sourceRefType: 'artifact_version',
+      sourceRefId: version.id,
+      evidenceRole: 'source_artifact',
+      locator: { storageKey },
+      contentHash: sourceArtifact.contentHash,
+      metadata: {
+        mediaType: sourceArtifact.mediaType,
+        byteLength: sourceArtifact.byteLength,
+        extractedTextAvailable: sourceArtifact.extractedTextAvailable === true,
+        ...(sourceArtifact.originalFileName ? { originalFileName: sourceArtifact.originalFileName } : {}),
+      },
+    }],
+    entities: [
+      {
+        entityType: 'workspace_person',
+        entityId: input.workspacePersonId,
+        relationship: 'subject',
+      },
+      {
+        entityType: 'artifact',
+        entityId: artifact.id,
+        relationship: 'source_artifact',
+      },
+      {
+        entityType: 'artifact_version',
+        entityId: version.id,
+        relationship: 'source_version',
+      },
+    ],
   });
 }
 
@@ -764,6 +821,7 @@ export async function ensureRolelessTalentPoolIdentity(input: {
     now,
   });
   await persistRolelessSourceArtifact({
+    db,
     store,
     workspacePersonId: workspacePerson.id,
     candidateId,

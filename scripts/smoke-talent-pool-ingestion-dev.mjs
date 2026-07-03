@@ -578,6 +578,7 @@ function auditIsReady(report) {
   if (report.sourceProof?.submittedIntakeWithoutExactCandidateNodeCount !== 0) return false;
   if (report.sourceProof?.contextSourceRefCount < 1) return false;
   if (uploadEvidenceExpected && report.sourceProof?.profileUploadArtifactVersionCount < 1) return false;
+  if (uploadEvidenceExpected && report.sourceProof?.profileUploadReceiptContextCount < 1) return false;
   if (
     (smokeMode === 'upload-docx' || smokeMode === 'browser-upload-docx')
     && report.rawCapture?.documentProfileStorageKeyCount !== 1
@@ -619,6 +620,7 @@ function auditHasExpectedEvidenceGap(report) {
   if (report.sourceProof?.documentProfileMissingExtractionProofCount !== 0) return false;
   if (report.sourceProof?.candidateNodeExactSourceQuoteCount !== 0) return false;
   if (report.sourceProof?.submittedIntakeWithoutExactCandidateNodeCount !== 0) return false;
+  if (report.sourceProof?.profileUploadReceiptContextCount !== 1) return false;
   if (report.sourceProof?.contextSourceRefCount < 1) return false;
   if (report.personProjection?.talentPoolWorkspacePersonCount !== 1) return false;
   if (report.personProjection?.designQueueCount !== 1) return false;
@@ -978,6 +980,7 @@ async function main() {
     documentProfileExtractionGapCount: report.sourceProof.documentProfileExtractionGapCount,
     documentProfileMissingExtractionProofCount: report.sourceProof.documentProfileMissingExtractionProofCount,
     profileUploadArtifactVersionCount: report.sourceProof.profileUploadArtifactVersionCount,
+    profileUploadReceiptContextCount: report.sourceProof.profileUploadReceiptContextCount,
     sourceObjectProof,
     talentPoolWorkspacePersonCount: report.personProjection.talentPoolWorkspacePersonCount,
     designQueueCount: report.personProjection.designQueueCount,

@@ -67,6 +67,9 @@ The verifier reports:
 - uploaded profile artifact versions whose storage key matches the current
   `talent_pool_intakes.profile_r2_key`, proving original blob capture even when
   claim extraction is still missing
+- `talent_pool_profile_upload_receipt` context records whose source ref cites
+  the exact current upload `artifact_version`, proving person-context provenance
+  for binary/no-text upload gaps without requiring a fabricated source span
 - roleless `people` / `workspace_people` projection
 - accidental `applications` / `person_roles` for roleless Talent Pool members
 - PR-backed ready challenge assignments vs. incomplete assignment rows and
@@ -106,7 +109,10 @@ keeps pasted profile text and uploaded files distinct even when both use
 content-hash `talent-intake/<candidate>/<sha>-...` keys.
 This artifact is source inventory only: if no exact text can be extracted, it
 must not create a source span, context record, candidate node, skill, readiness
-claim, or repo-family suggestion. PDF/DOCX extraction still runs in background
+claim, or repo-family suggestion. The only positive context record allowed for
+an unextractable file is the upload receipt itself:
+`talent_pool_profile_upload_receipt` with a `source_ref_type: artifact_version`
+ref to the raw upload version. PDF/DOCX extraction still runs in background
 resume ingestion when foreground extraction is unavailable, but the upload route
 does not queue a doomed background parser after foreground extraction already
 proved the file has no usable source text; `candidate_ingestion.current_step`
@@ -328,6 +334,7 @@ zero duplicate projected edges, no failed `candidate_ingestion` state, and no
 candidate-node projection from invite/upload placeholders. It also requires
 `documentProfileExtractionGapCount: 1`,
 `documentProfileMissingExtractionProofCount: 0`,
+`profileUploadReceiptContextCount: 1`,
 `submittedIntakeWithoutExactCandidateNodeCount: 0`, and the scoped
 `candidate_ingestion.current_step` to be `profile_text_extraction_needed`.
 Scheduled Talent Pool repair applies the same rule to historical unextractable
@@ -957,9 +964,10 @@ all 4 unauthenticated browser scenarios passed.
   source-ref repair command reports no remaining repairable profile/resume
   source refs. Five historical PDF profile-intake receipt nodes still point at
   older roleless message spans because their current uploaded PDFs have no
-  extracted source spans; they need document extraction or an artifact-level
-  receipt model, not fabricated source spans. New scoped browser smokes audit
-  clean. The 2026-07-03 post-deploy `--limit 5` app-dev audit proves zero
+  extracted source spans; newer upload paths and scheduled repair project an
+  artifact-level receipt context for current uploads instead of fabricated
+  source spans. New scoped browser smokes audit clean. The 2026-07-03
+  post-deploy `--limit 5` app-dev audit proves zero
   source-less positives, zero duplicate projected edges, zero failed ingestion
   rows, zero error-text rows, zero generic submitted candidate-node gaps, and
   zero document rows missing extraction proof inside the recent window. Three

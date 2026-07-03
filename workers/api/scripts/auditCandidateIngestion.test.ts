@@ -442,6 +442,7 @@ describe('auditCandidateIngestion', () => {
       profileUploadArtifactVersionCount: 0,
       documentProfileExtractionGapCount: 0,
       documentProfileMissingExtractionProofCount: 0,
+      profileUploadReceiptContextCount: 0,
       contextSourceRefCount: 7,
       candidateNodeWithoutExactSourceCount: 0,
       candidateNodeSourceSpanMissingCount: 0,
@@ -1109,6 +1110,17 @@ describe('auditCandidateIngestion', () => {
       VALUES ('artifact-upload', 'workspace-person-1', 'interaction-upload', 'profile_upload', 'roleless_candidate_profile_upload', '{"evidenceKind":"profile_upload_source"}');
       INSERT INTO artifact_versions (id, artifact_id, storage_key, content_text)
       VALUES ('artifact-version-upload', 'artifact-upload', 'talent-intake/candidate-1/profile.pdf', NULL);
+      INSERT INTO context_records (id, workspace_person_id, record_type, predicate, narrative, polarity)
+      VALUES (
+        'context-record-upload-receipt',
+        'workspace-person-1',
+        'talent_pool_profile_upload_receipt',
+        'received_profile_upload_artifact',
+        'Candidate uploaded a Talent Pool profile or resume artifact.',
+        1
+      );
+      INSERT INTO context_record_source_refs (context_record_id, source_ref_type, source_ref_id, evidence_role)
+      VALUES ('context-record-upload-receipt', 'artifact_version', 'artifact-version-upload', 'source_artifact');
     `);
 
     const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
@@ -1127,6 +1139,7 @@ describe('auditCandidateIngestion', () => {
     expect(audit.sourceProof.documentProfileExtractionGapCount).toBe(1);
     expect(audit.sourceProof.documentProfileMissingExtractionProofCount).toBe(0);
     expect(audit.sourceProof.profileUploadArtifactVersionCount).toBe(1);
+    expect(audit.sourceProof.profileUploadReceiptContextCount).toBe(1);
     expect(audit.failures).toContain('1 PDF/DOCX Talent Pool profile upload(s) are explicit profile_text_extraction_needed evidence gaps with raw upload receipts and no extracted profile text');
     expect(audit.failures).not.toContain('1 submitted Talent Pool intake(s) lack exact-source candidate-node projection');
     expect(audit.nextActions).toContain('Run document extraction/backfill before projecting profile claims from PDF/DOCX uploads; keep the raw upload receipt as the only evidence until text exists.');
@@ -1169,6 +1182,7 @@ describe('auditCandidateIngestion', () => {
     expect(audit.sourceProof.documentProfileSourceSpanCount).toBe(0);
     expect(audit.sourceProof.documentProfileExtractionGapCount).toBe(0);
     expect(audit.sourceProof.documentProfileMissingExtractionProofCount).toBe(1);
+    expect(audit.sourceProof.profileUploadReceiptContextCount).toBe(0);
     expect(audit.sourceProof.submittedIntakeWithoutExactCandidateNodeCount).toBe(1);
     expect(audit.failures).toContain('1 PDF/DOCX Talent Pool profile upload(s) have neither extracted source spans nor an explicit profile_text_extraction_needed upload receipt gap');
     expect(audit.nextActions).toContain('Repair PDF/DOCX profile ingestion so each current document key has extracted source spans or an explicit profile_text_extraction_needed upload receipt gap.');

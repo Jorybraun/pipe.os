@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter interview cards now flag whether submitted assessment work has a review artifact, distinguishing external GitHub commits from source-backed captured workspace diffs and missing diff proof.
 - Open-source workspace dev smoke now fails if a workspace-only commit lacks a recruiter-visible captured `code_diff` panel, keeping the reviewable-diff path covered when no GitHub compare URL exists.
 - Recruiter assessment detail now renders the full captured `code_diff` source text for workspace-only commits instead of leaving reviewers with only a compact teaser or a potentially fake GitHub compare link.
 - Recruiter interview lists now return summary-only assessment challenge packets while preserving exact source text for detail/progress reads, reducing first-page dashboard payload without losing provenance.
@@ -43,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Talent Pool profile uploads now project a source-backed `talent_pool_profile_upload_receipt` person-context record that cites the raw upload `artifact_version`, giving unextractable PDF/DOCX gaps artifact-level provenance without fabricating text claims.
 - Candidate-ingestion audit and Talent Pool PDF-gap smokes now classify receipt-backed unextractable PDF/DOCX uploads as explicit `profile_text_extraction_needed` document gaps instead of generic missing exact-source candidate-node projections.
 - Scheduled Talent Pool repair now normalizes historical unextractable PDF/DOCX `parse_resume` failures into the explicit `profile_text_extraction_needed` evidence-gap state instead of leaving them as failed ingestion rows.
 - Talent Pool dev smokes now fail unless recruiter candidate and canonical person graphs expose the submitted profile context record with exact `source_span` provenance, strengthening the raw-source-to-person-read proof.

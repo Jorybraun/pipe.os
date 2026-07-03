@@ -96,6 +96,7 @@ export interface CandidateSourceProofAudit {
   documentProfileExtractionGapCount: number;
   documentProfileMissingExtractionProofCount: number;
   profileUploadArtifactVersionCount: number;
+  profileUploadReceiptContextCount: number;
   contextSourceRefCount: number;
 }
 
@@ -191,6 +192,7 @@ interface SourceProofRow {
   document_profile_extraction_gap_count: number | null;
   document_profile_missing_extraction_proof_count: number | null;
   profile_upload_artifact_version_count: number | null;
+  profile_upload_receipt_context_count: number | null;
   context_source_ref_count: number | null;
 }
 
@@ -632,6 +634,13 @@ async function loadSourceProof(
                  FROM linked_workspace_people lwp
                  JOIN artifacts a ON a.workspace_person_id = lwp.workspace_person_id
                  JOIN artifact_versions av ON av.artifact_id = a.id
+                 JOIN context_records cr
+                   ON cr.workspace_person_id = lwp.workspace_person_id
+                  AND cr.record_type = 'talent_pool_profile_upload_receipt'
+                 JOIN context_record_source_refs crsr
+                   ON crsr.context_record_id = cr.id
+                  AND crsr.source_ref_type = 'artifact_version'
+                  AND crsr.source_ref_id = av.id
                 WHERE lwp.candidate_id = ac.id
                   AND av.storage_key = t.profile_r2_key
                   AND (
@@ -801,6 +810,13 @@ async function loadSourceProof(
                FROM linked_workspace_people lwp
                JOIN artifacts a ON a.workspace_person_id = lwp.workspace_person_id
                JOIN artifact_versions av ON av.artifact_id = a.id
+               JOIN context_records cr
+                 ON cr.workspace_person_id = lwp.workspace_person_id
+                AND cr.record_type = 'talent_pool_profile_upload_receipt'
+               JOIN context_record_source_refs crsr
+                 ON crsr.context_record_id = cr.id
+                AND crsr.source_ref_type = 'artifact_version'
+                AND crsr.source_ref_id = av.id
               WHERE lwp.candidate_id = ac.id
                 AND av.storage_key = t.profile_r2_key
                 AND (
@@ -844,6 +860,13 @@ async function loadSourceProof(
                  FROM linked_workspace_people lwp
                  JOIN artifacts a ON a.workspace_person_id = lwp.workspace_person_id
                  JOIN artifact_versions av ON av.artifact_id = a.id
+                 JOIN context_records cr
+                   ON cr.workspace_person_id = lwp.workspace_person_id
+                  AND cr.record_type = 'talent_pool_profile_upload_receipt'
+                 JOIN context_record_source_refs crsr
+                   ON crsr.context_record_id = cr.id
+                  AND crsr.source_ref_type = 'artifact_version'
+                  AND crsr.source_ref_id = av.id
                 WHERE lwp.candidate_id = ac.id
                   AND av.storage_key = t.profile_r2_key
                   AND (
@@ -866,6 +889,26 @@ async function loadSourceProof(
              OR a.logical_key = 'roleless_candidate_profile_upload'
              OR json_extract(a.metadata_json, '$.evidenceKind') = 'profile_upload_source'
            )) AS profile_upload_artifact_version_count,
+       (SELECT COUNT(DISTINCT cr.id)
+          FROM audited_candidates ac
+          JOIN talent_pool_intakes t ON t.candidate_id = ac.id
+          JOIN linked_workspace_people lwp ON lwp.candidate_id = ac.id
+          JOIN artifacts a ON a.workspace_person_id = lwp.workspace_person_id
+          JOIN artifact_versions av ON av.artifact_id = a.id
+          JOIN context_records cr
+            ON cr.workspace_person_id = lwp.workspace_person_id
+           AND cr.record_type = 'talent_pool_profile_upload_receipt'
+          JOIN context_record_source_refs crsr
+            ON crsr.context_record_id = cr.id
+           AND crsr.source_ref_type = 'artifact_version'
+           AND crsr.source_ref_id = av.id
+         WHERE t.profile_r2_key IS NOT NULL
+           AND av.storage_key = t.profile_r2_key
+           AND (
+             a.artifact_type = 'profile_upload'
+             OR a.logical_key = 'roleless_candidate_profile_upload'
+             OR json_extract(a.metadata_json, '$.evidenceKind') = 'profile_upload_source'
+           )) AS profile_upload_receipt_context_count,
        (SELECT COUNT(DISTINCT crsr.context_record_id || ':' || crsr.source_ref_type || ':' || crsr.source_ref_id || ':' || crsr.evidence_role)
           FROM linked_workspace_people lwp
           JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
@@ -891,6 +934,7 @@ async function loadSourceProof(
     documentProfileExtractionGapCount: toNumber(row?.document_profile_extraction_gap_count),
     documentProfileMissingExtractionProofCount: toNumber(row?.document_profile_missing_extraction_proof_count),
     profileUploadArtifactVersionCount: toNumber(row?.profile_upload_artifact_version_count),
+    profileUploadReceiptContextCount: toNumber(row?.profile_upload_receipt_context_count),
     contextSourceRefCount: toNumber(row?.context_source_ref_count),
   };
 }
@@ -1372,6 +1416,7 @@ export async function auditCandidateIngestion(
       documentProfileExtractionGapCount: 0,
       documentProfileMissingExtractionProofCount: 0,
       profileUploadArtifactVersionCount: 0,
+      profileUploadReceiptContextCount: 0,
       contextSourceRefCount: 0,
     },
     personProjection: {
@@ -1784,6 +1829,7 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  document gap receipts: ${report.sourceProof.documentProfileExtractionGapCount}`);
   console.log(`  document proof gaps:   ${report.sourceProof.documentProfileMissingExtractionProofCount}`);
   console.log(`  upload artifact refs:  ${report.sourceProof.profileUploadArtifactVersionCount}`);
+  console.log(`  upload receipt records: ${report.sourceProof.profileUploadReceiptContextCount}`);
   console.log(`  context source refs:   ${report.sourceProof.contextSourceRefCount}`);
   console.log('');
   console.log('Person projection:');
