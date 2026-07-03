@@ -96,6 +96,9 @@ Uploaded profile files use content-hash storage keys, so replaying the same
 file reuses the same source artifact path. Each upload also creates an
 idempotent roleless person `profile_upload` artifact version for the original
 blob with storage key, content hash, media type, byte length, and filename.
+Pasted profile text is also written to the private Talent Pool R2 source path,
+and pasted/uploaded profile objects carry private `talent_pool_intake` and
+candidate metadata for raw evidence inventory.
 This artifact is source inventory only: if no exact text can be extracted, it
 must not create a source span, context record, candidate node, skill, readiness
 claim, or repo-family suggestion. PDF/DOCX extraction still runs in background

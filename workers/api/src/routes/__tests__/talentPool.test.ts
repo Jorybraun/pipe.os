@@ -598,6 +598,14 @@ describe('talent pool candidate RPC', () => {
       availability: 'Weekday afternoons after 2 PM.',
     });
     expect((intake as { profile_r2_key: string }).profile_r2_key).toMatch(/^talent-intake\/candidate-1\//);
+    expect(storage.puts.get((intake as { profile_r2_key: string }).profile_r2_key)).toMatchObject({
+      text: payload.resumeText,
+      contentType: 'text/plain; charset=utf-8',
+      customMetadata: {
+        source: 'talent_pool_intake',
+        candidateId: 'candidate-1',
+      },
+    });
 
     expect(sqlite.prepare(
       `SELECT status, github_url, linkedin_url, current_step, error_text

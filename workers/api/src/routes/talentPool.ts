@@ -611,7 +611,10 @@ async function persistIntake(
   if (!options.profileKey) {
     await c.env.STORAGE.put(profileKey, input.resumeText, {
       httpMetadata: { contentType: 'text/plain; charset=utf-8' },
-      customMetadata: { source: 'talent_pool_intake' },
+      customMetadata: {
+        source: 'talent_pool_intake',
+        candidateId: candidate.id,
+      },
     });
   }
 
