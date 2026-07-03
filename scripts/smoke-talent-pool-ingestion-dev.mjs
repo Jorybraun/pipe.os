@@ -721,6 +721,35 @@ function recruiterReadNeedle() {
   return 'source spans can be audited back';
 }
 
+function sourceRefProvesSubmittedText(source, needle) {
+  return source?.sourceRefType === 'source_span'
+    && typeof source.sourceSpanId === 'string'
+    && source.sourceSpanId.length > 0
+    && typeof source.sourceRefId === 'string'
+    && source.sourceRefId.length > 0
+    && typeof source.artifactVersionId === 'string'
+    && source.artifactVersionId.length > 0
+    && String(source.exactText ?? '').includes(needle);
+}
+
+function assertSourceBackedTalentPoolProfileContext(graph, needle, label) {
+  const contextRecords = Array.isArray(graph?.livingContext?.contextRecords)
+    ? graph.livingContext.contextRecords
+    : (Array.isArray(graph?.contextRecords) ? graph.contextRecords : []);
+  const profileRecord = contextRecords.find((record) =>
+    record?.recordType === 'talent_pool_profile_intake'
+    && record?.predicate === 'submitted_profile_evidence'
+    && Array.isArray(record?.sources)
+    && record.sources.some((source) => sourceRefProvesSubmittedText(source, needle)),
+  );
+  if (!profileRecord) {
+    const recordTypes = contextRecords
+      .map((record) => `${record?.recordType ?? 'unknown'}:${record?.predicate ?? 'none'}`)
+      .join(', ');
+    throw new Error(`${label} did not expose source-backed Talent Pool profile context for submitted text. Context records: ${recordTypes || 'none'}.`);
+  }
+}
+
 async function verifyRecruiterEvidenceReads(candidateId) {
   if (!verifyRecruiterReads) return null;
 
@@ -742,6 +771,7 @@ async function verifyRecruiterEvidenceReads(candidateId) {
   if (!JSON.stringify(candidateGraph).includes(needle)) {
     throw new Error(`Candidate living-context graph did not include submitted source text "${needle}".`);
   }
+  assertSourceBackedTalentPoolProfileContext(candidateGraph, needle, 'Candidate living-context graph');
 
   const contactsList = await requestJson(recruiterApiBase, '/api/v1/contacts?limit=200');
   const unifiedPerson = Array.isArray(contactsList?.contacts)
@@ -776,6 +806,18 @@ async function verifyRecruiterEvidenceReads(candidateId) {
   assertAtLeast(candidateEvidenceDepth?.totalContextRecords, 1, 'candidate evidence-depth context records');
 
   const encodedPersonId = encodeURIComponent(personId);
+  const personGraph = await requestJson(
+    recruiterApiBase,
+    `/api/v1/contacts/${encodedPersonId}/living-context`,
+  );
+  if (personGraph?.person?.personId !== personId) {
+    throw new Error('Canonical person living-context graph did not resolve the same person id.');
+  }
+  if (personGraph?.person?.workspacePersonId !== workspacePersonId) {
+    throw new Error('Canonical person living-context graph did not resolve the canonical workspace person.');
+  }
+  assertSourceBackedTalentPoolProfileContext(personGraph, needle, 'Canonical person living-context graph');
+
   const personSearch = await requestJson(
     recruiterApiBase,
     `/api/v1/contacts/${encodedPersonId}/living-context/search?q=${encodeURIComponent(needle)}`,
@@ -818,6 +860,7 @@ async function verifyRecruiterEvidenceReads(candidateId) {
     timelineEntries: personTimeline.totalEntries,
     personEvidenceSourceSpans: personEvidenceDepth.totalSourceSpans,
     personEvidenceContextRecords: personEvidenceDepth.totalContextRecords,
+    sourceBackedProfileContext: true,
   };
 }
 

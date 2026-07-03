@@ -315,7 +315,10 @@ unless `--skip-recruiter-reads` is passed: candidate living-context graph,
 unified People list, candidate source search, candidate evidence-depth, person
 source search, person evidence timeline, and person evidence-depth must all
 resolve the same canonical `workspace_people` projection and return the submitted
-exact source text. Ready smokes also require
+exact source text. Ready smokes also require both the candidate graph and the
+canonical person graph to expose a `talent_pool_profile_intake` context record
+with a `source_span` ref whose exact text contains the submitted profile source.
+Ready smokes also require
 `submittedIntakeWithoutExactCandidateNodeCount` to be zero.
 `smoke:talent-pool-pdf-gap-dev` is intentionally different:
 it uploads an unextractable PDF and expects the audit to remain `not_ready`
@@ -889,6 +892,15 @@ The same bounded window is still `not_ready` because one recent PDF/DOCX intake
 has a failed `candidate_ingestion` row at `parse_resume` and lacks exact-source
 candidate-node projection; that row needs document extraction/replay or an
 artifact-receipt-only model before the recent-window audit can become ready.
+The ready app-dev smoke was refreshed on 2026-07-03 with
+`npm run smoke:talent-pool-ingestion-dev`, creating invite
+`1fbde4d7-eb06-48cb-8a5a-62ce56787758`. The proof reported
+`status: ready`, `sourceLessPositiveClaimCount: 0`,
+`duplicateProjectedEdgeCount: 0`, `candidateNodeExactSourceQuoteCount: 6`,
+`submittedIntakeWithoutExactCandidateNodeCount: 0`,
+`contextSourceRefCount: 8`, `keyHashMatchesObject: true`,
+`objectMatchesSubmittedSource: true`, and recruiter/person read
+`sourceBackedProfileContext: true` for the canonical person graph.
 
 Browser proof on 2026-07-02 uses
 `e2e/talent-pool-intake.unauth.spec.ts` with the unauthenticated Playwright
