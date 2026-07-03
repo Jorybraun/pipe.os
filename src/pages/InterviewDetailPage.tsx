@@ -851,6 +851,10 @@ function readableList(parts: string[]): string {
   return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
 }
 
+function pluralVerb(parts: readonly unknown[], singular: string, plural: string): string {
+  return parts.length === 1 ? singular : plural;
+}
+
 function assessmentHasSatisfiedCoverage(
   progress: AssessmentProgressSnapshot | null,
   label: string,
@@ -1139,6 +1143,203 @@ function workspaceAssessmentNextActionItem(progress: AssessmentProgressSnapshot 
     detail: progress?.nextActionLabel ?? 'Create or configure the source-backed assessment before relying on this interview.',
     tone: progress?.nextAction === 'RESOLVE_DIAGNOSTIC' ? 'blocked' : 'neutral',
   };
+}
+
+function workspaceAssessmentProofDecisionLabel(label: string): string {
+  switch (label) {
+    case 'challenge_packet':
+      return 'Complete challenge packet';
+    case 'work_evidence':
+      return 'Candidate work evidence';
+    case 'assessment_commit':
+    case 'git_commit':
+      return 'Assessment branch commit';
+    case 'code_diff':
+      return 'Code diff';
+    case 'test_run':
+      return 'Test or verification run';
+    case 'terminal_activity':
+      return 'Terminal activity';
+    case 'code_editor_activity':
+      return 'Code editor activity';
+    case 'ai_assistance':
+      return 'AI-use trail';
+    case 'workspace_captured_commit':
+      return 'Workspace-captured commit';
+    case 'transcript_or_chat':
+      return 'Explanation trail';
+    default:
+      return assessmentProofDisplayLabel(label);
+  }
+}
+
+function workspaceAssessmentSourceRefBasisLabel(kind: string): string {
+  switch (kind) {
+    case 'review_challenge_packet':
+    case 'open_source_challenge_packet':
+    case 'repo_task_challenge_packet':
+    case 'challenge_packet':
+      return 'challenge packet';
+    case 'git_commit':
+      return 'git commit';
+    case 'code_diff':
+      return 'code diff';
+    case 'test_run':
+      return 'test run';
+    case 'terminal_command':
+      return 'terminal command';
+    case 'terminal_output':
+      return 'terminal output';
+    case 'code_server_file_observation':
+      return 'file observation';
+    case 'room_chat_message':
+      return 'room chat message';
+    case 'meeting_transcript_segment':
+      return 'transcript segment';
+    case 'ai_user_prompt':
+      return 'AI prompt';
+    case 'ai_agent_response':
+    case 'agent_response':
+      return 'agent response';
+    default:
+      return kind.replace(/[_-]+/g, ' ');
+  }
+}
+
+function workspaceAssessmentSourceRefBasis(progress: AssessmentProgressSnapshot | null): string {
+  const counts = progress?.sourceRefCounts ?? [];
+  if (counts.length === 0) return 'No source refs captured yet.';
+  const priority = new Map([
+    ['review_challenge_packet', 0],
+    ['open_source_challenge_packet', 1],
+    ['repo_task_challenge_packet', 2],
+    ['challenge_packet', 3],
+    ['git_commit', 4],
+    ['code_diff', 5],
+    ['test_run', 6],
+    ['terminal_command', 7],
+    ['terminal_output', 8],
+    ['code_server_file_observation', 9],
+    ['room_chat_message', 10],
+    ['meeting_transcript_segment', 11],
+    ['ai_user_prompt', 12],
+    ['ai_agent_response', 13],
+    ['agent_response', 14],
+  ]);
+  const parts = [...counts]
+    .filter((item) => item.count > 0)
+    .sort((a, b) => (priority.get(a.kind) ?? 100) - (priority.get(b.kind) ?? 100)
+      || a.kind.localeCompare(b.kind))
+    .slice(0, 5)
+    .map((item) => sourceRefCountLabel(
+      item.count,
+      workspaceAssessmentSourceRefBasisLabel(item.kind),
+    ))
+    .filter((item): item is string => Boolean(item));
+  return parts.length > 0 ? readableList(parts) : 'No source refs captured yet.';
+}
+
+function workspaceAssessmentValidityProof(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem[] {
+  const requiredProof = assessmentRequiredProofItems(progress);
+  const confidenceSignals = assessmentConfidenceSignalItems(progress);
+  const satisfiedRequired = requiredProof
+    .filter((item) => item.satisfied)
+    .map((item) => workspaceAssessmentProofDecisionLabel(item.label));
+  const missingRequired = requiredProof
+    .filter((item) => !item.satisfied)
+    .map((item) => workspaceAssessmentProofDecisionLabel(item.label));
+  const satisfiedConfidence = confidenceSignals
+    .filter((item) => item.satisfied)
+    .map((item) => workspaceAssessmentProofDecisionLabel(item.label));
+  const missingConfidence = confidenceSignals
+    .filter((item) => !item.satisfied)
+    .map((item) => workspaceAssessmentProofDecisionLabel(item.label));
+
+  const validityItem: WorkspaceAssessmentReadoutItem = !progress
+    ? {
+        label: 'Valid because',
+        value: 'Not valid yet',
+        detail: 'No source-backed assessment session exists yet.',
+        tone: 'blocked',
+      }
+    : missingRequired.length > 0
+      ? {
+          label: 'Valid because',
+          value: 'Not valid yet',
+          detail: `Missing required source-backed proof: ${readableList(missingRequired)}.`,
+          tone: progress.hasChallengePacket ? 'watch' : 'blocked',
+        }
+      : {
+          label: 'Valid because',
+          value: 'Required proof is source-backed',
+          detail: satisfiedRequired.length > 0
+            ? `${readableList(satisfiedRequired)} ${pluralVerb(satisfiedRequired, 'is', 'are')} source-backed.`
+            : 'Required source-backed proof is present.',
+          tone: 'positive',
+        };
+
+  const calibrationItem: WorkspaceAssessmentReadoutItem = missingRequired.length > 0
+    ? {
+        label: 'Still calibrate because',
+        value: 'Required proof missing',
+        detail: 'Resolve the missing required proof before using this assessment as hiring signal.',
+        tone: 'blocked',
+      }
+    : missingConfidence.length > 0
+      ? {
+          label: 'Still calibrate because',
+          value: 'Confidence gaps remain',
+          detail: `${readableList(missingConfidence)} ${pluralVerb(missingConfidence, 'is', 'are')} not captured.`,
+          tone: 'watch',
+        }
+      : {
+          label: 'Still calibrate because',
+          value: 'No confidence gaps flagged',
+          detail: satisfiedConfidence.length > 0
+            ? `${readableList(satisfiedConfidence)} ${pluralVerb(satisfiedConfidence, 'is', 'are')} captured.`
+            : 'No optional confidence signals were returned by the evaluator.',
+          tone: 'positive',
+        };
+
+  const useAsItem: WorkspaceAssessmentReadoutItem = !progress || missingRequired.length > 0
+    ? {
+        label: 'Use as',
+        value: 'Do not use for hiring decision',
+        detail: 'Treat this interview as setup or raw evidence until required proof exists.',
+        tone: 'blocked',
+      }
+    : progress.humanDecision
+      ? {
+          label: 'Use as',
+          value: 'Use with recorded human decision',
+          detail: 'A reviewer decision is tied to the source-backed assessment report and commit evidence.',
+          tone: progress.humanDecision.decision === 'advance' ? 'positive' : 'watch',
+        }
+      : progress.evaluation?.status === 'EVALUATED'
+        ? {
+            label: 'Use as',
+            value: 'Use as source-backed signal, not an automatic decision',
+            detail: 'Review the evaluator claims, cautions, diff, and evidence trail before advancing or rejecting.',
+            tone: assessmentEvaluationNeedsHumanCorrectnessReview(progress.evaluation) ? 'watch' : 'positive',
+          }
+        : {
+            label: 'Use as',
+            value: 'Use after evaluation',
+            detail: progress.nextActionLabel ?? 'Run source-backed evaluation before treating this work as hiring signal.',
+            tone: 'neutral',
+          };
+
+  return [
+    validityItem,
+    calibrationItem,
+    {
+      label: 'Evidence basis',
+      value: 'Source refs captured',
+      detail: workspaceAssessmentSourceRefBasis(progress),
+      tone: progress?.sourceRefCounts.length ? 'positive' : 'watch',
+    },
+    useAsItem,
+  ];
 }
 
 function workspaceAssessmentCollaborationItem(progress: AssessmentProgressSnapshot): WorkspaceAssessmentReadoutItem {
@@ -3608,6 +3809,7 @@ export default function InterviewDetailPage(): JSX.Element {
     setup: interview.assessmentSetup,
     challengeText: assessmentChallengeText,
   });
+  const workspaceAssessmentValidity = workspaceAssessmentValidityProof(assessmentProgress);
   const showsRoomPanel = !isCodeReviewInterview;
   const hasCallRecordEvidence = Boolean(
     interview.transcriptArtifact
@@ -4144,6 +4346,24 @@ export default function InterviewDetailPage(): JSX.Element {
             <div style={FIELD_LABEL}>Hiring manager readout</div>
             <div style={DECISION_COCKPIT_GRID}>
               {workspaceAssessmentReadout.map((item) => (
+                <div
+                  key={item.label}
+                  style={{
+                    ...DECISION_COCKPIT_ITEM,
+                    ...DECISION_NEXT_STEP_TONE[item.tone],
+                  }}
+                >
+                  <div style={FIELD_LABEL}>{item.label}</div>
+                  <div style={DECISION_COCKPIT_VALUE}>{item.value}</div>
+                  <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div data-testid="interview-workspace-assessment-validity-proof" style={DECISION_COCKPIT}>
+            <div style={FIELD_LABEL}>Score validity</div>
+            <div style={DECISION_COCKPIT_GRID}>
+              {workspaceAssessmentValidity.map((item) => (
                 <div
                   key={item.label}
                   style={{

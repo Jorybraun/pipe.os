@@ -1235,6 +1235,16 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Test evidence is missing');
     expect(decision).toHaveTextContent('Next action');
     expect(decision).toHaveTextContent('Review evaluation');
+    const validity = screen.getByTestId('interview-workspace-assessment-validity-proof');
+    expect(validity).toHaveTextContent('Score validity');
+    expect(validity).toHaveTextContent('Valid because');
+    expect(validity).toHaveTextContent('Complete challenge packet, Assessment branch commit, and Code diff are source-backed');
+    expect(validity).toHaveTextContent('Still calibrate because');
+    expect(validity).toHaveTextContent('Test or verification run, Code editor activity, and AI-use trail are not captured');
+    expect(validity).toHaveTextContent('Evidence basis');
+    expect(validity).toHaveTextContent('1 git commit, 1 code diff, and 1 test run');
+    expect(validity).toHaveTextContent('Use as');
+    expect(validity).toHaveTextContent('Use as source-backed signal, not an automatic decision');
     const claims = screen.getByTestId('interview-assessment-evaluation-claims');
     expect(claims).toHaveTextContent('Evidence-backed claims');
     expect(claims).toHaveTextContent('Strength');

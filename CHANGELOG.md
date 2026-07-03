@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Workspace assessment detail now includes a recruiter-facing score-validity proof that states why the report is usable, what confidence gaps remain, which source refs back it, and how to use it without treating PIPE as an automatic hiring decision.
 - PIPE-matched open-source assessment packets now carry deterministic assessment-fit calibration into recruiter list/detail readouts, including difficulty, seniority, target time, and sizing facts from the source-backed review profile.
 - Recruiter interview cards now show source-backed challenge match proof from summary-only assessment packets, so the list view explains why PIPE assigned a repo task without exposing internal source ref IDs.
 - Source-backed assessment evaluation now drops unsupported positive model claims for tests, verification, or AI use when the cited source refs do not prove that evidence, and reports missing `test_run` proof as a recruiter-visible diagnostic.
