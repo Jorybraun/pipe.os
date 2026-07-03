@@ -746,7 +746,7 @@ describe('corpusSeeder', () => {
       'packet-2',
       JSON.stringify([
         rankedChallenge('packet-2', 1, 0.88),
-        rankedChallenge('packet-1', 2, 0.84),
+        rankedChallenge('packet-1', 2, 0.2),
       ]),
       '2026-07-02T21:01:00.000Z',
     );
@@ -763,6 +763,7 @@ describe('corpusSeeder', () => {
       'packet-2',
     ]);
     expect(result.corpus.metadata.totalExpectedPackets).toBe(2);
+    expect(() => validateCorpus(result.corpus)).not.toThrow();
   });
 
   it('namespaces shared living-context assertions by candidate in seeded corpora', async () => {
