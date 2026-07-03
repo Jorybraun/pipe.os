@@ -153,10 +153,12 @@ describe('AssessmentStatusStrip', () => {
   });
 
   it('surfaces durable assessment progress after commit submission', () => {
+    const onOpenSubmission = vi.fn();
     render(
       <AssessmentStatusStrip
         meetingType="DEV_CONTAINER_CHALLENGE"
         workspace={workspace()}
+        onOpenSubmission={onOpenSubmission}
         assessmentProgress={{
           ...progress,
           sourceRefCounts: [
@@ -174,6 +176,34 @@ describe('AssessmentStatusStrip', () => {
     expect(screen.getByTestId('assessment-ai-usage-state').textContent).toContain('AI response captured');
     expect(screen.getByText('Start source-backed AI or human evaluation.')).not.toBeNull();
     expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain('challenge, chat, workspace, tool activity, commit, AI response, tests');
+    expect(screen.getByTestId('assessment-open-submission').textContent).toContain('Review Submission');
+    expect(screen.getByTestId('assessment-open-submission').textContent).not.toContain('Submit Work');
+    fireEvent.click(screen.getByTestId('assessment-open-submission'));
+    expect(onOpenSubmission).toHaveBeenCalledTimes(1);
+  });
+
+  it('labels evaluated submissions as report-ready instead of asking for another submission', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace()}
+        onOpenSubmission={vi.fn()}
+        assessmentProgress={{
+          ...progress,
+          stage: 'EVALUATED',
+          nextAction: 'REVIEW_EVALUATION',
+          nextActionLabel: 'Review the source-backed report.',
+          evaluation: {
+            status: 'EVALUATED',
+            summary: 'Source-backed report ready.',
+            createdAt: '2026-07-03T20:00:00.000Z',
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('assessment-open-submission').textContent).toContain('Report Ready');
+    expect(screen.getByTestId('assessment-open-submission').textContent).not.toContain('Submit Work');
   });
 
   it('makes the absence of AI usage visible instead of implying it was captured', () => {

@@ -196,6 +196,8 @@ describe('AssessmentTaskBrief', () => {
     expect(briefText).toContain('Tests or verification note: Captured');
     expect(briefText).toContain('Candidate explanation: Captured');
     expect(briefText).toContain('Commit cccccccccc');
+    expect(screen.getByTestId('assessment-brief-open-submission').textContent).toContain('Review Submission');
+    expect(screen.getByTestId('assessment-brief-open-submission').textContent).not.toContain('Submit work');
     expect(briefText).not.toContain('sha256:packet-content-hash');
 
     fireEvent.click(screen.getByTestId('assessment-brief-open-workspace'));
@@ -296,6 +298,7 @@ describe('AssessmentTaskBrief', () => {
           },
         }}
         workspaceReady
+        onOpenSubmission={vi.fn()}
       />,
     );
 
@@ -353,6 +356,7 @@ describe('AssessmentTaskBrief', () => {
           },
         }}
         workspaceReady
+        onOpenSubmission={vi.fn()}
       />,
     );
 
@@ -363,6 +367,8 @@ describe('AssessmentTaskBrief', () => {
     expect(submission.textContent).toContain('cccccccccc');
     expect(submission.textContent).toContain('Verification gap captured');
     expect(submission.textContent).not.toContain('strong_evidence_to_advance');
+    expect(screen.getByTestId('assessment-brief-open-submission').textContent).toContain('Report Ready');
+    expect(screen.getByTestId('assessment-brief-open-submission').textContent).not.toContain('Submit work');
   });
 
   it('shows evaluator diagnostics instead of hiding an unavailable AI evaluator state', () => {

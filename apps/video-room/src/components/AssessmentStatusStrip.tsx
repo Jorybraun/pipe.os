@@ -13,6 +13,7 @@ import {
 import type { RoomAssessmentProgressSnapshot, RoomWorkspace } from '../types';
 import { summarizeChallengePacket } from '../lib/challengePacketSummary';
 import { summarizeAssessmentAiUse } from '../lib/aiUseSummary';
+import { assessmentSubmissionActionLabel } from '../lib/assessmentSubmissionState';
 
 export type AssessmentRoomMode = 'standard_call' | 'code_review' | 'dev_container_assessment';
 
@@ -198,6 +199,7 @@ export function AssessmentStatusStrip({
   const progressCommitSha = shortSha(assessmentProgress?.commit?.commitSha ?? null);
   const aiUse = assessmentProgress ? summarizeAssessmentAiUse(assessmentProgress) : null;
   const primaryEvaluationDiagnostic = assessmentProgress?.evaluation?.diagnostics?.[0] ?? null;
+  const submissionActionLabel = assessmentSubmissionActionLabel(assessmentProgress);
 
   return (
     <section
@@ -317,8 +319,8 @@ export function AssessmentStatusStrip({
             onClick={onOpenSubmission}
             data-testid="assessment-open-submission"
           >
-            <Upload size={13} />
-            Submit Work
+            {submissionActionLabel === 'Submit Work' ? <Upload size={13} /> : <CheckCircle2 size={13} />}
+            {submissionActionLabel}
           </button>
         )}
         {mode !== 'standard_call' && summary.expectedEvidence.length > 0 && (

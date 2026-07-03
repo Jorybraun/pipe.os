@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, CircleDashed, ClipboardCheck, GitBranch, ShieldCheck, SquareTerminal, Upload } from 'lucide-react';
 import { summarizeChallengePacket } from '../lib/challengePacketSummary';
 import { summarizeAssessmentAiUse } from '../lib/aiUseSummary';
+import { assessmentSubmissionActionLabel } from '../lib/assessmentSubmissionState';
 import type { RoomAssessmentProgressSnapshot, RoomWorkspace, RoomWorkspaceChallengePacket } from '../types';
 
 interface AssessmentTaskBriefProps {
@@ -203,6 +204,7 @@ export function AssessmentTaskBrief({
       : 'No test evidence captured';
   const evaluationDiagnostics = progress?.evaluation?.diagnostics?.slice(0, 3) ?? [];
   const canOpenSubmission = workspaceReady && !challengeSetupStep;
+  const submissionActionLabel = assessmentSubmissionActionLabel(progress, 'Submit work');
   const hasContract = Boolean(
     summary.task
     || summary.matchProof.length > 0
@@ -411,8 +413,8 @@ export function AssessmentTaskBrief({
         )}
         {canOpenSubmission && onOpenSubmission && (
           <button type="button" onClick={onOpenSubmission} data-testid="assessment-brief-open-submission">
-            <Upload size={14} />
-            Submit work
+            {submissionActionLabel === 'Submit work' ? <Upload size={14} /> : <CheckCircle2 size={14} />}
+            {submissionActionLabel}
           </button>
         )}
         {progress?.commit?.commitSha && (

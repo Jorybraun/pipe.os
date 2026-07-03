@@ -6,6 +6,10 @@ import {
   type CommitSubmissionFormFields,
 } from '../lib/commitSubmission';
 import { summarizeChallengePacket } from '../lib/challengePacketSummary';
+import {
+  assessmentSubmissionLocked,
+  assessmentSubmissionLockedReason,
+} from '../lib/assessmentSubmissionState';
 import type {
   RoomCommitSubmissionRequest,
   RoomCommitSubmissionResponse,
@@ -479,8 +483,12 @@ export function CommitSubmissionPanel({
     verificationNotes: '',
   });
   const displayedProgress = workspaceFinalizeResult?.progress ?? result?.progress ?? assessmentProgress;
+  const submissionLocked = assessmentSubmissionLocked(displayedProgress);
+  const submissionLockedReason = assessmentSubmissionLockedReason(displayedProgress);
+  const submissionButtonLabel = submissionLocked ? 'Submission captured' : 'Submit commit';
   const challengeDisabledReason = challengePacketDisabledReason(challengePacket, displayedProgress);
-  const effectiveDisabledReason = disabledReason ?? challengeDisabledReason;
+  const effectiveDisabledReason = disabledReason ?? challengeDisabledReason ?? submissionLockedReason;
+  const manualSubmissionDisabled = Boolean(disabledReason) || submissionLocked || submitting;
   const workspaceFinalizeBlockedReason = effectiveDisabledReason
     ?? workspaceFinalizeDisabledReason
     ?? (!workspaceFinalizeAvailable ? 'Launch the workspace before finalizing the assessment commit.' : null);
@@ -661,7 +669,7 @@ export function CommitSubmissionPanel({
             value={fields.repositoryUrl}
             onChange={(event) => setField('repositoryUrl', event.target.value)}
             placeholder="https://github.com/org/repo"
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
             data-testid="commit-submission-repository-url"
           />
         </label>
@@ -671,7 +679,7 @@ export function CommitSubmissionPanel({
             value={fields.forkRepositoryUrl}
             onChange={(event) => setField('forkRepositoryUrl', event.target.value)}
             placeholder="https://github.com/you/repo"
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
           />
         </label>
         <label>
@@ -680,7 +688,7 @@ export function CommitSubmissionPanel({
             value={fields.branchName}
             onChange={(event) => setField('branchName', event.target.value)}
             placeholder="pipe-assessment/my-fix"
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
             data-testid="commit-submission-branch"
           />
         </label>
@@ -690,7 +698,7 @@ export function CommitSubmissionPanel({
             value={fields.changedFilesText}
             onChange={(event) => setField('changedFilesText', event.target.value)}
             placeholder="modified src/retry.ts"
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
             rows={3}
             data-testid="commit-submission-changed-files"
           />
@@ -701,7 +709,7 @@ export function CommitSubmissionPanel({
             value={fields.baseCommitSha}
             onChange={(event) => setField('baseCommitSha', event.target.value)}
             placeholder="40-char SHA"
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
             data-testid="commit-submission-base-sha"
           />
         </label>
@@ -711,7 +719,7 @@ export function CommitSubmissionPanel({
             value={fields.commitSha}
             onChange={(event) => setField('commitSha', event.target.value)}
             placeholder="40-char SHA"
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
             data-testid="commit-submission-commit-sha"
           />
         </label>
@@ -721,7 +729,7 @@ export function CommitSubmissionPanel({
             value={fields.commitUrl}
             onChange={(event) => setField('commitUrl', event.target.value)}
             placeholder="https://github.com/you/repo/commit/..."
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
           />
         </label>
         <label>
@@ -730,7 +738,7 @@ export function CommitSubmissionPanel({
             value={fields.upstreamPullRequestUrl}
             onChange={(event) => setField('upstreamPullRequestUrl', event.target.value)}
             placeholder="https://github.com/org/repo/pull/123"
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
             data-testid="commit-submission-upstream-pr-url"
           />
         </label>
@@ -741,7 +749,7 @@ export function CommitSubmissionPanel({
           type="checkbox"
           checked={fields.upstreamPrConsent}
           onChange={(event) => setField('upstreamPrConsent', event.target.checked)}
-          disabled={Boolean(disabledReason) || submitting}
+          disabled={manualSubmissionDisabled}
           data-testid="commit-submission-upstream-consent"
         />
         <span>Candidate approved optional upstream PR tracking</span>
@@ -753,7 +761,7 @@ export function CommitSubmissionPanel({
           value={fields.narrative}
           onChange={(event) => setField('narrative', event.target.value)}
           placeholder="Submitted retry fix; tests passing locally."
-          disabled={Boolean(disabledReason) || submitting}
+          disabled={manualSubmissionDisabled}
           rows={2}
           data-testid="commit-submission-narrative"
         />
@@ -765,7 +773,7 @@ export function CommitSubmissionPanel({
           value={fields.commitEvidenceText}
           onChange={(event) => setField('commitEvidenceText', event.target.value)}
           placeholder="Paste git show --stat --no-patch output"
-          disabled={Boolean(disabledReason) || submitting}
+          disabled={manualSubmissionDisabled}
           rows={5}
           data-testid="commit-submission-commit-evidence"
         />
@@ -777,7 +785,7 @@ export function CommitSubmissionPanel({
           value={fields.diffText}
           onChange={(event) => setField('diffText', event.target.value)}
           placeholder="Paste git diff BASE..COMMIT"
-          disabled={Boolean(disabledReason) || submitting}
+          disabled={manualSubmissionDisabled}
           rows={7}
           data-testid="commit-submission-diff"
         />
@@ -789,7 +797,7 @@ export function CommitSubmissionPanel({
           value={fields.testEvidenceText}
           onChange={(event) => setField('testEvidenceText', event.target.value)}
           placeholder="Paste test command output, e.g. npm test -- retry"
-          disabled={Boolean(disabledReason) || submitting}
+          disabled={manualSubmissionDisabled}
           rows={4}
           data-testid="commit-submission-test-evidence"
         />
@@ -801,7 +809,7 @@ export function CommitSubmissionPanel({
           value={fields.verificationNotesText}
           onChange={(event) => setField('verificationNotesText', event.target.value)}
           placeholder="If test output is missing, record why and what remains unverified."
-          disabled={Boolean(disabledReason) || submitting}
+          disabled={manualSubmissionDisabled}
           rows={3}
           data-testid="commit-submission-verification-notes"
         />
@@ -837,8 +845,8 @@ export function CommitSubmissionPanel({
           disabled={Boolean(effectiveDisabledReason) || submitting}
           data-testid="commit-submission-submit"
         >
-          {submitting ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
-          Submit commit
+          {submitting ? <Loader2 size={14} className="spin" /> : submissionLocked ? <CheckCircle2 size={14} /> : <Send size={14} />}
+          {submissionButtonLabel}
         </button>
       </div>
     </form>

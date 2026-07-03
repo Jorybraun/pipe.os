@@ -217,6 +217,92 @@ describe('CommitSubmissionPanel', () => {
     expect(onFinalizeWorkspace).not.toHaveBeenCalled();
   });
 
+  it('locks duplicate commit submission once source-backed commit evidence is captured', () => {
+    const commitSha = 'e'.repeat(40);
+    const submittedProgress: RoomAssessmentProgressSnapshot = {
+      ...loadedProgress,
+      state: 'SUBMITTED',
+      stage: 'READY_FOR_EVALUATION',
+      nextAction: 'START_EVALUATION',
+      nextActionLabel: 'Start source-backed evaluation.',
+      hasCommitSubmission: true,
+      hasTestEvidence: true,
+      evidenceCounts: [
+        { kind: 'challenge_packet', count: 1 },
+        { kind: 'git_commit', count: 1 },
+        { kind: 'code_diff', count: 1 },
+        { kind: 'test_run', count: 1 },
+      ],
+      sourceRefCounts: [
+        { kind: 'git_commit', count: 1 },
+        { kind: 'code_diff', count: 1 },
+        { kind: 'test_run', count: 1 },
+      ],
+      latestEvent: {
+        kind: 'commit_submission',
+        sequence: 9,
+        occurredAt: '2026-06-29T20:03:00.000Z',
+      },
+      commit: {
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        forkRepositoryUrl: null,
+        branchName: 'pipe-assessment',
+        baseCommitSha: 'd'.repeat(40),
+        commitSha,
+        commitUrl: null,
+        upstreamPullRequestUrl: null,
+        upstreamPrConsent: false,
+        submissionSource: 'live_workspace',
+        submissionSourceLabel: 'Live workspace finalizer',
+        integrity: {
+          status: 'workspace_captured',
+          label: 'Workspace-captured commit',
+          detail: 'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
+          tone: 'verified',
+        },
+        challengeBinding: {
+          status: 'bound_to_assigned_challenge',
+          label: 'Bound to assigned challenge',
+          detail: 'Submitted repository and base commit match the assigned source-backed challenge packet.',
+          tone: 'verified',
+        },
+        changedFiles: [{ path: 'src/retry.ts', status: 'modified' }],
+        occurredAt: '2026-06-29T20:03:00.000Z',
+      },
+    };
+    const onSubmit = vi.fn();
+    const onFinalizeWorkspace = vi.fn();
+
+    render(
+      <CommitSubmissionPanel
+        defaultRepositoryUrl="https://github.com/fallback/repo"
+        challengePacket={richPacket}
+        assessmentProgress={submittedProgress}
+        onSubmit={onSubmit}
+        workspaceFinalizeAvailable
+        onFinalizeWorkspace={onFinalizeWorkspace}
+      />,
+    );
+
+    expect(screen.getByTestId('commit-submission-disabled').textContent).toContain(
+      'Submission is captured. The assessment commit is locked for source-backed evaluation.',
+    );
+    expect(screen.getByTestId('workspace-finalize-disabled').textContent).toContain(
+      'Submission is captured. The assessment commit is locked for source-backed evaluation.',
+    );
+    expect(screen.getByTestId('commit-submission-submit')).toHaveProperty('disabled', true);
+    expect(screen.getByTestId('commit-submission-submit').textContent).toContain('Submission captured');
+    expect(screen.getByTestId('workspace-finalize-submit')).toHaveProperty('disabled', true);
+    expect(screen.getByTestId('commit-submission-commit-sha')).toHaveProperty('disabled', true);
+    expect(screen.getByTestId('commit-submission-diff')).toHaveProperty('disabled', true);
+
+    fireEvent.click(screen.getByTestId('commit-submission-submit'));
+    fireEvent.click(screen.getByTestId('workspace-finalize-submit'));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onFinalizeWorkspace).not.toHaveBeenCalled();
+  });
+
   it('submits the current live workspace HEAD through the real finalizer path', async () => {
     const commitSha = 'b'.repeat(40);
     const onSubmit = vi.fn();

@@ -53,6 +53,7 @@ import {
 import { useAssessmentProgressPolling } from './hooks/useAssessmentProgressPolling';
 import { useToolSurfaceManager } from './hooks/useToolSurfaceManager';
 import { shouldAutoRelaunchWorkspace } from './lib/workspaceRecovery';
+import { assessmentSubmissionActionLabel } from './lib/assessmentSubmissionState';
 import { StandardLayout } from './components/StandardLayout';
 import { ChatPanel, type ChatMessage } from './components/ChatPanel';
 import { TerminalPanel } from './components/TerminalPanel';
@@ -1276,6 +1277,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       onOpenSubmission={() => openSubmissionPanel()}
     />
   );
+  const submissionActionLabel = assessmentSubmissionActionLabel(assessmentProgress);
 
   const renderSurfaceContent = (surface: ToolSurfaceState): JSX.Element => {
     switch (surface.surfaceType) {
@@ -1537,6 +1539,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recordingActive={visibleRecordingActive}
       modeLabel={roomAssessmentModeLabel}
       primarySurface={roomAssessmentMode === 'dev_container_assessment' ? 'workspace' : 'video'}
+      submissionActionLabel={submissionActionLabel}
     />
   );
 
