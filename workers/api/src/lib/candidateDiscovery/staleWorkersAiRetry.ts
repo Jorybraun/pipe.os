@@ -482,7 +482,40 @@ export async function processTalentPoolOperationalContextRepairs(
                AND app.pipeline_id IS NULL
           )
         )
-      ORDER BY t.updated_at DESC
+      ORDER BY
+        CASE WHEN EXISTS (
+          SELECT 1
+            FROM candidate_nodes cn
+           WHERE cn.candidate_id = c.id
+             AND cn.superseded_at IS NULL
+             AND cn.source_type = 'resume'
+             AND json_extract(cn.extracted_properties_json, '$.source_quote_validated') = 1
+             AND COALESCE(json_extract(cn.extracted_properties_json, '$.source_span_id'), '') = ''
+             AND (
+               cn.source_reference IS NULL
+               OR cn.source_reference NOT LIKE 'source_span:%'
+             )
+        ) THEN 0 ELSE 1 END,
+        CASE WHEN EXISTS (
+          SELECT 1
+            FROM candidate_nodes cn
+            JOIN source_spans ss
+              ON ss.id = COALESCE(
+                json_extract(cn.extracted_properties_json, '$.source_span_id'),
+                CASE
+                  WHEN cn.source_reference LIKE 'source_span:%' THEN substr(cn.source_reference, 13)
+                  ELSE NULL
+                END
+              )
+            JOIN artifact_versions av ON av.id = ss.artifact_version_id
+           WHERE cn.candidate_id = c.id
+             AND cn.superseded_at IS NULL
+             AND cn.source_type IN ('resume', 'talent_pool_profile_intake')
+             AND t.profile_r2_key IS NOT NULL
+             AND TRIM(t.profile_r2_key) <> ''
+             AND COALESCE(av.storage_key, '') <> t.profile_r2_key
+        ) THEN 0 ELSE 1 END,
+        t.updated_at DESC
       LIMIT ?1`,
   ).bind(boundedLimit).all<{ candidate_id: string }>();
 

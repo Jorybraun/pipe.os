@@ -131,6 +131,9 @@ validated exact resume nodes can attach `source_span:<id>` refs to the current
 profile source instead of staying source-less or stale. Document blobs are not
 treated as text-profile claims by this repair; PDF/DOCX evidence still requires
 successful extraction.
+The scheduled repair batch orders candidates with missing resume source-span
+refs or stale profile source spans ahead of already-clean recent submissions, so
+unscoped audit debt burns down before cron spends work on healthy intakes.
 Background projection receives the roleless Talent Pool person identity and
 background decomposition runs with legacy candidate-node mirroring disabled, so
 it must not create `applications` or `person_roles` before a role-backed process
