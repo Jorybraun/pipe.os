@@ -4,9 +4,11 @@ import {
   matchQualityCasesFromEvaluationCorpus,
   parseOptions,
   parseMatchQualityCorpusJson,
+  resolveLatestExpertCorpusId,
   validateOptions,
 } from './runMatchQualityEvaluation';
 import type { EvaluationCorpus } from '../src/lib/challengeMatching/evaluation';
+import type { D1Database } from '@cloudflare/workers-types';
 
 function evaluationCorpus(): EvaluationCorpus {
   return {
@@ -111,6 +113,31 @@ function evaluationCorpus(): EvaluationCorpus {
   };
 }
 
+function fakeEvaluationCorpusDb(rows: Array<{
+  corpus_id: string;
+  expert_label_count: number;
+  synthetic_fixture_count: number;
+  created_at: number;
+}>): D1Database {
+  return {
+    prepare(sql: string) {
+      return {
+        all: async () => {
+          const source = sql.includes('expert_label_count > 0')
+            ? rows.filter((row) => row.expert_label_count > 0 && row.synthetic_fixture_count === 0)
+            : rows;
+          return {
+            success: true,
+            results: [...source].sort((left, right) =>
+              right.created_at - left.created_at || right.corpus_id.localeCompare(left.corpus_id),
+            ).slice(0, 1),
+          };
+        },
+      };
+    },
+  } as unknown as D1Database;
+}
+
 describe('runMatchQualityEvaluation corpus loading', () => {
   it('parses remote app-dev D1 options for stored corpus evaluation', () => {
     const options = parseOptions([
@@ -128,6 +155,7 @@ describe('runMatchQualityEvaluation corpus loading', () => {
       databaseId: 'app-dev-db-id',
       corpusFile: undefined,
       corpusId: 'reviewed-code-review-corpus',
+      latestExpertCorpus: false,
       remote: true,
       requirePass: true,
       allowDraftCorpus: false,
@@ -154,7 +182,36 @@ describe('runMatchQualityEvaluation corpus loading', () => {
       '--database-id=app-dev-db-id',
     ]);
 
-    expect(() => validateOptions(options)).toThrow('--corpus-file or --corpus-id is required');
+    expect(() => validateOptions(options)).toThrow('--corpus-file, --corpus-id, or --latest-expert-corpus is required');
+  });
+
+  it('parses latest expert corpus auto-selection', () => {
+    const options = parseOptions([
+      '--remote',
+      '--database-id=app-dev-db-id',
+      '--latest-expert-corpus',
+      '--require-pass',
+    ]);
+
+    expect(options).toEqual(expect.objectContaining({
+      latestExpertCorpus: true,
+      corpusId: undefined,
+      corpusFile: undefined,
+      requirePass: true,
+    }));
+    expect(() => validateOptions(options)).not.toThrow();
+  });
+
+  it('rejects ambiguous latest expert corpus sources', () => {
+    const options = parseOptions([
+      '--remote',
+      '--database-id=app-dev-db-id',
+      '--latest-expert-corpus',
+      '--corpus-id',
+      'explicit-corpus',
+    ]);
+
+    expect(() => validateOptions(options)).toThrow('pass only one corpus source');
   });
 
   it('rejects stored draft corpora before running the production match-quality gate', () => {
@@ -187,6 +244,38 @@ describe('runMatchQualityEvaluation corpus loading', () => {
 
     expect(options.allowDraftCorpus).toBe(true);
     expect(() => validateOptions(options)).toThrow('--allow-draft-corpus cannot be combined with --require-pass');
+  });
+
+  it('resolves the latest expert-labelled stored corpus', async () => {
+    await expect(resolveLatestExpertCorpusId(fakeEvaluationCorpusDb([
+      {
+        corpus_id: 'draft-newer',
+        expert_label_count: 0,
+        synthetic_fixture_count: 0,
+        created_at: 300,
+      },
+      {
+        corpus_id: 'expert-older',
+        expert_label_count: 3,
+        synthetic_fixture_count: 0,
+        created_at: 200,
+      },
+      {
+        corpus_id: 'synthetic-newest',
+        expert_label_count: 3,
+        synthetic_fixture_count: 1,
+        created_at: 400,
+      },
+    ]))).resolves.toBe('expert-older');
+  });
+
+  it('reports the latest draft when no expert-labelled stored corpus exists', async () => {
+    await expect(resolveLatestExpertCorpusId(fakeEvaluationCorpusDb([{
+      corpus_id: 'draft-only',
+      expert_label_count: 0,
+      synthetic_fixture_count: 0,
+      created_at: 300,
+    }]))).rejects.toThrow('No expert-labelled CODE_REVIEW match-quality corpus found; latest frozen corpus draft-only has 0 expert labels and 0 synthetic fixture labels.');
   });
 
   it('keeps compact match-quality corpus files unchanged', () => {

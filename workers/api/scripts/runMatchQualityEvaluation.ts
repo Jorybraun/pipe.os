@@ -5,6 +5,7 @@
  * Usage:
  *   npx tsx scripts/runMatchQualityEvaluation.ts --database-path .wrangler/.../db.sqlite --corpus-file ./corpus.json --require-pass
  *   npx tsx scripts/runMatchQualityEvaluation.ts --remote --database-id <d1-id> --corpus-id <stored-corpus> --require-pass
+ *   npx tsx scripts/runMatchQualityEvaluation.ts --remote --database-id <d1-id> --latest-expert-corpus --require-pass
  *   npx tsx scripts/runMatchQualityEvaluation.ts --remote --database-id <d1-id> --corpus-id <draft-corpus> --allow-draft-corpus
  */
 
@@ -63,6 +64,13 @@ interface FrozenCorpusRow {
   synthetic_fixture_count: number;
 }
 
+interface EvaluationCorpusSummaryRow {
+  corpus_id: string;
+  expert_label_count: number;
+  synthetic_fixture_count: number;
+  created_at: number;
+}
+
 interface StoredCorpusGateInput {
   corpusId: string;
   expertLabelCount: number;
@@ -75,6 +83,7 @@ export interface CliOptions {
   databaseId?: string;
   corpusFile?: string;
   corpusId?: string;
+  latestExpertCorpus: boolean;
   remote: boolean;
   requirePass: boolean;
   allowDraftCorpus: boolean;
@@ -193,6 +202,7 @@ export function parseOptions(argv: string[]): CliOptions {
     databaseId: valueFor(argv, '--database-id'),
     corpusFile: valueFor(argv, '--corpus-file'),
     corpusId: valueFor(argv, '--corpus-id'),
+    latestExpertCorpus: hasFlag(argv, '--latest-expert-corpus'),
     remote: hasFlag(argv, '--remote'),
     requirePass: hasFlag(argv, '--require-pass'),
     allowDraftCorpus: hasFlag(argv, '--allow-draft-corpus'),
@@ -207,14 +217,22 @@ export function validateOptions(options: CliOptions): void {
   if (!options.remote && !options.databasePath) {
     throw new Error('--database-path or --remote is required');
   }
-  if (!options.corpusFile && !options.corpusId) {
-    throw new Error('--corpus-file or --corpus-id is required');
+  const corpusSourceCount = [
+    Boolean(options.corpusFile),
+    Boolean(options.corpusId),
+    options.latestExpertCorpus,
+  ].filter(Boolean).length;
+  if (corpusSourceCount === 0) {
+    throw new Error('--corpus-file, --corpus-id, or --latest-expert-corpus is required');
   }
-  if (options.corpusFile && options.corpusId) {
-    throw new Error('pass only one of --corpus-file or --corpus-id');
+  if (corpusSourceCount > 1) {
+    throw new Error('pass only one corpus source');
   }
   if (options.databaseId && !options.remote) {
     throw new Error('--database-id requires --remote');
+  }
+  if (options.allowDraftCorpus && options.latestExpertCorpus) {
+    throw new Error('--allow-draft-corpus cannot be combined with --latest-expert-corpus');
   }
   if (options.allowDraftCorpus && options.requirePass) {
     throw new Error('--allow-draft-corpus cannot be combined with --require-pass');
@@ -357,6 +375,35 @@ async function loadStoredCorpus(
   return matchQualityCasesFromEvaluationCorpus(evaluationCorpus);
 }
 
+export async function resolveLatestExpertCorpusId(db: D1Database): Promise<string> {
+  const expertRows = await db.prepare(
+    `SELECT corpus_id, expert_label_count, synthetic_fixture_count, created_at
+       FROM evaluation_corpora
+      WHERE expert_label_count > 0
+        AND synthetic_fixture_count = 0
+      ORDER BY created_at DESC, corpus_id DESC
+      LIMIT 1`,
+  ).all<EvaluationCorpusSummaryRow>();
+  const expert = expertRows.results[0];
+  if (expert) return expert.corpus_id;
+
+  const latestRows = await db.prepare(
+    `SELECT corpus_id, expert_label_count, synthetic_fixture_count, created_at
+       FROM evaluation_corpora
+      ORDER BY created_at DESC, corpus_id DESC
+      LIMIT 1`,
+  ).all<EvaluationCorpusSummaryRow>();
+  const latest = latestRows.results[0];
+  if (!latest) {
+    throw new Error(
+      'No frozen CODE_REVIEW match-quality corpora found; create a draft with matching-eval:review, complete expert review, then persist the reviewed corpus.',
+    );
+  }
+  throw new Error(
+    `No expert-labelled CODE_REVIEW match-quality corpus found; latest frozen corpus ${latest.corpus_id} has ${latest.expert_label_count} expert labels and ${latest.synthetic_fixture_count} synthetic fixture labels.`,
+  );
+}
+
 async function main(): Promise<void> {
   const options = parseOptions(process.argv.slice(2));
   validateOptions(options);
@@ -366,9 +413,12 @@ async function main(): Promise<void> {
     ? remoteD1(options.databaseId)
     : new LocalD1(sqlite!) as unknown as D1Database;
   try {
+    const storedCorpusId = options.latestExpertCorpus
+      ? await resolveLatestExpertCorpusId(db)
+      : options.corpusId;
     const corpus = options.corpusFile
       ? loadCorpusFile(options.corpusFile)
-      : await loadStoredCorpus(db, options.corpusId!, {
+      : await loadStoredCorpus(db, storedCorpusId!, {
           allowDraftCorpus: options.allowDraftCorpus,
         });
     const result = await runMatchQualityEvaluation(
