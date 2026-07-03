@@ -603,6 +603,97 @@ async function createRelatedPersonBoundaryInterview(invite) {
   };
 }
 
+export function assertPersonRelatedBoundaryProfile({
+  profile,
+  selectedInterviewId,
+  selectedInterviewDetail = null,
+  selectedRepoUrl,
+  selectedPrNumber,
+  relatedBoundaryInterview,
+}) {
+  if (!relatedBoundaryInterview) return {
+    verified: false,
+    reason: 'no related boundary interview requested',
+  };
+
+  const scheduledInterviews = Array.isArray(profile?.scheduledInterviews)
+    ? profile.scheduledInterviews
+    : [];
+  const selected = scheduledInterviews.find((candidateInterview) =>
+    candidateInterview?.id === selectedInterviewId
+  ) ?? selectedInterviewDetail;
+  const relatedFromCandidateProfile = scheduledInterviews.find((candidateInterview) =>
+    candidateInterview?.id === relatedBoundaryInterview.interviewId
+  );
+  const relatedFromInterviewDetail = Array.isArray(selectedInterviewDetail?.relatedEvidenceInterviews)
+    ? selectedInterviewDetail.relatedEvidenceInterviews.find((candidateInterview) =>
+        candidateInterview?.id === relatedBoundaryInterview.interviewId
+      )
+    : null;
+  const related = relatedFromCandidateProfile ?? relatedFromInterviewDetail;
+  assert(
+    selected?.status === 'COMPLETED',
+    `Person profile boundary missing completed selected interview ${selectedInterviewId}: ${JSON.stringify(scheduledInterviews)}`,
+  );
+  assert(
+    related?.id === relatedBoundaryInterview.interviewId,
+    `Person profile boundary missing related same-person interview ${relatedBoundaryInterview.interviewId}: ${JSON.stringify(scheduledInterviews)}`,
+  );
+
+  const match = profile?.standaloneReviewMatch ?? null;
+  assert(
+    match?.submitted === true
+      && match?.matchStatus === 'MATCHED'
+      && match?.repoUrl === selectedRepoUrl
+      && String(match?.prNumber ?? '') === String(selectedPrNumber),
+    `Person profile selected code-review recommendation does not point at submitted interview ${selectedInterviewId}: ${JSON.stringify(match)}`,
+  );
+  assert(
+    match?.interviewId === undefined
+      || match.interviewId === selectedInterviewId,
+    `Person profile selected code-review recommendation points at related interview ${relatedBoundaryInterview.interviewId}: ${JSON.stringify(match)}`,
+  );
+  assert(
+    match.repoUrl !== relatedBoundaryInterview.repoUrl
+      || String(match.prNumber ?? '') !== String(relatedBoundaryInterview.prNumber ?? ''),
+    `Person profile selected code-review recommendation promoted related repo/PR ${relatedBoundaryInterview.repoUrl}#${relatedBoundaryInterview.prNumber}: ${JSON.stringify(match)}`,
+  );
+
+  return {
+    verified: true,
+    selectedInterviewId,
+    relatedInterviewId: relatedBoundaryInterview.interviewId,
+    relatedSource: relatedFromCandidateProfile ? 'candidate_profile' : 'interview_detail',
+    selectedRepoUrl,
+    selectedPrNumber,
+    relatedRepoUrl: relatedBoundaryInterview.repoUrl,
+    relatedPrNumber: relatedBoundaryInterview.prNumber,
+    scheduledCodeReviewCount: scheduledInterviews.filter((candidateInterview) =>
+      candidateInterview?.interviewType === 'CODE_REVIEW'
+    ).length,
+  };
+}
+
+async function verifyPersonRelatedBoundaryProfile({
+  candidateId,
+  selectedInterviewId,
+  selectedRepoUrl,
+  selectedPrNumber,
+  relatedBoundaryInterview,
+}) {
+  if (!relatedBoundaryInterview) return null;
+  const profile = await requestJson(`/api/v1/candidates/${candidateId}`);
+  const detail = await requestJson(`/api/v1/scheduling/interviews/${selectedInterviewId}`);
+  return assertPersonRelatedBoundaryProfile({
+    profile,
+    selectedInterviewId,
+    selectedInterviewDetail: detail?.interview ?? null,
+    selectedRepoUrl,
+    selectedPrNumber,
+    relatedBoundaryInterview,
+  });
+}
+
 async function resolveInvite(inviteToken) {
   return requestJson('/rpc/resolve-token', {
     method: 'POST',
@@ -1665,6 +1756,13 @@ async function main() {
       interviewId: invite.interviewId,
     });
     const relatedBoundaryInterview = await createRelatedPersonBoundaryInterview(invite);
+    const relatedBoundaryProfile = await verifyPersonRelatedBoundaryProfile({
+      candidateId: session.id,
+      selectedInterviewId: invite.interviewId,
+      selectedRepoUrl: challenge.githubRepoUrl,
+      selectedPrNumber: challenge.githubPrNumber,
+      relatedBoundaryInterview,
+    });
     const recruiterBrowserSmoke = await runRecruiterDetailBrowserSmoke({
       interviewId: invite.interviewId,
       expectedOutcome: 'matched',
@@ -1711,6 +1809,7 @@ async function main() {
       recruiterBrowserSmoke,
       submissionSmoke,
       relatedBoundaryInterview,
+      relatedBoundaryProfile,
     }, null, 2));
   } catch (error) {
     const context = {

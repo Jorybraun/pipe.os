@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW full-submit person-boundary smokes now verify the person-profile recommendation by API when recruiter browser proof is skipped, ensuring related same-person interviews stay context instead of replacing the submitted review decision.
 - CODE_REVIEW assess smokes now still verify recruiter detail projection readiness when only recruiter browser proof is skipped, preserving hiring-manager readout evidence in clean worktrees without Clerk browser credentials.
 - Unauthenticated CODE_REVIEW assess browser smokes can now skip Clerk global setup, letting clean worktrees prove the candidate `/assess` handoff without requiring recruiter-auth test secrets.
 - CODE_REVIEW full-submit app-dev smoke now verifies durable assessment evidence and source-backed evaluation claims against remote D1 instead of skipping evidence proof outside localhost.
