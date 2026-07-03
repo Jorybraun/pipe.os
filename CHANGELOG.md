@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Open-source workspace dev smoke now fails if a workspace-only commit lacks a recruiter-visible captured `code_diff` panel, keeping the reviewable-diff path covered when no GitHub compare URL exists.
 - Recruiter assessment detail now renders the full captured `code_diff` source text for workspace-only commits instead of leaving reviewers with only a compact teaser or a potentially fake GitHub compare link.
 - Recruiter interview lists now return summary-only assessment challenge packets while preserving exact source text for detail/progress reads, reducing first-page dashboard payload without losing provenance.
 - Candidate workspace finalization now accepts explicit verification commands and missing-test notes from both assessment cockpit surfaces, keeping test evidence or verification gaps source-backed at submit time.

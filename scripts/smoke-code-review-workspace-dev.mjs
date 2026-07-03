@@ -491,6 +491,11 @@ async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit,
     baseCommitSha: commit.baseCommitSha,
     commitSha: commit.commitSha,
   });
+  const capturedDiffSnippet = (progress.evidenceSnippets ?? []).find((snippet) =>
+    snippet.sourceRefType === 'code_diff'
+    && typeof snippet.exactText === 'string'
+    && snippet.exactText.trim().length > 0
+  ) ?? null;
   const sourceRefTypes = new Set((progress.sourceRefCounts ?? []).map((row) => row.kind));
   for (const requiredSourceRefType of ['git_commit', 'code_diff', 'test_run']) {
     if (!sourceRefTypes.has(requiredSourceRefType)) {
@@ -500,9 +505,18 @@ async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit,
   if (commit.commitUrl && !compareUrl) {
     throw new Error(`Recruiter detail cannot produce a GitHub compare URL from external commit metadata: ${JSON.stringify(commit)}`);
   }
+  if (!compareUrl) {
+    if (!capturedDiffSnippet) {
+      throw new Error(`Recruiter detail has no compare URL and no captured code_diff exact text: ${JSON.stringify(progress.evidenceSnippets)}`);
+    }
+    if (!capturedDiffSnippet.exactText.includes('diff --git')) {
+      throw new Error(`Recruiter detail captured code_diff does not look reviewable: ${capturedDiffSnippet.exactText.slice(0, 240)}`);
+    }
+  }
 
   return {
     compareUrl,
+    capturedDiffSnippet,
     sourceRefCounts: progress.sourceRefCounts ?? [],
     humanDecision: progress.humanDecision ?? null,
   };
@@ -560,7 +574,13 @@ async function recordHumanAssessmentDecision(interviewId, workspaceCommit, recom
   };
 }
 
-async function assertRecruiterReviewerReceiptBrowser(interviewId, workspaceCommit, submittedBranchName, humanDecision) {
+async function assertRecruiterReviewerReceiptBrowser(
+  interviewId,
+  workspaceCommit,
+  submittedBranchName,
+  humanDecision,
+  recruiterProjection,
+) {
   if (SKIP_RECRUITER_BROWSER) {
     return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_RECRUITER_BROWSER=1' };
   }
@@ -605,6 +625,20 @@ async function assertRecruiterReviewerReceiptBrowser(interviewId, workspaceCommi
     await expect(receipt).toContainText('Recorded by');
     await expect(receipt).toContainText('Human reviewer');
     await expect(receipt).not.toContainText('dev-user');
+    if (!recruiterProjection.compareUrl) {
+      const capturedDiff = page.getByTestId('interview-assessment-captured-diff');
+      await expect(capturedDiff).toBeVisible({ timeout: 60_000 });
+      await expect(capturedDiff).toContainText('Captured source-backed diff');
+      await expect(capturedDiff).toContainText('diff --git');
+      const capturedText = recruiterProjection.capturedDiffSnippet?.exactText ?? '';
+      const expectedDiffNeedles = CHANGE_PROFILE?.changedPaths?.slice(0, 2) ?? ['PIPE_WORKSPACE_SMOKE.md'];
+      for (const needle of expectedDiffNeedles) {
+        if (capturedText.includes(needle)) {
+          await expect(capturedDiff).toContainText(needle);
+        }
+      }
+      await expect(page.getByRole('link', { name: 'Compare base to submitted commit' })).toHaveCount(0);
+    }
 
     return { skipped: false };
   } finally {
@@ -1127,6 +1161,7 @@ async function main() {
     workspaceCommit,
     submittedBranchName,
     humanDecision,
+    recruiterProjection,
   );
   const recruiterListBrowser = await assertRecruiterListCardBrowser(
     interviewId,
@@ -1188,6 +1223,8 @@ async function main() {
     recruiterListCardVisible: !recruiterListBrowser.skipped,
     recruiterListCardSkippedReason: recruiterListBrowser.skipped ? recruiterListBrowser.reason : null,
     recruiterCompareUrl: recruiterProjection.compareUrl,
+    recruiterCapturedDiffVisible: !recruiterProjection.compareUrl && !recruiterBrowser.skipped,
+    recruiterCapturedDiffExactTextLength: recruiterProjection.capturedDiffSnippet?.exactText?.length ?? 0,
     recruiterSourceRefCounts: recruiterProjection.sourceRefCounts,
   }, null, 2));
 }
