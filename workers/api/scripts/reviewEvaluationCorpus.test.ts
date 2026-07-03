@@ -748,6 +748,7 @@ describe('evaluation corpus review CLI', () => {
 
     const template = JSON.parse(await readFile(reviewTemplatePath, 'utf8')) as ExpertReviewFile;
     expect(template.sourceCorpusId).toBe(summary.sourceCorpusId);
+    expect(template.sourceCorpusHash).toBe(summary.draftCorpusHash);
     expect(template.labels[0]).toEqual(expect.objectContaining({
       labelId: 'seeded-match-run-1-packet-1',
       explanation: expect.stringContaining('TODO'),
@@ -783,6 +784,18 @@ describe('evaluation corpus review CLI', () => {
         explanation: expect.stringContaining('TODO: replace'),
       }),
     ]);
+  });
+
+  it('builds an expert review template bound to an immutable source corpus hash', () => {
+    const packet = buildCorpusReviewPacket(loadFixtureCorpus());
+    const template = buildExpertReviewTemplate(packet, {
+      sourceCorpusHash: 'source-corpus-hash-1',
+    });
+
+    expect(template).toEqual(expect.objectContaining({
+      sourceCorpusId: 'sample-corpus-v1',
+      sourceCorpusHash: 'source-corpus-hash-1',
+    }));
   });
 
   it('builds a human-readable expert review markdown packet from source evidence', () => {
@@ -925,6 +938,9 @@ describe('evaluation corpus review CLI', () => {
     }));
     const template = JSON.parse(await readFile(reviewTemplatePath, 'utf8')) as ExpertReviewFile;
     expect(template.sourceCorpusId).toBe('sample-corpus-v1');
+    expect(template.sourceCorpusHash).toBe(
+      createHash('sha256').update(JSON.stringify(loadFixtureCorpus())).digest('hex'),
+    );
     expect(template.labels[0]?.explanation).toContain('TODO');
     const markdown = await readFile(reviewMarkdownPath, 'utf8');
     expect(markdown).toContain('# CODE_REVIEW Expert Corpus Review');
@@ -975,6 +991,27 @@ describe('evaluation corpus review CLI', () => {
       reviewedCorpusPath,
     ])).rejects.toThrow(
       'reviewed positive label requires contrast candidate and minimum score separation: label-1',
+    );
+  });
+
+  it('rejects completed expert reviews bound to a different source corpus hash', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-corpus-review-'));
+    const reviewFilePath = join(directory, 'review.json');
+    const reviewedCorpusPath = join(directory, 'reviewed-corpus.json');
+    const template = buildExpertReviewTemplate(buildCorpusReviewPacket(loadFixtureCorpus()), {
+      sourceCorpusHash: 'different-source-hash',
+    });
+    writeFileSync(reviewFilePath, JSON.stringify(completedReview(template), null, 2));
+
+    await expect(runCorpusReviewCli([
+      '--source-corpus-file',
+      corpusFixture.pathname,
+      '--review-file',
+      reviewFilePath,
+      '--reviewed-corpus',
+      reviewedCorpusPath,
+    ])).rejects.toThrow(
+      'review file sourceCorpusHash "different-source-hash" does not match source corpus hash',
     );
   });
 

@@ -103,6 +103,16 @@ export function validateExpertSeedSummary(summary, thresholds = {}) {
   if (typeof summary.draftCorpusHash !== 'string' || summary.draftCorpusHash.length === 0) {
     failures.push('draftCorpusHash is required');
   }
+  if (typeof summary.sourceCorpusHash !== 'string' || summary.sourceCorpusHash.length === 0) {
+    failures.push('sourceCorpusHash is required');
+  }
+  if (
+    typeof summary.draftCorpusHash === 'string'
+    && typeof summary.sourceCorpusHash === 'string'
+    && summary.draftCorpusHash !== summary.sourceCorpusHash
+  ) {
+    failures.push('sourceCorpusHash must match draftCorpusHash for the persisted draft corpus');
+  }
   if (readiness?.nextAction !== 'complete_expert_review') {
     failures.push(`readinessSummary.nextAction must be complete_expert_review; got ${String(readiness?.nextAction)}`);
   }
@@ -354,6 +364,7 @@ function main() {
     reviewPacketPath: summary.reviewPacketPath ?? options.reviewPacketPath,
     reviewTemplatePath: summary.reviewTemplatePath ?? options.reviewTemplatePath,
     reviewMarkdownPath: summary.reviewMarkdownPath ?? options.reviewMarkdownPath,
+    sourceCorpusHash: summary.sourceCorpusHash ?? null,
     draftPersisted: summary.draftPersisted === true,
     draftCorpusHash: summary.draftCorpusHash ?? null,
     thresholds,

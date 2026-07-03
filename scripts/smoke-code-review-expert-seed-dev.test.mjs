@@ -25,6 +25,7 @@ function readySummary(overrides = {}) {
     },
     draftPersisted: true,
     draftCorpusHash: 'sha256:draft-corpus',
+    sourceCorpusHash: 'sha256:draft-corpus',
     reviewPacketPath: '/tmp/review-packet.json',
     reviewTemplatePath: '/tmp/review-template.json',
     reviewMarkdownPath: '/tmp/review.md',
@@ -158,6 +159,18 @@ describe('CODE_REVIEW expert seed smoke contract', () => {
       'draftPersisted must be true so expert review has an immutable source corpus; got false',
     );
     expect(result.failures).toContain('draftCorpusHash is required');
+  });
+
+  it('rejects expert seed summaries whose source hash drifts from the persisted draft hash', () => {
+    const result = validateExpertSeedSummary({
+      ...readySummary(),
+      sourceCorpusHash: 'sha256:other-corpus',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toContain(
+      'sourceCorpusHash must match draftCorpusHash for the persisted draft corpus',
+    );
   });
 
   it('accepts an expert review packet with eligible draft labels and contrast suggestions', () => {
