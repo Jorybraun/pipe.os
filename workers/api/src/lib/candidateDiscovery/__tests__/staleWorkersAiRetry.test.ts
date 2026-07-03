@@ -7,6 +7,7 @@ import {
   isRetryableCandidateDiscoveryOutputFailure,
   isRetryableStaleWorkersAIModelFailure,
   isRetryableStalledInProgressIngestion,
+  isRetryableTransientIngestionFailure,
   maybeQueueRetryableStandaloneIngestion,
   processPipelineCandidateIngestionRetries,
   processStaleWorkersAIModelIngestionRetries,
@@ -196,6 +197,29 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       status: 'failed',
       current_step: 'embed_profile',
       error_text: 'Embed failed: Candidate Discovery response was not a JSON object',
+    })).toBe(false);
+  });
+
+  it('classifies transient ingestion infrastructure failures as retryable', () => {
+    expect(isRetryableTransientIngestionFailure({
+      status: 'failed',
+      current_step: 'embed_profile',
+      error_text: 'Embed failed: D1_ERROR: D1 DB is overloaded. Requests queued for too long.',
+    })).toBe(true);
+    expect(isRetryableTransientIngestionFailure({
+      status: 'failed',
+      current_step: 'persist_profile',
+      error_text: 'Persist failed: database is locked',
+    })).toBe(true);
+    expect(isRetryableTransientIngestionFailure({
+      status: 'failed',
+      current_step: 'embed_profile',
+      error_text: 'Embed failed: Candidate Discovery response was not a JSON object',
+    })).toBe(false);
+    expect(isRetryableTransientIngestionFailure({
+      status: 'pending',
+      current_step: 'embed_profile',
+      error_text: 'D1 DB is overloaded',
     })).toBe(false);
   });
 
@@ -663,27 +687,35 @@ describe('stale Workers AI candidate-ingestion retry', () => {
           error_text: null,
           updated_at: '2026-06-28T18:00:00.000Z',
         },
+        {
+          candidate_id: 'd1-overload',
+          resume_s3_key: 'talent-intake/d1-overload/profile.pdf',
+          status: 'failed',
+          current_step: 'embed_profile',
+          error_text: 'Embed failed: D1_ERROR: D1 DB is overloaded. Requests queued for too long.',
+          updated_at: '2026-07-03T20:46:14.891Z',
+        },
       ],
     });
     const env = buildEnv(db, fakeStorage(
       'Backend engineer building queue workers, runtime recovery, and exact provenance tests.',
     ));
 
-    await expect(processStaleWorkersAIModelIngestionRetries(env, 3)).resolves.toEqual({
-      scanned: 4,
-      queued: 3,
-      skipped: 1,
+    await expect(processStaleWorkersAIModelIngestionRetries(env, 5)).resolves.toEqual({
+      scanned: 5,
+      queued: 5,
+      skipped: 0,
       failed: 0,
     });
     const selectCall = db.__calls.find((call) => call.sql.includes('FROM candidate_ingestion ci'))!;
-    expect(selectCall.sql).toContain("ci.current_step IN ('talent_pool_profile_received', 'queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'embed_profile', 'match_and_assign')");
+    expect(selectCall.sql).toContain("ci.current_step IN ('talent_pool_profile_received', 'queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'persist_profile', 'embed_profile', 'match_and_assign')");
     expect(selectCall.sql).toContain("CASE WHEN ci.status = 'pending' THEN 0 ELSE 1 END");
     expect(selectCall.sql).toContain("c.resume_s3_key LIKE 'candidate-documents/%'");
     expect(selectCall.sql).toContain("c.resume_s3_key LIKE 'talent-intake/%'");
     expect(selectCall.sql).toContain("CASE WHEN ci.status = 'pending' THEN ci.updated_at END DESC");
     expect(selectCall.sql).toContain("CASE WHEN ci.status = 'failed' THEN ci.updated_at END DESC");
-    expect(selectCall.params[1]).toBe(18);
-    expect(runCandidateIngestion).toHaveBeenCalledTimes(3);
+    expect(selectCall.params[1]).toBe(30);
+    expect(runCandidateIngestion).toHaveBeenCalledTimes(4);
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'oldest',
     }));
@@ -692,6 +724,15 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     }));
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'request-timeout',
+    }));
+    expect(processResumeFromR2).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'd1-overload',
+      r2Key: 'talent-intake/d1-overload/profile.pdf',
+      candidateDiscoveryTimeoutMs: 18000,
+      candidateDiscoveryMaxAttempts: 2,
+      maxNodeEmbeddings: 0,
+      maxParserOnlyNodes: 12,
+      skipPostDecompositionMaintenance: true,
     }));
     const retryEventCall = db.__calls.find((call) =>
       call.ran
@@ -706,6 +747,23 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       sourceRef: {
         type: 'text_intake_r2_object',
         key: 'text-intake/oldest/source',
+      },
+    });
+    const transientRetryEventCall = db.__calls.find((call) =>
+      call.ran
+      && call.sql.includes('INSERT INTO session_events')
+      && call.params[1] === 'ingestion-d1-overload'
+      && call.params[4] === 'ingestion_retry_queued'
+    );
+    expect(transientRetryEventCall).toBeDefined();
+    expect(JSON.parse(transientRetryEventCall!.params[5] as string)).toMatchObject({
+      trigger: 'scheduled_worker',
+      reason: 'transient_candidate_ingestion_failure',
+      originalStep: 'embed_profile',
+      originalErrorText: expect.stringContaining('D1_ERROR'),
+      sourceRef: {
+        type: 'resume_r2_object',
+        key: 'talent-intake/d1-overload/profile.pdf',
       },
     });
   });

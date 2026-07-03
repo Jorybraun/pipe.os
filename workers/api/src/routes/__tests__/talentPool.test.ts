@@ -229,6 +229,49 @@ function buildStoredDocx(documentXml: string): ArrayBuffer {
   return bytes.buffer;
 }
 
+function escapePdfText(text: string): string {
+  return text.replace(/[\\()]/g, '\\$&');
+}
+
+function pdfByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function buildTextPdf(lines: string[]): ArrayBuffer {
+  const stream = [
+    'BT',
+    '/F1 12 Tf',
+    '72 720 Td',
+    ...lines.flatMap((line, index) => [
+      `(${escapePdfText(line)}) Tj`,
+      ...(index === lines.length - 1 ? [] : ['0 -18 Td']),
+    ]),
+    'ET',
+  ].join('\n');
+  const objects = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n',
+    '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+    `5 0 obj\n<< /Length ${pdfByteLength(stream)} >>\nstream\n${stream}\nendstream\nendobj\n`,
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(pdfByteLength(pdf));
+    pdf += object;
+  }
+  const xrefOffset = pdfByteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+  for (const offset of offsets.slice(1)) {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`;
+  pdf += `startxref\n${xrefOffset}\n%%EOF\n`;
+  return new TextEncoder().encode(pdf).buffer;
+}
+
 function createSqlite(): BetterSqliteDb {
   const sqlite = new Database(':memory:');
   sqlite.exec('PRAGMA foreign_keys = ON;');
@@ -1299,6 +1342,178 @@ describe('talent pool candidate RPC', () => {
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       }),
     );
+
+    const replay = await app.request('/rpc/talent/upload-profile', {
+      method: 'POST',
+      body: replayFormData,
+    }, createEnv(sqlite, storage));
+
+    expect(replay.status).toBe(200);
+    expect(storage.puts.size).toBe(1);
+    expect([...storage.puts.keys()][0]).toBe(storedKey);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM interactions').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifacts').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifact_versions').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records cr
+         JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+         JOIN artifact_versions av ON av.id = crsr.source_ref_id
+        WHERE cr.record_type = 'talent_pool_profile_upload_receipt'
+          AND crsr.source_ref_type = 'artifact_version'
+          AND av.storage_key = ?`,
+    ).get(storedKey)).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM challenge_design_queue').get()).toEqual({ count: 1 });
+  });
+
+  it('projects extracted PDF uploads into source-backed person evidence idempotently', async () => {
+    sqlite = createSqlite();
+    seedCandidate(sqlite);
+    const storage = createMemoryR2();
+    const app = createApp();
+    const expectedPdfText = [
+      'Experience',
+      'Source PDF',
+      'Backend Engineer - January 2021 - Present',
+      'Built Cloudflare Workers ingestion replay with TypeScript.',
+    ].join('\n');
+    const pdf = buildTextPdf([
+      'Experience',
+      'Source PDF',
+      'Backend Engineer - January 2021 - Present',
+      'Built Cloudflare Workers ingestion replay with TypeScript.',
+    ]);
+    const formData = new FormData();
+    formData.set('inviteToken', 'invite-token');
+    formData.set('file', new File([pdf], 'source-pdf-profile.pdf', { type: 'application/pdf' }));
+
+    const res = await app.request('/rpc/talent/upload-profile', {
+      method: 'POST',
+      body: formData,
+    }, createEnv(sqlite, storage));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as TalentDashboardBody;
+    expect(body.status).toBe('CHALLENGE_PREPARING');
+    expectCandidateSafeDashboard(body, ['candidate-1', 'owner-1']);
+
+    const storedKey = [...storage.puts.keys()][0];
+    expect(storedKey).toMatch(/^talent-intake\/candidate-1\/.*source-pdf-profile\.pdf$/);
+    expect(storage.puts.get(storedKey)).toMatchObject({
+      byteLength: pdf.byteLength,
+      contentType: 'application/pdf',
+      customMetadata: {
+        source: 'talent_pool_intake',
+        candidateId: 'candidate-1',
+        sourceKind: 'uploaded_profile_file',
+        originalFileName: 'source-pdf-profile.pdf',
+      },
+    });
+    const intake = sqlite.prepare(
+      `SELECT profile_r2_key, profile_text_excerpt
+         FROM talent_pool_intakes
+        WHERE candidate_id = 'candidate-1'`,
+    ).get() as { profile_r2_key: string; profile_text_excerpt: string };
+    expect(intake.profile_r2_key).toBe(storedKey);
+    expect(intake.profile_text_excerpt).toContain('Built Cloudflare Workers ingestion replay');
+    expect(sqlite.prepare(
+      `SELECT resume_s3_key
+         FROM candidates
+        WHERE id = 'candidate-1'`,
+    ).get()).toEqual({ resume_s3_key: storedKey });
+
+    const pdfArtifactRows = sqlite.prepare(
+      `SELECT i.interaction_type,
+              a.artifact_type,
+              a.logical_key,
+              av.media_type,
+              av.storage_key,
+              av.content_text,
+              length(av.content_hash) AS hash_length,
+              json_extract(av.metadata_json, '$.evidenceKind') AS evidence_kind,
+              json_extract(av.metadata_json, '$.extractedTextAvailable') AS extracted_text_available,
+              json_extract(av.metadata_json, '$.originalFileName') AS original_file_name
+         FROM artifact_versions av
+         JOIN artifacts a ON a.id = av.artifact_id
+         JOIN interactions i ON i.id = a.interaction_id
+        WHERE av.storage_key = ?
+        ORDER BY a.artifact_type`,
+    ).all(storedKey);
+    expect(pdfArtifactRows).toEqual([
+      {
+        interaction_type: 'message',
+        artifact_type: 'message',
+        logical_key: 'roleless_candidate_intake_message',
+        media_type: 'application/pdf',
+        storage_key: storedKey,
+        content_text: expectedPdfText,
+        hash_length: 64,
+        evidence_kind: null,
+        extracted_text_available: null,
+        original_file_name: null,
+      },
+      {
+        interaction_type: 'file_upload',
+        artifact_type: 'profile_upload',
+        logical_key: 'roleless_candidate_profile_upload',
+        media_type: 'application/pdf',
+        storage_key: storedKey,
+        content_text: null,
+        hash_length: 64,
+        evidence_kind: 'profile_upload_source',
+        extracted_text_available: 1,
+        original_file_name: 'source-pdf-profile.pdf',
+      },
+    ]);
+    expect(sqlite.prepare(
+      `SELECT ss.exact_text, av.storage_key
+         FROM source_spans ss
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+        WHERE av.storage_key = ?
+          AND ss.exact_text = ?
+        LIMIT 1`,
+    ).get(storedKey, expectedPdfText)).toEqual({
+      exact_text: expectedPdfText,
+      storage_key: storedKey,
+    });
+    expect(sqlite.prepare(
+      `SELECT cr.record_type, cr.predicate, ss.exact_text, av.storage_key
+         FROM context_records cr
+         JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crsr.source_span_id
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+        WHERE cr.record_type = 'talent_pool_profile_intake'
+        LIMIT 1`,
+    ).get()).toEqual({
+      record_type: 'talent_pool_profile_intake',
+      predicate: 'submitted_profile_evidence',
+      exact_text: expectedPdfText,
+      storage_key: storedKey,
+    });
+    expect(sqlite.prepare(
+      `SELECT cn.node_type,
+              av.storage_key,
+              json_extract(cn.extracted_properties_json, '$.source_quote_validated') AS source_quote_validated,
+              json_extract(cn.extracted_properties_json, '$.source_quote') AS source_quote
+         FROM candidate_nodes cn
+         JOIN source_spans ss ON cn.source_reference = 'source_span:' || ss.id
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+        WHERE cn.candidate_id = 'candidate-1'
+        LIMIT 1`,
+    ).get()).toEqual({
+      node_type: 'TalentPoolProfileIntake',
+      storage_key: storedKey,
+      source_quote_validated: 1,
+      source_quote: expectedPdfText,
+    });
+
+    const replayFormData = new FormData();
+    replayFormData.set('inviteToken', 'invite-token');
+    replayFormData.set('file', new File([pdf], 'source-pdf-profile.pdf', { type: 'application/pdf' }));
 
     const replay = await app.request('/rpc/talent/upload-profile', {
       method: 'POST',

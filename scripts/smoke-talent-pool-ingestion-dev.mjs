@@ -50,14 +50,16 @@ const allowedSmokeModes = new Set([
   'browser-submit-text',
   'browser-upload-text',
   'browser-upload-docx',
+  'browser-upload-pdf',
   'browser-upload-pdf-gap',
   'upload-text',
   'upload-docx',
+  'upload-pdf',
   'upload-pdf-gap',
 ]);
 const smokeMode = argumentValue('--mode') ?? process.env.TALENT_POOL_SMOKE_MODE ?? 'submit-text';
 if (!allowedSmokeModes.has(smokeMode)) {
-  throw new Error(`Unsupported --mode "${smokeMode}". Use submit-text, browser-submit-text, browser-upload-text, browser-upload-docx, browser-upload-pdf-gap, upload-text, upload-docx, or upload-pdf-gap.`);
+  throw new Error(`Unsupported --mode "${smokeMode}". Use submit-text, browser-submit-text, browser-upload-text, browser-upload-docx, browser-upload-pdf, browser-upload-pdf-gap, upload-text, upload-docx, upload-pdf, or upload-pdf-gap.`);
 }
 
 const appBase = (
@@ -136,10 +138,19 @@ const r2BucketName = (
 ).trim();
 
 const failOnNextActions = booleanArgument('--fail-on-next-actions');
-const browserUploadModes = new Set(['browser-upload-text', 'browser-upload-docx', 'browser-upload-pdf-gap']);
+const browserUploadModes = new Set(['browser-upload-text', 'browser-upload-docx', 'browser-upload-pdf', 'browser-upload-pdf-gap']);
 const expectsEvidenceGap = smokeMode === 'upload-pdf-gap' || smokeMode === 'browser-upload-pdf-gap';
 const uploadEvidenceExpected = smokeMode.startsWith('upload-') || browserUploadModes.has(smokeMode);
 const verifyRecruiterReads = !expectsEvidenceGap && !booleanArgument('--skip-recruiter-reads');
+const auditStabilityWaitMs = Math.max(0, Math.min(
+  Number.parseInt(
+    argumentValue('--audit-stability-wait-ms')
+      ?? process.env.TALENT_POOL_SMOKE_AUDIT_STABILITY_WAIT_MS
+      ?? '15000',
+    10,
+  ) || 0,
+  60_000,
+));
 const slug = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
 const runId = `${slug}-${randomUUID().slice(0, 8)}`;
 const candidateName = argumentValue('--name') ?? `Talent Smoke ${runId}`;
@@ -157,6 +168,52 @@ const profileText = [
 ].join(' ');
 
 const DOCX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+function isExtractedDocumentUploadMode() {
+  return smokeMode === 'upload-docx'
+    || smokeMode === 'browser-upload-docx'
+    || smokeMode === 'upload-pdf'
+    || smokeMode === 'browser-upload-pdf';
+}
+
+function escapePdfText(text) {
+  return text.replace(/[\\()]/g, '\\$&');
+}
+
+function buildTextPdf(lines) {
+  const stream = [
+    'BT',
+    '/F1 12 Tf',
+    '72 720 Td',
+    ...lines.flatMap((line, index) => [
+      `(${escapePdfText(line)}) Tj`,
+      ...(index === lines.length - 1 ? [] : ['0 -18 Td']),
+    ]),
+    'ET',
+  ].join('\n');
+  const objects = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n',
+    '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+    `5 0 obj\n<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}\nendstream\nendobj\n`,
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(Buffer.byteLength(pdf, 'latin1'));
+    pdf += object;
+  }
+  const xrefOffset = Buffer.byteLength(pdf, 'latin1');
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+  for (const offset of offsets.slice(1)) {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`;
+  pdf += `startxref\n${xrefOffset}\n%%EOF\n`;
+  return new TextEncoder().encode(pdf).buffer;
+}
 
 function buildStoredDocx(documentXml) {
   const encoder = new TextEncoder();
@@ -225,6 +282,19 @@ function smokeUploadFile() {
     return {
       blob: new Blob([buildStoredDocx(documentXml)], { type: DOCX_CONTENT_TYPE }),
       fileName: `talent-smoke-${runId}.docx`,
+    };
+  }
+
+  if (smokeMode === 'upload-pdf' || smokeMode === 'browser-upload-pdf') {
+    const lines = [
+      `Talent Pool live ${smokeMode} smoke proof ${runId}.`,
+      'Recently implemented source-backed candidate evidence ingestion for public Talent Pool PDF profile uploads.',
+      'Built Cloudflare Workers ingestion replay with TypeScript and exact source-span proof.',
+      'This PDF text is intentionally unique so exact source spans can be audited back to the uploaded profile.',
+    ];
+    return {
+      blob: new Blob([buildTextPdf(lines)], { type: 'application/pdf' }),
+      fileName: `talent-smoke-${runId}.pdf`,
     };
   }
 
@@ -579,14 +649,8 @@ function auditIsReady(report) {
   if (report.sourceProof?.contextSourceRefCount < 1) return false;
   if (uploadEvidenceExpected && report.sourceProof?.profileUploadArtifactVersionCount < 1) return false;
   if (uploadEvidenceExpected && report.sourceProof?.profileUploadReceiptContextCount < 1) return false;
-  if (
-    (smokeMode === 'upload-docx' || smokeMode === 'browser-upload-docx')
-    && report.rawCapture?.documentProfileStorageKeyCount !== 1
-  ) return false;
-  if (
-    (smokeMode === 'upload-docx' || smokeMode === 'browser-upload-docx')
-    && report.sourceProof?.documentProfileSourceSpanCount < 1
-  ) return false;
+  if (isExtractedDocumentUploadMode() && report.rawCapture?.documentProfileStorageKeyCount !== 1) return false;
+  if (isExtractedDocumentUploadMode() && report.sourceProof?.documentProfileSourceSpanCount < 1) return false;
   if (report.personProjection?.talentPoolWorkspacePersonCount !== 1) return false;
   if (report.sourceLessPositiveClaimCount !== 0) return false;
   if (report.duplicateProjectedEdgeCount !== 0) return false;
@@ -667,6 +731,18 @@ async function pollAudit(inviteToken) {
   throw new Error(`Audit did not reach expected state:\n${JSON.stringify(lastReport, null, 2)}`);
 }
 
+async function verifyAuditStability(inviteToken, report) {
+  if (expectsEvidenceGap || auditStabilityWaitMs === 0) return report;
+  await sleep(auditStabilityWaitMs);
+  const stableReport = runAudit(inviteToken);
+  if (!auditIsReady(stableReport)) {
+    throw new Error(
+      `Audit became unstable after ${auditStabilityWaitMs}ms:\n${JSON.stringify(stableReport, null, 2)}`,
+    );
+  }
+  return stableReport;
+}
+
 async function submitProfileThroughBrowser(inviteToken, candidateId) {
   const browser = await chromium.launch({ headless: true });
   try {
@@ -722,6 +798,7 @@ async function submitProfileThroughBrowser(inviteToken, candidateId) {
 
 function recruiterReadNeedle() {
   if (smokeMode === 'upload-docx' || smokeMode === 'browser-upload-docx') return 'DOCX text is intentionally unique';
+  if (smokeMode === 'upload-pdf' || smokeMode === 'browser-upload-pdf') return 'PDF text is intentionally unique';
   return 'source spans can be audited back';
 }
 
@@ -914,6 +991,7 @@ async function main() {
     if (
       smokeMode === 'upload-text'
       || smokeMode === 'upload-docx'
+      || smokeMode === 'upload-pdf'
       || smokeMode === 'upload-pdf-gap'
     ) {
         const uploadFile = smokeUploadFile();
@@ -957,7 +1035,8 @@ async function main() {
   }
   assertCandidateDashboardSafe(submittedDashboard, candidateId, 'submit-profile');
 
-  const report = await pollAudit(inviteToken);
+  let report = await pollAudit(inviteToken);
+  report = await verifyAuditStability(inviteToken, report);
   const sourceObjectProof = await verifyRemoteSourceObject(inviteToken);
   const recruiterReadProof = await verifyRecruiterEvidenceReads(candidateId);
   console.log(expectsEvidenceGap ? '[talent-smoke] expected evidence gap' : '[talent-smoke] ready', {

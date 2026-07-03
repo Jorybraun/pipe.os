@@ -273,10 +273,12 @@ npx playwright test e2e/talent-pool-intake.unauth.spec.ts --project=unauthentica
 npm run smoke:talent-pool-browser-dev
 npm run smoke:talent-pool-browser-upload-dev
 npm run smoke:talent-pool-browser-docx-dev
+npm run smoke:talent-pool-browser-pdf-dev
 npm run smoke:talent-pool-browser-pdf-gap-dev
 npm run smoke:talent-pool-ingestion-dev
 npm run smoke:talent-pool-upload-dev
 npm run smoke:talent-pool-docx-dev
+npm run smoke:talent-pool-pdf-dev
 npm run smoke:talent-pool-pdf-gap-dev
 ```
 
@@ -298,14 +300,15 @@ app-dev proxy when no API base override is set. `smoke:talent-pool-browser-dev`
 and the `smoke:talent-pool-browser-*-dev` upload commands go one step further:
 they create a real dev Talent Pool candidate, open the public `/talent/:token`
 page in Chromium, submit pasted profile evidence, a text profile upload, a DOCX
-upload, or an unextractable PDF through the form, then reuse the same remote
+upload, an extractable PDF upload, or an unextractable PDF through the form,
+then reuse the same remote
 audit and recruiter/person read proofs. After the audit identifies the current
 `talent_pool_intakes.profile_r2_key`, the smokes also fetch that exact R2 object
 with Wrangler and compare its bytes to the submitted source. The fetched
 SHA-256 must match both the submitted source bytes and the content-addressed
 storage-key prefix. Browser upload smokes require the upload receipt artifact
-count to be present; the browser DOCX smoke also requires a document source
-span, while the browser PDF-gap smoke requires the explicit
+count to be present; the browser DOCX and extractable-PDF smokes also require a
+document source span, while the browser PDF-gap smoke requires the explicit
 `profile_text_extraction_needed` gap with no source-less claims. If a caller
 explicitly targets `api-dev.hire-pipe.com`, direct RPC smokes omit dev HTTP
 Basic Auth for that API host while still using Basic Auth for app-dev candidate
@@ -378,6 +381,23 @@ The direct scoped audit command
 returned `status: ready`, `candidateNodeExactSourceQuoteCount: 13`,
 `contextSourceRefCount: 9`, `sourceSpanTextMismatchCount: 0`,
 `sourceSpanHashMismatchCount: 0`, and no failures.
+After deploying Worker version `aa3ad3c5-2628-419c-99ee-c3fd853f23fd`, the
+2026-07-03T20:57Z `npm run smoke:talent-pool-pdf-dev` scoped proof for invite
+token `e8ef1ecf-cbc5-4045-8f8a-9ca860df3a32` returned `status: ready`,
+`documentProfileStorageKeyCount: 1`, `documentProfileSourceSpanCount: 1`,
+`documentProfileExtractionGapCount: 0`,
+`documentProfileMissingExtractionProofCount: 0`,
+`profileUploadArtifactVersionCount: 1`, `profileUploadReceiptContextCount: 1`,
+`candidateNodeExactSourceQuoteCount: 13`, `contextSourceRefCount: 9`,
+`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`. The
+source object proof showed `keyHashMatchesObject: true` and
+`objectMatchesSubmittedSource: true`; recruiter reads resolved unified People
+type `candidate`, the canonical person graph, source search, timeline, and
+evidence-depth reads. The direct scoped audit command
+`CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 npm --prefix workers/api run candidate-ingestion:audit -- --remote --invite-token e8ef1ecf-cbc5-4045-8f8a-9ca860df3a32 --require-context-records`
+returned `ingestionState.statuses: embedded`, `candidateNodeSourceSpanMissingCount: 0`,
+`sourceSpanTextMismatchCount: 0`, `sourceSpanHashMismatchCount: 0`, and no
+failures.
 
 Current app-dev HEAD check on 2026-07-02 local time, checked at
 2026-07-03T01:25Z through 2026-07-03T01:27Z, ran after deploying Worker version

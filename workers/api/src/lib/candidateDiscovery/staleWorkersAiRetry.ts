@@ -40,6 +40,7 @@ const RETRYABLE_STALLED_INGESTION_STEPS = new Set([
   'parse_resume',
   'decompose_resume',
   'discover_profile',
+  'persist_profile',
   'embed_profile',
   'match_and_assign',
 ]);
@@ -88,11 +89,13 @@ type RetryTrigger = 'candidate_rpc' | 'scheduled_worker';
 type RetryReasonCode =
   | 'stale_workers_ai_model_failure'
   | 'candidate_discovery_output_contract_failure'
+  | 'transient_candidate_ingestion_failure'
   | 'stalled_candidate_evidence_ingestion'
   | 'missing_candidate_evidence_ingestion';
 
 export const STALE_WORKERS_AI_RETRY_REASON = 'Retrying candidate evidence ingestion after a stale Workers AI model failure.';
 export const CANDIDATE_DISCOVERY_OUTPUT_RETRY_REASON = 'Retrying candidate evidence ingestion after the AI discovery output failed the structured JSON contract.';
+export const TRANSIENT_INGESTION_RETRY_REASON = 'Retrying candidate evidence ingestion after a transient ingestion infrastructure failure.';
 export const STALLED_INGESTION_RETRY_REASON = 'Retrying candidate evidence ingestion from the original source after the previous run stalled.';
 export const MISSING_INGESTION_RETRY_REASON = 'Starting candidate evidence ingestion from the uploaded resume because no ingestion run was recorded.';
 
@@ -224,6 +227,23 @@ export function isRetryableCandidateDiscoveryOutputFailure(row: {
     || errorText.includes('candidate discovery ai failed after');
 }
 
+export function isRetryableTransientIngestionFailure(row: {
+  status: string | null;
+  current_step: string | null;
+  error_text: string | null;
+}): boolean {
+  if (row.status !== 'failed') return false;
+  if (!row.current_step || !RETRYABLE_STALLED_INGESTION_STEPS.has(row.current_step)) return false;
+  const errorText = (row.error_text ?? '').toLowerCase();
+  if (!errorText) return false;
+  return errorText.includes('d1_error')
+    || errorText.includes('d1 db is overloaded')
+    || errorText.includes('requests queued for too long')
+    || errorText.includes('database is locked')
+    || errorText.includes('request timeout')
+    || errorText.includes('timed out');
+}
+
 export function isRetryableStalledInProgressIngestion(row: {
   status: string | null;
   current_step: string | null;
@@ -267,6 +287,17 @@ function retryContextForRow(row: StaleWorkersAIRow, trigger: RetryTrigger): (Ret
       trigger,
       reasonCode: 'candidate_discovery_output_contract_failure',
       publicReason: CANDIDATE_DISCOVERY_OUTPUT_RETRY_REASON,
+      originalErrorText: row.error_text,
+      originalStep: row.current_step,
+      originalUpdatedAt: row.updated_at ?? null,
+    };
+  }
+
+  if (isRetryableTransientIngestionFailure(row)) {
+    return {
+      trigger,
+      reasonCode: 'transient_candidate_ingestion_failure',
+      publicReason: TRANSIENT_INGESTION_RETRY_REASON,
       originalErrorText: row.error_text,
       originalStep: row.current_step,
       originalUpdatedAt: row.updated_at ?? null,
@@ -884,13 +915,14 @@ export async function processStaleWorkersAIModelIngestionRetries(
         AND (
           (
             ci.status = 'failed'
-            AND ci.current_step = 'discover_profile'
             AND ci.error_text IS NOT NULL
+            AND ci.current_step IS NOT NULL
+            AND ci.current_step IN ('talent_pool_profile_received', 'queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'persist_profile', 'embed_profile', 'match_and_assign')
           )
           OR (
             ci.status = 'pending'
             AND ci.current_step IS NOT NULL
-            AND ci.current_step IN ('talent_pool_profile_received', 'queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'embed_profile', 'match_and_assign')
+            AND ci.current_step IN ('talent_pool_profile_received', 'queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'persist_profile', 'embed_profile', 'match_and_assign')
             AND ci.updated_at IS NOT NULL
             AND ci.updated_at <= ?1
           )
@@ -984,13 +1016,14 @@ export async function processPipelineCandidateIngestionRetries(
           ci.candidate_id IS NULL
           OR (
             ci.status = 'failed'
-            AND ci.current_step = 'discover_profile'
             AND ci.error_text IS NOT NULL
+            AND ci.current_step IS NOT NULL
+            AND ci.current_step IN ('talent_pool_profile_received', 'queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'persist_profile', 'embed_profile', 'match_and_assign')
           )
           OR (
             ci.status = 'pending'
             AND ci.current_step IS NOT NULL
-            AND ci.current_step IN ('talent_pool_profile_received', 'queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'embed_profile', 'match_and_assign')
+            AND ci.current_step IN ('talent_pool_profile_received', 'queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'persist_profile', 'embed_profile', 'match_and_assign')
             AND ci.updated_at IS NOT NULL
             AND ci.updated_at <= ?3
           )
