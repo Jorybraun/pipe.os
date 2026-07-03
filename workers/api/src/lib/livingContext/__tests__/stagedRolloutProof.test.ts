@@ -92,9 +92,13 @@ function expertCorpus(): EvaluationCorpus {
   const negativeCandidateId = 'candidate-rollout-negative';
   const roleId = 'role-backend-eng';
   const challengeId = 'challenge-queue-system';
+  const followUpChallengeId = 'challenge-idempotent-retry-review';
   const repoId = 'repo-42';
+  const followUpRepoId = 'repo-43';
   const prNumber = 17;
+  const followUpPrNumber = 23;
   const sourceVersion = 'abc123';
+  const followUpSourceVersion = 'def456';
 
   return {
     version: EVALUATION_CORPUS_VERSION,
@@ -168,7 +172,7 @@ function expertCorpus(): EvaluationCorpus {
         roleId,
         challengeId,
         relevanceGrade: 'highly_relevant',
-        eligibleChallengeIds: [challengeId],
+        eligibleChallengeIds: [challengeId, followUpChallengeId],
         negativeCandidateId,
         minimumScoreSeparation: 0.25,
         explanation:
@@ -184,6 +188,31 @@ function expertCorpus(): EvaluationCorpus {
           reviewArtifactVersion: 'v1',
           contentHash: 'sha256:review-rollout-1-v1',
           locator: 'expert-review:rollout-proof-1',
+          rubricVersion: 'candidate-pr-match-rubric-v1',
+        },
+      },
+      {
+        labelId: 'expert-label-rollout-2',
+        candidateId,
+        roleId,
+        challengeId: followUpChallengeId,
+        relevanceGrade: 'relevant',
+        eligibleChallengeIds: [challengeId, followUpChallengeId],
+        negativeCandidateId,
+        minimumScoreSeparation: 0.20,
+        explanation:
+          'The candidate has source-backed at-least-once delivery and failure-handling evidence, '
+          + 'and this retry/idempotency PR is a relevant adjacent review challenge with exact source proof.',
+        labelVersion: '1.0.0',
+        labeledAt: '2026-06-28T11:03:00Z',
+        labeledBy: 'expert-reviewer-senior',
+        labelProvenance: {
+          reviewerId: 'expert-reviewer-senior',
+          reviewerRole: 'principal-engineer',
+          reviewArtifactId: 'review-artifact-rollout-2',
+          reviewArtifactVersion: 'v1',
+          contentHash: 'sha256:review-rollout-2-v1',
+          locator: 'expert-review:rollout-proof-2',
           rubricVersion: 'candidate-pr-match-rubric-v1',
         },
       },
@@ -232,14 +261,34 @@ function expertCorpus(): EvaluationCorpus {
           },
         ],
       },
+      {
+        challengeId: followUpChallengeId,
+        repoId: followUpRepoId,
+        prNumber: followUpPrNumber,
+        sourceVersion: followUpSourceVersion,
+        demands: [
+          {
+            demandId: 'demand-idempotent-retry',
+            concepts: ['term:at-least-once', 'term:idempotency'],
+            sourceRefs: [
+              expertSourceRef(
+                'pr-demand-idempotent-retry',
+                `repo-${followUpRepoId}`,
+                followUpSourceVersion,
+                'Make failed delivery retries idempotent before requeueing the job.',
+              ),
+            ],
+          },
+        ],
+      },
     ],
     metadata: {
-      totalLabels: 2,
+      totalLabels: 3,
       totalCandidates: 2,
       totalRoles: 1,
-      totalChallenges: 1,
+      totalChallenges: 2,
       syntheticFixtureCount: 0,
-      totalExpectedPackets: 1,
+      totalExpectedPackets: 2,
     },
   };
 }
@@ -248,6 +297,8 @@ function matchRun(runId: string): PersistedMatchRun {
   const corpus = expertCorpus();
   const label = corpus.expertLabels[0]!;
   const packet = corpus.expectedPackets![0]!;
+  const followUpLabel = corpus.expertLabels[1]!;
+  const followUpPacket = corpus.expectedPackets![1]!;
 
   const rankedChallenge: PersistedRankedChallenge = {
     rank: 1,
@@ -316,6 +367,77 @@ function matchRun(runId: string): PersistedMatchRun {
     rejectionReasons: [],
   };
 
+  const followUpRankedChallenge: PersistedRankedChallenge = {
+    rank: 2,
+    recallRank: 2,
+    challengeId: followUpLabel.challengeId,
+    repoId: followUpPacket.repoId,
+    prNumber: followUpPacket.prNumber,
+    sourceVersion: followUpPacket.sourceVersion,
+    score: 0.82,
+    candidateEvidenceAlignment: 0.76,
+    roleRelevance: 0.74,
+    contextualSpecificity: 0.72,
+    challengeQuality: 0.89,
+    validationDeepeningValue: 0.81,
+    alignedDemandCount: 1,
+    stretchCount: 1,
+    stretchDemandWeightRatio: 0.16,
+    provenanceComplete: true,
+    eligible: true,
+    alignments: [
+      {
+        atomId: 'atom-at-least-once-evidence',
+        demandId: 'demand-idempotent-retry',
+        pairScore: 0.82,
+        pairScoreBreakdown: {
+          semanticNarrative: 0.78,
+          conceptCorrespondence: 0.82,
+          problemMechanismCorrespondence: 0.80,
+          domainBusinessContext: 0.72,
+          ownershipActionCorrespondence: 0.78,
+          total: 0.82,
+        },
+        weightedScore: 0.82,
+        stretch: {
+          atomConcept: 'term:at-least-once',
+          demandConcept: 'term:idempotency',
+          dimension: 'mechanism',
+        },
+        sharedConcepts: ['term:at-least-once'],
+        roleSourceRefs: [
+          {
+            entityId: 'jd-queue-system',
+            locator: 'job_description:source_span:jd-queue',
+            conceptKeys: ['term:distributed-queue', 'term:message-processing'],
+            sourceRefType: 'source_span',
+            sourceRefId: 'role-source-span-jd-queue',
+            sourceSpanId: 'role-source-span-jd-queue',
+            exactText: 'Build reliable distributed queue processing for order fulfillment.',
+            contentHash: 'sha256:role-jd-queue',
+          },
+        ],
+        candidateSourceRefs: [
+          expertSourceRef(
+            'candidate-evidence-1',
+            'candidate-transcript',
+            'v1',
+            'I designed a distributed task queue with at-least-once delivery and dead-letter handling for our order processing system.',
+          ),
+        ],
+        challengeSourceRefs: [
+          expertSourceRef(
+            'pr-demand-idempotent-retry',
+            `repo-${followUpPacket.repoId}`,
+            followUpPacket.sourceVersion,
+            'Make failed delivery retries idempotent before requeueing the job.',
+          ),
+        ],
+      },
+    ],
+    rejectionReasons: [],
+  };
+
   return {
     matchRunId: runId,
     candidateId: label.candidateId,
@@ -324,13 +446,15 @@ function matchRun(runId: string): PersistedMatchRun {
     policyVersion: 'candidate-pr-v1',
     modelVersion: null,
     status: 'MATCHED',
-    rankedChallenges: [rankedChallenge],
+    rankedChallenges: [rankedChallenge, followUpRankedChallenge],
   };
 }
 
 function negativeMatchRun(runId: string): PersistedMatchRun {
   const corpus = expertCorpus();
-  const label = corpus.expertLabels[1]!;
+  const label = corpus.expertLabels.find(
+    (candidateLabel) => candidateLabel.labelId === 'expert-label-rollout-negative-1',
+  )!;
 
   return {
     matchRunId: runId,
@@ -384,7 +508,7 @@ describe('Staged rollout proof — criterion #8', () => {
   it('expert corpus produces passing evaluation metrics at all stages', () => {
     const metrics = passingMetrics();
 
-    expect(metrics.expertLabelCount).toBe(2);
+    expect(metrics.expertLabelCount).toBe(3);
     expect(metrics.syntheticFixtureCount).toBe(0);
     expect(metrics.recallAt50).toBe(1);
     expect(metrics.precisionAt3).toBe(1);

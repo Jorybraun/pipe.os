@@ -178,10 +178,20 @@ async function runStatementBatches(
   db: D1Database,
   statements: D1PreparedStatement[],
 ): Promise<void> {
+  const batchRunner = typeof db.batch === 'function'
+    ? db.batch.bind(db)
+    : null;
+
   for (let index = 0; index < statements.length; index += CONTEXT_RECORD_RELATIONSHIP_BATCH_SIZE) {
     const batch = statements.slice(index, index + CONTEXT_RECORD_RELATIONSHIP_BATCH_SIZE);
     if (batch.length > 0) {
-      await db.batch(batch);
+      if (batchRunner) {
+        await batchRunner(batch);
+      } else {
+        for (const statement of batch) {
+          await statement.run();
+        }
+      }
     }
   }
 }
