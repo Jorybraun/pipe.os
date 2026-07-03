@@ -10,10 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — CODE_REVIEW scoring
 
 - Judge-example verification now audits the real remote dev D1 database (`pipe-db-test`) through Wrangler instead of only local Miniflare SQLite files, so the production CODE_REVIEW scoring loop validates the same labelled examples created by the app-dev smoke.
+- Role-backed CODE_REVIEW matching now scores rounded 2% challenge-separation leads as measurable contrast, so app-dev auto-match no longer blocks a recruiter-visible “2% lead” candidate-safe assignment at the gate boundary.
 
 ### Fixed — Interview scheduling
 
 - Recruiter interview lists now hydrate assessment progress only for assessment-capable interview types, keeping standard-call dashboard pages from paying unnecessary assessment-session query cost.
+- Open-source workspace dev smoke now retries transient socket resets while starting assessment evaluation, preventing a transport hiccup from masking the real candidate commit/evaluation path.
 - Recruiter interview list/detail assessment setup now explains when role-backed CODE_REVIEW matching found a source-backed PR but withheld automatic assignment because the match quality gate failed, so AI ingestion no longer looks silently stuck at the generic profile-received handoff.
 - Manual open-source assessment setup now falls back to GitHub's public commit page when commit API verification is temporarily unavailable, preserving valid source-backed challenge creation while still rejecting missing commits.
 - Open-source assessment setup now retries transient GitHub base-commit verification failures before rejecting a manual challenge packet, reducing false `SERVICE_UNAVAILABLE` failures during real assessment creation.
@@ -23,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Added `smoke:talent-pool-browser-dev` to create a real dev Talent Pool candidate, submit pasted profile evidence through `/talent/:token` in Chromium, and then run the remote candidate-ingestion audit plus recruiter/person read proofs.
 - Talent Pool R2 profile objects now stamp whether the raw source came from pasted text or an uploaded file, and scheduled upload-receipt repair skips pasted text keys instead of inventing file-upload evidence during replay.
 - Talent Pool dev smoke now infers the remote D1 database id from the target app/API environment, so `app-dev` audits the `dev` D1 database instead of accidentally falling back to the root `CLOUDFLARE_D1_DATABASE_ID`.
 - Talent Pool dev smoke now defaults candidate RPC calls to the app-dev proxy and omits dev Basic Auth on direct `api-dev` RPC calls, so smoke proofs exercise the same proxy path candidates use while still supporting explicit API overrides.

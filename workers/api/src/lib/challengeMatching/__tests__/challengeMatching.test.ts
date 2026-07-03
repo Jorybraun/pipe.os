@@ -828,6 +828,21 @@ describe('ranking and explanations', () => {
     expect(explanation.assessmentQuality?.verdict).toBe('USABLE');
   });
 
+  it('treats rounded 2 percent contrast separation as measurable positive separation', () => {
+    const { compiled, packet } = directEligibleFixture('deepening');
+    const alignment = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
+    const explanation = explainChallengeMatch(alignment, { scoreSeparation: 0.018704521434697585 });
+
+    const contrastMetric = explanation.assessmentQuality?.metrics.find((metric) =>
+      metric.id === 'contrast_separation'
+    );
+    expect(contrastMetric).toEqual(expect.objectContaining({
+      score: 1,
+      reason: expect.stringContaining('2%'),
+    }));
+    expect(explanation.assessmentQuality?.verdict).toBe('STRONG');
+  });
+
   it('separates opposing candidate profiles across different review packets', () => {
     const kafkaCompiled = compile([
       signal('kafka-one'),
