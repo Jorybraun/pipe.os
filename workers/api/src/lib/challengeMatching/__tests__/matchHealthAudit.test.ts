@@ -103,6 +103,26 @@ describe('auditCodeReviewMatchHealth', () => {
       count: 4,
       share: 0.8,
     });
+    expect(audit.selectedPacketDistribution.slice(0, 2)).toEqual([
+      {
+        packetId: 'packet-1',
+        count: 4,
+        share: 0.8,
+        repoId: 'repo-0',
+        repoUrl: 'https://github.com/example/repo-0',
+        prNumber: 1001,
+        productionReady: true,
+      },
+      {
+        packetId: 'packet-2',
+        count: 1,
+        share: 0.2,
+        repoId: 'repo-1',
+        repoUrl: 'https://github.com/example/repo-1',
+        prNumber: 1002,
+        productionReady: true,
+      },
+    ]);
     expect(audit.nextAction).toBe('rebalance_challenge_corpus');
   });
 

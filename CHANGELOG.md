@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW match-health audits now return and print selected-packet distribution with repo/PR context, making challenge-corpus skew failures actionable for rebalancing.
 - CODE_REVIEW evaluation corpora and expert review templates now carry `negativeCandidateId` plus `minimumScoreSeparation`, letting stored labelled corpora produce real contrast cases for the match-quality gate.
 - `living-context:match-quality` can now run against remote D1 with `--remote --database-id <id> --corpus-id <stored-corpus>`, so app-dev CODE_REVIEW labelled gates can be evaluated without copying D1 to a local sqlite file.
 - Added `vercel/swr` live review-packet seed inputs with two dry-run-proven production-ready PRs, giving CODE_REVIEW a reproducible third real repo for source-backed packet breadth.

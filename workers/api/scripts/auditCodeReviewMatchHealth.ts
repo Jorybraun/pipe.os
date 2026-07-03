@@ -172,6 +172,16 @@ function printHumanSummary(audit: CodeReviewMatchHealthAudit): void {
   console.log(`staleOrNarrowSelectedMatches: ${audit.staleOrNarrowSelectedMatchCount}`);
   console.log(`roleBackedUnsafeMatches: ${audit.roleBackedUnsafeMatchCount}`);
   console.log(`topSelectedPacket: ${skew ? `${skew.packetId} (${skew.count}, ${Math.round(skew.share * 100)}%)` : 'none'}`);
+  if (audit.selectedPacketDistribution.length > 0) {
+    console.log('selectedPacketDistribution:');
+    for (const entry of audit.selectedPacketDistribution.slice(0, 5)) {
+      const repo = entry.repoUrl ?? entry.repoId ?? 'unknown repo';
+      const pr = entry.prNumber === null ? 'unknown PR' : `PR ${entry.prNumber}`;
+      console.log(
+        `- ${entry.packetId}: ${entry.count} (${Math.round(entry.share * 100)}%) ${repo} ${pr}`,
+      );
+    }
+  }
   console.log(`nextAction: ${audit.nextAction}`);
   for (const failure of audit.failures) {
     console.log(`FAIL: ${failure}`);
