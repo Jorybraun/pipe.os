@@ -101,6 +101,10 @@ interface TalentPoolDashboardResponse {
 
 const route = new Hono<{ Bindings: Env; Variables: Variables }>();
 const MAX_PROFILE_FILE_BYTES = 10 * 1024 * 1024;
+const TALENT_POOL_LIVE_MAX_NODE_EMBEDDINGS = 0;
+const TALENT_POOL_LIVE_MAX_PARSER_ONLY_NODES = 12;
+const TALENT_POOL_LIVE_DISCOVERY_TIMEOUT_MS = 8_000;
+const TALENT_POOL_LIVE_DISCOVERY_MAX_ATTEMPTS = 2;
 const ALLOWED_PROFILE_MIME_TYPES = new Set([
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -489,6 +493,11 @@ async function ingestTextProfile(input: {
     resumeText: input.resumeText,
     decompositionResult: null,
     mirrorLivingContext: input.mirrorLivingContext ?? false,
+    maxNodeEmbeddings: TALENT_POOL_LIVE_MAX_NODE_EMBEDDINGS,
+    maxParserOnlyNodes: TALENT_POOL_LIVE_MAX_PARSER_ONLY_NODES,
+    skipPostDecompositionMaintenance: true,
+    candidateDiscoveryTimeoutMs: TALENT_POOL_LIVE_DISCOVERY_TIMEOUT_MS,
+    candidateDiscoveryMaxAttempts: TALENT_POOL_LIVE_DISCOVERY_MAX_ATTEMPTS,
   });
 }
 

@@ -769,6 +769,11 @@ describe('talent pool candidate RPC', () => {
       resumeText: payload.resumeText,
       decompositionResult: null,
       mirrorLivingContext: false,
+      maxNodeEmbeddings: 0,
+      maxParserOnlyNodes: 12,
+      skipPostDecompositionMaintenance: true,
+      candidateDiscoveryTimeoutMs: 8000,
+      candidateDiscoveryMaxAttempts: 2,
       parsed: expect.objectContaining({
         skills: expect.any(Array),
         experiences: expect.any(Array),

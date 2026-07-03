@@ -133,6 +133,9 @@ retries reuse pre-extracted text and bounded parser-only decomposition so the AI
 attempt can start inside the Worker background window. The fallback is allowed
 to keep ingestion moving, but the event stream must state whether AI started,
 succeeded, or failed instead of fabricating an AI-derived profile.
+Live Talent Pool pasted-text and extracted-text upload ingestion use the same
+bounded, source-backed decomposition knobs before candidate discovery, avoiding
+full candidate-node embedding fan-out inside the Worker background window.
 Scheduled retry throughput defaults conservatively, while dev can raise it with
 `CANDIDATE_INGESTION_RETRY_LIMIT` to burn down stale AI-output failures without
 changing production behavior.
@@ -235,7 +238,63 @@ candidate-node projection from invite/upload placeholders. It also requires the
 scoped `candidate_ingestion.current_step` to be
 `profile_text_extraction_needed`.
 
-Latest app-dev proof on 2026-07-02 used invite token
+Latest bounded live text-ingestion proof on 2026-07-02 local time, checked at
+2026-07-03T00:04Z, ran after deploying Worker version
+`3fffc61b-d725-40ed-ba88-3fbf71a08a6b`:
+
+- `npm run smoke:talent-pool-ingestion-dev` submitted pasted profile text for
+  invite token `6a3a7bb7-4fe3-44eb-8471-39d762cf7815` and returned
+  `status: ready`, `ingestionSteps: [{currentStep: "discover_profile", count:
+  1}]`, `candidateNodeExactSourceQuoteCount: 13`, `contextSourceRefCount: 8`,
+  `talentPoolWorkspacePersonCount: 1`, `sourceLessPositiveClaimCount: 0`,
+  `sourceLessDesignQueueSuggestionCount: 0`, and `duplicateProjectedEdgeCount:
+  0`. A follow-up D1 query showed the same candidate reached `status:
+  embedded`, `current_step: embed_profile`, `profile_version: candidate-v3`,
+  and `model_used: workers-ai/@cf/meta/llama-3.2-3b-instruct` with no
+  `error_text`.
+
+Prior app-dev smoke proof on 2026-07-02 local time, checked at
+2026-07-03T00:00Z, ran after deploying Worker version
+`150bdeda-e131-45b8-a2e0-10ddedf00535`:
+
+- `npm run smoke:talent-pool-ingestion-dev` submitted pasted profile text for
+  invite token `2ac49c8d-8575-44ec-acda-b816de12b905` and returned
+  `status: ready`, `candidateNodeExactSourceQuoteCount: 56`,
+  `contextSourceRefCount: 8`, `talentPoolWorkspacePersonCount: 1`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`. Recruiter reads resolved unified People
+  type `candidate`, found the candidate/person source text, returned 8 timeline
+  entries, and reported 9 source spans plus 5 context records.
+- `npm run smoke:talent-pool-upload-dev` submitted a multipart text profile for
+  invite token `f9132def-fcbd-4626-b9d7-ca3b7e34c1ba` and returned
+  `status: ready`, `candidateNodeExactSourceQuoteCount: 45`,
+  `contextSourceRefCount: 8`, `profileUploadArtifactVersionCount: 1`,
+  `talentPoolWorkspacePersonCount: 1`, `sourceLessPositiveClaimCount: 0`,
+  `sourceLessDesignQueueSuggestionCount: 0`, and
+  `duplicateProjectedEdgeCount: 0`. Recruiter reads resolved the same roleless
+  person projection and reported 9 source spans plus 5 context records.
+- `npm run smoke:talent-pool-docx-dev` submitted a multipart DOCX profile for
+  invite token `dd5c6d3c-a043-46ae-b93c-ccc8b375d0f6` and returned
+  `status: ready`, `candidateNodeExactSourceQuoteCount: 52`,
+  `contextSourceRefCount: 8`, `documentProfileSourceSpanCount: 1`,
+  `profileUploadArtifactVersionCount: 1`, `talentPoolWorkspacePersonCount: 1`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`. Recruiter reads resolved unified People
+  type `candidate`, found the uploaded DOCX source text, returned 9 timeline
+  entries, and reported 9 source spans plus 5 context records.
+- `npm run smoke:talent-pool-pdf-gap-dev` submitted an intentionally invalid
+  PDF for invite token `0987f042-192b-4442-8b40-878b92198882` and returned
+  `status: not_ready`, `ingestionSteps:
+  [{currentStep: "profile_text_extraction_needed", count: 1}]`,
+  `documentProfileStorageKeyCount: 1`, `profileUploadArtifactVersionCount: 1`,
+  `candidateNodeCount: 0`, `contextSourceRefCount: 7`,
+  `talentPoolWorkspacePersonCount: 1`, `designQueueCount: 1`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`. The same guard was also verified
+  directly against `api-dev.hire-pipe.com` with invite token
+  `69edccb0-2677-4b6e-894f-56fa93d33842`.
+
+Historical app-dev profile-upload repair proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
 `11303318-b79f-451b-93c9-ab1ec4eb4616`, which includes canonical person-id
 source search, evidence timeline, evidence-depth reads for unified People rows,
