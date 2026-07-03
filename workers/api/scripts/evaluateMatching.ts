@@ -9,6 +9,7 @@ import Database from 'better-sqlite3';
 import {
   checkLatestProductionEvaluation,
   evaluationCorpusLabelCounts,
+  type EvaluationReadinessReport,
   generateEvaluationReadinessReport,
   generateHumanReadableReport,
   loadCorpus,
@@ -40,7 +41,7 @@ export interface EvaluationCliOptions {
   target: 'local' | 'remote';
   databasePath?: string;
   databaseId?: string;
-  corpusId: string;
+  corpusId?: string;
   corpusFile?: string;
   matchRunIds: string[];
   comparisonMatchRunIds: string[];
@@ -180,6 +181,13 @@ class RemoteD1 implements D1Like {
   }
 }
 
+interface EvaluationCorpusSummaryRow {
+  corpus_id: string;
+  expert_label_count: number;
+  synthetic_fixture_count: number;
+  created_at: number;
+}
+
 function discoverLocalDatabase(explicitPath?: string): string {
   if (explicitPath) return resolve(apiRoot, explicitPath);
   const directory = resolve(apiRoot, '.wrangler/state/v3/d1/miniflare-D1DatabaseObject');
@@ -243,8 +251,10 @@ function parseStage(value: string | undefined): 'shadow' | 'canary' | 'productio
 
 export function parseEvaluationArgs(argv: string[]): EvaluationCliOptions | null {
   if (argv.includes('--help') || argv.includes('-h')) return null;
-  const corpusId = valueFor(argv, '--corpus-id');
-  if (!corpusId) throw new Error('--corpus-id is required');
+  const checkLatestProductionPass = argv.includes('--check-latest-production-pass');
+  const corpusId = valueFor(argv, '--corpus-id')
+    ?? process.env['MATCHING_EVALUATION_CORPUS_ID'];
+  if (!corpusId && !checkLatestProductionPass) throw new Error('--corpus-id is required');
   const target = argv.includes('--remote') ? 'remote' : 'local';
   const databasePath = valueFor(argv, '--database-path');
   const databaseId = valueFor(argv, '--database-id');
@@ -263,7 +273,7 @@ export function parseEvaluationArgs(argv: string[]): EvaluationCliOptions | null
     target,
     ...(databasePath ? { databasePath } : {}),
     ...(databaseId ? { databaseId } : {}),
-    corpusId,
+    ...(corpusId ? { corpusId } : {}),
     ...(valueFor(argv, '--corpus-file')
       ? { corpusFile: valueFor(argv, '--corpus-file')! }
       : {}),
@@ -274,7 +284,7 @@ export function parseEvaluationArgs(argv: string[]): EvaluationCliOptions | null
     ...(valueFor(argv, '--report') ? { reportPath: valueFor(argv, '--report')! } : {}),
     persist: argv.includes('--persist'),
     allowSynthetic: argv.includes('--allow-synthetic'),
-    checkLatestProductionPass: argv.includes('--check-latest-production-pass'),
+    checkLatestProductionPass,
     stage: parseStage(valueFor(argv, '--stage')),
   };
 }
@@ -343,6 +353,71 @@ async function freezeCorpus(
   ).run();
 }
 
+function readinessFailureReport(
+  corpusId: string,
+  stage: 'shadow' | 'canary' | 'production',
+  failures: string[],
+  warnings: string[] = [],
+): EvaluationReadinessReport {
+  return {
+    ready: false,
+    corpusId,
+    evaluationResultId: null,
+    createdAt: null,
+    failures,
+    warnings,
+    metrics: null,
+    stage,
+  };
+}
+
+async function resolveReadinessCorpus(
+  db: D1Like,
+  explicitCorpusId: string | undefined,
+  stage: 'shadow' | 'canary' | 'production',
+): Promise<{ corpusId?: string; failureReport?: EvaluationReadinessReport }> {
+  if (explicitCorpusId) return { corpusId: explicitCorpusId };
+
+  const { results } = await db.prepare(
+    `SELECT corpus_id, expert_label_count, synthetic_fixture_count, created_at
+       FROM evaluation_corpora
+      ORDER BY created_at DESC, corpus_id DESC
+      LIMIT 20`,
+  ).all<EvaluationCorpusSummaryRow>();
+
+  if (results.length === 0) {
+    return {
+      failureReport: readinessFailureReport(
+        '(none)',
+        stage,
+        [
+          'No frozen CODE_REVIEW evaluation corpora found.',
+          'Seed a source-backed draft corpus with matching-eval:review --seed-from-match-runs --persist-draft, complete expert review, persist the reviewed corpus, run evaluation with --persist, then rerun readiness.',
+        ],
+      ),
+    };
+  }
+
+  const expertCorpus = results.find((row) =>
+    row.expert_label_count > 0
+    && row.synthetic_fixture_count === 0
+  );
+  if (expertCorpus) return { corpusId: expertCorpus.corpus_id };
+
+  const latest = results[0]!;
+  return {
+    failureReport: readinessFailureReport(
+      latest.corpus_id,
+      stage,
+      [
+        `No expert-labelled CODE_REVIEW evaluation corpus found; latest frozen corpus ${latest.corpus_id} has ${latest.expert_label_count} expert labels and ${latest.synthetic_fixture_count} synthetic fixture labels.`,
+        'Complete matching-eval:review expert review, persist the reviewed corpus, run evaluation with --persist, then rerun readiness.',
+      ],
+      [`Inspected ${results.length} frozen corpus row(s); none were expert-labelled and synthetic-free.`],
+    ),
+  };
+}
+
 export async function runEvaluationCli(argv: string[]): Promise<number> {
   const options = parseEvaluationArgs(argv);
   if (!options) {
@@ -372,8 +447,18 @@ export async function runEvaluationCli(argv: string[]): Promise<number> {
 
   try {
     if (options.checkLatestProductionPass) {
+      const resolved = await resolveReadinessCorpus(db, options.corpusId, options.stage);
+      if (resolved.failureReport) {
+        const json = `${JSON.stringify(resolved.failureReport, null, 2)}\n`;
+        const report = `${generateEvaluationReadinessReport(resolved.failureReport)}\n`;
+        if (options.jsonPath) writeFileSync(resolve(options.jsonPath), json);
+        if (options.reportPath) writeFileSync(resolve(options.reportPath), report);
+        if (!options.jsonPath) process.stdout.write(json);
+        if (!options.reportPath) process.stdout.write(report);
+        return 1;
+      }
       const readiness = await checkLatestProductionEvaluation(db as unknown as D1Database, {
-        corpusId: options.corpusId,
+        corpusId: resolved.corpusId!,
         stage: options.stage,
       });
       const json = `${JSON.stringify(readiness, null, 2)}\n`;
@@ -384,6 +469,7 @@ export async function runEvaluationCli(argv: string[]): Promise<number> {
       if (!options.reportPath) process.stdout.write(report);
       return readiness.ready ? 0 : 1;
     }
+    if (!options.corpusId) throw new Error('--corpus-id is required');
     if (options.corpusFile) {
       await freezeCorpus(db, options.corpusId, options.corpusFile);
     }
