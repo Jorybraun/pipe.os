@@ -572,8 +572,6 @@ describe('matching evaluation CLI', () => {
       '--local',
       '--database-path',
       databasePath,
-      '--corpus-id',
-      'expert-corpus-v1',
       '--check-latest-production-pass',
       '--json',
       jsonPath,
@@ -591,6 +589,51 @@ describe('matching evaluation CLI', () => {
         byteIdenticalRerun: true,
       },
     });
+  });
+
+  it('reports an actionable readiness failure when only draft corpora exist', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const jsonPath = join(directory, 'readiness.json');
+    const reportPath = join(directory, 'readiness.txt');
+    const draftCorpus = JSON.parse(expertCorpusJson()) as EvaluationCorpus;
+    draftCorpus.corpusId = 'draft-corpus-v1';
+    draftCorpus.expertLabels = draftCorpus.expertLabels.map((label) => {
+      const { labelProvenance: _labelProvenance, ...rest } = label;
+      return {
+        ...rest,
+        labeledBy: 'corpus-seeder',
+      };
+    });
+    draftCorpus.metadata.syntheticFixtureCount = 0;
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    insertEvaluationCorpus(sqlite, JSON.stringify(draftCorpus));
+    sqlite.close();
+
+    const exitCode = await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--check-latest-production-pass',
+      '--json',
+      jsonPath,
+      '--report',
+      reportPath,
+    ]);
+
+    expect(exitCode).toBe(1);
+    const readiness = JSON.parse(await readFile(jsonPath, 'utf8'));
+    expect(readiness).toMatchObject({
+      ready: false,
+      corpusId: 'draft-corpus-v1',
+      metrics: null,
+      failures: expect.arrayContaining([
+        expect.stringContaining('No expert-labelled CODE_REVIEW evaluation corpus found'),
+        expect.stringContaining('Complete matching-eval:review expert review'),
+      ]),
+    });
+    expect(await readFile(reportPath, 'utf8')).toContain('Ready: NO');
   });
 
   it('fails the readiness gate for historically persisted synthetic results', async () => {
@@ -1058,6 +1101,22 @@ describe('matching evaluation CLI', () => {
       corpusId: 'expert-corpus-v1',
       checkLatestProductionPass: true,
     }));
+  });
+
+  it('allows readiness checks to resolve the corpus from D1 when no corpus id is passed', () => {
+    const options = parseEvaluationArgs([
+      '--remote',
+      '--database-id',
+      'app-dev-d1',
+      '--check-latest-production-pass',
+    ]);
+
+    expect(options).toEqual(expect.objectContaining({
+      target: 'remote',
+      databaseId: 'app-dev-d1',
+      checkLatestProductionPass: true,
+    }));
+    expect(options).not.toHaveProperty('corpusId');
   });
 
   it('rejects remote database ids in local evaluation mode', () => {
