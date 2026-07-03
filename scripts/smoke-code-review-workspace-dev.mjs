@@ -876,6 +876,59 @@ async function assertCandidateTaskBriefBrowser(
   }
 }
 
+async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha) {
+  if (SKIP_CANDIDATE_BROWSER) {
+    return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_CANDIDATE_BROWSER=1' };
+  }
+
+  const roomCredentials = authCredentialsFromUrl(guestUrl);
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    ...(REMOTE && roomCredentials
+      ? { httpCredentials: roomCredentials }
+      : {}),
+    viewport: { width: 1440, height: 1000 },
+  });
+
+  try {
+    const page = await context.newPage();
+    const url = new URL(roomUrlWithoutCredentials(guestUrl));
+    url.searchParams.set('workspaceSmokeFinal', String(Date.now()));
+    await page.goto(url.toString(), {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+    await enterRoomFromPrejoinIfNeeded(page);
+
+    const assessmentHeader = page.getByTestId('standard-assessment-header');
+    const statusStrip = assessmentHeader.getByTestId('assessment-status-strip');
+    await expect(statusStrip).toBeVisible({ timeout: 60_000 });
+    await expect(statusStrip).toHaveAttribute('data-assessment-mode', 'dev_container_assessment');
+
+    const headerSubmission = assessmentHeader.getByTestId('assessment-open-submission');
+    await expect(headerSubmission).toContainText('Report Ready', { timeout: 60_000 });
+    await expect(headerSubmission).not.toContainText('Submit Work');
+
+    const footerSubmission = page.getByTestId('standard-open-submission');
+    await expect(footerSubmission).toContainText('Report Ready', { timeout: 60_000 });
+    await expect(footerSubmission).not.toContainText('Submit Work');
+
+    const brief = page.getByTestId('assessment-task-brief');
+    await expect(brief).toBeVisible({ timeout: 60_000 });
+    await expect(brief.getByTestId('assessment-brief-open-submission')).toContainText('Report Ready');
+    await expect(brief.getByTestId('assessment-brief-open-submission')).not.toContainText('Submit work');
+    await expect(brief.getByTestId('assessment-task-brief-submission')).toContainText('Assessment report ready');
+    await expect(brief.getByTestId('assessment-task-brief-submission')).toContainText(
+      expectedCommitSha.slice(0, 10),
+    );
+
+    return { skipped: false };
+  } finally {
+    await context.close();
+    await browser.close();
+  }
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1257,6 +1310,10 @@ async function main() {
   if (evaluationProgress?.evaluation?.status !== 'EVALUATED') {
     throw new Error(`Workspace assessment progress did not expose evaluated status: ${JSON.stringify(evaluationProgress?.evaluation)}`);
   }
+  const candidateTerminalBrowser = await assertCandidateTerminalStateBrowser(
+    invited.room.guestUrl,
+    workspaceCommit.commitSha,
+  );
   const recommendation = evaluationProgress?.evaluation?.recommendation
     ?? null;
   if (CHANGE_PROFILE) {
@@ -1322,6 +1379,8 @@ async function main() {
     candidateTaskBriefSkippedReason: candidateBrowser.skipped ? candidateBrowser.reason : null,
     candidateAssessmentStatusVisible: !candidateBrowser.skipped,
     candidateAssessmentStatusSkippedReason: candidateBrowser.skipped ? candidateBrowser.reason : null,
+    candidateTerminalStateVisible: !candidateTerminalBrowser.skipped,
+    candidateTerminalStateSkippedReason: candidateTerminalBrowser.skipped ? candidateTerminalBrowser.reason : null,
     roomChatEvidenceCaptured: true,
     roomChatEvidenceNodeId: roomChatEvidence.nodeId,
     roomChatEvidenceSourceRefs: roomChatEvidence.sourceRefTypes,
