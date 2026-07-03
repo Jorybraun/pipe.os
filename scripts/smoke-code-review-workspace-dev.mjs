@@ -698,7 +698,8 @@ async function assertCandidateTaskBriefBrowser(
     });
     await enterRoomFromPrejoinIfNeeded(page);
 
-    const statusStrip = page.getByTestId('assessment-status-strip');
+    const assessmentHeader = page.getByTestId('standard-assessment-header');
+    const statusStrip = assessmentHeader.getByTestId('assessment-status-strip');
     await expect(statusStrip).toBeVisible({ timeout: 60_000 });
     await expect(statusStrip).toHaveAttribute('data-assessment-mode', 'dev_container_assessment');
     await expect(statusStrip).toContainText('Dev-container assessment');
@@ -710,21 +711,21 @@ async function assertCandidateTaskBriefBrowser(
     const repoLabel = repoLabelFromUrl(expectedRepoUrl);
     if (repoLabel) {
       await expect(brief).toContainText(repoLabel);
-      await expect(page.getByTestId('assessment-repo')).toContainText(repoLabel);
+      await expect(assessmentHeader.getByTestId('assessment-repo')).toContainText(repoLabel);
     }
     if (expectedBaseCommitSha) {
       await expect(brief).toContainText(expectedBaseCommitSha.slice(0, 10));
-      await expect(page.getByTestId('assessment-base-commit')).toContainText(
+      await expect(assessmentHeader.getByTestId('assessment-base-commit')).toContainText(
         expectedBaseCommitSha.slice(0, 8),
       );
     }
     await expect(brief).toContainText('Task');
     await expect(brief).toContainText('Success criteria');
     await expect(brief).toContainText('Expected evidence');
-    await expect(page.getByTestId('assessment-progress-coverage')).toContainText('challenge', {
+    await expect(assessmentHeader.getByTestId('assessment-progress-coverage')).toContainText('challenge', {
       timeout: 60_000,
     });
-    await expect(page.getByTestId('assessment-ai-usage-state')).toContainText(
+    await expect(assessmentHeader.getByTestId('assessment-ai-usage-state')).toContainText(
       /AI use captured|No AI use captured/,
       { timeout: 60_000 },
     );
@@ -733,14 +734,14 @@ async function assertCandidateTaskBriefBrowser(
       await expect(brief).toContainText('popover');
       await expect(brief).toContainText('git_commit');
       await expect(brief).toContainText('code_diff');
-      await expect(page.getByTestId('assessment-next-action')).toContainText('popover');
+      await expect(assessmentHeader.getByTestId('assessment-next-action')).toContainText('popover');
     }
 
     if (expectWorkspaceReady) {
-      await expect(page.getByTestId('assessment-workspace-status')).toContainText('Workspace ready', {
+      await expect(assessmentHeader.getByTestId('assessment-workspace-status')).toContainText('Workspace ready', {
         timeout: 60_000,
       });
-      await expect(page.getByTestId('assessment-open-submission')).toContainText('Submit Work');
+      await expect(assessmentHeader.getByTestId('assessment-open-submission')).toContainText('Submit Work');
       await expect(page.getByTestId('standard-open-submission')).toContainText('Submit Work');
     }
 

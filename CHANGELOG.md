@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Candidate assessment cockpit smoke now scopes duplicate status-strip checks to the main room header, avoiding false failures when the video PiP mirrors the same assessment status.
 - Open-source workspace dev smoke now verifies the candidate-visible assessment cockpit after the workspace is ready, including repo/base commit, AI-use state, evidence coverage, and Submit Work.
 - Candidate dev-container assessments now keep the source-backed task packet, repo/base commit locator, evidence coverage, AI-use state, and Submit Work action visible above the code workspace, so the cockpit does not hide assessment readiness inside a drawer.
 - Recruiter interview lists now hydrate assessment progress only for assessment-capable interview types, keeping standard-call dashboard pages from paying unnecessary assessment-session query cost.
