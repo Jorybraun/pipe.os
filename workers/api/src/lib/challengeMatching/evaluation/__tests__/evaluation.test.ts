@@ -186,6 +186,78 @@ describe('Corpus Validation', () => {
     );
   });
 
+  it('requires production corpora to include at least one positive expert label', () => {
+    const corpus: EvaluationCorpus = {
+      version: EVALUATION_CORPUS_VERSION,
+      corpusId: 'production-corpus-without-positive-label',
+      createdAt: '2026-06-13T00:00:00Z',
+      description: 'Production corpus with only non-positive expert labels',
+      candidateEvidence: [
+        {
+          candidateId: 'candidate-1',
+          evidenceId: 'evidence-1',
+          episodeId: 'episode-1',
+          narrative: 'Operated analytics notebooks without owning queue systems.',
+          concepts: ['term:analytics-notebooks'],
+          evidenceReferences: [sourceRef('candidate-analytics')],
+        },
+        {
+          candidateId: 'candidate-2',
+          evidenceId: 'evidence-2',
+          episodeId: 'episode-2',
+          narrative: 'Reviewed unrelated content workflows.',
+          concepts: ['term:content-workflows'],
+          evidenceReferences: [sourceRef('candidate-content')],
+        },
+      ],
+      roleRequirements: [
+        {
+          roleId: 'role-1',
+          requiredLanguages: ['typescript'],
+          relevantConcepts: ['term:durable-task-queues'],
+          sourceReferences: [roleSource('queue-role', ['term:durable-task-queues'])],
+        },
+      ],
+      expertLabels: [
+        {
+          labelId: 'expert-label-negative-only',
+          candidateId: 'candidate-1',
+          roleId: 'role-1',
+          challengeId: 'challenge-1',
+          relevanceGrade: 'irrelevant',
+          eligibleChallengeIds: [],
+          negativeCandidateId: 'candidate-2',
+          minimumScoreSeparation: 0.2,
+          explanation:
+            'Expert reviewer confirmed this candidate lacks source-backed queue ownership evidence.',
+          labelVersion: '1.0.0',
+          labeledAt: '2026-06-13T00:00:00Z',
+          labeledBy: 'expert-reviewer-1',
+          labelProvenance: {
+            reviewerId: 'expert-reviewer-1',
+            reviewerRole: 'senior-engineering-reviewer',
+            reviewArtifactId: 'expert-review-artifact-1',
+            reviewArtifactVersion: 'v1',
+            contentHash: 'sha256:expert-review-artifact-1',
+            locator: 'expert-review:artifact-1',
+            rubricVersion: 'candidate-pr-match-rubric-v1',
+          },
+        },
+      ],
+      metadata: {
+        totalLabels: 1,
+        totalCandidates: 2,
+        totalRoles: 1,
+        totalChallenges: 1,
+        syntheticFixtureCount: 0,
+      },
+    };
+
+    expect(productionCorpusFailures(corpus)).toContain(
+      'production corpus requires at least one highly_relevant or relevant positive expert label',
+    );
+  });
+
   it('should reject corpus with version mismatch', () => {
     const corpus: EvaluationCorpus = {
       version: '0.0.0' as const,

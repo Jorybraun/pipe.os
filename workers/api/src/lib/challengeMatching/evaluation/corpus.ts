@@ -302,11 +302,15 @@ export function productionCorpusFailures(corpus: EvaluationCorpus): string[] {
   if (corpus.expertLabels.length === 0) {
     failures.push('production corpus requires at least one expert label');
   }
+  const positiveLabels = corpus.expertLabels.filter(positiveLabel);
   const negativeLabels = corpus.expertLabels.filter((label) => !positiveLabel(label));
   const contrastLabels = corpus.expertLabels.filter((label) =>
     nonEmptyString(label.negativeCandidateId)
       && label.minimumScoreSeparation !== undefined
   );
+  if (positiveLabels.length === 0) {
+    failures.push('production corpus requires at least one highly_relevant or relevant positive expert label');
+  }
   if (negativeLabels.length === 0) {
     failures.push('production corpus requires at least one insufficient-evidence or non-positive contrast label');
   }
