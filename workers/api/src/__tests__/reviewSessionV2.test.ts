@@ -181,6 +181,15 @@ interface ProfileReceivedHandoffBody {
   message?: string;
 }
 
+interface ProfileReceivedChallengeBody {
+  id?: string;
+  type?: string;
+  instructions?: string;
+  error?: unknown;
+  stageId?: string;
+  waitingChallenge?: unknown;
+}
+
 function expectProfileReceivedHandoff(body: ProfileReceivedHandoffBody): void {
   expect(body.error?.code).toBe('PROFILE_RECEIVED');
   expect(body.error?.message).toContain('email you when your code review is ready');
@@ -198,6 +207,22 @@ function expectProfileReceivedHandoff(body: ProfileReceivedHandoffBody): void {
   expect(body.currentIndex).toBe(0);
   expect(body.message).toContain('email you when your code review is ready');
   expect(JSON.stringify(body)).not.toContain('WAITING_FOR_MATCH');
+}
+
+function expectBareProfileReceivedChallenge(body: ProfileReceivedChallengeBody): void {
+  expect(body).toMatchObject({
+    id: 'profile-received',
+    type: 'PROFILE_RECEIVED',
+  });
+  expect(body.instructions).toContain('email you when your code review is ready');
+  expect(body.error).toBeUndefined();
+  expect(body.stageId).toBeUndefined();
+  expect(body.waitingChallenge).toBeUndefined();
+  const serialized = JSON.stringify(body);
+  expect(serialized).not.toContain('WAITING_FOR_MATCH');
+  expect(serialized).not.toContain('Building your personalized challenge');
+  expect(serialized).not.toContain('MATCHING IN PROGRESS');
+  expect(serialized).not.toContain('Repo matching');
 }
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -2371,11 +2396,7 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body).toMatchObject({
-      id: 'profile-received',
-      type: 'PROFILE_RECEIVED',
-    });
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(matchReposByGroundedEdges).not.toHaveBeenCalled();
     expect(matchReposForCandidateNeo4j).not.toHaveBeenCalled();
   });
@@ -2441,11 +2462,7 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body).toMatchObject({
-      id: 'profile-received',
-      type: 'PROFILE_RECEIVED',
-    });
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(matchReposByGroundedEdges).not.toHaveBeenCalled();
     expect(matchReposForCandidateNeo4j).not.toHaveBeenCalled();
   });
@@ -2531,11 +2548,7 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body).toMatchObject({
-      id: 'profile-received',
-      type: 'PROFILE_RECEIVED',
-    });
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
     expect(db.__calls.some((call) =>
       call.ran && call.sql.includes('INSERT INTO candidate_challenge_assignment')
@@ -2726,9 +2739,7 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body.type).toBe('PROFILE_RECEIVED');
-    expect(body.id).toBe('profile-received');
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
@@ -2781,11 +2792,7 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body).toMatchObject({
-      id: 'profile-received',
-      type: 'PROFILE_RECEIVED',
-    });
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
   });
 
@@ -2835,13 +2842,8 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body).toMatchObject({
-      id: 'profile-received',
-      type: 'PROFILE_RECEIVED',
-    });
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(JSON.stringify(body)).not.toContain('Upload Your CV');
-    expect(JSON.stringify(body)).not.toContain('WAITING_FOR_MATCH');
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
   });
 
@@ -2894,11 +2896,7 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body).toMatchObject({
-      id: 'profile-received',
-      type: 'PROFILE_RECEIVED',
-    });
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
   });
 
@@ -2985,11 +2983,7 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body).toMatchObject({
-      id: 'profile-received',
-      type: 'PROFILE_RECEIVED',
-    });
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran && call.sql.includes('SET matched_repo_id = NULL')
@@ -3072,11 +3066,7 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body).toMatchObject({
-      id: 'profile-received',
-      type: 'PROFILE_RECEIVED',
-    });
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran && call.sql.includes('SET matched_repo_id = ?1')

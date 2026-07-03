@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- Added a backend regression helper proving not-ready CODE_REVIEW challenge loads return a bare 200 `PROFILE_RECEIVED` challenge with no waiting, matching, or graph diagnostics, preserving the candidate-safe `/assess` boundary and avoiding false "link already used" client errors.
 - CODE_REVIEW reliability suite artifacts now include compact, redacted stdout/stderr previews for failed lanes, making pre-JSON failures like missing Cloudflare env self-explanatory from the summary file.
 - Added a component regression that keeps the CODE_REVIEW hiring-manager readout capped to five decision cards and free of raw match, packet, review-session, source-span, or graph-cockpit labels.
 - The CODE_REVIEW match-quality reliability lane now fails unless the labelled corpus proof includes positive, negative, insufficient-evidence, contrast, reason-category, failed-case, source-backed PR, repo-provenance, and positive candidate-evidence coverage.
