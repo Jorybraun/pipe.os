@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter assessment decision summaries now prefer durable PIPE-matched assignment trust over stale manual setup rationale, keeping evaluated open-source workspace readouts aligned with the matched challenge proof.
 - Candidate workspace finalization now rejects dev-container bridge payloads that omit both `test_run` and `verification_gap` source refs, preventing source-backed commits from silently losing verification evidence.
 - Candidate workspace finalization now pre-fills the assigned challenge packet's verification command, making expected test evidence easier to capture without overwriting candidate edits.
 - Candidate dev-container assessment rooms now render a structured source-backed task brief with task, success criteria, expected evidence, and verification command from the assigned challenge packet instead of showing candidates only raw packet text.

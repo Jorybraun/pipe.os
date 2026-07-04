@@ -1113,9 +1113,30 @@ function workspaceAssessmentFitItem(input: {
   };
 }
 
-function workspaceAssessmentSelectionRationaleItem(
-  setup: AssessmentSetupProjection | null | undefined,
-): WorkspaceAssessmentReadoutItem | null {
+function workspaceAssessmentSelectionRationaleItem(input: {
+  progress: AssessmentProgressSnapshot | null;
+  setup: AssessmentSetupProjection | null | undefined;
+}): WorkspaceAssessmentReadoutItem | null {
+  const setup = input.setup;
+  const progressMatched = input.progress?.assignmentTrust?.state === 'matched_challenge';
+  const setupIsManual = setup?.source === 'recruiter_manual_override'
+    || setup?.kind === 'manual_open_source_task';
+  if (progressMatched && setupIsManual) {
+    const trustDetail = input.progress?.assignmentTrust?.detail?.trim()
+      || 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.';
+    return {
+      label: 'Selection rationale',
+      value: 'PIPE-selected repo task',
+      detail: [
+        `${trustDetail} The durable assignment is shown instead of handing the candidate a generic repo.`,
+        'Lower-ranked or withheld challenges stay secondary once the assessment session is bound to this source-backed packet.',
+        'The assignment proves challenge fit only; the hiring signal still depends on the captured branch commit, diff, tests or verification gap, transcript/chat, AI-use trail, evaluator report, and human review.',
+        'Next: Run the controlled workspace assessment and review the source-backed evidence before making a hiring decision.',
+      ].join(' '),
+      tone: 'positive',
+    };
+  }
+
   const rationale = setup?.selectionRationale ?? null;
   if (!rationale) return null;
 
@@ -1764,7 +1785,10 @@ function workspaceAssessmentHiringReadout(input: {
   return [
     workspaceAssessmentDecisionItem(input.progress),
     workspaceAssessmentFitItem(input),
-    workspaceAssessmentSelectionRationaleItem(input.setup),
+    workspaceAssessmentSelectionRationaleItem({
+      progress: input.progress,
+      setup: input.setup,
+    }),
     workspaceAssessmentProofItem(input.progress),
     workspaceAssessmentRiskItem(input.progress),
     workspaceAssessmentNextActionItem(input.progress),
