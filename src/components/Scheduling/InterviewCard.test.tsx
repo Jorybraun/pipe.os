@@ -277,6 +277,9 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('DECISION');
     expect(progress).toHaveTextContent('Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.');
     expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, tool activity, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('AI USE');
+    expect(progress).toHaveTextContent('AI bridge trace captured');
+    expect(progress).toHaveTextContent('source-backed evidence trail');
     expect(progress).toHaveTextContent('PROOF');
     expect(progress).toHaveTextContent('Required: Captured: Complete challenge packet · Captured: Assessment branch commit');
     expect(progress).toHaveTextContent('Confidence: Captured: Workspace-captured commit');
@@ -1029,6 +1032,134 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).not.toHaveTextContent('assessment-event-verification-gap');
   });
 
+  it('distinguishes blocked AI prompts from real agent assistance on recruiter cards', () => {
+    renderCard({
+      id: 'interview-blocked-ai-prompt',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'INVITED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-blocked-ai',
+          ingestionKey: 'assessment-session:blocked-ai',
+          interviewId: 'interview-blocked-ai-prompt',
+          candidateId: 'candidate-1',
+          workspaceId: 'workspace-1',
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'IN_PROGRESS',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:20:00.000Z',
+        },
+        stage: 'WORK_IN_PROGRESS',
+        nextAction: 'SUBMIT_COMMIT',
+        nextActionLabel: 'Submit a real assessment branch commit.',
+        hasChallengePacket: true,
+        hasWorkEvidence: true,
+        hasMessageEvidence: true,
+        hasDevContainerEvidence: true,
+        hasToolUsageEvidence: true,
+        hasCommitSubmission: false,
+        hasFinalSubmission: false,
+        hasAiInteraction: true,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: false,
+        evidenceCounts: [{ kind: 'ai_prompt_blocked', count: 1 }],
+        sourceRefCounts: [
+          { kind: 'open_source_challenge_packet', count: 1 },
+          { kind: 'ai_user_prompt_blocked', count: 1 },
+        ],
+        challenge: null,
+        latestEvent: {
+          id: 'assessment-event-blocked-ai',
+          kind: 'ai_prompt_blocked',
+          sequence: 3,
+          occurredAt: '2026-06-23T00:18:00.000Z',
+        },
+        commit: null,
+        evaluation: null,
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('AI USE');
+    expect(progress).toHaveTextContent('AI prompt blocked');
+    expect(progress).toHaveTextContent('no agent response is counted as assistance');
+    expect(progress).not.toHaveTextContent('AI response captured');
+    expect(progress).not.toHaveTextContent('assessment-session-blocked-ai');
+    expect(progress).not.toHaveTextContent('assessment-event-blocked-ai');
+  });
+
+  it('shows real AI agent responses separately from generic traces on recruiter cards', () => {
+    renderCard({
+      id: 'interview-ai-response',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'INVITED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-ai-response',
+          ingestionKey: 'assessment-session:ai-response',
+          interviewId: 'interview-ai-response',
+          candidateId: 'candidate-1',
+          workspaceId: 'workspace-1',
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'IN_PROGRESS',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:20:00.000Z',
+        },
+        stage: 'WORK_IN_PROGRESS',
+        nextAction: 'SUBMIT_COMMIT',
+        nextActionLabel: 'Submit a real assessment branch commit.',
+        hasChallengePacket: true,
+        hasWorkEvidence: true,
+        hasMessageEvidence: true,
+        hasDevContainerEvidence: true,
+        hasToolUsageEvidence: true,
+        hasCommitSubmission: false,
+        hasFinalSubmission: false,
+        hasAiInteraction: true,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: false,
+        evidenceCounts: [
+          { kind: 'ai_user_prompt', count: 2 },
+          { kind: 'ai_agent_response', count: 1 },
+        ],
+        sourceRefCounts: [
+          { kind: 'open_source_challenge_packet', count: 1 },
+          { kind: 'ai_user_prompt', count: 2 },
+          { kind: 'ai_agent_response', count: 1 },
+        ],
+        challenge: null,
+        latestEvent: {
+          id: 'assessment-event-ai-response',
+          kind: 'ai_agent_response',
+          sequence: 4,
+          occurredAt: '2026-06-23T00:19:00.000Z',
+        },
+        commit: null,
+        evaluation: null,
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('AI USE');
+    expect(progress).toHaveTextContent('AI response captured');
+    expect(progress).toHaveTextContent('2 prompts and 1 agent response captured from the real agent bridge.');
+    expect(progress).not.toHaveTextContent('AI bridge trace captured');
+    expect(progress).not.toHaveTextContent('assessment-session-ai-response');
+    expect(progress).not.toHaveTextContent('assessment-event-ai-response');
+  });
+
   it('shows sourced evaluator claims, coverage gaps, and diagnostics without source-less praise or ids', () => {
     renderCard({
       id: 'interview-evaluation-proof',
@@ -1287,6 +1418,9 @@ describe('InterviewCard assessment progress', () => {
 
     const progress = screen.getByTestId('interview-card-assessment-progress');
     expect(progress).toHaveTextContent('LIMITATIONS');
+    expect(progress).toHaveTextContent('AI USE');
+    expect(progress).toHaveTextContent('No AI use captured');
+    expect(progress).toHaveTextContent('treat AI use as unobserved, not absent');
     expect(progress).toHaveTextContent('Human correctness review required');
     expect(progress).toHaveTextContent('Inspect the submitted diff and verification evidence before deciding.');
     expect(progress).toHaveTextContent('AI-use trail missing');

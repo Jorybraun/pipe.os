@@ -777,6 +777,10 @@ async function assertRecruiterListCardBrowser(
     }
     await expect(card).toContainText('EXPECTED');
     await expect(card).toContainText('git_commit source ref');
+    await expect(card).toContainText('AI USE');
+    await expect(card).toContainText(
+      /AI response captured|AI prompt captured|AI prompt blocked|AI bridge diagnostic|AI bridge status|AI bridge trace captured|No AI use captured/,
+    );
     await expect(card).toContainText('LIMITATIONS');
     await expect(card).toContainText('AI-use trail missing');
     await expect(card).toContainText('Transcript missing');

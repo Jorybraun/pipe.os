@@ -257,6 +257,12 @@ interface AssessmentLimitationSummary {
   tone: 'warning' | 'neutral';
 }
 
+interface AssessmentAiUseSummary {
+  label: string;
+  detail: string;
+  tone: 'verified' | 'warning' | 'neutral';
+}
+
 type AssessmentEvaluation = NonNullable<NonNullable<ScheduledInterview['assessmentProgress']>['evaluation']>;
 type AssessmentEvaluationClaim = NonNullable<AssessmentEvaluation['claims']>[number];
 type AssessmentEvaluationDiagnostic = NonNullable<AssessmentEvaluation['diagnostics']>[number];
@@ -382,6 +388,80 @@ function assessmentLimitationSummary(
   }
 
   return limitations.slice(0, 3);
+}
+
+function unitLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function assessmentAiUseSummary(
+  progress: ScheduledInterview['assessmentProgress'] | null | undefined,
+): AssessmentAiUseSummary | null {
+  if (!progress) return null;
+
+  const agentResponses = assessmentSourceRefCount(progress, 'ai_agent_response')
+    + assessmentSourceRefCount(progress, 'agent_response');
+  const sentPrompts = assessmentSourceRefCount(progress, 'ai_user_prompt');
+  const blockedPrompts = assessmentSourceRefCount(progress, 'ai_user_prompt_blocked');
+  const bridgeDiagnostics = assessmentSourceRefCount(progress, 'ai_agent_diagnostic')
+    + assessmentSourceRefCount(progress, 'agent_diagnostic');
+  const bridgeStatuses = assessmentSourceRefCount(progress, 'agent_status');
+  const usageEvents = assessmentSourceRefCount(progress, 'ai_usage_event');
+
+  if (agentResponses > 0) {
+    const promptPart = sentPrompts > 0 ? `${unitLabel(sentPrompts, 'prompt')} and ` : '';
+    return {
+      label: 'AI response captured',
+      detail: `${promptPart}${unitLabel(agentResponses, 'agent response')} captured from the real agent bridge.`,
+      tone: 'verified',
+    };
+  }
+
+  if (blockedPrompts > 0) {
+    return {
+      label: 'AI prompt blocked',
+      detail: `${unitLabel(blockedPrompts, 'blocked prompt')} captured. The bridge was unavailable or blocked the prompt; no agent response is counted as assistance.`,
+      tone: 'warning',
+    };
+  }
+
+  if (sentPrompts > 0) {
+    return {
+      label: 'AI prompt captured',
+      detail: `${unitLabel(sentPrompts, 'prompt')} sent to the real agent bridge; no agent response is captured yet.`,
+      tone: 'verified',
+    };
+  }
+
+  if (bridgeDiagnostics > 0) {
+    return {
+      label: 'AI bridge diagnostic',
+      detail: `${unitLabel(bridgeDiagnostics, 'bridge diagnostic')} captured; no agent response is counted as assistance.`,
+      tone: 'warning',
+    };
+  }
+
+  if (bridgeStatuses > 0) {
+    return {
+      label: 'AI bridge status',
+      detail: `${unitLabel(bridgeStatuses, 'bridge status', 'bridge statuses')} captured; no agent response is counted as assistance.`,
+      tone: 'neutral',
+    };
+  }
+
+  if (usageEvents > 0 || progress.hasAiInteraction) {
+    return {
+      label: 'AI bridge trace captured',
+      detail: 'AI prompts, responses, or bridge traces are part of the source-backed evidence trail.',
+      tone: 'verified',
+    };
+  }
+
+  return {
+    label: 'No AI use captured',
+    detail: 'No candidate AI-assistance evidence is attached; treat AI use as unobserved, not absent.',
+    tone: 'neutral',
+  };
 }
 
 function assessmentCoverageGaps(
@@ -886,6 +966,7 @@ export function InterviewCard({
   const visibleAssessmentEvaluationDiagnostics = assessmentEvaluationDiagnostics(assessmentProgress?.evaluation);
   const visibleAssessmentEvaluationGaps = assessmentCoverageGaps(assessmentProgress?.evaluation?.evidenceCoverage);
   const visibleAssessmentLimitations = assessmentLimitationSummary(assessmentProgress);
+  const assessmentAiUse = assessmentAiUseSummary(assessmentProgress);
   const assessmentDecision = assessmentDecisionSummary({
     setup: assessmentSetup,
     progress: assessmentProgress,
@@ -1077,6 +1158,21 @@ export function InterviewCard({
               <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                 {assessmentEvidence}
               </div>
+              {assessmentAiUse && (
+                <>
+                  <div style={{ fontSize: 9, color: assessmentCommitTrustColor(assessmentAiUse.tone), letterSpacing: '0.12em', fontWeight: 700 }}>
+                    AI USE
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: assessmentCommitTrustColor(assessmentAiUse.tone), fontWeight: 700 }}>
+                      {assessmentAiUse.label}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                      {assessmentAiUse.detail}
+                    </div>
+                  </div>
+                </>
+              )}
               {visibleAssessmentLimitations.length > 0 && (
                 <>
                   <div style={{ fontSize: 9, color: '#fbbf24', letterSpacing: '0.12em', fontWeight: 700 }}>
