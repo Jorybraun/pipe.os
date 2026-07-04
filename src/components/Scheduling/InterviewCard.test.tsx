@@ -1191,6 +1191,112 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).not.toHaveTextContent('assessment-diagnostic-proof-secret');
   });
 
+  it('summarizes missing high-confidence signals on evaluated open-source assessment cards', () => {
+    renderCard({
+      id: 'interview-evaluation-limitations',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:22:00.000Z',
+      status: 'COMPLETED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-limitations-secret',
+          ingestionKey: 'assessment-session:limitations',
+          interviewId: 'interview-evaluation-limitations',
+          candidateId: 'candidate-1',
+          workspaceId: 'workspace-1',
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'EVALUATED',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:22:00.000Z',
+        },
+        stage: 'EVALUATED',
+        nextAction: 'REVIEW_EVALUATION',
+        nextActionLabel: 'Review the source-backed evaluator report.',
+        hasChallengePacket: true,
+        hasWorkEvidence: true,
+        hasMessageEvidence: true,
+        hasDevContainerEvidence: true,
+        hasToolUsageEvidence: true,
+        hasCommitSubmission: true,
+        hasFinalSubmission: true,
+        hasAiInteraction: false,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: true,
+        evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+        sourceRefCounts: [
+          { kind: 'review_challenge_packet', count: 1 },
+          { kind: 'git_commit', count: 1 },
+          { kind: 'code_diff', count: 1 },
+          { kind: 'test_run', count: 1 },
+        ],
+        challenge: null,
+        latestEvent: {
+          id: 'assessment-event-limitations-secret',
+          kind: 'final_submission',
+          sequence: 4,
+          occurredAt: '2026-06-23T00:20:00.000Z',
+        },
+        commit: {
+          eventId: 'assessment-event-limitations-secret',
+          repositoryUrl: 'https://github.com/mui/base-ui',
+          forkRepositoryUrl: null,
+          branchName: 'pipe-assessment',
+          baseCommitSha: '3333333333333333333333333333333333333333',
+          commitSha: '123456abcdef123456abcdef123456abcdef1234',
+          commitUrl: null,
+          submissionSource: 'live_workspace',
+          submissionSourceLabel: 'Live workspace finalizer',
+          changedFiles: [{ path: 'packages/react/src/popover/root/usePopoverRoot.ts', status: 'modified' }],
+          occurredAt: '2026-06-23T00:18:00.000Z',
+        },
+        evaluation: {
+          id: 'assessment-report-limitations-secret',
+          status: 'EVALUATED',
+          summary: 'PIPE produced a conservative source-backed assessment report from captured challenge, commit, diff, verification, and workspace evidence.',
+          recommendation: 'mixed_evidence_human_review',
+          createdAt: '2026-06-23T00:22:00.000Z',
+          evidenceCoverage: {
+            schemaVersion: 'assessment-evidence-coverage-v1',
+            sourceRefCount: 4,
+            sourceRefTypeCounts: {
+              review_challenge_packet: 1,
+              git_commit: 1,
+              code_diff: 1,
+              test_run: 1,
+            },
+            requiredForEvaluation: [],
+            expectedForHighConfidence: [],
+          },
+          claims: [],
+          diagnostics: [{
+            id: 'assessment-diagnostic-limitations-secret',
+            code: 'HUMAN_CORRECTNESS_REVIEW_REQUIRED',
+            severity: 'warning',
+            message: 'A human reviewer should inspect the diff before treating the commit as proven upstream-correct.',
+            sourceRefCount: 1,
+            sourceRefTypes: ['code_diff'],
+          }],
+        },
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('LIMITATIONS');
+    expect(progress).toHaveTextContent('Human correctness review required');
+    expect(progress).toHaveTextContent('Inspect the submitted diff and verification evidence before deciding.');
+    expect(progress).toHaveTextContent('AI-use trail missing');
+    expect(progress).toHaveTextContent('Do not judge AI collaboration from this session.');
+    expect(progress).toHaveTextContent('Transcript missing');
+    expect(progress).toHaveTextContent('Reasoning and communication signals come from chat/code evidence only.');
+    expect(progress).not.toHaveTextContent('assessment-report-limitations-secret');
+    expect(progress).not.toHaveTextContent('assessment-diagnostic-limitations-secret');
+  });
+
   it('shows human assessment decision before evaluator recommendation without exposing ids', () => {
     renderCard({
       id: 'interview-evaluated',

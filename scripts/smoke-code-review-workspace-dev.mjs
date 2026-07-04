@@ -749,6 +749,10 @@ async function assertRecruiterListCardBrowser(
     }
     await expect(card).toContainText('EXPECTED');
     await expect(card).toContainText('git_commit source ref');
+    await expect(card).toContainText('LIMITATIONS');
+    await expect(card).toContainText('AI-use trail missing');
+    await expect(card).toContainText('Transcript missing');
+    await expect(card).toContainText('Do not judge AI collaboration from this session.');
     await expect(card).toContainText('COMMIT');
     await expect(card).toContainText(workspaceCommit.commitSha.slice(0, 12));
     await expect(card).toContainText('COMMIT TRUST');

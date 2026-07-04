@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter open-source assessment cards now surface missing high-confidence signals such as absent AI-use trails and missing speaker-attributed transcripts, so evaluated commits stay reviewable without implying unobserved candidate behavior was assessed.
 - Assessment room recovery now treats Cloudflare clean early container exits as recoverable, and the open-source workspace dev smoke relaunches once on that exact startup failure before retrying the unchanged-work finalizer proof while accepting the post-evaluation Report Ready state even if the already-submitted workspace later stops.
 - Open-source workspace dev smoke now preserves bridge health metadata after workspace recovery retries, keeping the final live-smoke proof JSON complete.
 - Workspace assessment detail now includes a recruiter-facing score-validity proof that states why the report is usable, what confidence gaps remain, which source refs back it, and how to use it without treating PIPE as an automatic hiring decision; the open-source workspace dev smoke now verifies the panel on app-dev.

@@ -251,6 +251,12 @@ interface AssessmentProofChecklistSummary {
   missingRequiredCount: number;
 }
 
+interface AssessmentLimitationSummary {
+  label: string;
+  detail: string;
+  tone: 'warning' | 'neutral';
+}
+
 type AssessmentEvaluation = NonNullable<NonNullable<ScheduledInterview['assessmentProgress']>['evaluation']>;
 type AssessmentEvaluationClaim = NonNullable<AssessmentEvaluation['claims']>[number];
 type AssessmentEvaluationDiagnostic = NonNullable<AssessmentEvaluation['diagnostics']>[number];
@@ -342,6 +348,40 @@ function assessmentEvaluationNeedsHumanCorrectnessReview(
   return evaluation?.recommendation === 'mixed_evidence_human_review'
     || codes.has('MODEL_CLAIMS_UNUSABLE')
     || codes.has('HUMAN_CORRECTNESS_REVIEW_REQUIRED');
+}
+
+function assessmentLimitationSummary(
+  progress: ScheduledInterview['assessmentProgress'] | null | undefined,
+): AssessmentLimitationSummary[] {
+  if (!progress?.hasCommitSubmission && !progress?.evaluation) return [];
+
+  const limitations: AssessmentLimitationSummary[] = [];
+
+  if (assessmentEvaluationNeedsHumanCorrectnessReview(progress.evaluation)) {
+    limitations.push({
+      label: 'Human correctness review required',
+      detail: 'Inspect the submitted diff and verification evidence before deciding.',
+      tone: 'warning',
+    });
+  }
+
+  if (!progress.hasAiInteraction) {
+    limitations.push({
+      label: 'AI-use trail missing',
+      detail: 'No candidate prompt, blocked attempt, or agent response was captured. Do not judge AI collaboration from this session.',
+      tone: 'neutral',
+    });
+  }
+
+  if (!progress.hasTranscriptEvidence) {
+    limitations.push({
+      label: 'Transcript missing',
+      detail: 'No speaker-attributed transcript spans were captured. Reasoning and communication signals come from chat/code evidence only.',
+      tone: 'neutral',
+    });
+  }
+
+  return limitations.slice(0, 3);
 }
 
 function assessmentCoverageGaps(
@@ -845,6 +885,7 @@ export function InterviewCard({
   const visibleAssessmentEvaluationClaims = assessmentEvaluationClaims(assessmentProgress?.evaluation);
   const visibleAssessmentEvaluationDiagnostics = assessmentEvaluationDiagnostics(assessmentProgress?.evaluation);
   const visibleAssessmentEvaluationGaps = assessmentCoverageGaps(assessmentProgress?.evaluation?.evidenceCoverage);
+  const visibleAssessmentLimitations = assessmentLimitationSummary(assessmentProgress);
   const assessmentDecision = assessmentDecisionSummary({
     setup: assessmentSetup,
     progress: assessmentProgress,
@@ -1036,6 +1077,29 @@ export function InterviewCard({
               <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                 {assessmentEvidence}
               </div>
+              {visibleAssessmentLimitations.length > 0 && (
+                <>
+                  <div style={{ fontSize: 9, color: '#fbbf24', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    LIMITATIONS
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    {visibleAssessmentLimitations.map((limitation) => (
+                      <div key={limitation.label} style={{ marginBottom: 4 }}>
+                        <div style={{
+                          fontSize: 10,
+                          color: limitation.tone === 'warning' ? '#fde68a' : 'var(--pipe-text)',
+                          fontWeight: 700,
+                        }}>
+                          {limitation.label}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                          {limitation.detail}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
               {assessmentProofChecklist && (
                 <>
                   <div style={{
