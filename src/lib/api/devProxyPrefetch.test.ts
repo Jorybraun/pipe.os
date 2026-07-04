@@ -18,6 +18,10 @@ describe('dev proxy API prefetch', () => {
 
     await expect(prefetched).resolves.toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/scheduling/interviews/interview-1', expect.objectContaining({
+      method: 'GET',
+      cache: 'no-store',
+    }));
     expect(window.__PIPE_DEV_PROXY_API_PREFETCHES__?.size ?? 0).toBe(0);
   });
 

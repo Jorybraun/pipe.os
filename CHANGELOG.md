@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter API reads now bypass browser cache, preventing app-dev interview detail pages from rendering stale pre-evaluation assessment state after source-backed review evidence has been recorded.
 - Candidate assessment submission panels now show the precise AI-use evidence state at finalization, distinguishing real responses, blocked prompts, bridge traces, and unobserved AI use without implying missing evidence proves no AI collaboration.
 - Candidate assessment submission panels now show the assigned challenge's assessment fit beside match proof, success criteria, and expected evidence, keeping difficulty/time calibration visible at the moment of commit finalization.
 - Candidate assessment task briefs now keep the Report Ready action available after evaluation even if the dev-container later stops, so candidates and reviewers are not stranded by post-submit workspace lifecycle changes.
