@@ -71,6 +71,21 @@ function buildCtx(): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
+function buildCapturingCtx(): { ctx: ExecutionContext; waitUntilAll: () => Promise<void> } {
+  const promises: Promise<unknown>[] = [];
+  return {
+    ctx: {
+      waitUntil: (promise: Promise<unknown>) => {
+        promises.push(promise);
+      },
+      passThroughOnException: () => {},
+    } as unknown as ExecutionContext,
+    waitUntilAll: async () => {
+      await Promise.all(promises);
+    },
+  };
+}
+
 async function authHeader(candidateId: string): Promise<string> {
   const token = await signJwt({ sub: candidateId, pid: 'pipe_1' }, 'test-secret');
   return `Bearer ${token}`;
@@ -685,6 +700,7 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
       DEV_CONTAINER: devContainerNamespace,
     } as unknown as Env;
 
+    const { ctx, waitUntilAll } = buildCapturingCtx();
     const response = await rpcAuth.request(
       `/dev-container/${devContainerSessionId}/assessment/finalize`,
       {
@@ -700,12 +716,13 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
         }),
       },
       env,
-      buildCtx(),
+      ctx,
     );
 
     expect(response.status).toBe(201);
     const body = await response.json() as {
       submission: { accepted: boolean; repositoryUrl: string; branchName: string; commitSha: string };
+      evaluationStart: { autoStarted: boolean; backgrounded: boolean };
       progress: {
         mode: string;
         state: string;
@@ -723,11 +740,15 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
       branchName: 'pipe-assessment/finalizer',
       commitSha,
     });
+    expect(body.evaluationStart).toEqual({
+      autoStarted: true,
+      backgrounded: true,
+    });
     expect(body.progress).toMatchObject({
       mode: 'DEV_CONTAINER_REPO_TASK',
-      state: 'FINAL_SUBMITTED',
-      stage: 'READY_FOR_EVALUATION',
-      nextAction: 'START_EVALUATION',
+      state: 'EVALUATING',
+      stage: 'EVALUATING',
+      nextAction: 'WAIT_FOR_EVALUATION',
       hasChallengePacket: true,
       hasCommitSubmission: true,
     });
@@ -756,6 +777,31 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
           AND kind = 'commit_submission'`,
     ).get(assessmentSessionId) as { count: number };
     expect(commitRow.count).toBe(1);
+    const evaluationRequestRow = sqlite.prepare(
+      `SELECT actor_type, actor_id, payload_json
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'dev_container_event'
+          AND narrative = 'PIPE queued source-backed assessment evaluation after workspace commit finalization.'
+        LIMIT 1`,
+    ).get(assessmentSessionId) as { actor_type: string; actor_id: string; payload_json: string } | undefined;
+    expect(evaluationRequestRow).toMatchObject({
+      actor_type: 'system',
+      actor_id: 'pipe-assessment-evaluator',
+    });
+    expect(JSON.parse(evaluationRequestRow?.payload_json ?? '{}')).toMatchObject({
+      action: 'auto_start_evaluation',
+      evaluatorStatus: 'source_backed_evaluator_requested',
+      devContainerSessionId,
+      commitSha,
+    });
+    const evaluationRequestSource = sqlite.prepare(
+      `SELECT exact_text
+         FROM assessment_event_source_refs
+        WHERE source_ref_type = 'assessment_evaluation_request'
+        LIMIT 1`,
+    ).get() as { exact_text: string } | undefined;
+    expect(evaluationRequestSource?.exact_text).toContain(`workspace commit ${commitSha}`);
     const fileObservationRow = sqlite.prepare(
       `SELECT exact_text
          FROM assessment_event_source_refs
@@ -770,5 +816,20 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
     expect(serialized).not.toContain(`assessment-session:finalize:${interviewId}`);
     expect(serialized).not.toContain('assessment-event-finalize-challenge');
     expect(serialized).not.toContain('internalAssessmentSessionId');
+
+    await waitUntilAll();
+    expect(sqlite.prepare(
+      `SELECT state FROM assessment_sessions WHERE id = ?`,
+    ).get(assessmentSessionId)).toEqual({ state: 'DIAGNOSTIC' });
+    const diagnosticRow = sqlite.prepare(
+      `SELECT code, provider
+         FROM assessment_diagnostics
+        WHERE session_id = ?
+        LIMIT 1`,
+    ).get(assessmentSessionId) as { code: string; provider: string } | undefined;
+    expect(diagnosticRow).toEqual({
+      code: 'AI_DEVELOPER_UNAVAILABLE',
+      provider: 'cloudflare-ai',
+    });
   });
 });

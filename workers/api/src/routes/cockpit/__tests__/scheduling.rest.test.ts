@@ -2551,6 +2551,37 @@ describe('GET /interviews/:id detail', () => {
       { kind: 'recruiter_note', count: 2 },
     ]));
 
+    const idempotentStartResponse = await app.request('/interviews/interview-1/assessment/start-evaluation', {
+      method: 'POST',
+    });
+    expect(idempotentStartResponse.status).toBe(200);
+    const idempotentStartBody = await idempotentStartResponse.json() as {
+      accepted: boolean;
+      alreadyEvaluated: boolean;
+      report: { status: string; recommendation: string | null } | null;
+      progress: { stage: string; nextAction: string };
+    };
+    expect(idempotentStartBody).toMatchObject({
+      accepted: true,
+      alreadyEvaluated: true,
+      report: {
+        status: 'EVALUATED',
+        recommendation: 'mixed_evidence_human_review',
+      },
+      progress: {
+        stage: 'EVALUATED',
+        nextAction: 'REVIEW_EVALUATION',
+      },
+    });
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'recruiter_note'
+          AND narrative = 'Recruiter requested source-backed assessment evaluation.'`,
+    ).get('assessment-session-ai-evaluation')).toEqual({ count: 1 });
+
     expect(sqlite!.prepare(
       `SELECT state FROM assessment_sessions WHERE id = ?`,
     ).get('assessment-session-ai-evaluation')).toEqual({ state: 'EVALUATED' });

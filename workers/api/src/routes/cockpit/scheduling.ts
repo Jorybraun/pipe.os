@@ -7935,6 +7935,15 @@ schedulingAuth.post('/interviews/:id/assessment/start-evaluation', async (c) => 
           accepted: true,
         }, 202);
       }
+      if (currentProgress.nextAction === 'REVIEW_EVALUATION' && currentProgress.evaluation) {
+        return c.json({
+          progress: currentProgress,
+          report: currentProgress.evaluation,
+          diagnostic: null,
+          accepted: true,
+          alreadyEvaluated: true,
+        }, 200);
+      }
       return apiError(
         c,
         'CONFLICT',
