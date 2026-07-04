@@ -78,7 +78,7 @@ describe('repo task assessment evaluator output parsing', () => {
         }),
         await sourceRef({
           type: 'test_run',
-          id: 'verification-1',
+          id: '81c11363a3b6e31b34b3777fd150de7fe462c64f:verification-1',
           sequence: 2,
           exactText: '$ git diff --check HEAD~1 HEAD\nexitCode: 0',
         }),

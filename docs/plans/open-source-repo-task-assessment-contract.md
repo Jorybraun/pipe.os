@@ -203,8 +203,9 @@ The controlling product rule remains:
   preserving the no-positive-verification-without-test-output rule.
 - Source-backed evaluator normalization drops positive implementation
   correctness, quality, security, reliability, or performance claims unless the
-  claim cites a successful `test_run`. A final diff alone can support
-  `implementation_evidence`, not proven correctness.
+  claim cites a successful `test_run` bound to the submitted `git_commit`. A
+  final diff alone can support `implementation_evidence`, not proven
+  correctness.
 - Source-backed evaluator normalization drops positive debugging/process claims
   unless the claim cites terminal, code-editor, workspace, transcript, chat, or
   candidate AI-prompt evidence. A final diff alone proves implementation

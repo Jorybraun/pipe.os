@@ -91,6 +91,7 @@ const ALLOWED_RECOMMENDATIONS = new Set([
 ]);
 const DEFAULT_RECOMMENDATION = 'mixed_evidence_human_review';
 type EvaluatorDiagnosticSeverity = 'info' | 'warning' | 'blocking';
+const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
 const MAX_SOURCE_REF_EXACT_TEXT_CHARS = 800;
 const MAX_AI_PROMPT_SOURCE_REFS = 16;
 const MAX_EVALUATION_SUMMARY_CHARS = 320;
@@ -111,7 +112,7 @@ const EXPECTED_HIGH_CONFIDENCE_REF_GROUPS = [
   {
     label: 'test_run',
     sourceRefTypes: ['test_run'],
-    missingImpact: 'Do not make positive test_strategy or verification claims without test_run evidence.',
+    missingImpact: 'Do not make positive test_strategy, verification, or correctness claims without test_run evidence bound to the submitted commit.',
   },
   {
     label: 'verification_gap',
@@ -577,13 +578,35 @@ function sourceRefsOfTypes(
   return sourceRefs.filter((ref) => allowedTypes.has(ref.sourceRefType));
 }
 
-function hasSuccessfulVerification(sourceRefs: readonly SessionSourceRef[]): boolean {
+function hasSuccessfulVerification(
+  sourceRefs: readonly SessionSourceRef[],
+  sessionSourceRefs: readonly SessionSourceRef[] = sourceRefs,
+): boolean {
   return sourceRefsOfTypes(sourceRefs, ['test_run']).some((ref) => {
+    if (!testRunMatchesCapturedCommit(ref, sessionSourceRefs)) return false;
     const exactText = ref.exactText ?? '';
     return /\bexitCode:\s*0\b/i.test(exactText)
       || /\bexit\s+code\s*[:=]\s*0\b/i.test(exactText)
       || /\bpassed\b/i.test(exactText);
   });
+}
+
+function testRunMatchesCapturedCommit(
+  ref: SessionSourceRef,
+  sessionSourceRefs: readonly SessionSourceRef[],
+): boolean {
+  if (ref.sourceRefType !== 'test_run') return false;
+  const commitShas = sourceRefsOfTypes(sessionSourceRefs, ['git_commit'])
+    .map((candidate) => candidate.sourceRefId.toLowerCase())
+    .filter((candidate) => COMMIT_SHA_PATTERN.test(candidate));
+  if (commitShas.length === 0) return false;
+
+  const sourceRefId = ref.sourceRefId.toLowerCase();
+  const locatorCommitSha = stringValue(ref.locator?.commitSha)?.toLowerCase();
+  return commitShas.some((commitSha) =>
+    sourceRefId === commitSha
+    || sourceRefId.startsWith(`${commitSha}:`)
+    || locatorCommitSha === commitSha);
 }
 
 function hasSourceRefsOfTypes(
@@ -917,6 +940,7 @@ function buildSystemPrompt(): string {
     'Use EVIDENCE_COVERAGE before scoring. Missing expected evidence must become diagnostics or uncertainty, never positive claims.',
     'Do not make positive test_strategy, verification, implementation correctness, quality, security, reliability, AI-usage, process, communication, reasoning, or tradeoff claims when the matching coverage item is unsatisfied.',
     'A code_diff proves what changed, not that the implementation is correct. Use implementation_evidence for diff-only claims.',
+    'A test_run must be bound to the submitted git_commit before it can support positive verification or correctness claims.',
     'A verification_gap explains why verification is partial or missing; it is not test_run evidence and must not support positive verification claims.',
     'If evidence is missing, uncertain, ungrounded, or insufficient, return diagnostics instead of positive claims.',
     'Keep the response compact: at most 4 claims and 4 diagnostics; summary and narratives must be one short sentence each.',
@@ -1341,7 +1365,11 @@ function normalizeAiClaims(
       confidence,
       sourceRefs: citedRefs,
     };
-    const unsupportedDiagnostic = positiveClaimUnsupportedDiagnostic(normalizedClaim, citedRefs);
+    const unsupportedDiagnostic = positiveClaimUnsupportedDiagnostic(
+      normalizedClaim,
+      citedRefs,
+      Array.from(sourceRefByKey.values()),
+    );
     if (unsupportedDiagnostic) {
       diagnostics.push(unsupportedDiagnostic);
       return;
@@ -1358,17 +1386,18 @@ function normalizeAiClaims(
 function positiveClaimUnsupportedDiagnostic(
   claim: AssessmentEvaluationClaimInputCompat,
   citedRefs: readonly SessionSourceRef[],
+  sessionSourceRefs: readonly SessionSourceRef[],
 ): AssessmentDiagnosticInput | null {
   if (claim.polarity !== 'positive') return null;
 
   const dimension = claim.dimension.toLowerCase();
   const hasTestRunRef = citedRefs.some((ref) => ref.sourceRefType === 'test_run');
-  const hasSuccessfulTestRunRef = hasSuccessfulVerification(citedRefs);
+  const hasSuccessfulTestRunRef = hasSuccessfulVerification(citedRefs, sessionSourceRefs);
   if (dimension.includes('verification') && !hasSuccessfulTestRunRef) {
     return unsupportedPositiveClaimDiagnostic(
       claim,
       citedRefs,
-      'Positive verification claims require a successful test_run source ref.',
+      'Positive verification claims require a successful test_run source ref bound to the submitted commit.',
     );
   }
   if (dimension.includes('test') && !hasTestRunRef) {
@@ -1389,7 +1418,7 @@ function positiveClaimUnsupportedDiagnostic(
     return unsupportedPositiveClaimDiagnostic(
       claim,
       citedRefs,
-      'Positive implementation correctness, quality, security, reliability, or performance claims require a successful test_run source ref; use implementation_evidence for diff-only claims.',
+      'Positive implementation correctness, quality, security, reliability, or performance claims require a successful test_run source ref bound to the submitted commit; use implementation_evidence for diff-only claims.',
     );
   }
   if (positiveProcessDimensionRequiresEvidence(dimension)

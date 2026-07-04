@@ -513,7 +513,7 @@ describe('repo task assessment evaluator integration', () => {
         sourceRefTypes: ['test_run'],
         satisfied: false,
         sourceRefKeys: [],
-        missingImpact: 'Do not make positive test_strategy or verification claims without test_run evidence.',
+        missingImpact: 'Do not make positive test_strategy, verification, or correctness claims without test_run evidence bound to the submitted commit.',
       }),
       expect.objectContaining({
         label: 'verification_gap',
@@ -667,6 +667,169 @@ describe('repo task assessment evaluator integration', () => {
     ]));
     expect(diagnostics.find((diagnostic) => diagnostic.code === 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE')?.message)
       .toContain('Positive implementation correctness, quality, security, reliability, or performance claims require a successful test_run source ref');
+  });
+
+  it('drops unsupported positive correctness claims when test evidence is not bound to the submitted commit', async () => {
+    const fixture = await createReadyAssessmentFixture(store, 'loose-test-run-correctness');
+    await store.recordEvent({
+      sessionId: fixture.sessionId,
+      ingestionKey: 'assessment-event:loose-test-run-correctness:loose-test-run',
+      kind: 'test_run',
+      actorType: 'system',
+      actorId: 'test-harness',
+      narrative: 'A loose test run exists but is not tied to the submitted commit.',
+      payload: {
+        command: 'npm test',
+        exitCode: 0,
+      },
+      sourceRefs: [await sourceRef({
+        type: 'test_run',
+        id: 'loose-successful-test-run',
+        evidenceRole: 'verification_test_output',
+        exactText: '$ npm test\npassed\nexitCode: 0',
+      })],
+    });
+    const aiRun = vi.fn(async () => ({
+      response: JSON.stringify({
+        summary: 'The candidate changed the popover root hook, but loose test output cannot prove the submitted commit.',
+        recommendation: 'mixed_evidence_human_review',
+        claims: [
+          {
+            id: 'implementation-evidence-backed-by-diff',
+            polarity: 'positive',
+            dimension: 'implementation_evidence',
+            narrative: 'The submitted diff changes the popover root hook.',
+            confidence: 0.72,
+            sourceRefKeys: ['code_diff'],
+          },
+          {
+            id: 'correctness-backed-by-loose-test',
+            polarity: 'positive',
+            dimension: 'implementation_correctness',
+            narrative: 'The submitted implementation is correct because tests passed.',
+            confidence: 0.82,
+            sourceRefKeys: ['loose-successful-test-run'],
+          },
+        ],
+        diagnostics: [],
+      }),
+    }));
+
+    const result = await evaluateRepoTaskAssessmentSession({
+      db,
+      store,
+      env: {
+        AI: { run: aiRun } as unknown as Ai,
+        CLOUDFLARE_AI_MODEL: '@cf/meta/llama-3.2-3b-instruct',
+      },
+      sessionId: fixture.sessionId,
+      scheduledInterviewId: fixture.scheduledInterviewId,
+      requestedBy: 'recruiter-1',
+      requestedAt: '2026-07-03T00:03:45.000Z',
+      requestEventId: fixture.requestEventId,
+      requestSourceRef: fixture.requestSourceRef,
+    });
+
+    expect(result.kind).toBe('evaluated');
+    const report = sqlite.prepare(
+      `SELECT id, status
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1`,
+    ).get(fixture.sessionId) as { id: string; status: string };
+    expect(report.status).toBe('EVALUATED');
+
+    const claims = sqlite.prepare(
+      `SELECT polarity, dimension, narrative
+         FROM assessment_evaluation_claims
+        WHERE report_id = ?
+        ORDER BY dimension`,
+    ).all(report.id) as Array<{ polarity: string; dimension: string; narrative: string }>;
+    expect(claims).toEqual(expect.arrayContaining([
+      expect.objectContaining({ polarity: 'positive', dimension: 'implementation_evidence' }),
+    ]));
+    expect(claims).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ dimension: 'implementation_correctness' }),
+    ]));
+
+    const diagnostics = sqlite.prepare(
+      `SELECT code, severity, message
+         FROM assessment_diagnostics
+        WHERE report_id = ?
+        ORDER BY code`,
+    ).all(report.id) as Array<{ code: string; severity: string; message: string }>;
+    expect(diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE', severity: 'warning' }),
+    ]));
+    expect(diagnostics.find((diagnostic) => diagnostic.code === 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE')?.message)
+      .toContain('bound to the submitted commit');
+  });
+
+  it('keeps positive correctness claims when successful test evidence is bound to the submitted commit', async () => {
+    const fixture = await createReadyAssessmentFixture(store, 'bound-test-run-correctness');
+    const aiRun = vi.fn(async () => ({
+      response: JSON.stringify({
+        summary: 'The candidate changed the popover root hook and cited commit-bound test evidence.',
+        recommendation: 'mixed_evidence_human_review',
+        claims: [
+          {
+            id: 'correctness-backed-by-bound-test',
+            polarity: 'positive',
+            dimension: 'implementation_correctness',
+            narrative: 'The submitted implementation has successful verification evidence tied to the submitted commit.',
+            confidence: 0.78,
+            sourceRefKeys: ['test_run'],
+          },
+        ],
+        diagnostics: [],
+      }),
+    }));
+
+    const result = await evaluateRepoTaskAssessmentSession({
+      db,
+      store,
+      env: {
+        AI: { run: aiRun } as unknown as Ai,
+        CLOUDFLARE_AI_MODEL: '@cf/meta/llama-3.2-3b-instruct',
+      },
+      sessionId: fixture.sessionId,
+      scheduledInterviewId: fixture.scheduledInterviewId,
+      requestedBy: 'recruiter-1',
+      requestedAt: '2026-07-03T00:03:55.000Z',
+      requestEventId: fixture.requestEventId,
+      requestSourceRef: fixture.requestSourceRef,
+    });
+
+    expect(result.kind).toBe('evaluated');
+    const report = sqlite.prepare(
+      `SELECT id, status
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1`,
+    ).get(fixture.sessionId) as { id: string; status: string };
+    expect(report.status).toBe('EVALUATED');
+
+    const claims = sqlite.prepare(
+      `SELECT polarity, dimension, narrative
+         FROM assessment_evaluation_claims
+        WHERE report_id = ?
+        ORDER BY dimension`,
+    ).all(report.id) as Array<{ polarity: string; dimension: string; narrative: string }>;
+    expect(claims).toEqual(expect.arrayContaining([
+      expect.objectContaining({ polarity: 'positive', dimension: 'implementation_correctness' }),
+    ]));
+
+    const diagnostics = sqlite.prepare(
+      `SELECT code, severity
+         FROM assessment_diagnostics
+        WHERE report_id = ?
+        ORDER BY code`,
+    ).all(report.id) as Array<{ code: string; severity: string }>;
+    expect(diagnostics).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ code: 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE' }),
+    ]));
   });
 
   it('drops unsupported positive process claims when only final diff evidence is cited', async () => {
