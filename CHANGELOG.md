@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter assessment detail can now download the final `repo-task-final-evidence-bundle-v1` JSON audit packet, giving reviewers a portable source-backed artifact with the exact challenge, commit, event timeline, source refs, evaluator output, and human decision state.
 - Recruiter assessment detail now fetches and displays the final source-backed evidence bundle after evaluation, showing reviewability, immutable timeline events, source-ref counts, exact source previews, evaluator output, and human-decision state from the buyer audit packet.
 - Recruiter assessment detail now has a final source-backed evidence bundle API and the open-source workspace smoke proves it contains the assigned challenge, submitted commit, timeline source refs, evaluation claims/diagnostics, and recorded human decision.
 - Candidate workspace finalization now automatically records a source-backed evaluation request and queues repo-task assessment evaluation after accepting the submitted commit, while recruiter start-evaluation remains idempotent after evaluation has already started or finished.

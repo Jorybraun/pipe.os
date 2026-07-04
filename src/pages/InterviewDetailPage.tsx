@@ -7,6 +7,7 @@ import {
   CheckCircle,
   Clock,
   Copy,
+  Download,
   FileText,
   GitPullRequest,
   Loader2,
@@ -2112,6 +2113,45 @@ function assessmentEvidenceBundleSourceSnippets(bundle: AssessmentEvidenceBundle
     .sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label))
     .slice(0, 4)
     .map(({ id, label, exactText }) => ({ id, label, exactText }));
+}
+
+function assessmentEvidenceBundleFilenamePart(value: string | null | undefined, fallback: string): string {
+  const normalized = value
+    ?.trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 72);
+  return normalized && normalized.length > 0 ? normalized : fallback;
+}
+
+function assessmentEvidenceBundleDownloadFilename(bundle: AssessmentEvidenceBundle): string {
+  const candidate = assessmentEvidenceBundleFilenamePart(
+    bundle.interview.recipientName ?? bundle.interview.recipientEmail,
+    'candidate',
+  );
+  const assessment = assessmentEvidenceBundleFilenamePart(
+    bundle.interview.title ?? bundle.interview.id,
+    'assessment',
+  );
+  const generatedDate = /^\d{4}-\d{2}-\d{2}/.test(bundle.generatedAt)
+    ? bundle.generatedAt.slice(0, 10)
+    : 'undated';
+  return `pipe-assessment-${candidate}-${assessment}-${generatedDate}.json`;
+}
+
+function downloadAssessmentEvidenceBundle(bundle: AssessmentEvidenceBundle): void {
+  const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = assessmentEvidenceBundleDownloadFilename(bundle);
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => {
+    URL.revokeObjectURL(objectUrl);
+  }, 0);
 }
 
 type ContractEvidenceReceipt = NonNullable<AssessmentProgressReviewPacketSummary['evidence']['contractEvidence']>;
@@ -5252,7 +5292,17 @@ export default function InterviewDetailPage(): JSX.Element {
                       </div>
                     </div>
                     {assessmentEvidenceBundle && (
-                      <span style={MATCH_BADGE}>{sentenceCaseToken(assessmentEvidenceBundle.assessment.stage)}</span>
+                      <div style={EVIDENCE_BUNDLE_ACTIONS}>
+                        <span style={MATCH_BADGE}>{sentenceCaseToken(assessmentEvidenceBundle.assessment.stage)}</span>
+                        <button
+                          type="button"
+                          onClick={() => downloadAssessmentEvidenceBundle(assessmentEvidenceBundle)}
+                          style={{ ...PRIMARY_BUTTON, ...EVIDENCE_BUNDLE_EXPORT_BUTTON }}
+                        >
+                          <Download size={14} />
+                          EXPORT JSON
+                        </button>
+                      </div>
                     )}
                   </div>
                   {isLoadingAssessmentEvidenceBundle && (
@@ -7601,6 +7651,21 @@ const DECISION_HEADER: CSSProperties = {
   justifyContent: 'space-between',
   gap: 14,
   minWidth: 0,
+};
+
+const EVIDENCE_BUNDLE_ACTIONS: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  gap: 8,
+  flexWrap: 'wrap',
+};
+
+const EVIDENCE_BUNDLE_EXPORT_BUTTON: CSSProperties = {
+  minHeight: 30,
+  padding: '7px 10px',
+  fontSize: 9,
+  whiteSpace: 'nowrap',
 };
 
 const DECISION_TITLE: CSSProperties = {

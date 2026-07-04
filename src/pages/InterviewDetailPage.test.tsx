@@ -1941,6 +1941,71 @@ describe('InterviewDetailPage', () => {
     expect(evidenceBundlePanel).toHaveTextContent('Source preview');
     expect(evidenceBundlePanel).toHaveTextContent('Diff evidence · Submitted diff');
     expect(evidenceBundlePanel).toHaveTextContent('cleanupStaleHandler');
+    const createObjectURL = vi.fn().mockReturnValue('blob:pipe-assessment-evidence');
+    const revokeObjectURL = vi.fn();
+    const originalBlob = globalThis.Blob;
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    const clickedAnchors: HTMLAnchorElement[] = [];
+    class InspectableBlob extends originalBlob {
+      readonly parts: BlobPart[];
+
+      constructor(parts: BlobPart[] = [], options?: BlobPropertyBag) {
+        super(parts, options);
+        this.parts = parts;
+      }
+    }
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function click(this: HTMLAnchorElement): void {
+        clickedAnchors.push(this);
+      });
+    Object.defineProperty(globalThis, 'Blob', {
+      configurable: true,
+      value: InspectableBlob,
+    });
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectURL,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: revokeObjectURL,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /export json/i }));
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    const exportedBlob = createObjectURL.mock.calls[0]?.[0] as InspectableBlob;
+    expect(exportedBlob).toBeInstanceOf(Blob);
+    const exportedBundle = JSON.parse(String(exportedBlob.parts[0] ?? '')) as AssessmentEvidenceBundle;
+    expect(exportedBundle.schemaVersion).toBe('repo-task-final-evidence-bundle-v1');
+    expect(exportedBundle.interview.id).toBe('interview-1');
+    expect(exportedBundle.timeline).toHaveLength(4);
+    expect(exportedBundle.timeline[1]?.sourceRefs.some((sourceRef) => sourceRef.sourceRefType === 'code_diff')).toBe(true);
+    expect(clickedAnchors).toHaveLength(1);
+    expect(clickedAnchors[0]?.href).toBe('blob:pipe-assessment-evidence');
+    expect(clickedAnchors[0]?.download).toBe(
+      'pipe-assessment-ada-candidate-fix-base-ui-popover-impatient-click-handling-2026-06-23.json',
+    );
+
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync();
+    });
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:pipe-assessment-evidence');
+    clickSpy.mockRestore();
+    Object.defineProperty(globalThis, 'Blob', {
+      configurable: true,
+      value: originalBlob,
+    });
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: originalCreateObjectURL,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: originalRevokeObjectURL,
+    });
     const contractReceipt = screen.getByTestId('interview-assessment-contract-receipt');
     expect(contractReceipt).toHaveTextContent('Evidence contract receipt');
     expect(contractReceipt).toHaveTextContent('2 of 3 expected evidence items machine-supported');
