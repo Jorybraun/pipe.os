@@ -199,6 +199,10 @@ The controlling product rule remains:
   own declared limitation and keeps `test_run` confidence unsatisfied until
   actual test output is captured, matching the durable session progress
   behavior.
+- Readiness details must make lower-confidence review states explicit: a session
+  may be ready to start evaluation with a declared verification gap or manual
+  commit evidence, but the recruiter readout must say that missing test output
+  or non-workspace commit provenance is a limitation and not correctness proof.
 - Source-backed evaluator prompts expose `verification_gap` separately from
   `test_run`, allowing reports to cite declared verification limits while
   preserving the no-positive-verification-without-test-output rule.

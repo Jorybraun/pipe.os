@@ -971,7 +971,7 @@ describe('InterviewCard assessment progress', () => {
         readiness: {
           status: 'READY_FOR_EVALUATION',
           label: 'Ready for evaluation',
-          detail: 'Required evidence is captured, but commit provenance needs repository or workspace verification before final reliance.',
+          detail: 'Required evidence is captured, but commit provenance still needs repository or workspace verification and test output is missing and only a declared verification gap is available; start evaluation as lower-confidence and do not treat correctness as proven.',
           isReadyForEvaluation: true,
           isUsableHiringSignal: false,
           missingRequiredCount: 0,
@@ -1037,6 +1037,8 @@ describe('InterviewCard assessment progress', () => {
     });
 
     const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('Ready with limitations');
+    expect(progress).toHaveTextContent('test output is missing');
     expect(progress).toHaveTextContent('workspace telemetry, tool activity, commit, verification gap');
     expect(progress).toHaveTextContent('Confidence: Missing: Test output · Captured: Verification gap declared');
     expect(progress).not.toHaveTextContent('tests');

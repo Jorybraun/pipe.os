@@ -2386,7 +2386,7 @@ Fix stale popover listener cleanup.`;
       readiness: {
         status: 'READY_FOR_EVALUATION',
         label: 'Ready for evaluation',
-        detail: 'Required evidence is captured, but commit provenance needs repository or workspace verification before final reliance.',
+        detail: 'Required evidence is captured, but commit provenance still needs repository or workspace verification; start evaluation as lower-confidence and do not treat correctness as proven.',
         isReadyForEvaluation: true,
         isUsableHiringSignal: false,
         missingRequiredCount: 0,
@@ -2776,6 +2776,7 @@ Fix retry cleanup without captured tests.`;
         hasVerificationGap: boolean;
         sourceRefCounts: Array<{ kind: string; count: number }>;
         readiness: {
+          detail: string;
           confidence: Array<{
             id: string;
             label: string;
@@ -2790,6 +2791,9 @@ Fix retry cleanup without captured tests.`;
       hasWorkEvidence: true,
       hasTestEvidence: false,
       hasVerificationGap: true,
+      readiness: {
+        detail: 'Required evidence is captured, but commit provenance still needs repository or workspace verification and test output is missing and only a declared verification gap is available; start evaluation as lower-confidence and do not treat correctness as proven.',
+      },
     });
     expect(progressBody.progress.sourceRefCounts).toEqual(expect.arrayContaining([
       { kind: 'code_diff', count: 1 },

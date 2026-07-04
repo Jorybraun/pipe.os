@@ -4286,6 +4286,8 @@ function scheduledAssessmentReadiness(input: {
       missingRequiredCount,
       requiresCommit,
       commit: input.commit,
+      hasTestEvidence: input.hasTestEvidence,
+      hasVerificationGap: input.hasVerificationGap,
       evaluation: input.evaluation,
       humanDecision: input.humanDecision,
     }),
@@ -4349,6 +4351,8 @@ function scheduledAssessmentReadinessStatusDetail(input: {
   missingRequiredCount: number;
   requiresCommit: boolean;
   commit: ScheduledAssessmentListCommit | null;
+  hasTestEvidence: boolean;
+  hasVerificationGap: boolean;
   evaluation: ScheduledAssessmentListEvaluation | null;
   humanDecision: ScheduledAssessmentListHumanDecision | null;
 }): string {
@@ -4366,10 +4370,26 @@ function scheduledAssessmentReadinessStatusDetail(input: {
   if (input.missingRequiredCount > 0) {
     return `${input.missingRequiredCount} required proof ${input.missingRequiredCount === 1 ? 'item is' : 'items are'} still missing before evaluation.`;
   }
+  const confidenceLimitations: string[] = [];
   if (input.requiresCommit && input.commit?.integrity.status !== 'workspace_captured') {
-    return 'Required evidence is captured, but commit provenance needs repository or workspace verification before final reliance.';
+    confidenceLimitations.push('commit provenance still needs repository or workspace verification');
   }
-  return 'Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.';
+  if (!input.hasTestEvidence) {
+    confidenceLimitations.push(
+      input.hasVerificationGap
+        ? 'test output is missing and only a declared verification gap is available'
+        : 'test output is missing',
+    );
+  }
+  if (confidenceLimitations.length > 0) {
+    return `Required evidence is captured, but ${formatScheduledAssessmentLimitationList(confidenceLimitations)}; start evaluation as lower-confidence and do not treat correctness as proven.`;
+  }
+  return 'Challenge, work evidence, required source refs, and test output are captured; start source-backed AI or human evaluation.';
+}
+
+function formatScheduledAssessmentLimitationList(limitations: readonly string[]): string {
+  if (limitations.length <= 1) return limitations[0] ?? '';
+  return `${limitations.slice(0, -1).join(', ')} and ${limitations[limitations.length - 1]}`;
 }
 
 function scheduledAssessmentAssignmentTrust(input: {

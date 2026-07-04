@@ -3122,6 +3122,9 @@ describe('GET /interviews/:id detail', () => {
       expect(interview?.assessmentProgress).toMatchObject({
         stage: 'READY_FOR_EVALUATION',
         nextAction: 'START_EVALUATION',
+        readiness: {
+          detail: 'Required evidence is captured, but commit provenance still needs repository or workspace verification and test output is missing and only a declared verification gap is available; start evaluation as lower-confidence and do not treat correctness as proven.',
+        },
         hasChallengePacket: true,
         hasCommitSubmission: true,
         commit: {

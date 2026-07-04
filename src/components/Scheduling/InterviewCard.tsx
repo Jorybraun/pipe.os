@@ -523,8 +523,9 @@ function assessmentDecisionSummary(input: {
       };
     }
     if (progress.readiness.isReadyForEvaluation) {
+      const hasConfidenceLimitations = progress.readiness.confidence.some((item) => !item.satisfied);
       return {
-        value: progress.readiness.label,
+        value: hasConfidenceLimitations ? 'Ready with limitations' : progress.readiness.label,
         detail: compactText(progress.readiness.detail, 150),
       };
     }
