@@ -354,10 +354,65 @@ describe('repo task assessment evaluator integration', () => {
         LIMIT 1`,
     ).get(session.id) as { id: string; status: string; output_json: string };
     expect(report.status).toBe('EVALUATED');
-    expect(JSON.parse(report.output_json)).toMatchObject({
+    const output = JSON.parse(report.output_json) as {
+      reviewPacket?: {
+        schemaVersion?: string;
+        scheduledInterviewId?: string;
+        challenge?: {
+          focus?: string | null;
+          repositoryUrl?: string | null;
+          baseCommitSha?: string | null;
+          assignmentTrust?: { state?: string };
+          contract?: { isComplete?: boolean; missingFields?: string[] };
+        };
+        submission?: {
+          repositoryUrl?: string | null;
+          branchName?: string | null;
+          commitSha?: string | null;
+          changedFileCount?: number;
+          integrity?: { status?: string };
+          challengeBinding?: { status?: string };
+        } | null;
+        evidence?: {
+          sourceRefTypeCounts?: Record<string, number>;
+          readiness?: { isReadyForEvaluation?: boolean; missingRequiredCount?: number };
+          highConfidenceSignals?: { testEvidence?: boolean; verificationGap?: boolean };
+        };
+      };
+    };
+    expect(output).toMatchObject({
       fallback: 'deterministic_source_evidence',
       fallbackReasonCode: 'MODEL_RESPONSE_UNPARSEABLE',
       recommendation: 'mixed_evidence_human_review',
+    });
+    expect(output.reviewPacket).toMatchObject({
+      schemaVersion: 'repo-task-review-packet-v1',
+      scheduledInterviewId: 'scheduled-interview-parse-fallback',
+      challenge: {
+        focus: 'Fix Base UI popover impatient click handling',
+        repositoryUrl: 'https://github.com/mui/base-ui',
+        baseCommitSha: '58dff8444fa56e4444a3a1dd991c76b49cf4ab7e',
+        assignmentTrust: { state: 'manual_challenge' },
+        contract: { isComplete: true, missingFields: [] },
+      },
+      submission: {
+        repositoryUrl: 'https://github.com/mui/base-ui',
+        branchName: 'pipe-assessment/popover-click-fix',
+        commitSha: expect.stringMatching(/^[a-f0-9]{40}$/),
+        changedFileCount: 1,
+        integrity: { status: 'unknown_needs_review' },
+        challengeBinding: { status: 'bound_to_assigned_challenge' },
+      },
+      evidence: {
+        sourceRefTypeCounts: expect.objectContaining({
+          open_source_challenge_packet: 1,
+          git_commit: 1,
+          code_diff: 1,
+          test_run: 1,
+        }),
+        readiness: { isReadyForEvaluation: true, missingRequiredCount: 0 },
+        highConfidenceSignals: { testEvidence: true, verificationGap: false },
+      },
     });
 
     const claims = sqlite.prepare(
@@ -938,9 +993,37 @@ describe('repo task assessment evaluator integration', () => {
         LIMIT 1`,
     ).get(fixture.sessionId) as { id: string; status: string; output_json: string };
     expect(report.status).toBe('EVALUATED');
-    expect(JSON.parse(report.output_json)).toMatchObject({
+    const output = JSON.parse(report.output_json) as {
+      reviewPacket?: {
+        evaluation?: {
+          recommendation?: string;
+          claimIds?: string[];
+          diagnosticCodes?: string[];
+        };
+        evidence?: {
+          highConfidenceSignals?: { testEvidence?: boolean };
+        };
+        submission?: {
+          challengeBinding?: { status?: string };
+        } | null;
+      };
+    };
+    expect(output).toMatchObject({
       recommendation: 'strong_evidence_to_advance',
     });
+    expect(output.reviewPacket).toMatchObject({
+      evaluation: {
+        recommendation: 'strong_evidence_to_advance',
+      },
+      evidence: {
+        highConfidenceSignals: { testEvidence: true },
+      },
+      submission: {
+        challengeBinding: { status: 'bound_to_assigned_challenge' },
+      },
+    });
+    expect(output.reviewPacket?.evaluation?.claimIds?.length).toBeGreaterThan(0);
+    expect(output.reviewPacket?.evaluation?.diagnosticCodes ?? []).not.toContain('MODEL_RECOMMENDATION_DOWNGRADED_BY_EVIDENCE');
 
     const diagnostics = sqlite.prepare(
       `SELECT code, severity

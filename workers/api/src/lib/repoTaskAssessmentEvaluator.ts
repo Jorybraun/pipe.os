@@ -5,6 +5,7 @@ import {
 import type { LLMProvider } from './llm/types';
 import {
   RepoTaskInterviewSessionStore,
+  type AssessmentProgressSnapshot,
   type AssessmentDiagnosticInput,
   type AssessmentEvaluationClaimInputCompat,
   type EvaluationReportStatus,
@@ -550,6 +551,137 @@ function buildEvidenceCoverage(sourceRefs: readonly SessionSourceRef[]): JsonObj
     sourceRefTypeCounts,
     requiredForEvaluation,
     expectedForHighConfidence,
+  };
+}
+
+function locatorString(
+  progress: AssessmentProgressSnapshot,
+  keys: readonly string[],
+): string | null {
+  const locator = progress.challenge?.locator;
+  if (!locator) return null;
+  for (const key of keys) {
+    const value = stringValue(locator[key]);
+    if (value) return value;
+  }
+  return null;
+}
+
+function sourceRefTypeCountsFromCoverage(evidenceCoverage: JsonObject): JsonObject {
+  const rawCounts = evidenceCoverage.sourceRefTypeCounts;
+  if (rawCounts === null || typeof rawCounts !== 'object' || Array.isArray(rawCounts)) {
+    return {};
+  }
+  const counts: JsonObject = {};
+  for (const [key, value] of Object.entries(rawCounts)) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      counts[key] = value;
+    }
+  }
+  return counts;
+}
+
+function buildReviewPacketOutput(input: {
+  progress: AssessmentProgressSnapshot;
+  sourceRefs: readonly SessionSourceRef[];
+  evidenceCoverage: JsonObject;
+  scheduledInterviewId: string;
+  requestEventId: string;
+  recommendation: string;
+  claimIds: readonly string[];
+  diagnosticCodes: readonly string[];
+}): JsonObject {
+  const challenge = input.progress.challenge;
+  const contract = input.progress.challengePacketContract;
+  const commit = input.progress.commit;
+  return {
+    schemaVersion: 'repo-task-review-packet-v1',
+    scheduledInterviewId: input.scheduledInterviewId,
+    requestEventId: input.requestEventId,
+    challenge: {
+      focus: challengeFocusSummary(input.sourceRefs),
+      sourceRefType: challenge?.sourceRefType ?? null,
+      sourceRefId: challenge?.sourceRefId ?? null,
+      evidenceRole: challenge?.evidenceRole ?? null,
+      repositoryUrl: locatorString(input.progress, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']),
+      baseCommitSha: locatorString(input.progress, ['baseCommitSha', 'baseCommit', 'base_commit_sha', 'base_commit']),
+      pullRequestUrl: locatorString(input.progress, ['pullRequestUrl', 'githubPullRequestUrl', 'prUrl']),
+      assignmentTrust: {
+        state: input.progress.assignmentTrust.state,
+        label: input.progress.assignmentTrust.label,
+        detail: input.progress.assignmentTrust.detail,
+        tone: input.progress.assignmentTrust.tone,
+      },
+      contract: {
+        schemaVersion: contract.schemaVersion,
+        isComplete: contract.isComplete,
+        missingFields: [...contract.missingFields],
+        hasRepositoryUrl: contract.hasRepositoryUrl,
+        hasBaseCommitSha: contract.hasBaseCommitSha,
+        hasTask: contract.hasTask,
+        hasSuccessCriteria: contract.hasSuccessCriteria,
+        hasExpectedEvidence: contract.hasExpectedEvidence,
+      },
+    },
+    submission: commit
+      ? {
+          repositoryUrl: commit.repositoryUrl,
+          forkRepositoryUrl: commit.forkRepositoryUrl,
+          branchName: commit.branchName,
+          baseCommitSha: commit.baseCommitSha,
+          commitSha: commit.commitSha,
+          commitUrl: commit.commitUrl,
+          upstreamPullRequestUrl: commit.upstreamPullRequestUrl,
+          upstreamPrConsent: commit.upstreamPrConsent,
+          submissionSource: commit.submissionSource,
+          submissionSourceLabel: commit.submissionSourceLabel,
+          integrity: {
+            status: commit.integrity.status,
+            label: commit.integrity.label,
+            detail: commit.integrity.detail,
+            tone: commit.integrity.tone,
+          },
+          challengeBinding: {
+            status: commit.challengeBinding.status,
+            label: commit.challengeBinding.label,
+            detail: commit.challengeBinding.detail,
+            tone: commit.challengeBinding.tone,
+          },
+          changedFileCount: commit.changedFiles.length,
+          changedFiles: commit.changedFiles.slice(0, 20),
+          occurredAt: commit.occurredAt,
+        }
+      : null,
+    evidence: {
+      sourceRefCount: input.sourceRefs.length,
+      sourceRefTypeCounts: sourceRefTypeCountsFromCoverage(input.evidenceCoverage),
+      sourceRefCounts: input.progress.sourceRefCounts.map((row) => ({
+        kind: row.kind,
+        count: row.count,
+      })),
+      readiness: {
+        status: input.progress.readiness.status,
+        label: input.progress.readiness.label,
+        detail: input.progress.readiness.detail,
+        isReadyForEvaluation: input.progress.readiness.isReadyForEvaluation,
+        isUsableHiringSignal: input.progress.readiness.isUsableHiringSignal,
+        missingRequiredCount: input.progress.readiness.missingRequiredCount,
+      },
+      highConfidenceSignals: {
+        messageEvidence: input.progress.hasMessageEvidence,
+        devContainerEvidence: input.progress.hasDevContainerEvidence,
+        toolUsageEvidence: input.progress.hasToolUsageEvidence,
+        aiInteraction: input.progress.hasAiInteraction,
+        transcriptEvidence: input.progress.hasTranscriptEvidence,
+        testEvidence: input.progress.hasTestEvidence,
+        verificationGap: input.progress.hasVerificationGap,
+      },
+    },
+    evaluation: {
+      recommendation: input.recommendation,
+      claimIds: [...input.claimIds],
+      diagnosticCodes: [...input.diagnosticCodes],
+    },
   };
 }
 
@@ -1710,6 +1842,7 @@ async function createDeterministicFallbackReport(input: {
   scheduledInterviewId: string;
   requestEventId: string;
   requestSourceRef: AssessmentEvidenceSourceRefInput;
+  progress: AssessmentProgressSnapshot;
   sourceRefs: readonly SessionSourceRef[];
   evidenceCoverage: JsonObject;
   provider: LLMProvider;
@@ -1749,6 +1882,16 @@ async function createDeterministicFallbackReport(input: {
       requestEventId: input.requestEventId,
       challengeFocus: challengeFocusSummary(input.sourceRefs),
       evidenceCoverage: input.evidenceCoverage,
+      reviewPacket: buildReviewPacketOutput({
+        progress: input.progress,
+        sourceRefs: input.sourceRefs,
+        evidenceCoverage: input.evidenceCoverage,
+        scheduledInterviewId: input.scheduledInterviewId,
+        requestEventId: input.requestEventId,
+        recommendation: deterministicFallback.recommendation,
+        claimIds: deterministicFallback.claims.map((claim) => claim.id),
+        diagnosticCodes: diagnostics.map((diagnostic) => diagnostic.code),
+      }),
       claimIds: deterministicFallback.claims.map((claim) => claim.id),
       diagnosticCodes: diagnostics.map((diagnostic) => diagnostic.code),
       fallback: 'deterministic_source_evidence',
@@ -1776,6 +1919,7 @@ export async function evaluateRepoTaskAssessmentSession(
   const sourceRefs = await loadSessionSourceRefs(input.db, input.sessionId);
   const sourceRefByKey = new Map(sourceRefs.map((ref) => [ref.key, ref]));
   const evidenceCoverage = buildEvidenceCoverage(sourceRefs);
+  const progress = await input.store.loadProgress(input.sessionId);
 
   if (!hasRequiredEvidence(sourceRefs)) {
     const missingChallengeFields = challengePacketContractMissingFields(sourceRefs);
@@ -1853,6 +1997,7 @@ export async function evaluateRepoTaskAssessmentSession(
         scheduledInterviewId: input.scheduledInterviewId,
         requestEventId: input.requestEventId,
         requestSourceRef: input.requestSourceRef,
+        progress,
         sourceRefs,
         evidenceCoverage,
         provider,
@@ -1917,6 +2062,7 @@ export async function evaluateRepoTaskAssessmentSession(
       scheduledInterviewId: input.scheduledInterviewId,
       requestEventId: input.requestEventId,
       requestSourceRef: input.requestSourceRef,
+      progress,
       sourceRefs,
       evidenceCoverage,
       provider,
@@ -1983,6 +2129,7 @@ export async function evaluateRepoTaskAssessmentSession(
       scheduledInterviewId: input.scheduledInterviewId,
       requestEventId: input.requestEventId,
       requestSourceRef: input.requestSourceRef,
+      progress,
       sourceRefs,
       evidenceCoverage,
       provider,
@@ -2036,6 +2183,16 @@ export async function evaluateRepoTaskAssessmentSession(
       requestEventId: input.requestEventId,
       challengeFocus,
       evidenceCoverage,
+      reviewPacket: buildReviewPacketOutput({
+        progress,
+        sourceRefs,
+        evidenceCoverage,
+        scheduledInterviewId: input.scheduledInterviewId,
+        requestEventId: input.requestEventId,
+        recommendation,
+        claimIds: claims.map((claim) => claim.id),
+        diagnosticCodes: reportDiagnostics.map((diagnostic) => diagnostic.code),
+      }),
       claimIds: claims.map((claim) => claim.id),
       diagnosticCodes: reportDiagnostics.map((diagnostic) => diagnostic.code),
     },

@@ -360,9 +360,15 @@ The controlling product rule remains:
 - `repo_task_interview_sessions` exists as a compatibility view over
   `assessment_sessions` so repo-task-specific routes can build on the common
   assessment substrate without duplicating event storage.
-- Repo-task route/API integration, final evidence bundle assembly, and
-  production `FinalRepoTaskAssessmentOutput` persistence from real assessment
-  runs remain pending.
+- Source-backed repo-task evaluator reports now persist a
+  `repo-task-review-packet-v1` artifact inside
+  `repo-task-assessment-output-v1`, joining the assigned challenge packet,
+  assignment trust, challenge contract, submitted commit, commit-to-challenge
+  binding, evidence coverage, readiness, recommendation, claim ids, and
+  diagnostic codes in one immutable evaluation report payload.
+- Repo-task route/API integration, full final evidence bundle assembly, and
+  candidate-safe views that expose the final output without leaking hidden
+  ground truth remain pending.
 
 ## Proposed TypeScript Surface
 
@@ -421,8 +427,10 @@ Required blocking diagnostics:
 5. Expand the initial `OPEN_SOURCE_BUG_FIX` meeting creation seam so matched
    repo-task assessments accept only `CandidateRepoTaskMatch` or explicit
    diagnostics.
-6. Add final evaluation persistence using `FinalRepoTaskAssessmentOutput`
-   against the canonical assessment event spine.
+6. Expand final evidence bundle assembly on top of the persisted
+   `repo-task-review-packet-v1` output, including candidate-safe views that
+   separate selected evidence, diagnostics, AI usage, and server-only ground
+   truth.
 7. Add recruiter and candidate-safe views that separate selected evidence,
    diagnostics, AI usage, and server-only ground truth.
 

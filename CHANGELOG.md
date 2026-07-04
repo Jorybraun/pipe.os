@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Source-backed repo-task evaluator reports now persist a `repo-task-review-packet-v1` artifact inside the final `repo-task-assessment-output-v1`, tying the assigned challenge, submitted assessment branch commit, evidence counts, readiness, recommendation, claim ids, and diagnostic codes into one immutable buyer-reviewable output.
 - Open-source workspace dev smoke now fails if recruiter list/detail projections hide room status, guest-waiting state, or workspace repo/base-commit state for a room-backed assessment, protecting the buyer-facing progress view from regressing to commit-only evidence.
 - Recruiter assessment detail now shows room activity next to workspace state, and the detail API exposes the same guest-waiting signal as the interview list so reviewers can see whether the candidate is currently in the controlled room.
 - Matched open-source repo-task assignment trust now uses the same source-backed match-fit wording across the durable session API, recruiter list/detail projections, and frontend summaries, avoiding stale role-context or code-review-only language for dev-container implementation assessments.
