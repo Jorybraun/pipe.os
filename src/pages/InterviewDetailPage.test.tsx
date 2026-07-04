@@ -1941,7 +1941,10 @@ describe('InterviewDetailPage', () => {
     expect(evidenceBundlePanel).toHaveTextContent('Source preview');
     expect(evidenceBundlePanel).toHaveTextContent('Diff evidence · Submitted diff');
     expect(evidenceBundlePanel).toHaveTextContent('cleanupStaleHandler');
-    const createObjectURL = vi.fn().mockReturnValue('blob:pipe-assessment-evidence');
+    const createObjectURL = vi
+      .fn()
+      .mockReturnValueOnce('blob:pipe-assessment-brief')
+      .mockReturnValueOnce('blob:pipe-assessment-evidence');
     const revokeObjectURL = vi.fn();
     const originalBlob = globalThis.Blob;
     const originalCreateObjectURL = URL.createObjectURL;
@@ -1973,25 +1976,48 @@ describe('InterviewDetailPage', () => {
       value: revokeObjectURL,
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /export json/i }));
+    fireEvent.click(screen.getByRole('button', { name: /export brief/i }));
 
     expect(createObjectURL).toHaveBeenCalledTimes(1);
-    const exportedBlob = createObjectURL.mock.calls[0]?.[0] as InspectableBlob;
-    expect(exportedBlob).toBeInstanceOf(Blob);
-    const exportedBundle = JSON.parse(String(exportedBlob.parts[0] ?? '')) as AssessmentEvidenceBundle;
+    const exportedBriefBlob = createObjectURL.mock.calls[0]?.[0] as InspectableBlob;
+    expect(exportedBriefBlob).toBeInstanceOf(Blob);
+    expect(exportedBriefBlob.type).toBe('text/markdown');
+    const exportedBrief = String(exportedBriefBlob.parts[0] ?? '');
+    expect(exportedBrief).toContain('# PIPE Assessment Brief');
+    expect(exportedBrief).toContain('Candidate: Ada Candidate');
+    expect(exportedBrief).toContain('Evaluator recommendation: Mixed evidence human review');
+    expect(exportedBrief).toContain('Task: Fix the popover cleanup regression');
+    expect(exportedBrief).toContain('Commit: abcdef1234567890abcdef1234567890abcdef12');
+    expect(exportedBrief).toContain('Commit quality');
+    expect(exportedBrief).toContain('Verification unobserved');
+    expect(exportedBrief).toContain('Use this as a source-backed assessment artifact, not an automatic hiring decision.');
+    expect(clickedAnchors).toHaveLength(1);
+    expect(clickedAnchors[0]?.href).toBe('blob:pipe-assessment-brief');
+    expect(clickedAnchors[0]?.download).toBe(
+      'pipe-assessment-ada-candidate-fix-base-ui-popover-impatient-click-handling-2026-06-23-brief.md',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /export json/i }));
+
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
+    const exportedJsonBlob = createObjectURL.mock.calls[1]?.[0] as InspectableBlob;
+    expect(exportedJsonBlob).toBeInstanceOf(Blob);
+    expect(exportedJsonBlob.type).toBe('application/json');
+    const exportedBundle = JSON.parse(String(exportedJsonBlob.parts[0] ?? '')) as AssessmentEvidenceBundle;
     expect(exportedBundle.schemaVersion).toBe('repo-task-final-evidence-bundle-v1');
     expect(exportedBundle.interview.id).toBe('interview-1');
     expect(exportedBundle.timeline).toHaveLength(4);
     expect(exportedBundle.timeline[1]?.sourceRefs.some((sourceRef) => sourceRef.sourceRefType === 'code_diff')).toBe(true);
-    expect(clickedAnchors).toHaveLength(1);
-    expect(clickedAnchors[0]?.href).toBe('blob:pipe-assessment-evidence');
-    expect(clickedAnchors[0]?.download).toBe(
+    expect(clickedAnchors).toHaveLength(2);
+    expect(clickedAnchors[1]?.href).toBe('blob:pipe-assessment-evidence');
+    expect(clickedAnchors[1]?.download).toBe(
       'pipe-assessment-ada-candidate-fix-base-ui-popover-impatient-click-handling-2026-06-23.json',
     );
 
     await act(async () => {
       await vi.runOnlyPendingTimersAsync();
     });
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:pipe-assessment-brief');
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:pipe-assessment-evidence');
     clickSpy.mockRestore();
     Object.defineProperty(globalThis, 'Blob', {

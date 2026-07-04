@@ -2125,7 +2125,7 @@ function assessmentEvidenceBundleFilenamePart(value: string | null | undefined, 
   return normalized && normalized.length > 0 ? normalized : fallback;
 }
 
-function assessmentEvidenceBundleDownloadFilename(bundle: AssessmentEvidenceBundle): string {
+function assessmentEvidenceBundleBaseFilename(bundle: AssessmentEvidenceBundle): string {
   const candidate = assessmentEvidenceBundleFilenamePart(
     bundle.interview.recipientName ?? bundle.interview.recipientEmail,
     'candidate',
@@ -2137,21 +2137,164 @@ function assessmentEvidenceBundleDownloadFilename(bundle: AssessmentEvidenceBund
   const generatedDate = /^\d{4}-\d{2}-\d{2}/.test(bundle.generatedAt)
     ? bundle.generatedAt.slice(0, 10)
     : 'undated';
-  return `pipe-assessment-${candidate}-${assessment}-${generatedDate}.json`;
+  return `pipe-assessment-${candidate}-${assessment}-${generatedDate}`;
 }
 
-function downloadAssessmentEvidenceBundle(bundle: AssessmentEvidenceBundle): void {
-  const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+function assessmentEvidenceBundleDownloadFilename(bundle: AssessmentEvidenceBundle): string {
+  return `${assessmentEvidenceBundleBaseFilename(bundle)}.json`;
+}
+
+function assessmentEvidenceBundleBriefFilename(bundle: AssessmentEvidenceBundle): string {
+  return `${assessmentEvidenceBundleBaseFilename(bundle)}-brief.md`;
+}
+
+function stringFromRecord(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function markdownBullet(value: string): string {
+  return `- ${value.replace(/\n+/g, ' ').trim()}`;
+}
+
+function markdownBulletList(values: string[], fallback: string): string[] {
+  const cleaned = values.map((value) => value.trim()).filter((value) => value.length > 0);
+  return cleaned.length > 0 ? cleaned.map(markdownBullet) : [markdownBullet(fallback)];
+}
+
+function assessmentEvidenceBundleTaskText(bundle: AssessmentEvidenceBundle): string {
+  const rawTask = bundle.challenge?.summary?.task
+    ?? compactEvidenceText(bundle.challenge?.exactText ?? '', 360)
+    ?? '';
+  const withoutLabel = rawTask.replace(/^task:\s*/i, '').trim();
+  if (!withoutLabel) return 'Not recorded';
+  return `${withoutLabel.slice(0, 1).toUpperCase()}${withoutLabel.slice(1)}`;
+}
+
+function assessmentEvidenceBundleBriefMarkdown(bundle: AssessmentEvidenceBundle): string {
+  const submission = bundle.submission;
+  const challengeSummary = bundle.challenge?.summary ?? null;
+  const evaluationRecommendation = bundle.evaluation
+    ? stringFromRecord(bundle.evaluation.output, 'recommendation')
+    : null;
+  const missingProof = assessmentEvidenceBundleMissingProof(bundle);
+  const sourceRefCounts = assessmentEvidenceBundleSourceRefTypeCounts(bundle)
+    .map((item) => markdownBullet(`${workspaceAssessmentSourceRefBasisLabel(item.kind, null)}: ${item.count}`));
+  const claims = (bundle.evaluation?.claims ?? []).slice(0, 5).map((claim) => {
+    const confidence = claim.confidence === null ? '' : ` (${Math.round(claim.confidence * 100)}% confidence)`;
+    const sourceRefs = sourceRefCountLabel(claim.sourceRefs.length, 'source ref') ?? '0 source refs';
+    return markdownBullet(`${sentenceCaseToken(claim.dimension)}${confidence}: ${claim.narrative} [${sourceRefs}]`);
+  });
+  const diagnostics = (bundle.evaluation?.diagnostics ?? []).slice(0, 5).map((diagnostic) => {
+    const sourceRefs = sourceRefCountLabel(diagnostic.sourceRefs.length, 'source ref') ?? '0 source refs';
+    return markdownBullet(`${sentenceCaseToken(diagnostic.severity)} ${sentenceCaseToken(diagnostic.code)}: ${diagnostic.message} [${sourceRefs}]`);
+  });
+  const timeline = assessmentEvidenceBundlePreviewEvents(bundle).map((event) =>
+    markdownBullet(`${event.sequence}. ${assessmentEvidenceBundleEventLabel(event)}: ${compactEvidenceText(event.narrative, 240) ?? sentenceCaseToken(event.kind)} (${event.sourceRefs.length} source ${event.sourceRefs.length === 1 ? 'ref' : 'refs'})`)
+  );
+  const snippets = assessmentEvidenceBundleSourceSnippets(bundle).map((snippet) =>
+    markdownBullet(`${snippet.label}: ${compactEvidenceText(snippet.exactText, 280) ?? 'Exact source text captured.'}`)
+  );
+
+  return [
+    '# PIPE Assessment Brief',
+    '',
+    `Generated: ${formatDate(bundle.generatedAt, 'just now')}`,
+    `Candidate: ${bundle.interview.recipientName ?? bundle.interview.recipientEmail ?? 'Unknown candidate'}`,
+    `Assessment: ${bundle.interview.title ?? bundle.interview.id}`,
+    `Mode: ${sentenceCaseToken(bundle.assessment.mode)}`,
+    `Stage: ${sentenceCaseToken(bundle.assessment.stage)}`,
+    `Schema: ${bundle.schemaVersion}`,
+    '',
+    '## Decision',
+    '',
+    `Human decision: ${bundle.humanDecision ? assessmentHumanDecisionLabel(bundle.humanDecision.decision) : 'Not recorded'}`,
+    `Human summary: ${bundle.humanDecision?.summary ?? 'A reviewer still needs to inspect the source-backed packet before finalizing.'}`,
+    `Evaluator status: ${bundle.evaluation ? assessmentEvaluationStatusLabel(bundle.evaluation.status) : 'No report'}`,
+    `Evaluator recommendation: ${evaluationRecommendation ? sentenceCaseToken(evaluationRecommendation) : 'Not recorded'}`,
+    `Evaluator summary: ${bundle.evaluation?.summary ?? 'No evaluator summary is available.'}`,
+    '',
+    '## Challenge',
+    '',
+    `Repository: ${challengeSummary?.repositoryUrl ?? submission?.repositoryUrl ?? 'Not recorded'}`,
+    `Base commit: ${challengeSummary?.baseCommitSha ?? submission?.baseCommitSha ?? 'Not recorded'}`,
+    `Task: ${assessmentEvidenceBundleTaskText(bundle)}`,
+    'Success criteria:',
+    ...markdownBulletList(challengeSummary?.successCriteria ?? [], 'No structured success criteria recorded.'),
+    'Expected evidence:',
+    ...markdownBulletList(challengeSummary?.expectedEvidence ?? [], 'No structured expected evidence recorded.'),
+    '',
+    '## Submitted Work',
+    '',
+    `Commit: ${submission?.commitSha ?? 'Not recorded'}`,
+    `Branch: ${submission?.branchName ?? 'Not recorded'}`,
+    `Commit URL: ${submission?.commitUrl ?? 'Not recorded'}`,
+    `Repository/fork: ${submission?.forkRepositoryUrl ?? submission?.repositoryUrl ?? 'Not recorded'}`,
+    `Integrity: ${submission?.integrity?.label ?? 'Not recorded'}`,
+    `Challenge binding: ${submission?.challengeBinding?.label ?? 'Not recorded'}`,
+    '',
+    '## Evidence Coverage',
+    '',
+    `Reviewability: ${assessmentEvidenceBundleReviewabilityItem(bundle).value}`,
+    `Missing proof: ${missingProof.length > 0 ? readableList(missingProof) : 'None'}`,
+    `Timeline events: ${bundle.timeline.length}`,
+    `Timeline source refs: ${assessmentEvidenceBundleSourceRefCount(bundle)}`,
+    'Source ref counts:',
+    ...(sourceRefCounts.length > 0 ? sourceRefCounts : [markdownBullet('No source refs recorded.')]),
+    '',
+    '## Evidence-Backed Claims',
+    '',
+    ...(claims.length > 0 ? claims : [markdownBullet('No evaluator claims recorded.')]),
+    '',
+    '## Evaluator Diagnostics',
+    '',
+    ...(diagnostics.length > 0 ? diagnostics : [markdownBullet('No evaluator diagnostics recorded.')]),
+    '',
+    '## Timeline',
+    '',
+    ...(timeline.length > 0 ? timeline : [markdownBullet('No timeline events recorded.')]),
+    '',
+    '## Source Preview',
+    '',
+    ...(snippets.length > 0 ? snippets : [markdownBullet('No exact source snippets available in preview.')]),
+    '',
+    '## Use Guidance',
+    '',
+    '- Use this as a source-backed assessment artifact, not an automatic hiring decision.',
+    '- Inspect the commit, diff, test evidence, AI-use trail, transcript/chat, and diagnostics before relying on the signal.',
+    '- Missing evidence should reduce confidence instead of being treated as positive signal.',
+    '',
+  ].join('\n');
+}
+
+function downloadTextFile(filename: string, contents: string, mimeType: string): void {
+  const blob = new Blob([contents], { type: mimeType });
   const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = objectUrl;
-  anchor.download = assessmentEvidenceBundleDownloadFilename(bundle);
+  anchor.download = filename;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
   window.setTimeout(() => {
     URL.revokeObjectURL(objectUrl);
   }, 0);
+}
+
+function downloadAssessmentEvidenceBundle(bundle: AssessmentEvidenceBundle): void {
+  downloadTextFile(
+    assessmentEvidenceBundleDownloadFilename(bundle),
+    JSON.stringify(bundle, null, 2),
+    'application/json',
+  );
+}
+
+function downloadAssessmentEvidenceBrief(bundle: AssessmentEvidenceBundle): void {
+  downloadTextFile(
+    assessmentEvidenceBundleBriefFilename(bundle),
+    assessmentEvidenceBundleBriefMarkdown(bundle),
+    'text/markdown',
+  );
 }
 
 type ContractEvidenceReceipt = NonNullable<AssessmentProgressReviewPacketSummary['evidence']['contractEvidence']>;
@@ -5294,6 +5437,14 @@ export default function InterviewDetailPage(): JSX.Element {
                     {assessmentEvidenceBundle && (
                       <div style={EVIDENCE_BUNDLE_ACTIONS}>
                         <span style={MATCH_BADGE}>{sentenceCaseToken(assessmentEvidenceBundle.assessment.stage)}</span>
+                        <button
+                          type="button"
+                          onClick={() => downloadAssessmentEvidenceBrief(assessmentEvidenceBundle)}
+                          style={{ ...PRIMARY_BUTTON, ...EVIDENCE_BUNDLE_EXPORT_BUTTON }}
+                        >
+                          <FileText size={14} />
+                          EXPORT BRIEF
+                        </button>
                         <button
                           type="button"
                           onClick={() => downloadAssessmentEvidenceBundle(assessmentEvidenceBundle)}

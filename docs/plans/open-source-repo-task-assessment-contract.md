@@ -405,9 +405,9 @@ The controlling product rule remains:
 - Recruiter assessment detail now renders that final evidence bundle after
   evaluation, showing reviewability, timeline events, source-ref counts, exact
   source previews, evaluator output, and human-decision state from the audit
-  packet, and recruiters can download the exact JSON audit packet from the
-  detail page. Broader signed artifact storage and cross-interview export views
-  remain pending.
+  packet, and recruiters can download both the exact JSON audit packet and a
+  human-readable Markdown assessment brief from the detail page. Broader signed
+  artifact storage and cross-interview export views remain pending.
 
 ## Proposed TypeScript Surface
 

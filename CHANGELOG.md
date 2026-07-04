@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter assessment detail can now export a Markdown hiring-manager brief from the final evidence bundle, summarizing the candidate, challenge, submitted commit, evaluator recommendation, claims, diagnostics, timeline, source previews, human decision, and missing-proof guidance without inventing new signals.
+- Open-source workspace dev smoke now verifies the deployed recruiter detail page exposes both `EXPORT BRIEF` and `EXPORT JSON` actions for the final source-backed assessment artifact.
 - Recruiter assessment detail can now download the final `repo-task-final-evidence-bundle-v1` JSON audit packet, giving reviewers a portable source-backed artifact with the exact challenge, commit, event timeline, source refs, evaluator output, and human decision state.
 - Open-source workspace dev smoke now verifies the deployed recruiter detail page exposes the final evidence bundle and its `EXPORT JSON` action, protecting the buyer-reviewable audit artifact from UI regressions.
 - Recruiter assessment detail now fetches and displays the final source-backed evidence bundle after evaluation, showing reviewability, immutable timeline events, source-ref counts, exact source previews, evaluator output, and human-decision state from the buyer audit packet.
