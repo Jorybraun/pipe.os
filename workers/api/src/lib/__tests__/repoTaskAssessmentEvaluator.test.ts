@@ -103,11 +103,20 @@ describe('repo task assessment evaluator output parsing', () => {
           sequence: 2,
           exactText: '$ git diff --check HEAD~1 HEAD',
         }),
+        await sourceRef({
+          type: 'room_chat_message',
+          id: 'chat-1',
+          sequence: 2,
+          exactText: 'Candidate: I kept the change scoped to the popover root hook because the impatient click failure is isolated there.',
+        }),
       ],
     });
 
     expect(fallback).not.toBeNull();
     expect(fallback?.summary).toContain('Fix Base UI popover impatient click handling');
+    expect(fallback?.summary).toContain('successful verification');
+    expect(fallback?.summary).toContain('AI-use trail captured');
+    expect(fallback?.summary).toContain('conversation context captured');
     expect(fallback?.recommendation).toBe('mixed_evidence_human_review');
     expect(fallback?.claims).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -127,6 +136,11 @@ describe('repo task assessment evaluator output parsing', () => {
         polarity: 'positive',
         dimension: 'upstream_pr_tracking',
         narrative: 'Candidate-approved upstream pull request tracking is captured for reviewer inspection.',
+      }),
+      expect.objectContaining({
+        polarity: 'positive',
+        dimension: 'communication_context',
+        narrative: 'Candidate explanation or room conversation context is captured as source evidence for review.',
       }),
     ]));
     expect(fallback?.claims.every((claim) => (claim.sourceRefs?.length ?? 0) > 0)).toBe(true);
@@ -180,6 +194,7 @@ describe('repo task assessment evaluator output parsing', () => {
     });
 
     expect(fallback).not.toBeNull();
+    expect(fallback?.summary).toContain('test evidence missing');
     expect(fallback?.claims).toEqual(expect.not.arrayContaining([
       expect.objectContaining({ dimension: 'verification' }),
     ]));

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Deterministic open-source assessment fallback reports now summarize captured verification, AI-use, conversation, workspace, upstream-PR, and missing-evidence signals from exact source refs, making model-fallback evaluations recruiter-actionable without inventing candidate performance claims.
 - Assessment progress now treats room transcript source refs (`meeting_transcript_segment`) as transcript evidence alongside legacy `transcript_span` events, so recruiter readouts no longer mark speaker-attributed transcript evidence as missing when the room captured it.
 - Recruiter open-source assessment cards now surface missing high-confidence signals such as absent AI-use trails and missing speaker-attributed transcripts, so evaluated commits stay reviewable without implying unobserved candidate behavior was assessed.
 - Open-source workspace dev smoke now waits for the recruiter assessment projection after human review before asserting commit/evaluation proof, avoiding false failures from short live projection races.

@@ -141,6 +141,11 @@ const EXPECTED_HIGH_CONFIDENCE_REF_GROUPS = [
     missingImpact: 'Treat AI usage as unobserved when real agent bridge chat evidence is absent.',
   },
   {
+    label: 'conversation_context',
+    sourceRefTypes: ['meeting_transcript_segment', 'transcript_span', 'room_chat_message'],
+    missingImpact: 'Treat reasoning, communication, and collaboration as unobserved when transcript or room chat evidence is absent.',
+  },
+  {
     label: 'upstream_pr_tracking',
     sourceRefTypes: ['upstream_pull_request'],
     missingImpact: 'Default assessment commits do not require upstream PRs; treat upstream usefulness as unreviewed unless candidate-approved PR tracking is captured.',
@@ -160,6 +165,18 @@ const AI_EVIDENCE_SOURCE_REF_TYPES = [
   'ai_chat_user',
   'ai_chat_agent',
 ] as const;
+const CONVERSATION_EVIDENCE_SOURCE_REF_TYPES = [
+  'meeting_transcript_segment',
+  'transcript_span',
+  'room_chat_message',
+] as const;
+const WORKSPACE_ACTIVITY_SOURCE_REF_TYPES = [
+  'terminal_command',
+  'terminal_output',
+  'dev_container_workspace_state',
+  'code_server_file_observation',
+] as const;
+const MAX_DETERMINISTIC_FALLBACK_CLAIMS = 8;
 
 function parseJsonObject(value: string | null): JsonObject {
   if (!value) return {};
@@ -512,6 +529,64 @@ function hasSuccessfulVerification(sourceRefs: readonly SessionSourceRef[]): boo
   });
 }
 
+function hasSourceRefsOfTypes(
+  sourceRefs: readonly SessionSourceRef[],
+  sourceRefTypes: readonly string[],
+): boolean {
+  const allowedTypes = new Set(sourceRefTypes);
+  return sourceRefs.some((ref) => allowedTypes.has(ref.sourceRefType));
+}
+
+function deterministicFallbackSummary(sourceRefs: readonly SessionSourceRef[]): string {
+  const focus = challengeFocusSummary(sourceRefs) ?? 'Open-source assessment';
+  const captured: string[] = [];
+  const gaps: string[] = [];
+
+  if (challengePacketContractMissingFields(sourceRefs).length === 0) {
+    captured.push('complete challenge packet');
+  }
+  if (hasSourceRefsOfTypes(sourceRefs, ['git_commit'])) captured.push('assessment commit');
+  if (hasSourceRefsOfTypes(sourceRefs, ['code_diff'])) captured.push('exact diff');
+
+  if (hasSuccessfulVerification(sourceRefs)) {
+    captured.push('successful verification');
+  } else if (hasSourceRefsOfTypes(sourceRefs, TEST_EVIDENCE_SOURCE_REF_TYPES)) {
+    captured.push('verification evidence captured');
+  } else {
+    gaps.push('test evidence missing');
+  }
+
+  if (hasSourceRefsOfTypes(sourceRefs, AI_EVIDENCE_SOURCE_REF_TYPES)) {
+    captured.push('AI-use trail captured');
+  } else {
+    gaps.push('AI-use trail missing');
+  }
+
+  if (hasSourceRefsOfTypes(sourceRefs, CONVERSATION_EVIDENCE_SOURCE_REF_TYPES)) {
+    captured.push('conversation context captured');
+  } else {
+    gaps.push('conversation context missing');
+  }
+
+  if (hasSourceRefsOfTypes(sourceRefs, WORKSPACE_ACTIVITY_SOURCE_REF_TYPES)) {
+    captured.push('workspace activity captured');
+  }
+
+  if (hasSourceRefsOfTypes(sourceRefs, ['upstream_pull_request'])) {
+    captured.push('upstream PR tracked');
+  } else {
+    gaps.push('upstream PR not tracked');
+  }
+
+  const capturedSummary = captured.length > 0
+    ? captured.join(', ')
+    : 'required source evidence captured';
+  const gapSummary = gaps.length > 0
+    ? gaps.join(', ')
+    : 'human correctness review still required';
+  return truncateEvaluationSummary(`${focus}: ${capturedSummary}; ${gapSummary}.`);
+}
+
 function missingVerificationDiagnostic(
   sourceRefs: readonly SessionSourceRef[],
 ): AssessmentDiagnosticInput | null {
@@ -573,19 +648,7 @@ export function buildDeterministicAssessmentFallback(input: {
     });
   }
 
-  const aiRefs = sourceRefsOfTypes(input.sourceRefs, [
-    'ai_user_prompt',
-    'ai_user_prompt_blocked',
-    'ai_agent_response',
-    'ai_agent_diagnostic',
-    'agent_status',
-    'agent_response',
-    'agent_diagnostic',
-    'session_chat_agent',
-    'session_chat_user',
-    'ai_chat_user',
-    'ai_chat_agent',
-  ]).slice(0, 4);
+  const aiRefs = sourceRefsOfTypes(input.sourceRefs, AI_EVIDENCE_SOURCE_REF_TYPES).slice(0, 4);
   if (aiRefs.length > 0) {
     const hasAgentResponse = aiRefs.some((ref) =>
       ref.sourceRefType === 'ai_agent_response' || ref.sourceRefType === 'session_chat_agent' || ref.sourceRefType === 'ai_chat_agent');
@@ -604,6 +667,18 @@ export function buildDeterministicAssessmentFallback(input: {
     });
   }
 
+  const conversationRefs = sourceRefsOfTypes(input.sourceRefs, CONVERSATION_EVIDENCE_SOURCE_REF_TYPES).slice(0, 4);
+  if (conversationRefs.length > 0) {
+    claims.push({
+      id: `repo_task_eval_${input.sessionId}_communication_context`.replace(/[^A-Za-z0-9:_-]/g, '_'),
+      polarity: 'positive',
+      dimension: 'communication_context',
+      narrative: 'Candidate explanation or room conversation context is captured as source evidence for review.',
+      confidence: 0.66,
+      sourceRefs: conversationRefs,
+    });
+  }
+
   const upstreamPullRequestRef = firstSourceRefOfType(input.sourceRefs, 'upstream_pull_request');
   if (upstreamPullRequestRef) {
     claims.push({
@@ -616,12 +691,7 @@ export function buildDeterministicAssessmentFallback(input: {
     });
   }
 
-  const activityRefs = sourceRefsOfTypes(input.sourceRefs, [
-    'terminal_command',
-    'terminal_output',
-    'dev_container_workspace_state',
-    'code_server_file_observation',
-  ]).slice(0, 4);
+  const activityRefs = sourceRefsOfTypes(input.sourceRefs, WORKSPACE_ACTIVITY_SOURCE_REF_TYPES).slice(0, 4);
   if (activityRefs.length > 0) {
     claims.push({
       id: `repo_task_eval_${input.sessionId}_workspace_activity`.replace(/[^A-Za-z0-9:_-]/g, '_'),
@@ -634,15 +704,12 @@ export function buildDeterministicAssessmentFallback(input: {
   }
 
   const focus = challengeFocusSummary(input.sourceRefs);
-  const summary = sourceBackedEvaluationSummary(
-    'PIPE produced a conservative source-backed assessment report from captured challenge, commit, diff, verification, and workspace evidence.',
-    input.sourceRefs,
-  );
+  const summary = deterministicFallbackSummary(input.sourceRefs);
 
   return {
     summary,
     recommendation: DEFAULT_RECOMMENDATION,
-    claims: claims.slice(0, 6),
+    claims: claims.slice(0, MAX_DETERMINISTIC_FALLBACK_CLAIMS),
     diagnostics: [
       ...[missingVerificationDiagnostic(input.sourceRefs)].filter((diagnostic): diagnostic is AssessmentDiagnosticInput => Boolean(diagnostic)),
       diagnosticInput({
