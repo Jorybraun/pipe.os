@@ -13,6 +13,7 @@ export interface ChallengePacketSummary extends ChallengePacketContract {
   repositoryUrl: string | null;
   baseCommitSha: string | null;
   githubPrNumber: number | null;
+  pullRequestUrl: string | null;
 }
 
 export function firstLocatorString(locator: Record<string, unknown>, keys: string[]): string | null {
@@ -105,6 +106,43 @@ export function parseChallengePacketContract(exactText: string): ChallengePacket
   return contract;
 }
 
+function packetLineValue(exactText: string, labels: readonly string[]): string | null {
+  const escapedLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const match = exactText.match(new RegExp(`^\\s*(?:${escapedLabels.join('|')})\\s*:\\s*(.+)$`, 'im'));
+  return match?.[1]?.trim() || null;
+}
+
+export function normalizeGitHubPullRequestUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return null;
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com') return null;
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length < 4 || parts[2] !== 'pull') return null;
+    const prNumber = Number.parseInt(parts[3] ?? '', 10);
+    if (!Number.isInteger(prNumber) || prNumber <= 0) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/pull/${prNumber}`;
+  } catch {
+    return null;
+  }
+}
+
+function buildGitHubPullRequestUrl(repositoryUrl: string | null, githubPrNumber: number | null): string | null {
+  if (!repositoryUrl || !githubPrNumber) return null;
+
+  try {
+    const url = new URL(repositoryUrl);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com') return null;
+    const parts = url.pathname.replace(/\.git$/i, '').split('/').filter(Boolean);
+    if (parts.length < 2) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/pull/${githubPrNumber}`;
+  } catch {
+    return null;
+  }
+}
+
 export function summarizeChallengePacket(packet: RoomWorkspaceChallengePacket | null | undefined): ChallengePacketSummary {
   const contract = packet
     ? parseChallengePacketContract(packet.exactText)
@@ -117,11 +155,19 @@ export function summarizeChallengePacket(packet: RoomWorkspaceChallengePacket | 
         expectedEvidence: [],
       };
   const locator = packet?.locator ?? {};
+  const exactText = packet?.exactText ?? '';
+  const repositoryUrl = firstLocatorString(locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']);
+  const githubPrNumber = firstLocatorNumber(locator, ['githubPrNumber', 'prNumber', 'pullRequestNumber']);
+  const pullRequestUrl = normalizeGitHubPullRequestUrl(
+    firstLocatorString(locator, ['pullRequestUrl', 'githubPullRequestUrl', 'prUrl'])
+      ?? packetLineValue(exactText, ['Pull request URL', 'PR URL']),
+  ) ?? buildGitHubPullRequestUrl(repositoryUrl, githubPrNumber);
 
   return {
     ...contract,
-    repositoryUrl: firstLocatorString(locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']),
+    repositoryUrl,
     baseCommitSha: firstLocatorString(locator, ['baseCommitSha', 'baseCommit']),
-    githubPrNumber: firstLocatorNumber(locator, ['githubPrNumber', 'prNumber', 'pullRequestNumber']),
+    githubPrNumber,
+    pullRequestUrl,
   };
 }

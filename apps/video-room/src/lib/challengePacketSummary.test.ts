@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseChallengePacketContract } from './challengePacketSummary';
+import { parseChallengePacketContract, summarizeChallengePacket } from './challengePacketSummary';
 
 describe('parseChallengePacketContract', () => {
   it('keeps matched challenge proof separate from success criteria and evidence', () => {
@@ -33,5 +33,42 @@ describe('parseChallengePacketContract', () => {
       successCriteria: ['Retry order remains deterministic.'],
       expectedEvidence: ['Commit SHA on assessment branch.'],
     });
+  });
+
+  it('keeps the source-backed upstream pull request URL in the packet summary', () => {
+    const summary = summarizeChallengePacket({
+      sourceRefType: 'review_challenge_packet',
+      evidenceRole: 'assigned_challenge',
+      exactText: [
+        'Repo: https://github.com/pipe/source-backed-worker',
+        'Base commit: dddddddddddddddddddddddddddddddddddddddd',
+        'Pull request: #144',
+        'Pull request URL: https://github.com/pipe/source-backed-worker/pull/144?conversation=1',
+        'Task: Fix deterministic retry handling.',
+      ].join('\n'),
+      locator: {
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        githubPrNumber: 144,
+        baseCommitSha: 'dddddddddddddddddddddddddddddddddddddddd',
+      },
+      contentHash: 'sha256:packet-content-hash',
+    });
+
+    expect(summary.pullRequestUrl).toBe('https://github.com/pipe/source-backed-worker/pull/144');
+  });
+
+  it('builds a GitHub pull request URL from a trusted repo locator and PR number', () => {
+    const summary = summarizeChallengePacket({
+      sourceRefType: 'open_source_challenge_packet',
+      evidenceRole: 'assigned_challenge',
+      exactText: 'Task: Fix deterministic retry handling.',
+      locator: {
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker.git',
+        githubPrNumber: 144,
+      },
+      contentHash: 'sha256:packet-content-hash',
+    });
+
+    expect(summary.pullRequestUrl).toBe('https://github.com/pipe/source-backed-worker/pull/144');
   });
 });

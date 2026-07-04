@@ -520,6 +520,18 @@ function firstLocatorString(locator: Record<string, unknown>, keys: string[]): s
   return null;
 }
 
+function firstLocatorNumber(locator: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = locator[key];
+    if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number.parseInt(value.trim().replace(/^#/, ''), 10);
+      if (Number.isInteger(parsed) && parsed > 0) return parsed;
+    }
+  }
+  return null;
+}
+
 function workspaceSessionSummary(interview: ScheduledInterviewDetail): string | null {
   const workspace = interview.workspaceSession ?? null;
   if (!workspace) return null;
@@ -540,6 +552,8 @@ function compactEvidenceText(value: string, maxLength = 160): string | null {
 
 interface AssessmentChallengeContract {
   repositoryUrl: string | null;
+  githubPrNumber: number | null;
+  pullRequestUrl: string | null;
   baseCommitSha: string | null;
   task: string | null;
   assessmentFit: string[];
@@ -556,6 +570,37 @@ function normalizePacketListItem(line: string): string {
     .trim();
 }
 
+function normalizeGitHubPullRequestUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return null;
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com') return null;
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length < 4 || parts[2] !== 'pull') return null;
+    const prNumber = Number.parseInt(parts[3] ?? '', 10);
+    if (!Number.isInteger(prNumber) || prNumber <= 0) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/pull/${prNumber}`;
+  } catch {
+    return null;
+  }
+}
+
+function gitHubPullRequestUrlForRepo(repositoryUrl: string | null, githubPrNumber: number | null): string | null {
+  if (!repositoryUrl || !githubPrNumber) return null;
+
+  try {
+    const url = new URL(repositoryUrl);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com') return null;
+    const parts = url.pathname.replace(/\.git$/i, '').split('/').filter(Boolean);
+    if (parts.length < 2) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/pull/${githubPrNumber}`;
+  } catch {
+    return null;
+  }
+}
+
 function parseAssessmentChallengeContract(challenge: AssessmentProgressSnapshot['challenge'] | null | undefined): AssessmentChallengeContract | null {
   if (!challenge) return null;
   const summary = challenge.summary;
@@ -566,6 +611,10 @@ function parseAssessmentChallengeContract(challenge: AssessmentProgressSnapshot[
   let section: 'assessmentFit' | 'matchProof' | 'successCriteria' | 'expectedEvidence' | null = null;
   const contract: AssessmentChallengeContract = {
     repositoryUrl: summary?.repositoryUrl ?? firstLocatorString(challenge.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']),
+    githubPrNumber: summary?.githubPrNumber ?? firstLocatorNumber(challenge.locator, ['githubPrNumber', 'prNumber', 'pullRequestNumber']),
+    pullRequestUrl: summary?.pullRequestUrl
+      ? normalizeGitHubPullRequestUrl(summary.pullRequestUrl)
+      : null,
     baseCommitSha: summary?.baseCommitSha ?? firstLocatorString(challenge.locator, ['baseCommitSha', 'baseCommit']),
     task: summary?.task ?? null,
     assessmentFit: [...(summary?.assessmentFit ?? [])],
@@ -584,6 +633,19 @@ function parseAssessmentChallengeContract(challenge: AssessmentProgressSnapshot[
     const baseCommitMatch = line.match(/^base commit\s*:\s*([a-f0-9]{7,40})$/i);
     if (baseCommitMatch?.[1] && !contract.baseCommitSha) {
       contract.baseCommitSha = baseCommitMatch[1].trim();
+      section = null;
+      continue;
+    }
+    const pullRequestUrlMatch = line.match(/^pull request url\s*:\s*(.+)$/i);
+    if (pullRequestUrlMatch?.[1] && !contract.pullRequestUrl) {
+      contract.pullRequestUrl = normalizeGitHubPullRequestUrl(pullRequestUrlMatch[1]);
+      section = null;
+      continue;
+    }
+    const pullRequestMatch = line.match(/^(?:pull request|pr)\s*:\s*#?(\d+)$/i);
+    if (pullRequestMatch?.[1] && !contract.githubPrNumber) {
+      const parsedPrNumber = Number.parseInt(pullRequestMatch[1], 10);
+      contract.githubPrNumber = Number.isInteger(parsedPrNumber) && parsedPrNumber > 0 ? parsedPrNumber : null;
       section = null;
       continue;
     }
@@ -623,8 +685,13 @@ function parseAssessmentChallengeContract(challenge: AssessmentProgressSnapshot[
     const item = normalizePacketListItem(line);
     if (item.length > 0 && !contract[section].includes(item)) contract[section].push(item);
   }
+  contract.pullRequestUrl = contract.pullRequestUrl
+    ?? normalizeGitHubPullRequestUrl(firstLocatorString(challenge.locator, ['pullRequestUrl', 'githubPullRequestUrl', 'prUrl']))
+    ?? gitHubPullRequestUrlForRepo(contract.repositoryUrl, contract.githubPrNumber);
 
   return contract.repositoryUrl
+    || contract.githubPrNumber
+    || contract.pullRequestUrl
     || contract.baseCommitSha
     || contract.task
     || contract.assessmentFit.length > 0
@@ -4667,7 +4734,9 @@ export default function InterviewDetailPage(): JSX.Element {
                     data-testid="interview-assessment-challenge-contract"
                     style={ASSESSMENT_CHALLENGE_CONTRACT}
                   >
-                    {(assessmentChallengeContract.repositoryUrl || assessmentChallengeContract.baseCommitSha) && (
+                    {(assessmentChallengeContract.repositoryUrl
+                      || assessmentChallengeContract.githubPrNumber
+                      || assessmentChallengeContract.baseCommitSha) && (
                       <div style={ASSESSMENT_CHALLENGE_META}>
                         {assessmentChallengeContract.repositoryUrl && (
                           <span>
@@ -4676,6 +4745,23 @@ export default function InterviewDetailPage(): JSX.Element {
                               {repoLabelFromUrl(assessmentChallengeContract.repositoryUrl)
                                 ?? assessmentChallengeContract.repositoryUrl}
                             </strong>
+                          </span>
+                        )}
+                        {assessmentChallengeContract.githubPrNumber && (
+                          <span>
+                            PR{' '}
+                            {assessmentChallengeContract.pullRequestUrl ? (
+                              <a
+                                href={assessmentChallengeContract.pullRequestUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={INLINE_LINK}
+                              >
+                                #{assessmentChallengeContract.githubPrNumber}
+                              </a>
+                            ) : (
+                              <strong>#{assessmentChallengeContract.githubPrNumber}</strong>
+                            )}
                           </span>
                         )}
                         {assessmentChallengeContract.baseCommitSha && (

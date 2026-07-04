@@ -177,6 +177,7 @@ export interface AssessmentProgressChallengePacketContract {
 export interface AssessmentProgressChallengeSummary {
   repositoryUrl: string | null;
   githubPrNumber: number | null;
+  pullRequestUrl?: string | null;
   baseCommitSha: string | null;
   task: string | null;
   assessmentFit: string[];

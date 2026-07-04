@@ -11,6 +11,7 @@ const packet: RoomWorkspaceChallengePacket = {
   exactText: [
     'Repo: https://github.com/pipe/source-backed-worker',
     'Base commit: dddddddddddddddddddddddddddddddddddddddd',
+    'Pull request URL: https://github.com/pipe/source-backed-worker/pull/144',
     'Task: Fix the source-backed worker retry path.',
     'Verification command: npm test -- retry-worker',
     'Match proof:',
@@ -29,6 +30,7 @@ const packet: RoomWorkspaceChallengePacket = {
   locator: {
     repositoryUrl: 'https://github.com/pipe/source-backed-worker',
     githubPrNumber: 144,
+    pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/144',
     baseCommitSha: 'dddddddddddddddddddddddddddddddddddddddd',
   },
   contentHash: 'sha256:packet-content-hash',
@@ -40,7 +42,9 @@ describe('ChallengePacketPanel', () => {
 
     expect(screen.getByText('Open-source challenge')).not.toBeNull();
     expect(screen.getByText('https://github.com/pipe/source-backed-worker')).not.toBeNull();
-    expect(screen.getByText('#144')).not.toBeNull();
+    expect(screen.getByRole('link', { name: '#144' }).getAttribute('href')).toBe(
+      'https://github.com/pipe/source-backed-worker/pull/144',
+    );
     expect(screen.getByText('dddddddddddddddddddddddddddddddddddddddd')).not.toBeNull();
     expect(screen.getByTestId('challenge-packet-exact-text').textContent).toContain(
       'Fix the source-backed worker retry path.',

@@ -411,6 +411,8 @@ describe('InterviewDetailPage', () => {
             exactText: [
               'Repo: https://github.com/open-source/widgets',
               'Base commit: 1111111111111111111111111111111111111111',
+              'Pull request: #42',
+              'Pull request URL: https://github.com/open-source/widgets/pull/42',
               'Task: Fix the popover cleanup regression.',
               'Match proof:',
               '- Review packet quality 92% from source-backed repo analysis.',
@@ -428,6 +430,8 @@ describe('InterviewDetailPage', () => {
             ].join('\n'),
             locator: {
               repositoryUrl: 'https://github.com/open-source/widgets',
+              githubPrNumber: 42,
+              pullRequestUrl: 'https://github.com/open-source/widgets/pull/42',
               baseCommitSha: '1111111111111111111111111111111111111111',
             },
           },
@@ -532,6 +536,11 @@ describe('InterviewDetailPage', () => {
     expect(workPacket).toHaveTextContent('Run evaluation');
     const contract = screen.getByTestId('interview-assessment-challenge-contract');
     expect(contract).toHaveTextContent('Repo open-source/widgets');
+    expect(contract).toHaveTextContent('PR #42');
+    expect(screen.getByRole('link', { name: '#42' })).toHaveAttribute(
+      'href',
+      'https://github.com/open-source/widgets/pull/42',
+    );
     expect(contract).toHaveTextContent('Base 1111111111');
     expect(contract).toHaveTextContent('Task');
     expect(contract).toHaveTextContent('Fix the popover cleanup regression.');

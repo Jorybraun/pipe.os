@@ -3402,6 +3402,7 @@ async function loadScheduledAssessmentProgressByInterviewIds(
 interface ScheduledAssessmentChallengeSummary {
   repositoryUrl: string | null;
   githubPrNumber: number | null;
+  pullRequestUrl: string | null;
   baseCommitSha: string | null;
   task: string | null;
   assessmentFit: string[];
@@ -3982,6 +3983,7 @@ function scheduledAssessmentChallengeSummary(
   return {
     repositoryUrl: scheduledAssessmentChallengeRepositoryUrl(challenge),
     githubPrNumber: scheduledAssessmentChallengePrNumber(challenge),
+    pullRequestUrl: scheduledAssessmentChallengePullRequestUrl(challenge),
     baseCommitSha: scheduledAssessmentChallengeBaseCommitSha(challenge),
     task: scheduledAssessmentChallengeLineValue(challenge.exactText, ['Task', 'Title']),
     assessmentFit: scheduledAssessmentChallengeSectionItems(challenge.exactText, ['Assessment fit']),
@@ -4496,6 +4498,47 @@ function scheduledAssessmentChallengePrNumber(
     ?? scheduledAssessmentLocatorNumber(challenge.locator, 'prNumber')
     ?? scheduledAssessmentLocatorNumber(challenge.locator, 'pullRequestNumber')
     ?? scheduledAssessmentChallengeLineNumber(challenge.exactText, ['Pull request', 'PR']);
+}
+
+function scheduledAssessmentChallengePullRequestUrl(
+  challenge: NonNullable<AssessmentProgressSnapshot['challenge']>,
+): string | null {
+  const explicitUrl = normalizeScheduledAssessmentGitHubPullRequestUrl(
+    scheduledAssessmentLocatorString(challenge.locator, 'pullRequestUrl')
+      ?? scheduledAssessmentLocatorString(challenge.locator, 'githubPullRequestUrl')
+      ?? scheduledAssessmentLocatorString(challenge.locator, 'prUrl')
+      ?? scheduledAssessmentChallengeLineValue(challenge.exactText, ['Pull request URL', 'PR URL']),
+  );
+  if (explicitUrl) return explicitUrl;
+
+  const repositoryUrl = scheduledAssessmentChallengeRepositoryUrl(challenge);
+  const githubPrNumber = scheduledAssessmentChallengePrNumber(challenge);
+  if (!repositoryUrl || !githubPrNumber) return null;
+  try {
+    const url = new URL(repositoryUrl);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com') return null;
+    const parts = url.pathname.replace(/\.git$/i, '').split('/').filter(Boolean);
+    if (parts.length < 2) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/pull/${githubPrNumber}`;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeScheduledAssessmentGitHubPullRequestUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com') return null;
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length < 4 || parts[2] !== 'pull') return null;
+    const prNumber = Number.parseInt(parts[3] ?? '', 10);
+    if (!Number.isInteger(prNumber) || prNumber <= 0) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/pull/${prNumber}`;
+  } catch {
+    return null;
+  }
 }
 
 function scheduledAssessmentLocatorString(locator: Record<string, unknown>, key: string): string | null {

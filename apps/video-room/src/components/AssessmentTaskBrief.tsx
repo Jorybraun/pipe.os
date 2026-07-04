@@ -193,6 +193,7 @@ export function AssessmentTaskBrief({
   const summary = summarizeChallengePacket(packet);
   const repositoryUrl = summary.repositoryUrl ?? workspace?.repoUrl ?? null;
   const baseCommitSha = summary.baseCommitSha ?? progress?.commit?.baseCommitSha ?? null;
+  const pullRequestUrl = summary.pullRequestUrl;
   const incompletePacketFields = progress?.challengePacketContract?.isComplete === false
     ? progress.challengePacketContract.missingFields
     : [];
@@ -253,7 +254,15 @@ export function AssessmentTaskBrief({
         {summary.githubPrNumber && (
           <>
             <dt>PR</dt>
-            <dd>#{summary.githubPrNumber}</dd>
+            <dd>
+              {pullRequestUrl ? (
+                <a href={pullRequestUrl} target="_blank" rel="noopener noreferrer">
+                  #{summary.githubPrNumber}
+                </a>
+              ) : (
+                <>#{summary.githubPrNumber}</>
+              )}
+            </dd>
           </>
         )}
         {baseCommitSha && (

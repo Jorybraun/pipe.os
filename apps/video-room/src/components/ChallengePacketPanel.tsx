@@ -46,7 +46,15 @@ export function ChallengePacketPanel({
           {summary.githubPrNumber && (
             <>
               <dt>PR</dt>
-              <dd>#{summary.githubPrNumber}</dd>
+              <dd>
+                {summary.pullRequestUrl ? (
+                  <a href={summary.pullRequestUrl} target="_blank" rel="noopener noreferrer">
+                    #{summary.githubPrNumber}
+                  </a>
+                ) : (
+                  <>#{summary.githubPrNumber}</>
+                )}
+              </dd>
             </>
           )}
           {summary.baseCommitSha && (
