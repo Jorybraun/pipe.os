@@ -934,6 +934,12 @@ async function assertRecruiterReviewerReceiptBrowser(
     await expect(reviewPacket).toContainText(workspaceCommit.commitSha.slice(0, 10));
     await expect(reviewPacket).toContainText('Evidence packet');
     await expect(reviewPacket).toContainText('source');
+    const evidenceBundle = page.getByTestId('interview-assessment-evidence-bundle');
+    await expect(evidenceBundle).toBeVisible({ timeout: 60_000 });
+    await expect(evidenceBundle).toContainText('Final evidence bundle');
+    await expect(evidenceBundle).toContainText('repo-task-final-evidence-bundle-v1');
+    await expect(evidenceBundle).toContainText('Final packet reviewable');
+    await expect(evidenceBundle.getByRole('button', { name: 'EXPORT JSON' })).toBeVisible();
     const contractReceipt = page.getByTestId('interview-assessment-contract-receipt');
     await expect(contractReceipt).toBeVisible({ timeout: 60_000 });
     await expect(contractReceipt).toContainText('Evidence contract receipt');
@@ -978,6 +984,7 @@ async function assertRecruiterReviewerReceiptBrowser(
 
     return {
       skipped: false,
+      evidenceBundleExportVisible: true,
       matchedDecisionVisible: MATCHED_REPO_ID !== null,
       matchedValidityVisible: MATCHED_REPO_ID !== null,
     };
@@ -1864,6 +1871,7 @@ async function main() {
     evidenceBundleEvaluationClaimCount: evidenceBundleProof.evaluationClaimCount,
     evidenceBundleEvaluationDiagnosticCount: evidenceBundleProof.evaluationDiagnosticCount,
     evidenceBundleHasHumanDecision: evidenceBundleProof.hasHumanDecision,
+    evidenceBundleExportVisible: recruiterBrowser.evidenceBundleExportVisible === true,
     recruiterDetailReviewable: true,
     recruiterReviewerReceiptVisible: !recruiterBrowser.skipped,
     recruiterReviewerReceiptSkippedReason: recruiterBrowser.skipped ? recruiterBrowser.reason : null,
