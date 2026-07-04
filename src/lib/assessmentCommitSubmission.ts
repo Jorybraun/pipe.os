@@ -502,7 +502,9 @@ export async function buildCandidateCommitSubmissionPayload(
             contentHash: await sha256ContentHash(testEvidenceText),
             metadata: sourceMetadata,
           }]
-        : [{
+        : []),
+      ...(verificationNotesText
+        ? [{
             sourceRefType: 'verification_gap',
             sourceRefId: `${commitSha}:test-evidence-missing`,
             evidenceRole: 'missing_test_evidence_note',
@@ -517,7 +519,8 @@ export async function buildCandidateCommitSubmissionPayload(
               source: 'assessment_commit_submission_panel',
               missingEvidence: 'test_run',
             },
-          }]),
+          }]
+        : []),
       ...(validatedUpstreamPullRequestUrl && fields.upstreamPrConsent
         ? [{
             sourceRefType: 'upstream_pull_request',

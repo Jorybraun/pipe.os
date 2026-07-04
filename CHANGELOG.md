@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Candidate manual commit submission now preserves a `verification_gap` source ref even when test output is also pasted, so partial verification gaps remain visible instead of being overwritten by the first captured `test_run`.
 - Devin bridge smoke now prints the exact `assessmentSessionId` and replay/audit commands for real response and auth-needed paths, keeping AI-use transparency tied to living-context proof instead of only room telemetry.
 - Open-source workspace dev smoke now prints the exact `assessmentSessionId` and replay/audit commands for the created session, and waits longer for real remote source-backed evaluation, making app-dev evidence ingestion proof repeatable without D1 guesswork.
 - Approved auto-matched repo assignments now include the latest match quality and contrast proof in recruiter list/detail setup rationale, explaining why a challenge was trusted instead of showing only generic assignment copy.

@@ -188,6 +188,9 @@ The controlling product rule remains:
 - Live assessment-room progress coverage must name those same verification gaps,
   so hosts and candidates do not read a missing-test note as captured passing
   tests while the session is still underway.
+- Candidate manual commit submission preserves partial verification gaps even
+  when test output is present, so "unit tests passed but browser e2e could not
+  run" remains source-backed as both `test_run` and `verification_gap` evidence.
 - Live assessment-room progress coverage must label accepted terminal, code,
   and tool evidence as `tool activity`, matching recruiter summaries and
   preserving the distinction between generic room presence and actual assessment

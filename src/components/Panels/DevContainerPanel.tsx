@@ -762,7 +762,7 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
                   }}
                   disabled={workspaceFinalizing}
                   data-testid="assessment-workspace-finalize-verification-notes"
-                  placeholder="If tests could not run, say exactly why."
+                  placeholder="If any expected tests could not run, say exactly why."
                   style={fieldStyle()}
                 />
               </label>
@@ -884,7 +884,7 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
               />
             </label>
             <label style={{ gridColumn: 'span 2', display: 'grid', gap: 4 }}>
-              <span>Missing test note</span>
+              <span>Missing or partial verification note</span>
               <textarea
                 value={commitFields.verificationNotesText}
                 onChange={(event) => setCommitField('verificationNotesText', event.target.value)}
