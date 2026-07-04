@@ -3646,6 +3646,15 @@ const SCHEDULED_ASSESSMENT_TRANSCRIPT_SOURCE_REF_TYPES = [
   'meeting_transcript_segment',
   'transcript_span',
 ] as const;
+const SCHEDULED_ASSESSMENT_AI_INTERACTION_SOURCE_REF_TYPES = [
+  'ai_user_prompt',
+  'ai_user_prompt_blocked',
+  'ai_agent_response',
+  'ai_agent_diagnostic',
+  'agent_status',
+  'agent_response',
+  'agent_diagnostic',
+] as const;
 const SCHEDULED_ASSESSMENT_TOOL_ACTIVITY_SOURCE_REF_TYPES = [
   'terminal_command',
   'terminal_output',
@@ -4455,11 +4464,7 @@ function buildScheduledAssessmentListProgress(input: {
   const hasCommitSubmission = commit !== null;
   const hasFinalSubmission = scheduledAssessmentHasKind(input.evidenceCounts, ['final_submission']);
   const hasAiInteraction = scheduledAssessmentHasKind(input.evidenceCounts, ['ai_interaction'])
-    || scheduledAssessmentHasKind(input.sourceRefCounts, [
-      'ai_user_prompt',
-      'ai_user_prompt_blocked',
-      'ai_agent_response',
-    ]);
+    || scheduledAssessmentHasKind(input.sourceRefCounts, SCHEDULED_ASSESSMENT_AI_INTERACTION_SOURCE_REF_TYPES);
   const hasMessageEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['message'])
     || scheduledAssessmentHasKind(input.sourceRefCounts, ['room_chat_message']);
   const hasDevContainerEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['dev_container_event'])
@@ -4797,8 +4802,8 @@ function scheduledAssessmentReadiness(input: {
       label: 'AI-use trail',
       required: false,
       satisfied: input.hasAiInteraction,
-      sourceRefTypes: ['ai_user_prompt', 'ai_agent_response', 'ai_usage_event'],
-      missingImpact: 'AI prompts and responses explain how the candidate used assistance.',
+      sourceRefTypes: [...SCHEDULED_ASSESSMENT_AI_INTERACTION_SOURCE_REF_TYPES, 'ai_usage_event'],
+      missingImpact: 'Real prompts, blocked attempts, bridge statuses, diagnostics, and agent responses explain how the candidate used assistance.',
     },
     {
       id: 'transcript_or_chat',

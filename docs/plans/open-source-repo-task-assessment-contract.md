@@ -110,6 +110,10 @@ The controlling product rule remains:
   requiring only open-source rows, matching filtered pagination totals to the
   open-source facet count, and proving the fresh assessment remains visible in
   that filtered list.
+- Recruiter projections treat real AI bridge prompts, blocked prompts,
+  responses, statuses, and diagnostics as AI-use transparency evidence. Status
+  or diagnostic-only traces prove observability, not assistance, and UI copy
+  must keep that distinction visible.
 - The list endpoint loads source-backed assessment progress only for the
   returned interview page. Detail views remain the place for full evidence
   audit trails, evaluation claims, and human-decision records.

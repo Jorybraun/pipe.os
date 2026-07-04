@@ -3073,6 +3073,24 @@ describe('GET /interviews/:id detail', () => {
       now,
       now,
     );
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+        narrative, payload_json, context_record_id, occurred_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+    `).run(
+      'assessment-event-list-agent-status',
+      'assessment-event:progress-list-agent-status',
+      'assessment-session-progress-list',
+      3,
+      'dev_container_event',
+      'system',
+      'devin-bridge',
+      'The real Devin bridge reported auth_needed before answering.',
+      JSON.stringify({ agentType: 'devin', status: 'auth_needed' }),
+      now,
+      now,
+    );
     for (const sourceRef of [
       {
         id: 'assessment-source-list-challenge',
@@ -3097,6 +3115,14 @@ describe('GET /interviews/:id detail', () => {
         refId: `${baseCommitSha}..${commitSha}`,
         locator: { path: 'src/list.ts', baseCommitSha, commitSha },
         text: diffText,
+      },
+      {
+        id: 'assessment-source-list-agent-status',
+        eventId: 'assessment-event-list-agent-status',
+        type: 'agent_status',
+        refId: 'devin:auth-needed',
+        locator: { agentType: 'devin', status: 'auth_needed' },
+        text: 'Devin bridge reported auth_needed before answering. No agent response was counted.',
       },
       {
         id: 'assessment-source-list-verification-gap',
@@ -3345,6 +3371,7 @@ describe('GET /interviews/:id detail', () => {
             nextAction: string;
             hasChallengePacket: boolean;
             hasCommitSubmission: boolean;
+            hasAiInteraction: boolean;
             readiness: {
               confidence: Array<{
                 id: string;
@@ -3426,6 +3453,7 @@ describe('GET /interviews/:id detail', () => {
         },
         hasChallengePacket: true,
         hasCommitSubmission: true,
+        hasAiInteraction: true,
         commit: {
           commitSha,
           branchName: 'pipe-assessment/list-progress',
@@ -3463,6 +3491,22 @@ describe('GET /interviews/:id detail', () => {
           missingImpact: 'A verification gap was declared, but no test output was captured; keep correctness lower-confidence.',
         }),
         expect.objectContaining({
+          id: 'ai_interaction',
+          label: 'AI-use trail',
+          satisfied: true,
+          sourceRefTypes: expect.arrayContaining([
+            'ai_user_prompt',
+            'ai_user_prompt_blocked',
+            'ai_agent_response',
+            'ai_agent_diagnostic',
+            'agent_status',
+            'agent_response',
+            'agent_diagnostic',
+            'ai_usage_event',
+          ]),
+          missingImpact: 'Real prompts, blocked attempts, bridge statuses, diagnostics, and agent responses explain how the candidate used assistance.',
+        }),
+        expect.objectContaining({
           id: 'verification_gap_declared',
           label: 'Verification gap declared',
           satisfied: true,
@@ -3471,6 +3515,7 @@ describe('GET /interviews/:id detail', () => {
         }),
       ]));
       expect(interview?.assessmentProgress?.sourceRefCounts).toEqual(expect.arrayContaining([
+        { kind: 'agent_status', count: 1 },
         { kind: 'code_diff', count: 1 },
         { kind: 'git_commit', count: 1 },
         { kind: 'review_challenge_packet', count: 1 },

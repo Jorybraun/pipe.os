@@ -165,6 +165,7 @@ function assessmentEvidenceSummary(input: {
   hasToolUsageEvidence?: boolean;
   hasCommitSubmission: boolean;
   hasAiInteraction: boolean;
+  aiEvidenceLabel?: string | null;
   hasTranscriptEvidence: boolean;
   hasTestEvidence: boolean;
   hasVerificationGap?: boolean;
@@ -185,7 +186,7 @@ function assessmentEvidenceSummary(input: {
     input.hasToolUsageEvidence ? 'tool activity' : null,
     input.hasWorkEvidence && !hasGranularWorkEvidence ? 'work evidence' : null,
     input.hasCommitSubmission ? 'commit' : null,
-    input.hasAiInteraction ? 'AI use' : null,
+    input.hasAiInteraction ? input.aiEvidenceLabel ?? 'AI bridge trace captured' : null,
     input.hasTranscriptEvidence ? 'transcript' : null,
     input.hasTestEvidence ? 'tests' : null,
     input.hasVerificationGap ? 'verification gap' : null,
@@ -910,13 +911,17 @@ export function InterviewCard({
     : assessmentSetup?.blocksPositiveAssessment
       ? 'Setup gap'
       : 'Assessment ready';
+  const assessmentAiUse = assessmentAiUseSummary(assessmentProgress);
   const assessmentNextAction = assessmentProgress?.nextActionLabel
     ?? assessmentProgress?.readiness?.detail
     ?? assessmentSetup?.nextActionLabel
     ?? assessmentSetup?.message
     ?? 'Assessment evidence will appear after the session starts.';
   const assessmentEvidence = assessmentProgress
-    ? assessmentEvidenceSummary(assessmentProgress)
+    ? assessmentEvidenceSummary({
+        ...assessmentProgress,
+        aiEvidenceLabel: assessmentAiUse?.label ?? null,
+      })
     : assessmentSetup?.status === 'reviewable_task_assigned'
       ? 'challenge assigned'
       : 'no assessment session yet';
@@ -970,7 +975,6 @@ export function InterviewCard({
   const visibleAssessmentEvaluationDiagnostics = assessmentEvaluationDiagnostics(assessmentProgress?.evaluation);
   const visibleAssessmentEvaluationGaps = assessmentCoverageGaps(assessmentProgress?.evaluation?.evidenceCoverage);
   const visibleAssessmentLimitations = assessmentLimitationSummary(assessmentProgress);
-  const assessmentAiUse = assessmentAiUseSummary(assessmentProgress);
   const assessmentDecision = assessmentDecisionSummary({
     setup: assessmentSetup,
     progress: assessmentProgress,

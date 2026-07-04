@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter assessment list/detail projections now count real AI bridge statuses and diagnostics as AI-use transparency evidence without counting them as agent assistance, and cards label the compact evidence line with the exact AI state instead of generic "AI use".
 - Open-source workspace dev smoke now verifies the deployed recruiter interview mode filter, including filtered rows, pagination totals, and global mode facets, so assessment history search cannot regress silently.
 - Recruiter interview mode filters now query the server with owned-history facets, so open-source, code-review, and dev-container assessments can be found beyond the first loaded page without misleading loaded-page counts.
 - Candidate assessment receipts now show upstream PR URL, explicit candidate consent status, and the no-auto-submit boundary, so fork or assessment-branch work cannot be mistaken for an upstream contribution unless a source-backed approved PR is recorded.
