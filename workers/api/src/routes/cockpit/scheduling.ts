@@ -3382,6 +3382,10 @@ type ScheduledAssessmentListEvaluation = NonNullable<AssessmentProgressSnapshot[
 type ScheduledAssessmentListHumanDecision = NonNullable<AssessmentProgressSnapshot['humanDecision']>;
 type ScheduledAssessmentListStage = AssessmentProgressSnapshot['stage'];
 type ScheduledAssessmentListNextAction = AssessmentProgressSnapshot['nextAction'];
+const SCHEDULED_ASSESSMENT_TRANSCRIPT_SOURCE_REF_TYPES = [
+  'meeting_transcript_segment',
+  'transcript_span',
+] as const;
 
 function scheduledAssessmentPlaceholders(count: number): string {
   return Array.from({ length: count }, (_, index) => `?${index + 1}`).join(', ');
@@ -3793,7 +3797,7 @@ function buildScheduledAssessmentListProgress(input: {
     'dev_container_event',
     'message',
     'commit_submission',
-  ]);
+  ]) || scheduledAssessmentHasKind(input.sourceRefCounts, SCHEDULED_ASSESSMENT_TRANSCRIPT_SOURCE_REF_TYPES);
   const hasCommitSubmission = commit !== null;
   const hasFinalSubmission = scheduledAssessmentHasKind(input.evidenceCounts, ['final_submission']);
   const hasAiInteraction = scheduledAssessmentHasKind(input.evidenceCounts, ['ai_interaction'])
@@ -3814,7 +3818,8 @@ function buildScheduledAssessmentListProgress(input: {
     ]);
   const hasToolUsageEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['tool_usage'])
     || scheduledAssessmentHasKind(input.sourceRefCounts, ['room_media_control']);
-  const hasTranscriptEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['transcript_span']);
+  const hasTranscriptEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['transcript_span'])
+    || scheduledAssessmentHasKind(input.sourceRefCounts, SCHEDULED_ASSESSMENT_TRANSCRIPT_SOURCE_REF_TYPES);
   const hasTestEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['test_run'])
     || scheduledAssessmentHasKind(input.sourceRefCounts, ['test_run']);
   const hasVerificationGap = scheduledAssessmentHasKind(input.sourceRefCounts, ['verification_gap']);
@@ -4104,7 +4109,7 @@ function scheduledAssessmentReadiness(input: {
       label: 'Explanation trail',
       required: false,
       satisfied: input.hasTranscriptEvidence || input.hasMessageEvidence,
-      sourceRefTypes: ['meeting_transcript_segment', 'room_chat_message'],
+      sourceRefTypes: ['meeting_transcript_segment', 'transcript_span', 'room_chat_message'],
       missingImpact: 'Transcript or chat evidence helps assess reasoning and communication.',
     },
   ];

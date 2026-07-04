@@ -576,6 +576,7 @@ const ASSESSMENT_PROGRESS_SNIPPET_TYPES = [
   'ai_usage_event',
   'room_chat_message',
   'meeting_transcript_segment',
+  'transcript_span',
 ] as const;
 const AI_INTERACTION_SOURCE_REF_TYPES = [
   'ai_user_prompt',
@@ -585,6 +586,10 @@ const AI_INTERACTION_SOURCE_REF_TYPES = [
   'agent_status',
   'agent_response',
   'agent_diagnostic',
+] as const;
+const TRANSCRIPT_SOURCE_REF_TYPES = [
+  'meeting_transcript_segment',
+  'transcript_span',
 ] as const;
 const MAX_ASSESSMENT_PROGRESS_SNIPPETS = 6;
 const MAX_ASSESSMENT_PROGRESS_SNIPPET_CHARS = 1_200;
@@ -1612,7 +1617,7 @@ function buildAssessmentReadiness(input: {
       label: 'Conversation transcript context',
       required: false,
       satisfied: input.hasTranscriptEvidence,
-      sourceRefTypes: ['meeting_transcript_segment'],
+      sourceRefTypes: [...TRANSCRIPT_SOURCE_REF_TYPES],
       missingImpact: 'Transcript context helps explain reasoning, tradeoffs, and communication quality.',
     },
     {
@@ -2096,7 +2101,7 @@ export class RepoTaskInterviewSessionStore {
       'dev_container_event',
       'message',
       'commit_submission',
-    ]);
+    ]) || hasEventKind(sourceRefCounts, TRANSCRIPT_SOURCE_REF_TYPES);
     const hasCommitSubmission = commit !== null;
     const hasFinalSubmission = hasEventKind(evidenceCounts, ['final_submission']);
     const hasAiInteraction = hasEventKind(evidenceCounts, ['ai_interaction'])
@@ -2115,7 +2120,8 @@ export class RepoTaskInterviewSessionStore {
       || hasEventKind(sourceRefCounts, [
         'room_media_control',
       ]);
-    const hasTranscriptEvidence = hasEventKind(evidenceCounts, ['transcript_span']);
+    const hasTranscriptEvidence = hasEventKind(evidenceCounts, ['transcript_span'])
+      || hasEventKind(sourceRefCounts, TRANSCRIPT_SOURCE_REF_TYPES);
     const hasTestEvidence = hasEventKind(evidenceCounts, ['test_run'])
       || hasEventKind(sourceRefCounts, ['test_run']);
     const hasVerificationGap = hasEventKind(sourceRefCounts, ['verification_gap']);

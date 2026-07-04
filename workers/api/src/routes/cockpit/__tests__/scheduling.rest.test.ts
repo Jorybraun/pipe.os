@@ -1496,10 +1496,28 @@ describe('GET /interviews/:id detail', () => {
         narrative, payload_json, context_record_id, occurred_at, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
     `).run(
+      'assessment-event-progress-transcript',
+      'assessment-event:progress-detail-transcript',
+      'assessment-session-progress-detail',
+      3,
+      'dev_container_event',
+      'candidate',
+      'candidate-1',
+      'Candidate reasoning transcript was captured from the assessment room.',
+      JSON.stringify({ source: 'video_room_transcript' }),
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+        narrative, payload_json, context_record_id, occurred_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+    `).run(
       'assessment-event-progress-commit',
       'assessment-event:progress-detail-commit',
       'assessment-session-progress-detail',
-      2,
+      4,
       'commit_submission',
       'candidate',
       'candidate-1',
@@ -1566,6 +1584,24 @@ describe('GET /interviews/:id detail', () => {
       JSON.stringify({ source: 'agent_bridge_workspace_finalize' }),
       now,
     );
+    const transcriptText = 'Speaker candidate: I picked the focused cleanup patch because it keeps the public API stable.';
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+        locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-source-progress-transcript',
+      'assessment-event-progress-transcript',
+      'meeting_transcript_segment',
+      'meeting-transcript-progress-detail',
+      'candidate_reasoning',
+      JSON.stringify({ speaker: 'candidate', startMs: 12000, endMs: 18000 }),
+      transcriptText,
+      sha256Hex(transcriptText),
+      JSON.stringify({ source: 'video_room_transcript' }),
+      now,
+    );
 
     const app = mountSchedulingApp();
     const response = await app.request('/interviews/interview-1');
@@ -1584,6 +1620,8 @@ describe('GET /interviews/:id detail', () => {
           };
           hasChallengePacket: boolean;
           hasCommitSubmission: boolean;
+          hasTranscriptEvidence: boolean;
+          sourceRefCounts: Array<{ kind: string; count: number }>;
           challenge: { sourceRefId: string } | null;
           commit: {
             commitSha: string | null;
@@ -1617,6 +1655,7 @@ describe('GET /interviews/:id detail', () => {
       },
       hasChallengePacket: true,
       hasCommitSubmission: true,
+      hasTranscriptEvidence: true,
       challenge: { sourceRefId: 'challenge-packet-progress-detail' },
       commit: {
         commitSha,
@@ -1634,6 +1673,10 @@ describe('GET /interviews/:id detail', () => {
     expect(body.interview.assessmentProgress?.readiness.confidence).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'workspace_captured_commit', satisfied: true }),
       expect.objectContaining({ id: 'test_run', satisfied: false }),
+      expect.objectContaining({ id: 'transcript_context', satisfied: true }),
+    ]));
+    expect(body.interview.assessmentProgress?.sourceRefCounts).toEqual(expect.arrayContaining([
+      { kind: 'meeting_transcript_segment', count: 1 },
     ]));
     expect(body.interview.assessmentProgress?.evidenceSnippets).toEqual(expect.arrayContaining([
       expect.objectContaining({

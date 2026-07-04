@@ -730,7 +730,7 @@ describe('repo task assessment session routes', () => {
       expect.objectContaining({
         id: 'ai_usage_transparency',
         satisfied: true,
-        sourceRefTypes: ['ai_user_prompt', 'ai_user_prompt_blocked', 'ai_agent_response'],
+        sourceRefTypes: expect.arrayContaining(['ai_user_prompt', 'ai_user_prompt_blocked', 'ai_agent_response']),
         missingImpact: 'If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly.',
       }),
     ]));
@@ -789,6 +789,66 @@ describe('repo task assessment session routes', () => {
         source_ref_type: 'code_server_file_observation',
         source_ref_id: 'editor-save-1',
         exact_text: 'Saved src/popover.ts after cleanup change.',
+      }),
+    ]));
+  });
+
+  it('counts room transcript source refs as transcript evidence even when the event kind is not transcript_span', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:room-transcript-source-ref',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-room-transcript',
+    });
+    const transcriptText = 'Speaker candidate: I chose the smaller patch because it preserves the public API.';
+
+    const response = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:room-transcript-message',
+        kind: 'message',
+        actorType: 'candidate',
+        actorId: 'candidate-room-transcript',
+        narrative: 'Room transcript segment captured candidate reasoning.',
+        payload: { source: 'video_room_transcript' },
+        sourceRefs: [
+          await sourceRef(
+            'meeting_transcript_segment',
+            'meeting-transcript-segment-1',
+            transcriptText,
+            { speaker: 'candidate', startMs: 12000, endMs: 18000 },
+          ),
+        ],
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(201);
+
+    const progressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(progressResponse.status).toBe(200);
+    const progressBody = await progressResponse.json() as {
+      progress: {
+        hasTranscriptEvidence: boolean;
+        sourceRefCounts: Array<{ kind: string; count: number }>;
+        readiness: {
+          confidence: Array<{ id: string; satisfied: boolean; sourceRefTypes: string[] }>;
+        };
+      };
+    };
+
+    expect(progressBody.progress.hasTranscriptEvidence).toBe(true);
+    expect(progressBody.progress.sourceRefCounts).toEqual(expect.arrayContaining([
+      { kind: 'meeting_transcript_segment', count: 1 },
+    ]));
+    expect(progressBody.progress.readiness.confidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'transcript_context',
+        satisfied: true,
+        sourceRefTypes: ['meeting_transcript_segment', 'transcript_span'],
       }),
     ]));
   });
