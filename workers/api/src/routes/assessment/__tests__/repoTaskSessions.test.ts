@@ -2712,6 +2712,73 @@ Fix stale popover listener cleanup.`;
     expect(duplicateProjectedEdges).toEqual([]);
   });
 
+  it('labels matched repo-task assignments as match-fit evidence for captured candidate work', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:matched-assignment-trust',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const challengeText = [
+      'Repo: https://github.com/mui/base-ui',
+      'Pull request: #973',
+      'Base commit: 1111111111111111111111111111111111111111',
+      'Task: fix retry state cleanup from the selected review packet.',
+      'Match proof:',
+      '- Review packet quality 92% from source-backed repo analysis.',
+      '- Demand families: retry logic.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the retry cleanup fix',
+    ].join('\n');
+    const challengeResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:matched-assignment-trust',
+        kind: 'match_decision',
+        actorType: 'system',
+        narrative: 'PIPE assigned a matched source-backed open-source challenge packet.',
+        payload: { matchedRepoId: 42, githubPrNumber: 973 },
+        sourceRefs: [{
+          ...await sourceRef('review_challenge_packet', 'matched-review-packet-973', challengeText),
+          evidenceRole: 'assigned_challenge',
+          locator: {
+            matchedRepoId: 42,
+            repositoryUrl: 'https://github.com/mui/base-ui',
+            githubPrNumber: 973,
+            baseCommitSha: '1111111111111111111111111111111111111111',
+          },
+        }],
+      }),
+      env,
+    );
+    expect(challengeResponse.status).toBe(201);
+
+    const progressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(progressResponse.status).toBe(200);
+    const body = await progressResponse.json() as {
+      progress: {
+        assignmentTrust: {
+          state: string;
+          label: string;
+          detail: string;
+          tone: string;
+        };
+      };
+    };
+
+    expect(body.progress.assignmentTrust).toMatchObject({
+      state: 'matched_challenge',
+      label: 'PIPE-matched challenge',
+      detail: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside captured candidate work.',
+      tone: 'matched',
+    });
+    expect(body.progress.assignmentTrust.detail).not.toContain('role context');
+    expect(body.progress.assignmentTrust.detail).not.toContain('candidate review');
+  });
+
   it('surfaces source-backed verification gaps separately from real test evidence', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:verification-gap',

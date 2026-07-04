@@ -1217,7 +1217,7 @@ describe('InterviewDetailPage', () => {
           message: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands.',
           selectionRationale: {
             summary: 'PIPE-selected repo task',
-            whyThisChallenge: 'PIPE selected this concrete GitHub PR from source-backed candidate evidence, role context, and repository demand instead of handing the candidate a generic repo.',
+            whyThisChallenge: 'PIPE selected this concrete GitHub PR from source-backed candidate evidence, role requirements when present, and repository demand instead of handing the candidate a generic repo.',
             whyNotAlternatives: 'Lower-ranked or withheld challenges did not provide stronger source-backed alignment, reviewability, or contrast for automatic assignment.',
             residualRisk: 'The assignment proves challenge fit only; the hiring signal still depends on the captured branch commit, diff, tests or verification gap, transcript/chat, AI-use trail, evaluator report, and human review.',
             nextAction: 'Run the controlled workspace assessment and review the source-backed evidence before making a hiring decision.',
@@ -1279,7 +1279,7 @@ describe('InterviewDetailPage', () => {
       assignmentTrust: {
         state: 'matched_challenge',
         label: 'PIPE-matched challenge',
-        detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+        detail: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside captured candidate work.',
         tone: 'matched',
       },
       hasChallengePacket: true,
@@ -1494,7 +1494,7 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Candidate made a focused source-backed change and cited the submitted diff evidence.');
     expect(decision).toHaveTextContent('Challenge fit');
     expect(decision).toHaveTextContent('Matched task');
-    expect(decision).toHaveTextContent('PIPE selected this task from source-backed candidate evidence, role context, and repository demand.');
+    expect(decision).toHaveTextContent('Use the assignment as match-fit evidence alongside captured candidate work.');
     expect(decision).toHaveTextContent('Selection rationale');
     expect(decision).toHaveTextContent('PIPE-selected repo task');
     expect(decision).toHaveTextContent('instead of handing the candidate a generic repo');

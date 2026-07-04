@@ -1138,7 +1138,7 @@ function workspaceAssessmentSelectionRationaleItem(input: {
     || setup?.kind === 'manual_open_source_task';
   if (progressMatched && setupIsManual) {
     const trustDetail = input.progress?.assignmentTrust?.detail?.trim()
-      || 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.';
+      || 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside captured candidate work.';
     return {
       label: 'Selection rationale',
       value: 'PIPE-selected repo task',

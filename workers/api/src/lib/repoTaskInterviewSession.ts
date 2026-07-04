@@ -493,6 +493,8 @@ export type AssessmentProgressAssignmentTrustState =
   | 'source_backed_challenge'
   | 'waiting_for_challenge';
 
+export const MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL = 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside captured candidate work.';
+
 export interface AssessmentProgressAssignmentTrust {
   state: AssessmentProgressAssignmentTrustState;
   label: string;
@@ -1463,7 +1465,7 @@ function progressAssignmentTrust(input: {
     return {
       state: 'matched_challenge',
       label: 'PIPE-matched challenge',
-      detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+      detail: MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL,
       tone: 'matched',
     };
   }

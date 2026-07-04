@@ -133,6 +133,11 @@ The controlling product rule remains:
   `OPEN_SOURCE_BUG_FIX`; manual task assignment must carry repo URL, base
   commit, task, success criteria, and expected evidence instead of falling back
   to a generic quick-create invite.
+- Matched repo-task assignment trust is shared by the durable assessment session
+  spine and recruiter projections. It may be used as source-backed match-fit
+  evidence for the assigned challenge, but the hiring signal still depends on
+  captured candidate work: commit, diff, tests or verification gap,
+  transcript/chat, AI-use trail, evaluator report, and human review.
 - The invite modal renders a live packet-contract checklist for those required
   fields and tells recruiters the candidate should work on an assessment branch
   or fork, with any upstream PR gated behind later review.

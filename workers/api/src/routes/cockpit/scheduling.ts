@@ -43,6 +43,7 @@ import {
 import { AssessmentLayerStore, type AssessmentEvidenceSourceRefInput } from '../../lib/assessmentLayer/persistence';
 import { recordAssessmentCandidateProfileEvidence } from '../../lib/assessmentLayer/candidateProfileEvidence';
 import {
+  MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL,
   RepoTaskInterviewSessionStore,
   type AssessmentEvidenceCoverageItem,
   type AssessmentEvidenceCoverageSnapshot,
@@ -74,8 +75,6 @@ interface ProviderEventTypeSummary {
   url: string;
   schedulingUrl: string;
 }
-
-const MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL = 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside the candidate review.';
 
 interface CalendlyUserResource {
   uri?: string;
@@ -462,8 +461,8 @@ function buildScheduledAssessmentSetup(input: {
       selectionRationale: {
         summary: 'PIPE-selected repo task',
         whyThisChallenge: quality
-          ? `PIPE selected this concrete GitHub PR from source-backed candidate evidence, role context, and repository demand; latest match proof reported ${quality} assessment quality.`
-          : 'PIPE selected this concrete GitHub PR from source-backed candidate evidence, role context, and repository demand instead of handing the candidate a generic repo.',
+          ? `PIPE selected this concrete GitHub PR from source-backed candidate evidence, role requirements when present, and repository demand; latest match proof reported ${quality} assessment quality.`
+          : 'PIPE selected this concrete GitHub PR from source-backed candidate evidence, role requirements when present, and repository demand instead of handing the candidate a generic repo.',
         whyNotAlternatives: contrast
           ?? 'Lower-ranked or withheld challenges did not provide stronger source-backed alignment, reviewability, or contrast for automatic assignment.',
         residualRisk: 'The assignment proves challenge fit only; the hiring signal still depends on the captured branch commit, diff, tests or verification gap, transcript/chat, AI-use trail, evaluator report, and human review.',

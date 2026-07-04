@@ -750,7 +750,7 @@ describe('InterviewCard assessment progress', () => {
         assignmentTrust: {
           state: 'matched_challenge',
           label: 'PIPE-matched challenge',
-          detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+          detail: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside captured candidate work.',
           tone: 'matched',
         },
         hasChallengePacket: true,
@@ -808,7 +808,7 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('ASSIGNMENT');
     expect(progress).toHaveTextContent('PIPE-matched challenge');
     expect(progress).toHaveTextContent(
-      'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+      'Use the assignment as match-fit evidence alongside captured candidate work.',
     );
     expect(progress).toHaveTextContent('MATCH PROOF');
     expect(progress).toHaveTextContent('Review packet quality 91% from source-backed repo analysis.');

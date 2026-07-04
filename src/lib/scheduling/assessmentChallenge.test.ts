@@ -43,14 +43,14 @@ describe('summarizeResolvedAssessmentAssignment', () => {
       assignmentTrust: {
         state: 'matched_challenge',
         label: 'PIPE-matched challenge',
-        detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+        detail: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside captured candidate work.',
         tone: 'matched',
       } satisfies NonNullable<AssessmentProgressSnapshot['assignmentTrust']>,
     });
 
     expect(assignment).toEqual({
       label: 'PIPE-matched challenge',
-      detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+      detail: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside captured candidate work.',
       tone: 'matched',
     });
   });
@@ -67,14 +67,14 @@ describe('summarizeResolvedAssessmentAssignment', () => {
       assignmentTrust: {
         state: 'matched_challenge',
         label: 'PIPE-matched challenge',
-        detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+        detail: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside captured candidate work.',
         tone: 'matched',
       } satisfies NonNullable<AssessmentProgressSnapshot['assignmentTrust']>,
     });
 
     expect(assignment).toEqual({
       label: 'PIPE-matched challenge',
-      detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand. PIPE found a source-backed candidate challenge at https://github.com/mui/base-ui #973. It passed the auto-assignment quality gate. Assessment quality: USABLE 9/12.',
+      detail: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside captured candidate work. PIPE found a source-backed candidate challenge at https://github.com/mui/base-ui #973. It passed the auto-assignment quality gate. Assessment quality: USABLE 9/12.',
       tone: 'matched',
     });
   });
