@@ -1642,6 +1642,14 @@ describe('InterviewDetailPage', () => {
     expect(reviewPacket).toHaveTextContent('4 source refs');
     expect(reviewPacket).toHaveTextContent('1 claim');
     expect(reviewPacket).toHaveTextContent('1 diagnostic');
+    const aiUseReceipt = screen.getByTestId('interview-assessment-ai-use-receipt');
+    expect(aiUseReceipt).toHaveTextContent('AI-use receipt');
+    expect(aiUseReceipt).toHaveTextContent('AI bridge observed');
+    expect(aiUseReceipt).toHaveTextContent('AI interaction event recorded, but no prompt or response source refs were returned.');
+    expect(aiUseReceipt).toHaveTextContent('No prompt/response source refs');
+    expect(aiUseReceipt).toHaveTextContent('Treat AI use as unobserved when prompt/response evidence is missing.');
+    expect(aiUseReceipt).not.toHaveTextContent('No AI was used');
+    expect(aiUseReceipt).not.toHaveTextContent('internal');
     expect(progress).toHaveTextContent('Required proof');
     expect(progress).toHaveTextContent('Challenge captured');
     expect(progress).toHaveTextContent('Commit captured');

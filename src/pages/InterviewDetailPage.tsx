@@ -919,6 +919,10 @@ function assessmentSourceRefCount(progress: AssessmentProgressSnapshot | null, k
   return progress?.sourceRefCounts.find((item) => item.kind === kind)?.count ?? 0;
 }
 
+function assessmentEvidenceCount(progress: AssessmentProgressSnapshot | null, kind: string): number {
+  return progress?.evidenceCounts.find((item) => item.kind === kind)?.count ?? 0;
+}
+
 function sourceRefCountLabel(count: number, singular: string, plural = `${singular}s`): string | null {
   if (count <= 0) return null;
   return `${count} ${count === 1 ? singular : plural}`;
@@ -1754,6 +1758,70 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
       tone: hasAiBridgeEvidence ? 'neutral' : 'watch',
     },
     reviewItem,
+  ];
+}
+
+function workspaceAssessmentAiUseReceipt(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem[] {
+  if (!progress?.evaluation) return [];
+
+  const aiInteractionEvents = assessmentEvidenceCount(progress, 'ai_interaction');
+  const aiPromptCount = assessmentSourceRefCount(progress, 'ai_user_prompt');
+  const aiBlockedPromptCount = assessmentSourceRefCount(progress, 'ai_user_prompt_blocked');
+  const aiResponseCount = assessmentSourceRefCount(progress, 'ai_agent_response')
+    + assessmentSourceRefCount(progress, 'agent_response');
+  const aiDiagnosticCount = assessmentSourceRefCount(progress, 'ai_agent_diagnostic')
+    + assessmentSourceRefCount(progress, 'agent_diagnostic');
+  const aiStatusCount = assessmentSourceRefCount(progress, 'agent_status');
+  const promptResponseParts = [
+    sourceRefCountLabel(aiPromptCount, 'AI prompt'),
+    sourceRefCountLabel(aiBlockedPromptCount, 'blocked prompt'),
+    sourceRefCountLabel(aiResponseCount, 'agent response'),
+  ].filter((item): item is string => Boolean(item));
+  const bridgeParts = [
+    sourceRefCountLabel(aiDiagnosticCount, 'bridge diagnostic'),
+    sourceRefCountLabel(aiStatusCount, 'bridge status', 'bridge statuses'),
+    sourceRefCountLabel(aiInteractionEvents, 'AI interaction event'),
+  ].filter((item): item is string => Boolean(item));
+  const hasPromptResponseProof = promptResponseParts.length > 0;
+  const hasBridgeProof = progress.hasAiInteraction || bridgeParts.length > 0;
+
+  return [
+    {
+      label: 'AI-use state',
+      value: hasPromptResponseProof
+        ? 'AI assistance observed'
+        : hasBridgeProof
+          ? 'AI bridge observed'
+          : 'AI use unobserved',
+      detail: hasPromptResponseProof
+        ? `${readableList(promptResponseParts)} captured as exact source-backed evidence.`
+        : hasBridgeProof
+          ? 'AI interaction event recorded, but no prompt or response source refs were returned.'
+          : 'No AI prompt, response, bridge status, or bridge diagnostic source refs were captured.',
+      tone: hasPromptResponseProof ? 'positive' : hasBridgeProof ? 'watch' : 'neutral',
+    },
+    {
+      label: 'Prompt/response proof',
+      value: hasPromptResponseProof ? 'Source refs captured' : 'No prompt/response source refs',
+      detail: hasPromptResponseProof
+        ? `Reviewer can inspect ${readableList(promptResponseParts)} before judging AI collaboration quality.`
+        : 'Treat AI use as unobserved when prompt/response evidence is missing.',
+      tone: hasPromptResponseProof ? 'positive' : 'watch',
+    },
+    {
+      label: 'Bridge proof',
+      value: bridgeParts.length > 0 ? 'Bridge telemetry captured' : 'No bridge telemetry',
+      detail: bridgeParts.length > 0
+        ? `${readableList(bridgeParts)} captured from the real agent bridge or assessment event stream.`
+        : 'No Clippy/Devin bridge diagnostic or status evidence is attached to this report.',
+      tone: bridgeParts.length > 0 ? 'neutral' : 'watch',
+    },
+    {
+      label: 'Assessment boundary',
+      value: 'No inference from silence',
+      detail: 'Missing AI evidence is a confidence gap, not proof that the candidate avoided AI.',
+      tone: 'neutral',
+    },
   ];
 }
 
@@ -4144,6 +4212,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentReviewerReceipt = workspaceAssessmentReviewerReceipt(assessmentProgress);
   const assessmentReviewPacket = assessmentProgress?.evaluation?.reviewPacket ?? null;
   const assessmentReviewPacketItems = workspaceAssessmentReviewPacketItems(assessmentReviewPacket);
+  const assessmentAiUseReceipt = workspaceAssessmentAiUseReceipt(assessmentProgress);
   const workspaceAssessmentReadout = workspaceAssessmentHiringReadout({
     progress: assessmentProgress,
     setup: interview.assessmentSetup,
@@ -4854,6 +4923,29 @@ export default function InterviewDetailPage(): JSX.Element {
                   </div>
                   <div style={DECISION_COCKPIT_GRID}>
                     {assessmentReviewPacketItems.map((item) => (
+                      <div
+                        key={item.label}
+                        style={{
+                          ...DECISION_COCKPIT_ITEM,
+                          ...DECISION_NEXT_STEP_TONE[item.tone],
+                        }}
+                      >
+                        <div style={FIELD_LABEL}>{item.label}</div>
+                        <div style={DECISION_COCKPIT_VALUE}>{item.value}</div>
+                        <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {assessmentAiUseReceipt.length > 0 && (
+                <div data-testid="interview-assessment-ai-use-receipt" style={DECISION_COCKPIT}>
+                  <div style={FIELD_LABEL}>AI-use receipt</div>
+                  <div style={ROOM_LINK_TEXT}>
+                    Real Clippy/Devin bridge evidence separated from evaluator claims and missing-evidence gaps.
+                  </div>
+                  <div style={DECISION_COCKPIT_GRID}>
+                    {assessmentAiUseReceipt.map((item) => (
                       <div
                         key={item.label}
                         style={{

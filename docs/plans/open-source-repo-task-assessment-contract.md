@@ -375,6 +375,10 @@ The controlling product rule remains:
   evidence packet view that separates selected evidence snippets, evaluator
   claims, evaluator diagnostics, and AI-use state without exposing internal
   claim or diagnostic ids.
+- Recruiter assessment detail now shows an AI-use receipt beside the final
+  review packet, separating real prompt/response source refs, Clippy/Devin
+  bridge telemetry, and missing-evidence boundaries without implying silence
+  proves no AI use.
 - Repo-task route/API integration, full final evidence bundle assembly, and
   broader final-output views beyond the compact room summary and Report Ready
   evidence packet remain pending.

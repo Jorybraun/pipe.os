@@ -857,6 +857,13 @@ async function assertRecruiterReviewerReceiptBrowser(
     await expect(reviewPacket).toContainText(workspaceCommit.commitSha.slice(0, 10));
     await expect(reviewPacket).toContainText('Evidence packet');
     await expect(reviewPacket).toContainText('source');
+    const aiUseReceipt = page.getByTestId('interview-assessment-ai-use-receipt');
+    await expect(aiUseReceipt).toBeVisible({ timeout: 60_000 });
+    await expect(aiUseReceipt).toContainText('AI-use receipt');
+    await expect(aiUseReceipt).toContainText(/AI assistance observed|AI bridge observed|AI use unobserved/);
+    await expect(aiUseReceipt).toContainText('Prompt/response proof');
+    await expect(aiUseReceipt).toContainText('No inference from silence');
+    await expect(aiUseReceipt).not.toContainText('No AI was used');
     const workPacket = page.getByTestId('interview-assessment-work-packet');
     await expect(workPacket).toBeVisible({ timeout: 60_000 });
     await expect(workPacket).toContainText('Process telemetry');
