@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter assessment detail work packets now label the candidate submission review path as a consented upstream PR candidate, fork-backed GitHub commit, workspace-only captured diff, or missing review artifact so reviewers know exactly what can be trusted before scoring.
 - Recruiter assessment setup now includes a compact challenge-selection rationale for matched, manual, held-back, and blocked repo tasks, and the workspace decision panel renders why the task was chosen, why alternatives were not used, residual risk, and the next action.
 - Open-source workspace dev smoke now waits through the recruiter detail's bounded assessment-progress refresh before asserting source-backed score-validity proof, avoiding false failures from the first eventual-consistency read.
 - Workspace assessment finalization now falls back to the candidate-entered verification command when no packet command is configured, while the room pre-fills the finalizer command from the assigned challenge packet.

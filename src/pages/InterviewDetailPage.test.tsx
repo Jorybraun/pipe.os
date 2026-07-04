@@ -508,6 +508,11 @@ describe('InterviewDetailPage', () => {
     expect(workPacket).toHaveTextContent('Workspace-captured commit');
     expect(workPacket).toHaveTextContent('Bound to assigned challenge');
     expect(workPacket).toHaveTextContent('Branch pipe-assessment/popover-cleanup');
+    expect(workPacket).toHaveTextContent('Review path');
+    expect(workPacket).toHaveTextContent('Consented upstream PR candidate');
+    expect(workPacket).toHaveTextContent(
+      'Review upstream PR open-source/widgets/pull/42 only as candidate-approved tracking; keep human review before any upstream merge or submission.',
+    );
     expect(workPacket).toHaveTextContent('Upstream PR tracked with candidate consent: open-source/widgets/pull/42');
     expect(workPacket).toHaveTextContent('Tracked with consent');
     expect(workPacket).toHaveTextContent('https://github.com/open-source/widgets/pull/42 is stored as optional source-backed upstream tracking.');
@@ -664,6 +669,12 @@ describe('InterviewDetailPage', () => {
     expect(progressPanel).toHaveTextContent('Stored in the assessment evidence trail: diff --git a/src/popover.ts b/src/popover.ts');
     expect(progressPanel).toHaveTextContent('Diff evidence');
     expect(screen.queryByRole('link', { name: 'Compare base to submitted commit' })).toBeNull();
+    const workPacket = screen.getByTestId('interview-assessment-work-packet');
+    expect(workPacket).toHaveTextContent('Review path');
+    expect(workPacket).toHaveTextContent('Workspace diff ready');
+    expect(workPacket).toHaveTextContent(
+      'No remote commit URL was captured; PIPE preserved exact code_diff evidence for abcdef1234 on open-source/widgets branch pipe-assessment.',
+    );
     const capturedDiffPanel = screen.getByTestId('interview-assessment-captured-diff');
     expect(capturedDiffPanel).toHaveTextContent('Captured source-backed diff');
     expect(capturedDiffPanel).toHaveTextContent('FULL_DIFF_SENTINEL_REVIEW_THIS_LINE');

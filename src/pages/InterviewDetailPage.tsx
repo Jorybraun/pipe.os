@@ -1438,6 +1438,80 @@ function workspaceAssessmentProcessTelemetryItem(progress: AssessmentProgressSna
   };
 }
 
+function workspaceAssessmentReviewPathItem(progress: AssessmentProgressSnapshot): WorkspaceAssessmentReadoutItem {
+  const commit = progress.commit;
+  if (!commit) {
+    return {
+      label: 'Review path',
+      value: 'No commit captured',
+      detail: 'PIPE has not captured a commit, GitHub URL, or code_diff source evidence for this assessment yet.',
+      tone: 'blocked',
+    };
+  }
+
+  const sourceRepo = repoLabelFromUrl(commit.repositoryUrl) ?? 'source repository';
+  const forkRepo = repoLabelFromUrl(commit.forkRepositoryUrl);
+  const branch = commit.branchName ? `branch ${commit.branchName}` : 'branch not captured';
+  const shortSha = shortCommitSha(commit.commitSha);
+  const hasCodeDiff = assessmentSourceRefCount(progress, 'code_diff') > 0;
+  const upstreamPullRequestUrl = commit.upstreamPullRequestUrl?.trim() || null;
+  const upstreamPullRequestLabel = upstreamPullRequestUrl
+    ? upstreamPullRequestUrl.replace(/^https:\/\/github\.com\//, '')
+    : null;
+
+  if (upstreamPullRequestUrl && !commit.upstreamPrConsent) {
+    return {
+      label: 'Review path',
+      value: 'Upstream blocked',
+      detail: `${upstreamPullRequestUrl} was supplied without candidate consent; do not treat it as upstream submission proof. Review ${shortSha} from ${forkRepo ?? sourceRepo} and the captured evidence inside PIPE.`,
+      tone: 'blocked',
+    };
+  }
+
+  if (upstreamPullRequestUrl) {
+    return {
+      label: 'Review path',
+      value: 'Consented upstream PR candidate',
+      detail: `Review upstream PR ${upstreamPullRequestLabel} only as candidate-approved tracking; keep human review before any upstream merge or submission.`,
+      tone: 'positive',
+    };
+  }
+
+  if (commit.commitUrl && forkRepo) {
+    return {
+      label: 'Review path',
+      value: 'Fork commit ready',
+      detail: `Review ${shortSha} on ${forkRepo} ${branch} against ${sourceRepo}. Upstream PRs remain opt-in after human review.`,
+      tone: 'positive',
+    };
+  }
+
+  if (commit.commitUrl) {
+    return {
+      label: 'Review path',
+      value: 'GitHub commit ready',
+      detail: `Review ${shortSha} from the captured GitHub commit URL against ${sourceRepo}; fork metadata was not captured.`,
+      tone: 'positive',
+    };
+  }
+
+  if (hasCodeDiff) {
+    return {
+      label: 'Review path',
+      value: 'Workspace diff ready',
+      detail: `No remote commit URL was captured; PIPE preserved exact code_diff evidence for ${shortSha} on ${sourceRepo} ${branch}.`,
+      tone: 'watch',
+    };
+  }
+
+  return {
+    label: 'Review path',
+    value: 'Review artifact missing',
+    detail: `Commit ${shortSha} exists, but PIPE has no GitHub commit URL or exact code_diff evidence. Do not score the implementation until reviewable proof is attached.`,
+    tone: 'blocked',
+  };
+}
+
 function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem[] {
   if (!progress?.commit) return [];
 
@@ -1531,6 +1605,7 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
       detail: commitDetail,
       tone: changedFiles.length > 0 ? 'positive' : 'watch',
     },
+    workspaceAssessmentReviewPathItem(progress),
     {
       label: 'Verification',
       value: progress.hasTestEvidence
