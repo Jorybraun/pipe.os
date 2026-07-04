@@ -2429,6 +2429,33 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('skips repo-match diagnostic enrichment for standard interview list rows', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-standard-video-ignored', 'candidate-1', 'role-context:ignored',
+        'MATCHED', '[]', NULL, '{}', '2026-06-22T17:46:01.000Z'
+      )
+    `).run();
+
+    const observedQueries: string[] = [];
+    const app = mountSchedulingApp({
+      DB: observeD1Queries(createMockD1(sqlite!), observedQueries),
+    });
+    const response = await app.request('/interviews');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interviews: Array<{ id: string; assessmentSetup: { status: string } }>;
+    };
+
+    expect(body.interviews.find((item) => item.id === 'interview-1')?.assessmentSetup.status)
+      .toBe('not_applicable');
+    expect(observedQueries.some((query) => query.includes('FROM match_runs'))).toBe(false);
+  });
+
   it('returns source-backed assessment progress on the interview list', async () => {
     seedInterviewDetailFixture();
     const now = '2026-06-22T18:42:00.000Z';

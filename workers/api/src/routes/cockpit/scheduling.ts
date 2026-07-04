@@ -6797,9 +6797,14 @@ schedulingAuth.get('/interviews', async (c) => {
     db,
     assessmentInterviewIds,
   );
+  const candidateIdsNeedingPendingMatchDiagnostics = rows.flatMap((row) => {
+    if (!isWorkspaceAssessmentInterviewType(row.interview_type)) return [];
+    if (row.matched_repo_id != null || row.assignment_repo_id != null) return [];
+    return row.candidate_id ? [row.candidate_id] : [];
+  });
   const pendingMatchDiagnosticsByCandidateId = await loadPendingCodeReviewMatchDiagnosticsByCandidateIds(
     db,
-    rows.flatMap((row) => row.candidate_id ? [row.candidate_id] : []),
+    candidateIdsNeedingPendingMatchDiagnostics,
   );
 
   const interviews = rows.map((r) => {
