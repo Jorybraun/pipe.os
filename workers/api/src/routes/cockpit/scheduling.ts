@@ -3569,6 +3569,123 @@ function scheduledAssessmentEvidenceCoverage(
   };
 }
 
+function scheduledAssessmentReviewPacketToneBlock(value: unknown): {
+  status?: string;
+  state?: string;
+  label: string;
+  detail: string;
+  tone: string;
+} | null {
+  const record = scheduledAssessmentJsonRecord(value);
+  if (!record) return null;
+  const label = optionalString(record.label);
+  const detail = optionalString(record.detail);
+  const tone = optionalString(record.tone);
+  if (!label || !detail || !tone) return null;
+  const status = optionalString(record.status);
+  const state = optionalString(record.state);
+  return {
+    ...(status ? { status } : {}),
+    ...(state ? { state } : {}),
+    label,
+    detail,
+    tone,
+  };
+}
+
+function scheduledAssessmentReviewPacket(
+  output: Record<string, unknown>,
+): ScheduledAssessmentListEvaluation['reviewPacket'] {
+  const packet = scheduledAssessmentJsonRecord(output.reviewPacket);
+  if (!packet) return null;
+  const schemaVersion = optionalString(packet.schemaVersion);
+  if (schemaVersion !== 'repo-task-review-packet-v1') return null;
+
+  const challenge = scheduledAssessmentJsonRecord(packet.challenge);
+  const evidence = scheduledAssessmentJsonRecord(packet.evidence);
+  const evaluation = scheduledAssessmentJsonRecord(packet.evaluation);
+  if (!challenge || !evidence || !evaluation) return null;
+
+  const assignmentTrust = scheduledAssessmentReviewPacketToneBlock(challenge.assignmentTrust);
+  const contract = scheduledAssessmentJsonRecord(challenge.contract);
+  const readiness = scheduledAssessmentJsonRecord(evidence.readiness);
+  if (!assignmentTrust?.state || !contract || !readiness) return null;
+
+  const readinessStatus = optionalString(readiness.status);
+  const readinessLabel = optionalString(readiness.label);
+  const readinessDetail = optionalString(readiness.detail);
+  if (!readinessStatus || !readinessLabel || !readinessDetail) return null;
+
+  const submissionRecord = scheduledAssessmentJsonRecord(packet.submission);
+  const submission = submissionRecord
+    ? (() => {
+        const integrity = scheduledAssessmentReviewPacketToneBlock(submissionRecord.integrity);
+        const challengeBinding = scheduledAssessmentReviewPacketToneBlock(submissionRecord.challengeBinding);
+        if (!integrity?.status || !challengeBinding?.status) return null;
+        return {
+          repositoryUrl: optionalString(submissionRecord.repositoryUrl) ?? null,
+          forkRepositoryUrl: optionalString(submissionRecord.forkRepositoryUrl) ?? null,
+          branchName: optionalString(submissionRecord.branchName) ?? null,
+          commitSha: optionalString(submissionRecord.commitSha) ?? null,
+          commitUrl: optionalString(submissionRecord.commitUrl) ?? null,
+          submissionSourceLabel: optionalString(submissionRecord.submissionSourceLabel) ?? null,
+          changedFileCount: numberOrNull(submissionRecord.changedFileCount) ?? 0,
+          integrity: {
+            status: integrity.status,
+            label: integrity.label,
+            detail: integrity.detail,
+            tone: integrity.tone,
+          },
+          challengeBinding: {
+            status: challengeBinding.status,
+            label: challengeBinding.label,
+            detail: challengeBinding.detail,
+            tone: challengeBinding.tone,
+          },
+        };
+      })()
+    : null;
+
+  return {
+    schemaVersion,
+    challenge: {
+      focus: optionalString(challenge.focus) ?? null,
+      repositoryUrl: optionalString(challenge.repositoryUrl) ?? null,
+      baseCommitSha: optionalString(challenge.baseCommitSha) ?? null,
+      pullRequestUrl: optionalString(challenge.pullRequestUrl) ?? null,
+      assignmentTrust: {
+        state: assignmentTrust.state,
+        label: assignmentTrust.label,
+        detail: assignmentTrust.detail,
+        tone: assignmentTrust.tone,
+      },
+      contract: {
+        schemaVersion: optionalString(contract.schemaVersion) ?? '',
+        isComplete: scheduledAssessmentJsonBoolean(contract.isComplete),
+        missingFields: stringArray(contract.missingFields),
+      },
+    },
+    submission,
+    evidence: {
+      sourceRefCount: numberOrNull(evidence.sourceRefCount) ?? 0,
+      sourceRefTypeCounts: scheduledAssessmentCoverageTypeCounts(evidence.sourceRefTypeCounts),
+      readiness: {
+        status: readinessStatus,
+        label: readinessLabel,
+        detail: readinessDetail,
+        isReadyForEvaluation: scheduledAssessmentJsonBoolean(readiness.isReadyForEvaluation),
+        isUsableHiringSignal: scheduledAssessmentJsonBoolean(readiness.isUsableHiringSignal),
+        missingRequiredCount: numberOrNull(readiness.missingRequiredCount) ?? 0,
+      },
+    },
+    evaluation: {
+      recommendation: optionalString(evaluation.recommendation) ?? null,
+      claimCount: stringArray(evaluation.claimIds).length,
+      diagnosticCount: stringArray(evaluation.diagnosticCodes).length,
+    },
+  };
+}
+
 function toScheduledAssessmentListSession(row: ScheduledAssessmentListSessionRow): ScheduledAssessmentListSession {
   const metadata = parseJsonObject(row.metadata_json);
   return {
@@ -3871,6 +3988,7 @@ async function loadScheduledAssessmentEvaluations(
       evidenceCoverage: scheduledAssessmentEvidenceCoverage(output),
       claims: [],
       diagnostics: [],
+      reviewPacket: scheduledAssessmentReviewPacket(output),
     });
   }
   const reportIds = [...evaluations.values()].map((evaluation) => evaluation.id);

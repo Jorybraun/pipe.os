@@ -837,6 +837,17 @@ async function assertRecruiterReviewerReceiptBrowser(
     await expect(receipt).toContainText('Recorded by');
     await expect(receipt).toContainText('Human reviewer');
     await expect(receipt).not.toContainText('dev-user');
+    const reviewPacket = page.getByTestId('interview-assessment-review-packet');
+    await expect(reviewPacket).toBeVisible({ timeout: 60_000 });
+    await expect(reviewPacket).toContainText('Final review packet');
+    await expect(reviewPacket).toContainText('repo-task-review-packet-v1');
+    await expect(reviewPacket).toContainText('Report artifact');
+    await expect(reviewPacket).toContainText('Challenge packet');
+    await expect(reviewPacket).toContainText(repoLabelFromUrl(REPO_URL) ?? REPO_URL);
+    await expect(reviewPacket).toContainText('Submitted work');
+    await expect(reviewPacket).toContainText(workspaceCommit.commitSha.slice(0, 10));
+    await expect(reviewPacket).toContainText('Evidence packet');
+    await expect(reviewPacket).toContainText('source');
     const workPacket = page.getByTestId('interview-assessment-work-packet');
     await expect(workPacket).toBeVisible({ timeout: 60_000 });
     await expect(workPacket).toContainText('Process telemetry');

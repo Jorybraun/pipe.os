@@ -133,6 +133,65 @@ export interface AssessmentEvidenceCoverageSnapshot {
   expectedForHighConfidence: AssessmentEvidenceCoverageItem[];
 }
 
+export interface AssessmentProgressReviewPacketSummary {
+  schemaVersion: 'repo-task-review-packet-v1';
+  challenge: {
+    focus: string | null;
+    repositoryUrl: string | null;
+    baseCommitSha: string | null;
+    pullRequestUrl: string | null;
+    assignmentTrust: {
+      state: string;
+      label: string;
+      detail: string;
+      tone: string;
+    };
+    contract: {
+      schemaVersion: string;
+      isComplete: boolean;
+      missingFields: string[];
+    };
+  };
+  submission: {
+    repositoryUrl: string | null;
+    forkRepositoryUrl: string | null;
+    branchName: string | null;
+    commitSha: string | null;
+    commitUrl: string | null;
+    submissionSourceLabel: string | null;
+    changedFileCount: number;
+    integrity: {
+      status: string;
+      label: string;
+      detail: string;
+      tone: string;
+    };
+    challengeBinding: {
+      status: string;
+      label: string;
+      detail: string;
+      tone: string;
+    };
+  } | null;
+  evidence: {
+    sourceRefCount: number;
+    sourceRefTypeCounts: Record<string, number>;
+    readiness: {
+      status: string;
+      label: string;
+      detail: string;
+      isReadyForEvaluation: boolean;
+      isUsableHiringSignal: boolean;
+      missingRequiredCount: number;
+    };
+  };
+  evaluation: {
+    recommendation: string | null;
+    claimCount: number;
+    diagnosticCount: number;
+  };
+}
+
 export type AssessmentProgressReadinessStatus =
   | 'WAITING_FOR_CHALLENGE'
   | 'READY_TO_START'
@@ -275,6 +334,7 @@ export interface AssessmentProgressSnapshot {
     evidenceCoverage?: AssessmentEvidenceCoverageSnapshot | null;
     claims?: AssessmentEvaluationClaimPreview[];
     diagnostics?: AssessmentEvaluationDiagnosticPreview[];
+    reviewPacket?: AssessmentProgressReviewPacketSummary | null;
   } | null;
   humanDecision?: {
     eventId: string;

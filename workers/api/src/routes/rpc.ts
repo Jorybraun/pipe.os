@@ -1985,6 +1985,7 @@ function serializeCandidateAssessmentProgress(
           evidenceCoverage: progress.evaluation.evidenceCoverage,
           claims: progress.evaluation.claims,
           diagnostics: progress.evaluation.diagnostics,
+          reviewPacket: progress.evaluation.reviewPacket,
         }
       : null,
   };

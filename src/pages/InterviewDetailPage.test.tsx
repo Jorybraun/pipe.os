@@ -1471,6 +1471,69 @@ describe('InterviewDetailPage', () => {
             },
           ],
         },
+        reviewPacket: {
+          schemaVersion: 'repo-task-review-packet-v1',
+          challenge: {
+            focus: 'Fix the popover cleanup regression',
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            baseCommitSha: '1111111111111111111111111111111111111111',
+            pullRequestUrl: 'https://github.com/open-source/widgets/pull/42',
+            assignmentTrust: {
+              state: 'matched_challenge',
+              label: 'PIPE-matched challenge',
+              detail: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands.',
+              tone: 'matched',
+            },
+            contract: {
+              schemaVersion: 'challenge-packet-contract-v1',
+              isComplete: true,
+              missingFields: [],
+            },
+          },
+          submission: {
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            forkRepositoryUrl: 'https://github.com/candidate/widgets',
+            branchName: 'pipe-assessment/popover-cleanup',
+            commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
+            commitUrl: 'https://github.com/candidate/widgets/commit/abcdef1234567890abcdef1234567890abcdef12',
+            submissionSourceLabel: 'Live workspace finalizer',
+            changedFileCount: 1,
+            integrity: {
+              status: 'workspace_captured',
+              label: 'Workspace-captured commit',
+              detail: 'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
+              tone: 'verified',
+            },
+            challengeBinding: {
+              status: 'bound_to_assigned_challenge',
+              label: 'Bound to assigned challenge',
+              detail: 'The submitted commit matches the assigned challenge repository and base commit.',
+              tone: 'verified',
+            },
+          },
+          evidence: {
+            sourceRefCount: 4,
+            sourceRefTypeCounts: {
+              review_challenge_packet: 1,
+              git_commit: 1,
+              code_diff: 1,
+              test_run: 1,
+            },
+            readiness: {
+              status: 'EVALUATED',
+              label: 'Evaluated',
+              detail: 'A source-backed evaluation report is available for review.',
+              isReadyForEvaluation: false,
+              isUsableHiringSignal: true,
+              missingRequiredCount: 0,
+            },
+          },
+          evaluation: {
+            recommendation: 'hire_now',
+            claimCount: 1,
+            diagnosticCount: 1,
+          },
+        },
       },
     };
     mocks.api.get.mockResolvedValueOnce({
@@ -1565,6 +1628,20 @@ describe('InterviewDetailPage', () => {
     expect(diagnostics).toHaveTextContent('Verification unobserved');
     expect(diagnostics).toHaveTextContent('The test evidence shows changed files but no test runner output.');
     expect(diagnostics).toHaveTextContent('1 source ref: Test run');
+    const reviewPacket = screen.getByTestId('interview-assessment-review-packet');
+    expect(reviewPacket).toHaveTextContent('Final review packet');
+    expect(reviewPacket).toHaveTextContent('repo-task-review-packet-v1');
+    expect(reviewPacket).toHaveTextContent('Fix the popover cleanup regression');
+    expect(reviewPacket).toHaveTextContent('Repo open-source/widgets');
+    expect(reviewPacket).toHaveTextContent('Base 1111111111');
+    expect(reviewPacket).toHaveTextContent('PIPE-matched challenge');
+    expect(reviewPacket).toHaveTextContent('abcdef1234');
+    expect(reviewPacket).toHaveTextContent('Branch pipe-assessment/popover-cleanup');
+    expect(reviewPacket).toHaveTextContent('Workspace-captured commit');
+    expect(reviewPacket).toHaveTextContent('Bound to assigned challenge');
+    expect(reviewPacket).toHaveTextContent('4 source refs');
+    expect(reviewPacket).toHaveTextContent('1 claim');
+    expect(reviewPacket).toHaveTextContent('1 diagnostic');
     expect(progress).toHaveTextContent('Required proof');
     expect(progress).toHaveTextContent('Challenge captured');
     expect(progress).toHaveTextContent('Commit captured');

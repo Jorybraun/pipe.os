@@ -4540,6 +4540,7 @@ describe('meeting room recording living-context route', () => {
       '+export const retryBackoff = "source-backed";',
     ].join('\n');
     const commitEvidenceText = `commit ${commitSha}\nAuthor: Commit Candidate\n\nFix retry path`;
+    const testRunText = 'npm test -- retry-path\nPASS src/retry.test.ts';
     const commitSourceRef = {
       sourceRefType: 'git_commit',
       sourceRefId: commitSha,
@@ -4562,6 +4563,19 @@ describe('meeting room recording living-context route', () => {
       },
       exactText: diffText,
       contentHash: await sha256ContentHash(diffText),
+    };
+    const testRunSourceRef = {
+      sourceRefType: 'test_run',
+      sourceRefId: `${commitSha}:test-run`,
+      evidenceRole: 'verification',
+      locator: {
+        repositoryUrl: 'https://github.com/candidate/source-backed-worker',
+        baseCommitSha,
+        commitSha,
+        command: 'npm test -- retry-path',
+      },
+      exactText: testRunText,
+      contentHash: await sha256ContentHash(testRunText),
     };
     const tamperedHashRes = await app.request(`/meeting/${guestToken}/assessment/commit-submission`, {
       method: 'POST',
@@ -4588,6 +4602,7 @@ describe('meeting room recording living-context route', () => {
             contentHash: await sha256ContentHash(`${commitEvidenceText}\nnot the submitted exact text`),
           },
           diffSourceRef,
+          testRunSourceRef,
         ],
       }),
     }, env, ctx);
@@ -4621,6 +4636,7 @@ describe('meeting room recording living-context route', () => {
         sourceRefs: [
           commitSourceRef,
           diffSourceRef,
+          testRunSourceRef,
         ],
       }),
     }, env, ctx);
@@ -4724,7 +4740,7 @@ describe('meeting room recording living-context route', () => {
       actor_type: 'candidate',
       actor_id: created.meeting.contactId,
       narrative: 'Candidate submitted a focused retry-path fix with tests passing locally.',
-      source_ref_count: 2,
+      source_ref_count: 3,
     });
     expect(JSON.parse(persistedCommit.payload_json)).toMatchObject({
       repositoryUrl: 'https://github.com/pipe/source-backed-worker',

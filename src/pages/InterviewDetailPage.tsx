@@ -24,6 +24,7 @@ import {
 import type {
   AssessmentEvidenceCoverageItem,
   AssessmentProgressSnapshot,
+  AssessmentProgressReviewPacketSummary,
   CodeReviewEvidencePlanItem,
   CodeReviewMatchAlignment,
   CodeReviewMatchDetail,
@@ -1797,6 +1798,79 @@ function workspaceAssessmentReviewerReceipt(progress: AssessmentProgressSnapshot
       value: 'Human reviewer',
       detail: `Recorded ${formatDate(decision.occurredAt, 'Recorded time unavailable')}${decision.notes ? ` · ${decision.notes}` : ''}`,
       tone: 'neutral',
+    },
+  ];
+}
+
+function workspaceAssessmentReviewPacketItems(
+  packet: AssessmentProgressReviewPacketSummary | null,
+): WorkspaceAssessmentReadoutItem[] {
+  if (!packet) return [];
+
+  const challengeRepo = repoLabelFromUrl(packet.challenge.repositoryUrl) ?? packet.challenge.repositoryUrl;
+  const challengeMeta = [
+    challengeRepo ? `Repo ${challengeRepo}` : null,
+    packet.challenge.baseCommitSha ? `Base ${shortCommitSha(packet.challenge.baseCommitSha)}` : null,
+    packet.challenge.pullRequestUrl ? `PR ${packet.challenge.pullRequestUrl.replace(/^https:\/\/github\.com\//, '')}` : null,
+    packet.challenge.contract.isComplete
+      ? 'challenge contract complete'
+      : `missing ${readableList(packet.challenge.contract.missingFields.map(sentenceCaseToken))}`,
+  ].filter((item): item is string => Boolean(item));
+  const submission = packet.submission;
+  const submissionDetail = submission
+    ? [
+        submission.branchName ? `Branch ${submission.branchName}` : null,
+        submission.repositoryUrl ? `Repo ${repoLabelFromUrl(submission.repositoryUrl) ?? submission.repositoryUrl}` : null,
+        submission.submissionSourceLabel,
+        submission.integrity.label,
+        submission.challengeBinding.label,
+        `${submission.changedFileCount} changed ${submission.changedFileCount === 1 ? 'file' : 'files'}`,
+      ].filter((item): item is string => Boolean(item)).join(' · ')
+    : 'No submitted commit is attached to this review packet.';
+  const topSourceRefs = Object.entries(packet.evidence.sourceRefTypeCounts)
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 4)
+    .map(([kind, count]) => `${count} ${sentenceCaseToken(kind)}`);
+  const evidenceDetail = [
+    `${packet.evidence.sourceRefCount} source ${packet.evidence.sourceRefCount === 1 ? 'ref' : 'refs'}`,
+    topSourceRefs.length > 0 ? readableList(topSourceRefs) : null,
+    `${packet.evaluation.claimCount} claim${packet.evaluation.claimCount === 1 ? '' : 's'}`,
+    `${packet.evaluation.diagnosticCount} diagnostic${packet.evaluation.diagnosticCount === 1 ? '' : 's'}`,
+  ].filter((item): item is string => Boolean(item)).join(' · ');
+
+  return [
+    {
+      label: 'Report artifact',
+      value: packet.schemaVersion,
+      detail: 'Immutable source-backed reviewer packet persisted inside the final assessment report.',
+      tone: 'positive',
+    },
+    {
+      label: 'Challenge packet',
+      value: packet.challenge.focus ?? packet.challenge.assignmentTrust.label,
+      detail: [packet.challenge.assignmentTrust.label, ...challengeMeta].join(' · '),
+      tone: packet.challenge.contract.isComplete ? 'positive' : 'watch',
+    },
+    {
+      label: 'Submitted work',
+      value: submission?.commitSha ? shortCommitSha(submission.commitSha) : 'No commit attached',
+      detail: submissionDetail,
+      tone: submission?.challengeBinding.tone === 'verified' && submission.integrity.tone === 'verified'
+        ? 'positive'
+        : submission
+          ? 'watch'
+          : 'blocked',
+    },
+    {
+      label: 'Evidence packet',
+      value: packet.evidence.readiness.label,
+      detail: `${packet.evidence.readiness.detail} ${evidenceDetail}`.trim(),
+      tone: packet.evidence.readiness.isUsableHiringSignal
+        ? 'positive'
+        : packet.evidence.readiness.isReadyForEvaluation
+          ? 'neutral'
+          : 'watch',
     },
   ];
 }
@@ -4068,6 +4142,8 @@ export default function InterviewDetailPage(): JSX.Element {
   );
   const assessmentWorkPacket = workspaceAssessmentWorkPacket(assessmentProgress);
   const assessmentReviewerReceipt = workspaceAssessmentReviewerReceipt(assessmentProgress);
+  const assessmentReviewPacket = assessmentProgress?.evaluation?.reviewPacket ?? null;
+  const assessmentReviewPacketItems = workspaceAssessmentReviewPacketItems(assessmentReviewPacket);
   const workspaceAssessmentReadout = workspaceAssessmentHiringReadout({
     progress: assessmentProgress,
     setup: interview.assessmentSetup,
@@ -4755,6 +4831,29 @@ export default function InterviewDetailPage(): JSX.Element {
                   </div>
                   <div style={DECISION_COCKPIT_GRID}>
                     {assessmentReviewerReceipt.map((item) => (
+                      <div
+                        key={item.label}
+                        style={{
+                          ...DECISION_COCKPIT_ITEM,
+                          ...DECISION_NEXT_STEP_TONE[item.tone],
+                        }}
+                      >
+                        <div style={FIELD_LABEL}>{item.label}</div>
+                        <div style={DECISION_COCKPIT_VALUE}>{item.value}</div>
+                        <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {assessmentReviewPacketItems.length > 0 && (
+                <div data-testid="interview-assessment-review-packet" style={DECISION_COCKPIT}>
+                  <div style={FIELD_LABEL}>Final review packet</div>
+                  <div style={ROOM_LINK_TEXT}>
+                    Source-backed assessment artifact persisted with the final evaluator report.
+                  </div>
+                  <div style={DECISION_COCKPIT_GRID}>
+                    {assessmentReviewPacketItems.map((item) => (
                       <div
                         key={item.label}
                         style={{

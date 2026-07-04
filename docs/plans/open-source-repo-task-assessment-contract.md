@@ -366,9 +366,13 @@ The controlling product rule remains:
   assignment trust, challenge contract, submitted commit, commit-to-challenge
   binding, evidence coverage, readiness, recommendation, claim ids, and
   diagnostic codes in one immutable evaluation report payload.
+- Recruiter assessment detail and the live open-source workspace smoke now
+  expose that persisted `repo-task-review-packet-v1` as a safe final review
+  packet summary: assigned challenge, submitted commit, evidence readiness,
+  recommendation, claim count, and diagnostic count, without leaking hidden
+  rubric data.
 - Repo-task route/API integration, full final evidence bundle assembly, and
-  candidate-safe views that expose the final output without leaking hidden
-  ground truth remain pending.
+  broader candidate-safe final-output views remain pending.
 
 ## Proposed TypeScript Surface
 
@@ -428,9 +432,9 @@ Required blocking diagnostics:
    repo-task assessments accept only `CandidateRepoTaskMatch` or explicit
    diagnostics.
 6. Expand final evidence bundle assembly on top of the persisted
-   `repo-task-review-packet-v1` output, including candidate-safe views that
-   separate selected evidence, diagnostics, AI usage, and server-only ground
-   truth.
+   `repo-task-review-packet-v1` output, beyond the current recruiter-safe
+   summary, including candidate-safe views that separate selected evidence,
+   diagnostics, AI usage, and server-only ground truth.
 7. Add recruiter and candidate-safe views that separate selected evidence,
    diagnostics, AI usage, and server-only ground truth.
 

@@ -455,6 +455,65 @@ export interface AssessmentEvidenceCoverageSnapshot {
   expectedForHighConfidence: AssessmentEvidenceCoverageItem[];
 }
 
+export interface AssessmentProgressReviewPacketSummary {
+  schemaVersion: 'repo-task-review-packet-v1';
+  challenge: {
+    focus: string | null;
+    repositoryUrl: string | null;
+    baseCommitSha: string | null;
+    pullRequestUrl: string | null;
+    assignmentTrust: {
+      state: string;
+      label: string;
+      detail: string;
+      tone: string;
+    };
+    contract: {
+      schemaVersion: string;
+      isComplete: boolean;
+      missingFields: string[];
+    };
+  };
+  submission: {
+    repositoryUrl: string | null;
+    forkRepositoryUrl: string | null;
+    branchName: string | null;
+    commitSha: string | null;
+    commitUrl: string | null;
+    submissionSourceLabel: string | null;
+    changedFileCount: number;
+    integrity: {
+      status: string;
+      label: string;
+      detail: string;
+      tone: string;
+    };
+    challengeBinding: {
+      status: string;
+      label: string;
+      detail: string;
+      tone: string;
+    };
+  } | null;
+  evidence: {
+    sourceRefCount: number;
+    sourceRefTypeCounts: Record<string, number>;
+    readiness: {
+      status: string;
+      label: string;
+      detail: string;
+      isReadyForEvaluation: boolean;
+      isUsableHiringSignal: boolean;
+      missingRequiredCount: number;
+    };
+  };
+  evaluation: {
+    recommendation: string | null;
+    claimCount: number;
+    diagnosticCount: number;
+  };
+}
+
 export interface AssessmentProgressEvaluation {
   id: string;
   status: EvaluationReportStatus;
@@ -464,6 +523,7 @@ export interface AssessmentProgressEvaluation {
   evidenceCoverage: AssessmentEvidenceCoverageSnapshot | null;
   claims: AssessmentProgressEvaluationClaim[];
   diagnostics: AssessmentProgressEvaluationDiagnostic[];
+  reviewPacket: AssessmentProgressReviewPacketSummary | null;
 }
 
 export interface AssessmentProgressEvaluationClaim {
@@ -1179,6 +1239,121 @@ function parseEvidenceCoverage(output: JsonObject): AssessmentEvidenceCoverageSn
     sourceRefTypeCounts: parseCoverageTypeCounts(coverage.sourceRefTypeCounts),
     requiredForEvaluation: parseCoverageItems(coverage.requiredForEvaluation),
     expectedForHighConfidence: parseCoverageItems(coverage.expectedForHighConfidence),
+  };
+}
+
+function parseReviewPacketToneBlock(value: JsonValue | undefined): {
+  status?: string;
+  state?: string;
+  label: string;
+  detail: string;
+  tone: string;
+} | null {
+  const object = jsonObjectValue(value);
+  if (!object) return null;
+  const label = jsonStringValue(object.label);
+  const detail = jsonStringValue(object.detail);
+  const tone = jsonStringValue(object.tone);
+  if (!label || !detail || !tone) return null;
+  const status = jsonStringValue(object.status);
+  const state = jsonStringValue(object.state);
+  return {
+    ...(status ? { status } : {}),
+    ...(state ? { state } : {}),
+    label,
+    detail,
+    tone,
+  };
+}
+
+function parseReviewPacketSummary(output: JsonObject): AssessmentProgressReviewPacketSummary | null {
+  const packet = jsonObjectValue(output.reviewPacket);
+  if (!packet) return null;
+  const schemaVersion = jsonStringValue(packet.schemaVersion);
+  if (schemaVersion !== 'repo-task-review-packet-v1') return null;
+
+  const challenge = jsonObjectValue(packet.challenge);
+  const submission = jsonObjectValue(packet.submission);
+  const evidence = jsonObjectValue(packet.evidence);
+  const evaluation = jsonObjectValue(packet.evaluation);
+  if (!challenge || !evidence || !evaluation) return null;
+
+  const assignmentTrust = parseReviewPacketToneBlock(challenge.assignmentTrust);
+  const contract = jsonObjectValue(challenge.contract);
+  const readiness = jsonObjectValue(evidence.readiness);
+  if (!assignmentTrust?.state || !contract || !readiness) return null;
+
+  const readinessStatus = jsonStringValue(readiness.status);
+  const readinessLabel = jsonStringValue(readiness.label);
+  const readinessDetail = jsonStringValue(readiness.detail);
+  if (!readinessStatus || !readinessLabel || !readinessDetail) return null;
+
+  const parsedSubmission = submission
+    ? (() => {
+        const integrity = parseReviewPacketToneBlock(submission.integrity);
+        const challengeBinding = parseReviewPacketToneBlock(submission.challengeBinding);
+        if (!integrity?.status || !challengeBinding?.status) return null;
+        return {
+          repositoryUrl: jsonStringValue(submission.repositoryUrl),
+          forkRepositoryUrl: jsonStringValue(submission.forkRepositoryUrl),
+          branchName: jsonStringValue(submission.branchName),
+          commitSha: jsonStringValue(submission.commitSha),
+          commitUrl: jsonStringValue(submission.commitUrl),
+          submissionSourceLabel: jsonStringValue(submission.submissionSourceLabel),
+          changedFileCount: jsonNumberValue(submission.changedFileCount) ?? 0,
+          integrity: {
+            status: integrity.status,
+            label: integrity.label,
+            detail: integrity.detail,
+            tone: integrity.tone,
+          },
+          challengeBinding: {
+            status: challengeBinding.status,
+            label: challengeBinding.label,
+            detail: challengeBinding.detail,
+            tone: challengeBinding.tone,
+          },
+        };
+      })()
+    : null;
+
+  return {
+    schemaVersion,
+    challenge: {
+      focus: jsonStringValue(challenge.focus),
+      repositoryUrl: jsonStringValue(challenge.repositoryUrl),
+      baseCommitSha: jsonStringValue(challenge.baseCommitSha),
+      pullRequestUrl: jsonStringValue(challenge.pullRequestUrl),
+      assignmentTrust: {
+        state: assignmentTrust.state,
+        label: assignmentTrust.label,
+        detail: assignmentTrust.detail,
+        tone: assignmentTrust.tone,
+      },
+      contract: {
+        schemaVersion: jsonStringValue(contract.schemaVersion) ?? '',
+        isComplete: jsonBooleanValue(contract.isComplete) === true,
+        missingFields: jsonStringArrayValue(contract.missingFields),
+      },
+    },
+    submission: parsedSubmission,
+    evidence: {
+      sourceRefCount: jsonNumberValue(evidence.sourceRefCount) ?? 0,
+      sourceRefTypeCounts: parseCoverageTypeCounts(evidence.sourceRefTypeCounts),
+      readiness: {
+        status: readinessStatus,
+        label: readinessLabel,
+        detail: readinessDetail,
+        isReadyForEvaluation: jsonBooleanValue(readiness.isReadyForEvaluation) === true,
+        isUsableHiringSignal: jsonBooleanValue(readiness.isUsableHiringSignal) === true,
+        missingRequiredCount: jsonNumberValue(readiness.missingRequiredCount) ?? 0,
+      },
+    },
+    evaluation: {
+      recommendation: jsonStringValue(evaluation.recommendation),
+      claimCount: jsonStringArrayValue(evaluation.claimIds).length,
+      diagnosticCount: jsonStringArrayValue(evaluation.diagnosticCodes).length,
+    },
   };
 }
 
@@ -2764,6 +2939,7 @@ export class RepoTaskInterviewSessionStore {
       evidenceCoverage: parseEvidenceCoverage(output),
       claims,
       diagnostics,
+      reviewPacket: parseReviewPacketSummary(output),
     };
   }
 
