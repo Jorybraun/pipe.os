@@ -9,6 +9,9 @@ describe('parseChallengePacketContract', () => {
       'Match proof:',
       '- Review packet quality 92% from source-backed repo analysis.',
       '- 2 source-backed repo demands in the selected PR packet.',
+      'Assessment fit:',
+      '- focused review calibrated for senior candidates.',
+      '- 30 minute target from deterministic engineering prior.',
       'Success criteria:',
       '- Retry order remains deterministic.',
       'Expected evidence:',
@@ -20,6 +23,10 @@ describe('parseChallengePacketContract', () => {
       matchProof: [
         'Review packet quality 92% from source-backed repo analysis.',
         '2 source-backed repo demands in the selected PR packet.',
+      ],
+      assessmentFit: [
+        'focused review calibrated for senior candidates.',
+        '30 minute target from deterministic engineering prior.',
       ],
       successCriteria: ['Retry order remains deterministic.'],
       expectedEvidence: ['Commit SHA on assessment branch.'],

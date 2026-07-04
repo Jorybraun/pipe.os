@@ -891,6 +891,9 @@ async function assertCandidateTaskBriefBrowser(
       await expect(brief).toContainText('Match proof');
       await expect(brief).toContainText('Review packet quality');
       await expect(brief).toContainText('source-backed repo demand');
+      await expect(brief).toContainText('Assessment fit');
+      await expect(brief).toContainText('minute target from deterministic engineering prior');
+      await expect(brief).toContainText(/Issue context is present|No issue context in the source-backed PR packet/);
     }
     await expect(brief).toContainText('Success criteria');
     await expect(brief).toContainText('Expected evidence');

@@ -15,6 +15,7 @@ export function ChallengePacketPanel({
   const hasContract = Boolean(
     summary.task
     || summary.matchProof.length > 0
+    || summary.assessmentFit.length > 0
     || summary.successCriteria.length > 0
     || summary.expectedEvidence.length > 0,
   );
@@ -69,6 +70,16 @@ export function ChallengePacketPanel({
               <strong>Match proof</strong>
               <ul>
                 {summary.matchProof.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {summary.assessmentFit.length > 0 && (
+            <div className="challenge-packet-contract-section">
+              <strong>Assessment fit</strong>
+              <ul>
+                {summary.assessmentFit.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>

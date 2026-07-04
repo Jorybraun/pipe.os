@@ -396,6 +396,14 @@ export function AssessmentTaskBrief({
               </ul>
             </section>
           )}
+          {summary.assessmentFit.length > 0 && (
+            <section>
+              <strong>Assessment fit</strong>
+              <ul>
+                {summary.assessmentFit.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </section>
+          )}
           {summary.successCriteria.length > 0 && (
             <section>
               <strong>Success criteria</strong>

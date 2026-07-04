@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Candidate open-source assessment rooms now surface the challenge packet's source-backed assessment fit, including difficulty/time calibration and issue-context availability, so matched repo tasks are legible before work starts instead of hiding reviewer expectations in exact packet text.
 - Candidate open-source assessment task briefs now keep AI-use transparency visible in the proof checklist even when server readiness is present, distinguishing real agent responses, blocked bridge states, and unobserved AI use without implying silence proves no AI collaboration.
 - Open-source workspace dev smoke now verifies the deployed recruiter detail keeps matched-task provenance in both the hiring readout and score-validity proof after evaluation and human review.
 - Recruiter assessment detail now preserves PIPE-matched challenge provenance in the hiring readout and score-validity proof, so matched tasks no longer collapse into generic challenge-packet wording after evaluation.

@@ -15,6 +15,10 @@ const packet: RoomWorkspaceChallengePacket = {
     'Match proof:',
     '- Review packet quality 92% from source-backed repo analysis.',
     '- 2 source-backed repo demands in the selected PR packet.',
+    'Assessment fit:',
+    '- focused review calibrated for senior candidates.',
+    '- 30 minute target from deterministic engineering prior.',
+    '- No issue context in the source-backed PR packet; assess from code demand evidence.',
     'Success criteria:',
     '- Retry order remains deterministic',
     '- Existing worker tests pass',
@@ -175,6 +179,10 @@ describe('AssessmentTaskBrief', () => {
     expect(briefText).toContain('Match proof');
     expect(briefText).toContain('Review packet quality 92% from source-backed repo analysis.');
     expect(briefText).toContain('2 source-backed repo demands in the selected PR packet.');
+    expect(briefText).toContain('Assessment fit');
+    expect(briefText).toContain('focused review calibrated for senior candidates.');
+    expect(briefText).toContain('30 minute target from deterministic engineering prior.');
+    expect(briefText).toContain('No issue context in the source-backed PR packet; assess from code demand evidence.');
     expect(briefText).toContain('Retry order remains deterministic');
     expect(briefText).toContain('Existing worker tests pass');
     expect(briefText).toContain('Commit SHA on assessment branch');

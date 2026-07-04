@@ -15,6 +15,9 @@ const packet: RoomWorkspaceChallengePacket = {
     'Match proof:',
     '- Review packet quality 92% from source-backed repo analysis.',
     '- 2 source-backed repo demands in the selected PR packet.',
+    'Assessment fit:',
+    '- focused review calibrated for senior candidates.',
+    '- 30 minute target from deterministic engineering prior.',
     'Success criteria:',
     '- Retry order remains deterministic',
     '- Existing worker tests pass',
@@ -53,6 +56,9 @@ describe('ChallengePacketPanel', () => {
     expect(contract.textContent).toContain('Match proof');
     expect(contract.textContent).toContain('Review packet quality 92% from source-backed repo analysis.');
     expect(contract.textContent).toContain('2 source-backed repo demands in the selected PR packet.');
+    expect(contract.textContent).toContain('Assessment fit');
+    expect(contract.textContent).toContain('focused review calibrated for senior candidates.');
+    expect(contract.textContent).toContain('30 minute target from deterministic engineering prior.');
     expect(contract.textContent).toContain('Success criteria');
     expect(contract.textContent).toContain('Retry order remains deterministic');
     expect(contract.textContent).toContain('Existing worker tests pass');
