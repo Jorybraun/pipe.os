@@ -182,6 +182,24 @@ const WORKSPACE_ACTIVITY_SOURCE_REF_TYPES = [
   'dev_container_workspace_state',
   'code_server_file_observation',
 ] as const;
+const PROCESS_EVIDENCE_SOURCE_REF_TYPES = [
+  'terminal_command',
+  'terminal_output',
+  'session_terminal_command',
+  'session_terminal_output',
+  'code_editor_save',
+  'code_file_change',
+  'file_change',
+  'code_server_file_observation',
+  'dev_container_workspace_state',
+  'meeting_transcript_segment',
+  'transcript_span',
+  'room_chat_message',
+  'ai_user_prompt',
+  'ai_user_prompt_blocked',
+  'session_chat_user',
+  'ai_chat_user',
+] as const;
 const MAX_DETERMINISTIC_FALLBACK_CLAIMS = 8;
 
 function parseJsonObject(value: string | null): JsonObject {
@@ -1358,7 +1376,23 @@ function positiveClaimUnsupportedDiagnostic(
       'Positive AI-use claims require real AI prompt, response, blocked-prompt, or agent diagnostic source refs.',
     );
   }
+  if (positiveProcessDimensionRequiresEvidence(dimension)
+    && sourceRefsOfTypes(citedRefs, PROCESS_EVIDENCE_SOURCE_REF_TYPES).length === 0) {
+    return unsupportedPositiveClaimDiagnostic(
+      claim,
+      citedRefs,
+      'Positive process or debugging claims require terminal, code-editor, workspace, transcript, chat, or candidate AI-prompt source refs.',
+    );
+  }
   return null;
+}
+
+function positiveProcessDimensionRequiresEvidence(dimension: string): boolean {
+  return dimension.includes('process')
+    || dimension.includes('debugging')
+    || dimension.includes('workflow')
+    || dimension.includes('terminal')
+    || dimension.includes('tool');
 }
 
 function unsupportedPositiveClaimDiagnostic(

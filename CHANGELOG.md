@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Source-backed evaluator normalization now drops positive debugging/process claims unless they cite terminal, code-editor, workspace, transcript, chat, or candidate AI-prompt evidence, preventing final diffs from being misread as workflow proof.
 - Source-backed evaluator prompts now expose `verification_gap` as its own high-confidence coverage signal while keeping `test_run` unsatisfied, so AI reports can cite declared verification limits without treating them as passing tests.
 - Scheduled interview list/detail progress now treats explicit `verification_gap` source refs as satisfied verification evidence without inventing a `test_run`, keeping dashboard confidence proof aligned with the durable assessment session spine.
 - Deterministic open-source assessment fallback reports now preserve source-backed `verification_gap` notes as explicit warning diagnostics instead of flattening declared blockers into generic missing-test evidence.
