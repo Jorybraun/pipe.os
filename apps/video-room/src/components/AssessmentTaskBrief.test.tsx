@@ -409,6 +409,69 @@ describe('AssessmentTaskBrief', () => {
             summary: 'Source-backed report is ready.',
             recommendation: 'strong_evidence_to_advance',
             createdAt: '2026-06-29T22:03:00.000Z',
+            reviewPacket: {
+              schemaVersion: 'repo-task-review-packet-v1',
+              challenge: {
+                focus: 'Fix the source-backed worker retry path.',
+                repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+                baseCommitSha: 'd'.repeat(40),
+                pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/144',
+                assignmentTrust: {
+                  state: 'matched_challenge',
+                  label: 'PIPE-matched challenge',
+                  detail: 'Selected from source-backed repo and candidate evidence.',
+                  tone: 'matched',
+                },
+                contract: {
+                  schemaVersion: 'challenge-packet-contract-v1',
+                  isComplete: true,
+                  missingFields: [],
+                },
+              },
+              submission: {
+                repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+                forkRepositoryUrl: 'https://github.com/candidate/source-backed-worker',
+                branchName: 'pipe-assessment/retry-path',
+                commitSha: 'c'.repeat(40),
+                commitUrl: `https://github.com/candidate/source-backed-worker/commit/${'c'.repeat(40)}`,
+                submissionSourceLabel: 'Workspace-captured commit',
+                changedFileCount: 1,
+                integrity: {
+                  status: 'workspace_captured',
+                  label: 'Workspace-captured commit',
+                  detail: 'Commit metadata was captured from the controlled workspace.',
+                  tone: 'verified',
+                },
+                challengeBinding: {
+                  status: 'bound_to_assigned_challenge',
+                  label: 'Bound to assigned challenge',
+                  detail: 'The submitted commit is bound to the assigned challenge packet.',
+                  tone: 'verified',
+                },
+              },
+              evidence: {
+                sourceRefCount: 4,
+                sourceRefTypeCounts: {
+                  git_commit: 1,
+                  code_diff: 1,
+                  test_run: 1,
+                  room_chat_message: 1,
+                },
+                readiness: {
+                  status: 'EVALUATED',
+                  label: 'Evaluated',
+                  detail: 'Required challenge, work, commit, and source evidence are captured.',
+                  isReadyForEvaluation: true,
+                  isUsableHiringSignal: true,
+                  missingRequiredCount: 0,
+                },
+              },
+              evaluation: {
+                recommendation: 'strong_evidence_to_advance',
+                claimCount: 2,
+                diagnosticCount: 1,
+              },
+            },
           },
         }}
         workspaceReady={false}
@@ -423,6 +486,24 @@ describe('AssessmentTaskBrief', () => {
     expect(submission.textContent).toContain('cccccccccc');
     expect(submission.textContent).toContain('Verification gap captured');
     expect(submission.textContent).not.toContain('strong_evidence_to_advance');
+
+    const finalPacket = screen.getByTestId('assessment-final-review-packet');
+    expect(finalPacket.textContent).toContain('Source-backed report ready');
+    expect(finalPacket.textContent).toContain('repo-task-review-packet-v1');
+    expect(finalPacket.textContent).toContain('PIPE-matched challenge');
+    expect(finalPacket.textContent).toContain('pipe/source-backed-worker');
+    expect(finalPacket.textContent).toContain('Base dddddddddd');
+    expect(finalPacket.textContent).toContain('#144');
+    expect(finalPacket.textContent).toContain('Commit cccccccccc');
+    expect(finalPacket.textContent).toContain('pipe-assessment/retry-path');
+    expect(finalPacket.textContent).toContain('Workspace-captured commit');
+    expect(finalPacket.textContent).toContain('Bound to assigned challenge');
+    expect(finalPacket.textContent).toContain('4 source refs');
+    expect(finalPacket.textContent).toContain('2 claims');
+    expect(finalPacket.textContent).toContain('1 diagnostic');
+    expect(finalPacket.textContent).toContain('Git Commit');
+    expect(finalPacket.textContent).not.toContain('assessment_evaluation_report_');
+    expect(finalPacket.textContent).not.toContain('internal');
     expect(screen.getByTestId('assessment-brief-open-submission').textContent).toContain('Report Ready');
     expect(screen.getByTestId('assessment-brief-open-submission').textContent).not.toContain('Submit work');
   });

@@ -366,13 +366,14 @@ The controlling product rule remains:
   assignment trust, challenge contract, submitted commit, commit-to-challenge
   binding, evidence coverage, readiness, recommendation, claim ids, and
   diagnostic codes in one immutable evaluation report payload.
-- Recruiter assessment detail and the live open-source workspace smoke now
-  expose that persisted `repo-task-review-packet-v1` as a safe final review
-  packet summary: assigned challenge, submitted commit, evidence readiness,
-  recommendation, claim count, and diagnostic count, without leaking hidden
-  rubric data.
+- Recruiter assessment detail, the candidate room task brief, and the live
+  open-source workspace smoke now expose that persisted
+  `repo-task-review-packet-v1` as a safe final review packet summary: assigned
+  challenge, submitted commit, evidence readiness, claim count, and diagnostic
+  count, without leaking hidden rubric data.
 - Repo-task route/API integration, full final evidence bundle assembly, and
-  broader candidate-safe final-output views remain pending.
+  broader candidate-safe final-output views beyond the compact room summary
+  remain pending.
 
 ## Proposed TypeScript Surface
 

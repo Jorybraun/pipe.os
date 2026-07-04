@@ -1165,6 +1165,14 @@ async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha) 
     await expect(brief.getByTestId('assessment-task-brief-submission')).toContainText(
       expectedCommitSha.slice(0, 10),
     );
+    const finalReviewPacket = brief.getByTestId('assessment-final-review-packet');
+    await expect(finalReviewPacket).toBeVisible({ timeout: 60_000 });
+    await expect(finalReviewPacket).toContainText('Source-backed report ready');
+    await expect(finalReviewPacket).toContainText('repo-task-review-packet-v1');
+    await expect(finalReviewPacket).toContainText(repoLabelFromUrl(REPO_URL) ?? REPO_URL);
+    await expect(finalReviewPacket).toContainText(expectedCommitSha.slice(0, 10));
+    await expect(finalReviewPacket).toContainText('source');
+    await expect(finalReviewPacket).toContainText('claim');
     const submissionPanel = page.getByTestId('commit-submission-completion');
     await expect(submissionPanel).toContainText('Assessment fit');
     await expect(submissionPanel).toContainText('minute target from deterministic engineering prior');

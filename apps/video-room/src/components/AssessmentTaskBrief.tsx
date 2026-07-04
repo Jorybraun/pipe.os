@@ -32,6 +32,22 @@ function shortSha(value: string | null | undefined): string | null {
   return trimmed ? trimmed.slice(0, 10) : null;
 }
 
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function pullRequestLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    const [, owner, repo, pull, number] = parsed.pathname.split('/');
+    if (parsed.hostname === 'github.com' && owner && repo && pull === 'pull' && number) return `#${number}`;
+  } catch {
+    // Keep the raw value below for non-URL PR labels.
+  }
+  return value;
+}
+
 interface ProofChecklistItem {
   label: string;
   captured: boolean;
@@ -63,6 +79,16 @@ function diagnosticSourceSummary(diagnostic: EvaluationDiagnostic): string {
     : 'No source refs listed';
   const countLabel = diagnostic.sourceRefCount === 1 ? 'source ref' : 'source refs';
   return `${diagnostic.sourceRefCount} ${countLabel}: ${sourceTypes}`;
+}
+
+function topReviewPacketSourceRefLabels(
+  packet: NonNullable<NonNullable<RoomAssessmentProgressSnapshot['evaluation']>['reviewPacket']>,
+): string[] {
+  return Object.entries(packet.evidence.sourceRefTypeCounts)
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 4)
+    .map(([kind, count]) => `${count} ${sentenceCaseToken(kind)}`);
 }
 
 function primaryEvaluationDiagnostic(progress: RoomAssessmentProgressSnapshot): EvaluationDiagnostic | null {
@@ -212,6 +238,7 @@ export function AssessmentTaskBrief({
   const missingRequiredProof = progress?.readiness?.missingRequiredCount
     ?? proofItems.filter((item) => item.required && !item.captured).length;
   const status = progress ? submissionStatus(progress) : null;
+  const finalReviewPacket = progress?.evaluation?.reviewPacket ?? null;
   const submittedChangedFileCount = progress?.commit?.changedFiles.length ?? 0;
   const submittedVerification = progress?.hasTestEvidence
     ? 'Test evidence captured'
@@ -221,6 +248,7 @@ export function AssessmentTaskBrief({
   const evaluationDiagnostics = progress?.evaluation?.diagnostics?.slice(0, 3) ?? [];
   const submissionActionLabel = assessmentSubmissionActionLabel(progress, 'Submit work');
   const canOpenSubmission = (workspaceReady || submissionActionLabel !== 'Submit work') && !challengeSetupStep;
+  const reviewPacketSourceRefs = finalReviewPacket ? topReviewPacketSourceRefLabels(finalReviewPacket) : [];
   const hasContract = Boolean(
     summary.task
     || summary.verificationCommand
@@ -330,6 +358,61 @@ export function AssessmentTaskBrief({
             </dd>
             <dt>Verification</dt>
             <dd>{submittedVerification}</dd>
+          </dl>
+        </section>
+      )}
+
+      {finalReviewPacket && (
+        <section
+          className="assessment-final-review-packet"
+          data-testid="assessment-final-review-packet"
+          aria-label="Source-backed final review packet"
+        >
+          <div className="assessment-final-review-packet-header">
+            <CheckCircle2 size={15} />
+            <div>
+              <strong>Source-backed report ready</strong>
+              <p>
+                The final packet is tied to the assigned repo challenge, submitted commit,
+                and captured evidence. It does not auto-submit anything upstream.
+              </p>
+            </div>
+          </div>
+          <dl>
+            <dt>Artifact</dt>
+            <dd>{finalReviewPacket.schemaVersion}</dd>
+            <dt>Challenge</dt>
+            <dd>
+              {[
+                finalReviewPacket.challenge.assignmentTrust.label,
+                repoLabel(finalReviewPacket.challenge.repositoryUrl),
+                finalReviewPacket.challenge.baseCommitSha ? `Base ${shortSha(finalReviewPacket.challenge.baseCommitSha)}` : null,
+                pullRequestLabel(finalReviewPacket.challenge.pullRequestUrl),
+              ].filter(Boolean).join(' · ')}
+            </dd>
+            {finalReviewPacket.submission && (
+              <>
+                <dt>Submitted work</dt>
+                <dd>
+                  {[
+                    finalReviewPacket.submission.commitSha ? `Commit ${shortSha(finalReviewPacket.submission.commitSha)}` : null,
+                    finalReviewPacket.submission.branchName,
+                    finalReviewPacket.submission.submissionSourceLabel,
+                    finalReviewPacket.submission.integrity.label,
+                    finalReviewPacket.submission.challengeBinding.label,
+                  ].filter(Boolean).join(' · ')}
+                </dd>
+              </>
+            )}
+            <dt>Evidence</dt>
+            <dd>
+              {[
+                pluralize(finalReviewPacket.evidence.sourceRefCount, 'source ref'),
+                reviewPacketSourceRefs.join(', '),
+                pluralize(finalReviewPacket.evaluation.claimCount, 'claim'),
+                pluralize(finalReviewPacket.evaluation.diagnosticCount, 'diagnostic'),
+              ].filter(Boolean).join(' · ')}
+            </dd>
           </dl>
         </section>
       )}

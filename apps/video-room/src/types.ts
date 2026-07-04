@@ -199,6 +199,58 @@ export interface RoomAssessmentChallengePacketContract {
   hasExpectedEvidence: boolean;
 }
 
+export interface RoomAssessmentReviewPacketTone {
+  state?: string;
+  status?: string;
+  label: string;
+  detail: string;
+  tone: string;
+}
+
+export interface RoomAssessmentProgressReviewPacketSummary {
+  schemaVersion: 'repo-task-review-packet-v1';
+  challenge: {
+    focus: string | null;
+    repositoryUrl: string | null;
+    baseCommitSha: string | null;
+    pullRequestUrl: string | null;
+    assignmentTrust: RoomAssessmentReviewPacketTone;
+    contract: {
+      schemaVersion: string;
+      isComplete: boolean;
+      missingFields: string[];
+    };
+  };
+  submission: {
+    repositoryUrl: string | null;
+    forkRepositoryUrl: string | null;
+    branchName: string | null;
+    commitSha: string | null;
+    commitUrl: string | null;
+    submissionSourceLabel: string | null;
+    changedFileCount: number;
+    integrity: RoomAssessmentReviewPacketTone;
+    challengeBinding: RoomAssessmentReviewPacketTone;
+  } | null;
+  evidence: {
+    sourceRefCount: number;
+    sourceRefTypeCounts: Record<string, number>;
+    readiness: {
+      status: string;
+      label: string;
+      detail: string;
+      isReadyForEvaluation: boolean;
+      isUsableHiringSignal: boolean;
+      missingRequiredCount: number;
+    };
+  };
+  evaluation: {
+    recommendation: string | null;
+    claimCount: number;
+    diagnosticCount: number;
+  };
+}
+
 export interface RoomAssessmentProgressSnapshot {
   mode: string;
   state: string;
@@ -254,6 +306,7 @@ export interface RoomAssessmentProgressSnapshot {
       sourceRefCount: number;
       sourceRefTypes: string[];
     }>;
+    reviewPacket?: RoomAssessmentProgressReviewPacketSummary | null;
   } | null;
   readiness?: RoomAssessmentReadinessSnapshot;
 }
