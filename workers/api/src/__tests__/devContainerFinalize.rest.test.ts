@@ -174,6 +174,7 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
   async function seedFinalizeScenario(options: {
     includeVerificationEvidence?: boolean;
     includeTerminalEvidence?: boolean;
+    terminalLocatorCommitSha?: string;
   } = {}): Promise<{
     candidateId: string;
     devContainerSessionId: string;
@@ -323,7 +324,12 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
           sourceRefType: 'terminal_command',
           sourceRefId: `${commitSha}:terminal-finalize`,
           evidenceRole: 'workspace_terminal_command',
-          locator: { repositoryUrl, baseCommitSha, commitSha, command: 'npm test -- finalize' },
+          locator: {
+            repositoryUrl,
+            baseCommitSha,
+            commitSha: options.terminalLocatorCommitSha ?? commitSha,
+            command: 'npm test -- finalize',
+          },
           exactText: terminalExactText,
         }),
       );
@@ -424,6 +430,42 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
     expect(response.status).toBe(502);
     const body = await response.json() as { error?: { message?: string } };
     expect(body.error?.message).toContain('terminal_command');
+
+    const commitRows = sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'commit_submission'`,
+    ).get(scenario.assessmentSessionId) as { count: number };
+    expect(commitRows.count).toBe(0);
+  });
+
+  it('rejects bridge-captured commits whose process source refs point at another commit', async () => {
+    const scenario = await seedFinalizeScenario({
+      terminalLocatorCommitSha: 'e'.repeat(40),
+    });
+
+    const response = await rpcAuth.request(
+      `/dev-container/${scenario.devContainerSessionId}/assessment/finalize`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: await authHeader(scenario.candidateId),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          narrative: 'Finish my workspace assessment.',
+          testCommand: 'npm test -- finalize',
+          verificationNotes: 'Focused finalizer test passed in the workspace.',
+        }),
+      },
+      scenario.env,
+      buildCtx(),
+    );
+
+    expect(response.status).toBe(502);
+    const body = await response.json() as { error?: { message?: string } };
+    expect(body.error?.message).toContain('source refs are not bound');
 
     const commitRows = sqlite.prepare(
       `SELECT COUNT(*) AS count

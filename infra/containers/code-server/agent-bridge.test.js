@@ -656,6 +656,8 @@ describe('agent bridge readiness', () => {
       sourceRefId: `${commitSha}:test-run`,
       evidenceRole: 'verification_test_output',
       locator: {
+        baseCommitSha,
+        commitSha,
         command: 'node -e "console.log(42)"',
         exitCode: 0,
       },
@@ -694,6 +696,8 @@ describe('agent bridge readiness', () => {
       sourceRefId: `${commitSha}:test-run`,
       evidenceRole: 'verification_test_output',
       locator: {
+        baseCommitSha,
+        commitSha,
         command: 'node -e "console.log(999)"',
         exitCode: 0,
       },
@@ -789,6 +793,12 @@ describe('agent bridge readiness', () => {
       expect(verificationGap).toMatchObject({
         sourceRefId: `${commitSha}:test-evidence-missing`,
         evidenceRole: 'missing_test_evidence_note',
+        locator: {
+          repositoryUrl: 'https://github.com/example/repo',
+          baseCommitSha,
+          commitSha,
+          expectedSourceRefType: 'test_run',
+        },
         metadata: {
           source: 'agent_bridge_workspace_finalize',
           missingEvidence: 'test_run',

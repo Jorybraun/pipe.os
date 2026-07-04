@@ -125,6 +125,8 @@ const bridgeFinalizeResponseSchema = z.object({
 });
 
 type WorkspaceFinalizeRequest = z.infer<typeof workspaceFinalizeRequestSchema>;
+type BridgeSubmissionPayload = z.infer<typeof bridgeSubmissionPayloadSchema>;
+type BridgeSubmissionSourceRef = BridgeSubmissionPayload['sourceRefs'][number];
 
 function parseIntEnv(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
@@ -374,10 +376,60 @@ function bridgePayloadHasVerificationEvidence(
 }
 
 function bridgePayloadHasProcessTelemetry(
-  payload: z.infer<typeof bridgeSubmissionPayloadSchema>,
+  payload: BridgeSubmissionPayload,
 ): boolean {
   return payload.sourceRefs.some((sourceRef) =>
     sourceRef.sourceRefType === 'terminal_command');
+}
+
+function bridgePayloadHasBoundSourceRefs(payload: BridgeSubmissionPayload): boolean {
+  return payload.sourceRefs.some((sourceRef) =>
+    sourceRef.sourceRefType === 'git_commit'
+    && sourceRef.sourceRefId.toLowerCase() === payload.commitSha.toLowerCase()
+    && bridgeSourceRefLocatorMatchesSubmittedCommit(sourceRef, payload, { requireBaseCommitSha: false }))
+    && payload.sourceRefs.some((sourceRef) =>
+      sourceRef.sourceRefType === 'code_diff'
+      && sourceRef.sourceRefId.toLowerCase()
+        === `${payload.baseCommitSha.toLowerCase()}..${payload.commitSha.toLowerCase()}`
+      && bridgeSourceRefLocatorMatchesSubmittedCommit(sourceRef, payload, { requireBaseCommitSha: true }))
+    && payload.sourceRefs.some((sourceRef) =>
+      sourceRef.sourceRefType === 'terminal_command'
+      && bridgeSourceRefLocatorMatchesSubmittedCommit(sourceRef, payload, { requireBaseCommitSha: true }))
+    && payload.sourceRefs.some((sourceRef) =>
+      (sourceRef.sourceRefType === 'test_run' || sourceRef.sourceRefType === 'verification_gap')
+      && bridgeSourceRefLocatorMatchesSubmittedCommit(sourceRef, payload, { requireBaseCommitSha: true }));
+}
+
+function bridgeSourceRefLocatorMatchesSubmittedCommit(
+  sourceRef: BridgeSubmissionSourceRef,
+  payload: BridgeSubmissionPayload,
+  options: { requireBaseCommitSha: boolean },
+): boolean {
+  const locatorRepositoryUrl = sourceRefLocatorString(sourceRef, 'repositoryUrl');
+  if (!locatorRepositoryUrl) return false;
+
+  const allowedRepositoryUrls = new Set(
+    [payload.repositoryUrl, payload.forkRepositoryUrl ?? null]
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .map(normalizeEvidenceRepositoryUrl),
+  );
+  if (!allowedRepositoryUrls.has(normalizeEvidenceRepositoryUrl(locatorRepositoryUrl))) return false;
+
+  const locatorCommitSha = sourceRefLocatorString(sourceRef, 'commitSha')?.toLowerCase();
+  if (locatorCommitSha !== payload.commitSha.toLowerCase()) return false;
+
+  if (!options.requireBaseCommitSha) return true;
+  const locatorBaseCommitSha = sourceRefLocatorString(sourceRef, 'baseCommitSha')?.toLowerCase();
+  return locatorBaseCommitSha === payload.baseCommitSha.toLowerCase();
+}
+
+function sourceRefLocatorString(sourceRef: BridgeSubmissionSourceRef, key: string): string | null {
+  const value = sourceRef.locator?.[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeEvidenceRepositoryUrl(value: string): string {
+  return value.trim().replace(/\/+$/g, '').replace(/\.git$/i, '').toLowerCase();
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -783,6 +835,12 @@ devContainer.post('/:sessionId/assessment/finalize', async (c) => {
   if (!bridgePayloadHasProcessTelemetry(payload)) {
     return devContainerErrorResponse(
       'Workspace finalizer returned commit evidence without a terminal_command source ref.',
+      502,
+    );
+  }
+  if (!bridgePayloadHasBoundSourceRefs(payload)) {
+    return devContainerErrorResponse(
+      'Workspace finalizer source refs are not bound to the submitted repo/base/commit.',
       502,
     );
   }

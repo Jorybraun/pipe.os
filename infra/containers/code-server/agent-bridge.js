@@ -609,6 +609,7 @@ async function buildWorkspaceCommitSubmission(body = {}) {
       evidenceRole: 'verification_test_output',
       locator: {
         repositoryUrl: sourceRepositoryUrl,
+        baseCommitSha: baseCommitSha.toLowerCase(),
         commitSha,
         command: testCommand,
         exitCode: testResult.status,
@@ -628,6 +629,7 @@ async function buildWorkspaceCommitSubmission(body = {}) {
       evidenceRole: 'missing_test_evidence_note',
       locator: {
         repositoryUrl: sourceRepositoryUrl,
+        baseCommitSha: baseCommitSha.toLowerCase(),
         commitSha,
         expectedSourceRefType: 'test_run',
       },
