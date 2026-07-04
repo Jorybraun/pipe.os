@@ -339,6 +339,79 @@ function WorkspaceFinalizeTrustContract(): JSX.Element {
   );
 }
 
+function WorkspaceFinalizeChecklist({
+  verificationCommand,
+}: {
+  verificationCommand: string;
+}): JSX.Element {
+  const commands = [
+    'git status --short',
+    verificationCommand.trim() || '<run the assigned verification command>',
+    'git add <files>',
+    'git commit -m "pipe assessment submission"',
+  ];
+
+  return (
+    <div
+      data-testid="assessment-workspace-finalize-checklist"
+      aria-label="Workspace submit checklist"
+      style={{
+        gridColumn: '1 / -1',
+        border: '1px solid rgba(96,165,250,0.26)',
+        background: 'rgba(96,165,250,0.06)',
+        padding: 10,
+        display: 'grid',
+        gap: 8,
+      }}
+    >
+      <strong style={{ color: '#93c5fd', letterSpacing: '0.12em' }}>
+        BEFORE FINALIZING
+      </strong>
+      <ol
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+          gap: 8,
+          margin: 0,
+          padding: 0,
+          listStyle: 'none',
+        }}
+      >
+        {commands.map((command, index) => (
+          <li
+            key={`${index}:${command}`}
+            style={{
+              display: 'grid',
+              gap: 4,
+              minWidth: 0,
+            }}
+          >
+            <span style={{ color: 'var(--pipe-text-dim)', fontSize: 9 }}>
+              STEP {index + 1}
+            </span>
+            <code
+              style={{
+                display: 'block',
+                overflowWrap: 'anywhere',
+                color: '#bfdbfe',
+                background: 'rgba(2,6,23,0.62)',
+                border: '1px solid rgba(148,163,184,0.18)',
+                padding: '6px 7px',
+                minHeight: 30,
+              }}
+            >
+              {command}
+            </code>
+          </li>
+        ))}
+      </ol>
+      <span style={{ color: 'var(--pipe-text-dim)', fontSize: 10, lineHeight: 1.5 }}>
+        Finalize captures the current HEAD on the `pipe-assessment` branch; uncommitted editor changes are rejected.
+      </span>
+    </div>
+  );
+}
+
 function WorkspaceFinalizeRecovery({ error }: { error: string | null }): JSX.Element | null {
   if (!isDirtyWorkspaceFinalizeError(error)) return null;
 
@@ -723,6 +796,7 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
                 padding: 10,
               }}
             >
+              <WorkspaceFinalizeChecklist verificationCommand={workspaceTestCommand} />
               <label style={{ display: 'grid', gap: 4 }}>
                 <span>Workspace submission note</span>
                 <input

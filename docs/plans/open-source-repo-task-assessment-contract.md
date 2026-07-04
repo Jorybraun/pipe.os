@@ -359,6 +359,10 @@ The controlling product rule remains:
   task packet, repo/base commit locator, evidence coverage, AI-use state, and
   Submit Work action visible above the code workspace instead of hiding
   assessment readiness inside a drawer.
+- Open-source assessment containers now set a deterministic Git author identity
+  before the candidate creates an assessment-branch commit, and the candidate
+  workspace submit panel shows the exact status, verification, add, commit, and
+  finalizer sequence before the trusted workspace finalizer runs.
 - Workspace finalization also attaches bounded `code_server_file_observation`
   source refs for changed files at the submitted commit. These observations are
   derived from immutable git blobs, carry blob/content hashes and safe previews

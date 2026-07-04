@@ -342,6 +342,13 @@ describe('DevContainerPanel assessment submission', () => {
     await waitFor(() => {
       expect(screen.getByTestId('assessment-workspace-finalize-test-command')).toHaveValue('npm test -- retry');
     });
+    const checklist = screen.getByTestId('assessment-workspace-finalize-checklist');
+    expect(checklist).toHaveTextContent('BEFORE FINALIZING');
+    expect(checklist).toHaveTextContent('git status --short');
+    expect(checklist).toHaveTextContent('npm test -- retry');
+    expect(checklist).toHaveTextContent('git add <files>');
+    expect(checklist).toHaveTextContent('git commit -m "pipe assessment submission"');
+    expect(checklist).toHaveTextContent('current HEAD on the `pipe-assessment` branch');
   });
 
   it('finalizes the committed workspace HEAD through the live dev-container bridge', async () => {
