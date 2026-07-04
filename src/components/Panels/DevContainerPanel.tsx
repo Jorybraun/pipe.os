@@ -804,6 +804,39 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
               />
             </label>
             <label style={{ display: 'grid', gap: 4 }}>
+              <span>Fork URL</span>
+              <input
+                value={commitFields.forkRepositoryUrl}
+                onChange={(event) => setCommitField('forkRepositoryUrl', event.target.value)}
+                disabled={commitSubmitting}
+                data-testid="assessment-commit-fork-url"
+                placeholder="https://github.com/you/repo"
+                style={fieldStyle()}
+              />
+            </label>
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span>Commit URL</span>
+              <input
+                value={commitFields.commitUrl}
+                onChange={(event) => setCommitField('commitUrl', event.target.value)}
+                disabled={commitSubmitting}
+                data-testid="assessment-commit-commit-url"
+                placeholder="https://github.com/you/repo/commit/..."
+                style={fieldStyle()}
+              />
+            </label>
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span>Upstream PR URL</span>
+              <input
+                value={commitFields.upstreamPullRequestUrl}
+                onChange={(event) => setCommitField('upstreamPullRequestUrl', event.target.value)}
+                disabled={commitSubmitting}
+                data-testid="assessment-commit-upstream-pr-url"
+                placeholder="Optional, only after review"
+                style={fieldStyle()}
+              />
+            </label>
+            <label style={{ display: 'grid', gap: 4 }}>
               <span>Branch</span>
               <input
                 value={commitFields.branchName}
@@ -832,6 +865,29 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
                 data-testid="assessment-commit-commit-sha"
                 style={fieldStyle()}
               />
+            </label>
+            <label
+              style={{
+                gridColumn: 'span 2',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                color: 'var(--pipe-text-dim)',
+                border: '1px solid rgba(148,163,184,0.22)',
+                background: 'rgba(148,163,184,0.06)',
+                padding: '8px 10px',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={commitFields.upstreamPrConsent}
+                onChange={(event) => setCommitField('upstreamPrConsent', event.target.checked)}
+                disabled={commitSubmitting}
+                data-testid="assessment-commit-upstream-pr-consent"
+              />
+              <span>
+                I explicitly approve storing this upstream PR URL for assessment tracking.
+              </span>
             </label>
 
             <label style={{ gridColumn: 'span 2', display: 'grid', gap: 4 }}>

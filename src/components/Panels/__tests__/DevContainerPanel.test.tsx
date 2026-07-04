@@ -194,6 +194,9 @@ describe('DevContainerPanel assessment submission', () => {
   });
 
   it('lets candidates submit source-backed commit evidence from a ready dev container', async () => {
+    const forkRepositoryUrl = 'https://github.com/candidate/repo';
+    const commitUrl = `${forkRepositoryUrl}/commit/${commitSha}`;
+    const upstreamPullRequestUrl = 'https://github.com/acme/repo/pull/42';
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = input.toString();
       if (url.endsWith('/rpc/assessment/progress')) {
@@ -209,7 +212,9 @@ describe('DevContainerPanel assessment submission', () => {
             repositoryUrl: 'https://github.com/acme/repo',
             branchName: 'pipe-assessment',
             commitSha,
-            commitUrl: null,
+            commitUrl,
+            upstreamPullRequestUrl,
+            upstreamPrConsent: true,
           },
           progress: {
             ...progressResponse().progress,
@@ -218,11 +223,13 @@ describe('DevContainerPanel assessment submission', () => {
             nextActionLabel: 'Ready for evaluation',
             commit: {
               repositoryUrl: 'https://github.com/acme/repo',
-              forkRepositoryUrl: null,
+              forkRepositoryUrl,
               branchName: 'pipe-assessment',
               baseCommitSha,
               commitSha,
-              commitUrl: null,
+              commitUrl,
+              upstreamPullRequestUrl,
+              upstreamPrConsent: true,
               submissionSource: 'manual_fallback',
               submissionSourceLabel: 'Manual commit evidence',
               integrity: null,
@@ -249,6 +256,16 @@ describe('DevContainerPanel assessment submission', () => {
       expect(screen.getByTestId('assessment-commit-base-sha')).toHaveValue(baseCommitSha);
     });
 
+    fireEvent.change(screen.getByTestId('assessment-commit-fork-url'), {
+      target: { value: forkRepositoryUrl },
+    });
+    fireEvent.change(screen.getByTestId('assessment-commit-commit-url'), {
+      target: { value: commitUrl },
+    });
+    fireEvent.change(screen.getByTestId('assessment-commit-upstream-pr-url'), {
+      target: { value: upstreamPullRequestUrl },
+    });
+    fireEvent.click(screen.getByTestId('assessment-commit-upstream-pr-consent'));
     fireEvent.change(screen.getByTestId('assessment-commit-narrative'), {
       target: { value: 'Fixed retry handling and verified the focused test.' },
     });
@@ -282,15 +299,24 @@ describe('DevContainerPanel assessment submission', () => {
     });
     const payload = JSON.parse(String(submitCall?.[1]?.body)) as {
       sourceRefs: Array<{ sourceRefType: string; metadata?: { source?: string } }>;
+      forkRepositoryUrl: string | null;
       branchName: string;
       commitSha: string;
+      commitUrl: string | null;
+      upstreamPullRequestUrl: string | null;
+      upstreamPrConsent: boolean;
     };
+    expect(payload.forkRepositoryUrl).toBe(forkRepositoryUrl);
     expect(payload.branchName).toBe('pipe-assessment');
     expect(payload.commitSha).toBe(commitSha);
+    expect(payload.commitUrl).toBe(commitUrl);
+    expect(payload.upstreamPullRequestUrl).toBe(upstreamPullRequestUrl);
+    expect(payload.upstreamPrConsent).toBe(true);
     expect(payload.sourceRefs.map((ref) => ref.sourceRefType)).toEqual([
       'git_commit',
       'code_diff',
       'test_run',
+      'upstream_pull_request',
     ]);
     expect(payload.sourceRefs.every((ref) => ref.metadata?.source === 'assessment_commit_submission_panel')).toBe(true);
   });

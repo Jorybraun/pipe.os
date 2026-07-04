@@ -169,6 +169,10 @@ The controlling product rule remains:
   repository or the candidate's declared fork. A GitHub commit URL from an
   unrelated repository is rejected even when the commit SHA, diff source ref, and
   source hashes are otherwise well-formed.
+- Candidate commit-submission UI must expose the declared fork URL, exact GitHub
+  commit URL, optional upstream PR URL, and explicit upstream consent field, so
+  real assessment-branch/fork work remains reviewable instead of degrading into
+  hash-only manual evidence.
 - Assessment progress must expose commit integrity separately from generic
   submission status: live dev-container finalizer captures are labelled
   workspace-captured, while manual evidence fallback remains explicit as needing
