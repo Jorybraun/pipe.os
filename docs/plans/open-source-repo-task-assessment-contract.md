@@ -205,6 +205,11 @@ The controlling product rule remains:
   unless the claim cites terminal, code-editor, workspace, transcript, chat, or
   candidate AI-prompt evidence. A final diff alone proves implementation
   content, not workflow quality.
+- Source-backed evaluator normalization drops positive communication,
+  reasoning, collaboration, explanation, or tradeoff claims unless the claim
+  cites transcript, chat, candidate plan, or candidate-authored AI-prompt
+  evidence. A final diff alone proves implementation content, not candidate
+  explanation quality.
 - Live assessment-room progress coverage now labels accepted terminal command,
   terminal output, code-server file/editor observations, and room media/tool
   controls as `tool activity`, matching recruiter summaries and preserving the

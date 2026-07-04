@@ -176,6 +176,14 @@ const CONVERSATION_EVIDENCE_SOURCE_REF_TYPES = [
   'transcript_span',
   'room_chat_message',
 ] as const;
+const COMMUNICATION_EVIDENCE_SOURCE_REF_TYPES = [
+  ...CONVERSATION_EVIDENCE_SOURCE_REF_TYPES,
+  'candidate_plan',
+  'session_chat_user',
+  'ai_user_prompt',
+  'ai_user_prompt_blocked',
+  'ai_chat_user',
+] as const;
 const WORKSPACE_ACTIVITY_SOURCE_REF_TYPES = [
   'terminal_command',
   'terminal_output',
@@ -907,7 +915,7 @@ function buildSystemPrompt(): string {
     'Assess only the evidence provided in SOURCE_REFS. Do not invent repo behavior, tests, seniority, intent, or correctness.',
     'Every positive or negative claim must cite one or more exact sourceRefKeys from SOURCE_REFS.',
     'Use EVIDENCE_COVERAGE before scoring. Missing expected evidence must become diagnostics or uncertainty, never positive claims.',
-    'Do not make positive test_strategy, verification, AI-usage, or process claims when the matching coverage item is unsatisfied.',
+    'Do not make positive test_strategy, verification, AI-usage, process, communication, reasoning, or tradeoff claims when the matching coverage item is unsatisfied.',
     'A verification_gap explains why verification is partial or missing; it is not test_run evidence and must not support positive verification claims.',
     'If evidence is missing, uncertain, ungrounded, or insufficient, return diagnostics instead of positive claims.',
     'Keep the response compact: at most 4 claims and 4 diagnostics; summary and narratives must be one short sentence each.',
@@ -1384,6 +1392,14 @@ function positiveClaimUnsupportedDiagnostic(
       'Positive process or debugging claims require terminal, code-editor, workspace, transcript, chat, or candidate AI-prompt source refs.',
     );
   }
+  if (positiveCommunicationDimensionRequiresEvidence(dimension)
+    && sourceRefsOfTypes(citedRefs, COMMUNICATION_EVIDENCE_SOURCE_REF_TYPES).length === 0) {
+    return unsupportedPositiveClaimDiagnostic(
+      claim,
+      citedRefs,
+      'Positive communication, reasoning, or tradeoff claims require transcript, chat, candidate plan, or candidate-authored AI prompt source refs.',
+    );
+  }
   return null;
 }
 
@@ -1393,6 +1409,17 @@ function positiveProcessDimensionRequiresEvidence(dimension: string): boolean {
     || dimension.includes('workflow')
     || dimension.includes('terminal')
     || dimension.includes('tool');
+}
+
+function positiveCommunicationDimensionRequiresEvidence(dimension: string): boolean {
+  return dimension.includes('communication')
+    || dimension.includes('collaboration')
+    || dimension.includes('conversation')
+    || dimension.includes('explanation')
+    || dimension.includes('reasoning')
+    || dimension.includes('rationale')
+    || dimension.includes('tradeoff')
+    || dimension.includes('trade-off');
 }
 
 function unsupportedPositiveClaimDiagnostic(

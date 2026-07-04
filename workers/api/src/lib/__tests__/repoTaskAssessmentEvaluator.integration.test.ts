@@ -666,6 +666,167 @@ describe('repo task assessment evaluator integration', () => {
       .toContain('Positive process or debugging claims require terminal, code-editor, workspace, transcript, chat, or candidate AI-prompt source refs');
   });
 
+  it('drops unsupported positive communication claims when only final diff evidence is cited', async () => {
+    const fixture = await createReadyAssessmentFixture(store, 'unsupported-communication-claim');
+    const aiRun = vi.fn(async () => ({
+      response: JSON.stringify({
+        summary: 'The candidate changed the popover root hook, but communication evidence is not available.',
+        recommendation: 'mixed_evidence_human_review',
+        claims: [
+          {
+            id: 'implementation-backed-by-diff',
+            polarity: 'positive',
+            dimension: 'implementation_correctness',
+            narrative: 'The candidate changed the popover root hook in the submitted diff.',
+            confidence: 0.72,
+            sourceRefKeys: ['code_diff'],
+          },
+          {
+            id: 'tradeoff-reasoning-from-diff',
+            polarity: 'positive',
+            dimension: 'tradeoff_reasoning',
+            narrative: 'The candidate clearly explained the tradeoff behind the hook change.',
+            confidence: 0.81,
+            sourceRefKeys: ['code_diff'],
+          },
+        ],
+        diagnostics: [],
+      }),
+    }));
+
+    const result = await evaluateRepoTaskAssessmentSession({
+      db,
+      store,
+      env: {
+        AI: { run: aiRun } as unknown as Ai,
+        CLOUDFLARE_AI_MODEL: '@cf/meta/llama-3.2-3b-instruct',
+      },
+      sessionId: fixture.sessionId,
+      scheduledInterviewId: fixture.scheduledInterviewId,
+      requestedBy: 'recruiter-1',
+      requestedAt: '2026-07-03T00:04:30.000Z',
+      requestEventId: fixture.requestEventId,
+      requestSourceRef: fixture.requestSourceRef,
+    });
+
+    expect(result.kind).toBe('evaluated');
+    const report = sqlite.prepare(
+      `SELECT id, status
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1`,
+    ).get(fixture.sessionId) as { id: string; status: string };
+    expect(report.status).toBe('EVALUATED');
+
+    const claims = sqlite.prepare(
+      `SELECT polarity, dimension, narrative
+         FROM assessment_evaluation_claims
+        WHERE report_id = ?
+        ORDER BY dimension`,
+    ).all(report.id) as Array<{ polarity: string; dimension: string; narrative: string }>;
+    expect(claims).toEqual(expect.arrayContaining([
+      expect.objectContaining({ polarity: 'positive', dimension: 'implementation_correctness' }),
+    ]));
+    expect(claims).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ dimension: 'tradeoff_reasoning' }),
+    ]));
+
+    const diagnostics = sqlite.prepare(
+      `SELECT code, severity, message
+         FROM assessment_diagnostics
+        WHERE report_id = ?
+        ORDER BY code`,
+    ).all(report.id) as Array<{ code: string; severity: string; message: string }>;
+    expect(diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE', severity: 'warning' }),
+    ]));
+    expect(diagnostics.find((diagnostic) => diagnostic.code === 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE')?.message)
+      .toContain('Positive communication, reasoning, or tradeoff claims require transcript, chat, candidate plan, or candidate-authored AI prompt source refs');
+  });
+
+  it('keeps positive communication claims when candidate chat evidence is cited', async () => {
+    const fixture = await createReadyAssessmentFixture(store, 'supported-communication-claim');
+    await store.recordEvent({
+      sessionId: fixture.sessionId,
+      ingestionKey: 'assessment-event:supported-communication-claim:chat-message',
+      kind: 'message',
+      actorType: 'candidate',
+      actorId: 'candidate-supported-communication-claim',
+      narrative: 'Candidate explained the tradeoff behind the implementation change.',
+      payload: {
+        channel: 'room_chat',
+      },
+      sourceRefs: [await sourceRef({
+        type: 'room_chat_message',
+        id: 'supported-communication-claim:room-chat-message',
+        exactText: 'Candidate: I kept the change scoped to the hook because it avoids changing public popover behavior while fixing the impatient-click edge case.',
+      })],
+    });
+    const aiRun = vi.fn(async () => ({
+      response: JSON.stringify({
+        summary: 'The candidate changed the popover root hook and explained the tradeoff in chat.',
+        recommendation: 'mixed_evidence_human_review',
+        claims: [
+          {
+            id: 'tradeoff-reasoning-backed-by-chat',
+            polarity: 'positive',
+            dimension: 'tradeoff_reasoning',
+            narrative: 'The candidate explained why the hook-level change avoided altering public popover behavior.',
+            confidence: 0.77,
+            sourceRefKeys: ['room_chat_message'],
+          },
+        ],
+        diagnostics: [],
+      }),
+    }));
+
+    const result = await evaluateRepoTaskAssessmentSession({
+      db,
+      store,
+      env: {
+        AI: { run: aiRun } as unknown as Ai,
+        CLOUDFLARE_AI_MODEL: '@cf/meta/llama-3.2-3b-instruct',
+      },
+      sessionId: fixture.sessionId,
+      scheduledInterviewId: fixture.scheduledInterviewId,
+      requestedBy: 'recruiter-1',
+      requestedAt: '2026-07-03T00:04:45.000Z',
+      requestEventId: fixture.requestEventId,
+      requestSourceRef: fixture.requestSourceRef,
+    });
+
+    expect(result.kind).toBe('evaluated');
+    const report = sqlite.prepare(
+      `SELECT id, status
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1`,
+    ).get(fixture.sessionId) as { id: string; status: string };
+    expect(report.status).toBe('EVALUATED');
+
+    const claims = sqlite.prepare(
+      `SELECT polarity, dimension, narrative
+         FROM assessment_evaluation_claims
+        WHERE report_id = ?
+        ORDER BY dimension`,
+    ).all(report.id) as Array<{ polarity: string; dimension: string; narrative: string }>;
+    expect(claims).toEqual(expect.arrayContaining([
+      expect.objectContaining({ polarity: 'positive', dimension: 'tradeoff_reasoning' }),
+    ]));
+
+    const diagnostics = sqlite.prepare(
+      `SELECT code, severity, message
+         FROM assessment_diagnostics
+        WHERE report_id = ?
+        ORDER BY code`,
+    ).all(report.id) as Array<{ code: string; severity: string; message: string }>;
+    expect(diagnostics).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ code: 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE' }),
+    ]));
+  });
+
   it('recovers stale running evaluation sessions from the scheduled worker path', async () => {
     const fixture = await createReadyAssessmentFixture(store, 'scheduled-recovery');
     await store.transitionState({
