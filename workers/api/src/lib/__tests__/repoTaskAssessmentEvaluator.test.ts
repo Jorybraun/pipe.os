@@ -207,6 +207,79 @@ describe('repo task assessment evaluator output parsing', () => {
     ]));
   });
 
+  it('preserves declared verification gaps without creating positive verification claims', async () => {
+    const requestText = 'Recruiter requested source-backed evaluation.';
+    const fallback = buildDeterministicAssessmentFallback({
+      sessionId: 'assessment-session-verification-gap',
+      requestSourceRef: {
+        sourceRefType: 'assessment_evaluation_request',
+        sourceRefId: 'request-verification-gap',
+        exactText: requestText,
+        contentHash: await sha256Hex(requestText),
+      },
+      sourceRefs: [
+        await sourceRef({
+          type: 'open_source_challenge_packet',
+          id: 'challenge-verification-gap',
+          role: 'assigned_challenge',
+          sequence: 1,
+          exactText: [
+            'Repo: https://github.com/mui/base-ui',
+            'Base commit: 58dff8444fa56e4444a3a1dd991c76b49cf4ab7e',
+            'Task: Fix Base UI popover impatient click handling',
+            'Success criteria:',
+            '- Change popover behavior.',
+            'Expected evidence:',
+            '- git_commit',
+            '- code_diff',
+            '- test_run or verification_gap',
+          ].join('\n'),
+        }),
+        await sourceRef({
+          type: 'git_commit',
+          id: '81c11363a3b6e31b34b3777fd150de7fe462c64f',
+          sequence: 2,
+          exactText: 'commit 81c11363a3b6e31b34b3777fd150de7fe462c64f\nfix popover impatient click handling',
+        }),
+        await sourceRef({
+          type: 'code_diff',
+          id: 'base..head',
+          sequence: 2,
+          exactText: 'diff --git a/packages/react/src/popover/root/usePopoverRoot.ts b/packages/react/src/popover/root/usePopoverRoot.ts\n+PATIENT_CLICK_THRESHOLD',
+        }),
+        await sourceRef({
+          type: 'verification_gap',
+          id: 'verification-gap-1',
+          role: 'missing_test_evidence_note',
+          sequence: 2,
+          exactText: 'Browser e2e could not run because Playwright browser install is missing in this assessment container.',
+        }),
+      ],
+    });
+
+    expect(fallback).not.toBeNull();
+    expect(fallback?.summary).toContain('verification gap declared');
+    expect(fallback?.summary).toContain('test output missing');
+    expect(fallback?.claims).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ dimension: 'verification' }),
+    ]));
+    expect(fallback?.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'VERIFICATION_GAP_DECLARED',
+        severity: 'warning',
+        sourceRefs: [
+          expect.objectContaining({
+            sourceRefType: 'verification_gap',
+            sourceRefId: 'verification-gap-1',
+          }),
+        ],
+      }),
+    ]));
+    expect(fallback?.diagnostics).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ code: 'MISSING_TEST_EVIDENCE' }),
+    ]));
+  });
+
   it('preserves PIPE-matched challenge provenance in deterministic fallback reports', async () => {
     const requestText = 'Recruiter requested source-backed evaluation.';
     const fallback = buildDeterministicAssessmentFallback({

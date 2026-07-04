@@ -152,6 +152,7 @@ const EXPECTED_HIGH_CONFIDENCE_REF_GROUPS = [
   },
 ] as const;
 const TEST_EVIDENCE_SOURCE_REF_TYPES = ['test_run'] as const;
+const VERIFICATION_GAP_SOURCE_REF_TYPES = ['verification_gap'] as const;
 const AI_EVIDENCE_SOURCE_REF_TYPES = [
   'ai_user_prompt',
   'ai_user_prompt_blocked',
@@ -574,10 +575,18 @@ function deterministicFallbackSummary(sourceRefs: readonly SessionSourceRef[]): 
   if (hasSourceRefsOfTypes(sourceRefs, ['git_commit'])) captured.push('assessment commit');
   if (hasSourceRefsOfTypes(sourceRefs, ['code_diff'])) captured.push('exact diff');
 
+  const hasVerificationGap = hasSourceRefsOfTypes(sourceRefs, VERIFICATION_GAP_SOURCE_REF_TYPES);
   if (hasSuccessfulVerification(sourceRefs)) {
-    captured.push('successful verification');
+    captured.push(hasVerificationGap
+      ? 'successful verification with declared verification gap'
+      : 'successful verification');
   } else if (hasSourceRefsOfTypes(sourceRefs, TEST_EVIDENCE_SOURCE_REF_TYPES)) {
-    captured.push('verification evidence captured');
+    captured.push(hasVerificationGap
+      ? 'verification evidence captured with declared gap'
+      : 'verification evidence captured');
+  } else if (hasVerificationGap) {
+    captured.push('verification gap declared');
+    gaps.push('test output missing');
   } else {
     gaps.push('test evidence missing');
   }
@@ -616,6 +625,30 @@ function deterministicFallbackSummary(sourceRefs: readonly SessionSourceRef[]): 
 function missingVerificationDiagnostic(
   sourceRefs: readonly SessionSourceRef[],
 ): AssessmentDiagnosticInput | null {
+  const verificationGapRefs = sourceRefsOfTypes(sourceRefs, VERIFICATION_GAP_SOURCE_REF_TYPES)
+    .slice(0, 4);
+  if (verificationGapRefs.length > 0) {
+    const hasTestEvidence = sourceRefsOfTypes(sourceRefs, TEST_EVIDENCE_SOURCE_REF_TYPES).length > 0;
+    return diagnosticInput({
+      code: 'VERIFICATION_GAP_DECLARED',
+      severity: 'warning',
+      message: hasTestEvidence
+        ? 'A verification_gap source ref was captured alongside test output, so PIPE preserves the declared partial verification limitation for human review.'
+        : 'A verification_gap source ref was captured instead of test_run output, so PIPE preserves the declared verification limitation and cannot make positive verification or test-strategy claims.',
+      retryable: false,
+      sourceRefs: verificationGapRefs,
+      details: hasTestEvidence
+        ? {
+            capturedSourceRefType: 'verification_gap',
+            impact: 'Human review should inspect the declared gap before treating captured test output as complete verification.',
+          }
+        : {
+            capturedSourceRefType: 'verification_gap',
+            missingSourceRefType: 'test_run',
+            impact: 'Human review can inspect the commit, diff, and declared blocker, but verification confidence is lower until test output is captured.',
+          },
+    });
+  }
   if (sourceRefsOfTypes(sourceRefs, TEST_EVIDENCE_SOURCE_REF_TYPES).length > 0) return null;
   return diagnosticInput({
     code: 'MISSING_TEST_EVIDENCE',

@@ -191,6 +191,10 @@ The controlling product rule remains:
 - Candidate manual commit submission preserves partial verification gaps even
   when test output is present, so "unit tests passed but browser e2e could not
   run" remains source-backed as both `test_run` and `verification_gap` evidence.
+- Deterministic assessment fallback reports now cite source-backed
+  `verification_gap` notes as explicit warnings instead of collapsing declared
+  blockers into generic missing-test diagnostics, while still refusing positive
+  verification claims without successful `test_run` evidence.
 - Live assessment-room progress coverage now labels accepted terminal command,
   terminal output, code-server file/editor observations, and room media/tool
   controls as `tool activity`, matching recruiter summaries and preserving the

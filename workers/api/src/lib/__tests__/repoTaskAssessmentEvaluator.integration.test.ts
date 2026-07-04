@@ -524,11 +524,28 @@ describe('repo task assessment evaluator integration', () => {
         ORDER BY code`,
     ).all(report.id) as Array<{ code: string; severity: string; message: string }>;
     expect(diagnostics).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: 'MISSING_TEST_EVIDENCE', severity: 'warning' }),
       expect.objectContaining({ code: 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE', severity: 'warning' }),
+      expect.objectContaining({ code: 'VERIFICATION_GAP_DECLARED', severity: 'warning' }),
     ]));
+    expect(diagnostics).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ code: 'MISSING_TEST_EVIDENCE' }),
+    ]));
+    expect(diagnostics.find((diagnostic) => diagnostic.code === 'VERIFICATION_GAP_DECLARED')?.message)
+      .toContain('verification_gap source ref was captured instead of test_run output');
     expect(diagnostics.find((diagnostic) => diagnostic.code === 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE')?.message)
       .toContain('Positive test-strategy claims require a test_run source ref');
+
+    const diagnosticSourceRefs = sqlite.prepare(
+      `SELECT sr.source_ref_type
+         FROM assessment_diagnostic_source_refs sr
+         JOIN assessment_diagnostics d ON d.id = sr.diagnostic_id
+        WHERE d.report_id = ?
+          AND d.code = ?
+        ORDER BY sr.source_ref_type`,
+    ).all(report.id, 'VERIFICATION_GAP_DECLARED') as Array<{ source_ref_type: string }>;
+    expect(diagnosticSourceRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source_ref_type: 'verification_gap' }),
+    ]));
   });
 
   it('recovers stale running evaluation sessions from the scheduled worker path', async () => {
