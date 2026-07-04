@@ -133,6 +133,9 @@ describe('commit submission payloads', () => {
         sourceRefType: 'test_run',
         sourceRefId: `${normalizedCommitSha}:test-run`,
         evidenceRole: 'verification_test_output',
+        locator: expect.objectContaining({
+          command: 'npm test -- retry',
+        }),
         exactText: testEvidenceText,
         contentHash: await sha256ContentHash(testEvidenceText),
       }),

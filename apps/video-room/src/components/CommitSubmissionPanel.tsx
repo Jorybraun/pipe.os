@@ -494,6 +494,7 @@ export function CommitSubmissionPanel({
   workspaceFinalizeDisabledReason = null,
   onFinalizeWorkspace,
 }: CommitSubmissionPanelProps): JSX.Element {
+  const assignedVerificationCommand = summarizeChallengePacket(challengePacket ?? null).verificationCommand ?? '';
   const submissionDefaults = buildCommitSubmissionDefaults({
     repositoryUrl: defaultRepositoryUrl,
     challengePacket,
@@ -509,7 +510,7 @@ export function CommitSubmissionPanel({
   const [workspaceFinalizeResult, setWorkspaceFinalizeResult] = useState<RoomWorkspaceFinalizeResponse | null>(null);
   const [workspaceFinalizeFields, setWorkspaceFinalizeFields] = useState<Required<RoomWorkspaceFinalizeRequest>>({
     narrative: '',
-    testCommand: '',
+    testCommand: assignedVerificationCommand,
     verificationNotes: '',
   });
   const displayedProgress = workspaceFinalizeResult?.progress ?? result?.progress ?? assessmentProgress;
@@ -543,6 +544,15 @@ export function CommitSubmissionPanel({
     submissionDefaults.branchName,
     submissionDefaults.baseCommitSha,
   ]);
+
+  useEffect(() => {
+    if (!assignedVerificationCommand) return;
+    setWorkspaceFinalizeFields((current) => (
+      current.testCommand.trim()
+        ? current
+        : { ...current, testCommand: assignedVerificationCommand }
+    ));
+  }, [assignedVerificationCommand]);
 
   const setField = (key: keyof CommitSubmissionFormFields, value: string | boolean): void => {
     setFields((current) => ({ ...current, [key]: value }));

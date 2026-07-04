@@ -27,6 +27,7 @@ const richPacket: RoomWorkspaceChallengePacket = {
     'Repo: https://github.com/pipe/source-backed-worker',
     `Base commit: ${'d'.repeat(40)}`,
     'Task: Fix the source-backed worker retry path.',
+    'Verification command: npm test -- retry',
     'Match proof:',
     '- Review packet quality 92% from source-backed repo analysis.',
     '- 2 source-backed repo demands in the selected PR packet.',
@@ -448,9 +449,7 @@ describe('CommitSubmissionPanel', () => {
     fireEvent.change(screen.getByTestId('workspace-finalize-narrative'), {
       target: { value: 'Submitted retry fix from the assessment branch.' },
     });
-    fireEvent.change(screen.getByTestId('workspace-finalize-test-command'), {
-      target: { value: 'npm test -- retry' },
-    });
+    expect((screen.getByTestId('workspace-finalize-test-command') as HTMLInputElement).value).toBe('npm test -- retry');
     fireEvent.change(screen.getByTestId('workspace-finalize-verification-notes'), {
       target: { value: 'Targeted retry test passed in the workspace.' },
     });
