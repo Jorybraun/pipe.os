@@ -67,6 +67,8 @@ const STATUS_COLORS: Record<string, string> = {
 
 const LIVE_RECORDING_STALE_AFTER_MS = 4 * 60 * 60 * 1000;
 const CLIPBOARD_WRITE_TIMEOUT_MS = 800;
+const ASSESSMENT_PROGRESS_REFRESH_INTERVAL_MS = 1500;
+const ASSESSMENT_PROGRESS_REFRESH_MAX_ATTEMPTS = 8;
 
 interface PreparedRoomLinks {
   id: string;
@@ -3153,6 +3155,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const [workspacePrNumber, setWorkspacePrNumber] = useState('');
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
   const hasLoadedOnceRef = useRef(false);
+  const assessmentProgressRefreshAttemptsRef = useRef(0);
   const guestLinkInputRef = useRef<HTMLInputElement | null>(null);
   const assessmentLinkInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -3176,6 +3179,7 @@ export default function InterviewDetailPage(): JSX.Element {
 
   useEffect(() => {
     hasLoadedOnceRef.current = false;
+    assessmentProgressRefreshAttemptsRef.current = 0;
     setInterview(null);
     void load({ showLoading: true });
   }, [interviewId, load]);
@@ -3558,6 +3562,30 @@ export default function InterviewDetailPage(): JSX.Element {
     interview?.linkedMeeting?.endedAt,
     interview?.linkedMeeting?.recordingR2Key,
     interview?.transcriptArtifact?.status,
+    load,
+  ]);
+
+  useEffect(() => {
+    const isWorkspaceAssessment = interview?.interviewType === 'DEV_CONTAINER_CHALLENGE'
+      || interview?.interviewType === 'OPEN_SOURCE_BUG_FIX';
+    const shouldRefresh = Boolean(
+      interview
+        && isWorkspaceAssessment
+        && !interview.assessmentProgress
+        && !interview.assessmentSetup?.blocksPositiveAssessment,
+    );
+    if (!shouldRefresh) return undefined;
+    if (assessmentProgressRefreshAttemptsRef.current >= ASSESSMENT_PROGRESS_REFRESH_MAX_ATTEMPTS) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      assessmentProgressRefreshAttemptsRef.current += 1;
+      void load({ showLoading: false });
+    }, ASSESSMENT_PROGRESS_REFRESH_INTERVAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [
+    interview,
     load,
   ]);
 

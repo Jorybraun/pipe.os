@@ -105,6 +105,125 @@ function evidenceFollowUpNotes(): string {
   ].join('\n');
 }
 
+function makeWorkspaceAssessmentProgress(
+  overrides: Partial<NonNullable<ScheduledInterviewDetail['assessmentProgress']>> = {},
+): NonNullable<ScheduledInterviewDetail['assessmentProgress']> {
+  return {
+    session: {
+      id: 'assessment-session-refresh',
+      ingestionKey: 'assessment-session:refresh',
+      interviewId: 'interview-1',
+      candidateId: 'candidate-1',
+      workspaceId: 'workspace-1',
+      workspacePersonId: null,
+      applicationId: null,
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      state: 'EVALUATED',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:22:00.000Z',
+    },
+    stage: 'EVALUATED',
+    nextAction: 'REVIEW_EVALUATION',
+    nextActionLabel: 'Review the assessment report and evidence.',
+    hasChallengePacket: true,
+    hasWorkEvidence: true,
+    hasMessageEvidence: true,
+    hasDevContainerEvidence: true,
+    hasToolUsageEvidence: true,
+    hasCommitSubmission: true,
+    hasFinalSubmission: true,
+    hasAiInteraction: false,
+    hasTranscriptEvidence: true,
+    hasTestEvidence: true,
+    evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+    sourceRefCounts: [
+      { kind: 'review_challenge_packet', count: 1 },
+      { kind: 'git_commit', count: 1 },
+      { kind: 'code_diff', count: 1 },
+      { kind: 'test_run', count: 1 },
+    ],
+    challenge: {
+      sourceRefType: 'review_challenge_packet',
+      sourceRefId: 'challenge-packet-refresh',
+      evidenceRole: 'assigned_challenge',
+      exactText: 'Task: fix the popover cleanup regression.',
+      locator: {
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        baseCommitSha: '1111111111111111111111111111111111111111',
+      },
+    },
+    latestEvent: {
+      id: 'assessment-event-refresh-commit',
+      kind: 'commit_submission',
+      sequence: 2,
+      occurredAt: '2026-06-23T00:18:00.000Z',
+    },
+    commit: {
+      eventId: 'assessment-event-refresh-commit',
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      forkRepositoryUrl: 'https://github.com/candidate/widgets',
+      branchName: 'pipe-assessment/popover-cleanup',
+      baseCommitSha: '1111111111111111111111111111111111111111',
+      commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
+      commitUrl: 'https://github.com/candidate/widgets/commit/abcdef1234567890abcdef1234567890abcdef12',
+      changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+      occurredAt: '2026-06-23T00:18:00.000Z',
+    },
+    evaluation: {
+      id: 'assessment-report-refresh',
+      status: 'EVALUATED',
+      summary: 'Candidate made a focused source-backed change.',
+      recommendation: 'mixed_evidence_human_review',
+      createdAt: '2026-06-23T00:22:00.000Z',
+      evidenceCoverage: {
+        schemaVersion: 'assessment-evidence-coverage-v1',
+        sourceRefCount: 4,
+        sourceRefTypeCounts: {
+          review_challenge_packet: 1,
+          git_commit: 1,
+          code_diff: 1,
+          test_run: 1,
+        },
+        requiredForEvaluation: [
+          {
+            label: 'challenge_packet',
+            required: true,
+            sourceRefTypes: ['review_challenge_packet'],
+            satisfied: true,
+            sourceRefKeys: ['review_challenge_packet:challenge-packet-refresh:assigned_challenge:'],
+            missingImpact: '',
+          },
+          {
+            label: 'git_commit',
+            required: true,
+            sourceRefTypes: ['git_commit'],
+            satisfied: true,
+            sourceRefKeys: ['git_commit:abcdef1234567890abcdef1234567890abcdef12:support:'],
+            missingImpact: '',
+          },
+          {
+            label: 'code_diff',
+            required: true,
+            sourceRefTypes: ['code_diff'],
+            satisfied: true,
+            sourceRefKeys: ['code_diff:abcdef1234567890abcdef1234567890abcdef12:diff:support:'],
+            missingImpact: '',
+          },
+        ],
+        expectedForHighConfidence: [{
+          label: 'test_run',
+          required: false,
+          sourceRefTypes: ['test_run'],
+          satisfied: true,
+          sourceRefKeys: ['test_run:workspace-smoke:support:'],
+          missingImpact: '',
+        }],
+      },
+    },
+    ...overrides,
+  };
+}
+
 describe('InterviewDetailPage', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -2953,6 +3072,58 @@ describe('InterviewDetailPage', () => {
 
     expect(writeText).toHaveBeenCalledWith(deliveredUrl);
     expect(linkPanel).toHaveTextContent('Workspace link copied.');
+  });
+
+  it('refreshes assigned workspace assessments when the first detail read is missing progress', async () => {
+    const setup = {
+      status: 'reviewable_task_assigned' as const,
+      kind: 'github_pr' as const,
+      source: 'matched_repo_id' as const,
+      blocksPositiveAssessment: false,
+      message: 'PIPE matched a reviewable source-backed PR task.',
+      nextAction: 'OPEN_ROOM_OR_WORKSPACE' as const,
+      nextActionLabel: 'Open the controlled workspace room.',
+      lastDeliveredUrl: 'https://room-dev.hire-pipe.com/room/workspace-token',
+      lastDeliveredUrlState: 'active' as const,
+      lastDeliveredUrlMessage: null,
+    };
+    const progress = makeWorkspaceAssessmentProgress();
+    mocks.api.get
+      .mockResolvedValueOnce({
+        interview: makeInterview({
+          interviewType: 'OPEN_SOURCE_BUG_FIX',
+          status: 'ACTIVE',
+          assessmentSetup: setup,
+          assessmentProgress: null,
+        }),
+      })
+      .mockResolvedValueOnce({
+        interview: makeInterview({
+          interviewType: 'OPEN_SOURCE_BUG_FIX',
+          status: 'COMPLETED',
+          assessmentSetup: setup,
+          assessmentProgress: progress,
+        }),
+      });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    const initialValidity = screen.getByTestId('interview-workspace-assessment-validity-proof');
+    expect(initialValidity).toHaveTextContent('No source-backed assessment session exists yet.');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    await flushAsyncUpdates();
+
+    expect(mocks.api.get).toHaveBeenCalledTimes(2);
+    const refreshedValidity = screen.getByTestId('interview-workspace-assessment-validity-proof');
+    expect(refreshedValidity).toHaveTextContent('Score validity');
+    expect(refreshedValidity).toHaveTextContent('Required proof is source-backed');
+    expect(refreshedValidity).toHaveTextContent('git commit');
+    expect(refreshedValidity).toHaveTextContent('code diff');
+    expect(refreshedValidity).not.toHaveTextContent('No source-backed assessment session exists yet.');
   });
 
   it('keeps the assessment link selected when browser clipboard APIs are blocked', async () => {
