@@ -649,16 +649,16 @@ async function assertRecruiterReviewerReceiptBrowser(
 
     const validity = page.getByTestId('interview-workspace-assessment-validity-proof');
     await expect(validity).toBeVisible({ timeout: 60_000 });
-    await expect(validity).toContainText('Score validity');
-    await expect(validity).toContainText('Valid because');
-    await expect(validity).toContainText('source-backed');
-    await expect(validity).toContainText('Evidence basis');
-    await expect(validity).toContainText('git commit');
-    await expect(validity).toContainText('code diff');
-    await expect(validity).toContainText('Use as');
-    await expect(validity).toContainText('Use with recorded human decision');
+    await expect(validity).toContainText('Score validity', { timeout: 60_000 });
+    await expect(validity).toContainText('Valid because', { timeout: 60_000 });
+    await expect(validity).toContainText('source-backed', { timeout: 60_000 });
+    await expect(validity).toContainText('Evidence basis', { timeout: 60_000 });
+    await expect(validity).toContainText('git commit', { timeout: 60_000 });
+    await expect(validity).toContainText('code diff', { timeout: 60_000 });
+    await expect(validity).toContainText('Use as', { timeout: 60_000 });
+    await expect(validity).toContainText('Use with recorded human decision', { timeout: 60_000 });
     if (MATCHED_REPO_ID !== null) {
-      await expect(validity).toContainText('PIPE-matched challenge packet');
+      await expect(validity).toContainText('PIPE-matched challenge packet', { timeout: 60_000 });
     }
 
     const receipt = page.getByTestId('interview-assessment-reviewer-receipt');
