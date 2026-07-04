@@ -1030,6 +1030,12 @@ describe('InterviewDetailPage', () => {
       stage: 'READY_FOR_EVALUATION',
       nextAction: 'START_EVALUATION',
       nextActionLabel: 'Start source-backed AI or human evaluation.',
+      assignmentTrust: {
+        state: 'matched_challenge',
+        label: 'PIPE-matched challenge',
+        detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+        tone: 'matched',
+      },
       hasChallengePacket: true,
       hasWorkEvidence: true,
       hasCommitSubmission: true,
@@ -1039,6 +1045,7 @@ describe('InterviewDetailPage', () => {
       hasTestEvidence: true,
       evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
       sourceRefCounts: [
+        { kind: 'review_challenge_packet', count: 1 },
         { kind: 'git_commit', count: 1 },
         { kind: 'code_diff', count: 1 },
         { kind: 'test_run', count: 1 },
@@ -1226,7 +1233,8 @@ describe('InterviewDetailPage', () => {
     expect(decision).not.toHaveTextContent('Hire now');
     expect(decision).toHaveTextContent('Candidate made a focused source-backed change and cited the submitted diff evidence.');
     expect(decision).toHaveTextContent('Challenge fit');
-    expect(decision).toHaveTextContent('Source-backed task');
+    expect(decision).toHaveTextContent('Matched task');
+    expect(decision).toHaveTextContent('PIPE selected this task from source-backed candidate evidence, role context, and repository demand.');
     expect(decision).toHaveTextContent('Required proof');
     expect(decision).toHaveTextContent('Required proof captured');
     expect(decision).toHaveTextContent('Challenge, commit, and diff are source-backed');
@@ -1238,11 +1246,11 @@ describe('InterviewDetailPage', () => {
     const validity = screen.getByTestId('interview-workspace-assessment-validity-proof');
     expect(validity).toHaveTextContent('Score validity');
     expect(validity).toHaveTextContent('Valid because');
-    expect(validity).toHaveTextContent('Complete challenge packet, Assessment branch commit, and Code diff are source-backed');
+    expect(validity).toHaveTextContent('PIPE-matched challenge packet, Assessment branch commit, and Code diff are source-backed');
     expect(validity).toHaveTextContent('Still calibrate because');
     expect(validity).toHaveTextContent('Test or verification run, Code editor activity, and AI-use trail are not captured');
     expect(validity).toHaveTextContent('Evidence basis');
-    expect(validity).toHaveTextContent('1 git commit, 1 code diff, and 1 test run');
+    expect(validity).toHaveTextContent('1 PIPE-matched challenge packet, 1 git commit, 1 code diff, and 1 test run');
     expect(validity).toHaveTextContent('Use as');
     expect(validity).toHaveTextContent('Use as source-backed signal, not an automatic decision');
     const claims = screen.getByTestId('interview-assessment-evaluation-claims');

@@ -991,6 +991,15 @@ function workspaceAssessmentFitItem(input: {
     };
   }
 
+  if (input.progress?.assignmentTrust?.state === 'matched_challenge') {
+    return {
+      label: 'Challenge fit',
+      value: 'Matched task',
+      detail: input.progress.assignmentTrust.detail,
+      tone: 'positive',
+    };
+  }
+
   if (input.setup?.source === 'matched_repo_id' || input.setup?.kind === 'auto_match') {
     return {
       label: 'Challenge fit',
@@ -1145,10 +1154,16 @@ function workspaceAssessmentNextActionItem(progress: AssessmentProgressSnapshot 
   };
 }
 
-function workspaceAssessmentProofDecisionLabel(label: string): string {
+function workspaceAssessmentProofDecisionLabelForProgress(
+  label: string,
+  progress: AssessmentProgressSnapshot | null,
+): string {
+  const isMatchedChallenge = progress?.assignmentTrust?.state === 'matched_challenge';
   switch (label) {
     case 'challenge_packet':
-      return 'Complete challenge packet';
+      return isMatchedChallenge ? 'PIPE-matched challenge packet' : 'Complete challenge packet';
+    case 'Complete challenge packet':
+      return isMatchedChallenge ? 'PIPE-matched challenge packet' : label;
     case 'work_evidence':
       return 'Candidate work evidence';
     case 'assessment_commit':
@@ -1173,9 +1188,15 @@ function workspaceAssessmentProofDecisionLabel(label: string): string {
   }
 }
 
-function workspaceAssessmentSourceRefBasisLabel(kind: string): string {
+function workspaceAssessmentSourceRefBasisLabel(
+  kind: string,
+  progress: AssessmentProgressSnapshot | null,
+): string {
   switch (kind) {
     case 'review_challenge_packet':
+      return progress?.assignmentTrust?.state === 'matched_challenge'
+        ? 'PIPE-matched challenge packet'
+        : 'challenge packet';
     case 'open_source_challenge_packet':
     case 'repo_task_challenge_packet':
     case 'challenge_packet':
@@ -1233,7 +1254,7 @@ function workspaceAssessmentSourceRefBasis(progress: AssessmentProgressSnapshot 
     .slice(0, 5)
     .map((item) => sourceRefCountLabel(
       item.count,
-      workspaceAssessmentSourceRefBasisLabel(item.kind),
+      workspaceAssessmentSourceRefBasisLabel(item.kind, progress),
     ))
     .filter((item): item is string => Boolean(item));
   return parts.length > 0 ? readableList(parts) : 'No source refs captured yet.';
@@ -1244,16 +1265,16 @@ function workspaceAssessmentValidityProof(progress: AssessmentProgressSnapshot |
   const confidenceSignals = assessmentConfidenceSignalItems(progress);
   const satisfiedRequired = requiredProof
     .filter((item) => item.satisfied)
-    .map((item) => workspaceAssessmentProofDecisionLabel(item.label));
+    .map((item) => workspaceAssessmentProofDecisionLabelForProgress(item.label, progress));
   const missingRequired = requiredProof
     .filter((item) => !item.satisfied)
-    .map((item) => workspaceAssessmentProofDecisionLabel(item.label));
+    .map((item) => workspaceAssessmentProofDecisionLabelForProgress(item.label, progress));
   const satisfiedConfidence = confidenceSignals
     .filter((item) => item.satisfied)
-    .map((item) => workspaceAssessmentProofDecisionLabel(item.label));
+    .map((item) => workspaceAssessmentProofDecisionLabelForProgress(item.label, progress));
   const missingConfidence = confidenceSignals
     .filter((item) => !item.satisfied)
-    .map((item) => workspaceAssessmentProofDecisionLabel(item.label));
+    .map((item) => workspaceAssessmentProofDecisionLabelForProgress(item.label, progress));
 
   const validityItem: WorkspaceAssessmentReadoutItem = !progress
     ? {
