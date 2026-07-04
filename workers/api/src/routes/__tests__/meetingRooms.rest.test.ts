@@ -3856,6 +3856,8 @@ describe('meeting room recording living-context route', () => {
       'Repo: https://github.com/pipe/source-backed-worker',
       `Base commit: ${baseCommitSha}`,
       'Pull request: #5110',
+      'Pull request URL: https://github.com/pipe/source-backed-worker/pull/5110',
+      `Head commit: ${headCommitSha}`,
       'Task: Fix the matched retry scheduler packet.',
       `Verification command: ${verificationCommand}`,
       'Success criteria:',
@@ -3973,6 +3975,7 @@ describe('meeting room recording living-context route', () => {
           source: string;
           packet: {
             sourceRefType: string;
+            exactText: string;
             locator: Record<string, unknown>;
             contentHash: string;
           } | null;
@@ -3980,7 +3983,7 @@ describe('meeting room recording living-context route', () => {
       };
     };
     expect(workspaceBody.workspace.repoUrl).toBe('https://github.com/pipe/source-backed-worker');
-    expect(workspaceBody.workspace.githubPrNumber).toBe(5110);
+    expect(workspaceBody.workspace.githubPrNumber).toBeNull();
     expect(workspaceBody.workspace.matchedRepoId).toBe(973);
     expect(workspaceBody.workspace.challenge).toMatchObject({
       status: 'repo_task_assigned',
@@ -3989,15 +3992,52 @@ describe('meeting room recording living-context route', () => {
       packet: {
         sourceRefType: 'review_challenge_packet',
         locator: {
-          matchedRepoId: 973,
-          githubPrNumber: 5110,
           baseCommitSha,
-          headCommitSha,
           verificationCommand,
         },
         contentHash: 'sha256:matched-packet-pr-content-hash',
       },
     });
+    expect(workspaceBody.workspace.challenge.packet?.locator).not.toHaveProperty('githubPrNumber');
+    expect(workspaceBody.workspace.challenge.packet?.locator).not.toHaveProperty('pullRequestUrl');
+    expect(workspaceBody.workspace.challenge.packet?.locator).not.toHaveProperty('headCommitSha');
+    expect(workspaceBody.workspace.challenge.packet?.locator).not.toHaveProperty('scheduledInterviewId');
+    expect(workspaceBody.workspace.challenge.packet?.locator).not.toHaveProperty('repoSnapshotId');
+    expect(workspaceBody.workspace.challenge.packet?.exactText).toContain('Fix the matched retry scheduler packet.');
+    expect(workspaceBody.workspace.challenge.packet?.exactText).toContain(verificationCommand);
+    expect(workspaceBody.workspace.challenge.packet?.exactText).not.toContain('Pull request');
+    expect(workspaceBody.workspace.challenge.packet?.exactText).not.toContain('5110');
+    expect(workspaceBody.workspace.challenge.packet?.exactText).not.toContain(headCommitSha);
+
+    const progressRes = await app.request(`/meeting/${created.hostToken}/assessment/progress`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(progressRes.status).toBe(200);
+    const progressBody = await progressRes.json() as {
+      progress: {
+        assignmentTrust: { state: string };
+        challenge: {
+          repositoryUrl: string | null;
+          githubPrNumber: number | null;
+          pullRequestUrl: string | null;
+          baseCommitSha: string | null;
+          task: string | null;
+          verificationCommand: string | null;
+        } | null;
+        evidenceSnippets: Array<{ exactText: string }>;
+      };
+    };
+    expect(progressBody.progress.assignmentTrust.state).toBe('matched_challenge');
+    expect(progressBody.progress.challenge).toMatchObject({
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      githubPrNumber: null,
+      pullRequestUrl: null,
+      baseCommitSha,
+      task: 'Fix the matched retry scheduler packet.',
+      verificationCommand,
+    });
+    expect(JSON.stringify(progressBody.progress.evidenceSnippets)).not.toContain('/pull/5110');
+    expect(JSON.stringify(progressBody.progress.evidenceSnippets)).not.toContain(headCommitSha);
 
     const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
       method: 'POST',
@@ -4034,10 +4074,20 @@ describe('meeting room recording living-context route', () => {
       verificationCommand,
       challengePacketContentHash: 'sha256:matched-packet-pr-content-hash',
       matchedRepoId: 973,
-      githubPrNumber: 5110,
+      githubPrNumber: null,
       challengeStatus: 'repo_task_assigned',
       challengeSource: 'scheduled_interview.challenge_packet',
     }));
+
+    const receiptRes = await app.request(`/meeting/${created.hostToken}/assessment/receipt`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(receiptRes.status).toBe(200);
+    const receiptMarkdown = await receiptRes.text();
+    expect(receiptMarkdown).toContain('Pull request: Hidden until recruiter review');
+    expect(receiptMarkdown).not.toContain('/pull/5110');
+    expect(receiptMarkdown).not.toContain('#5110');
+    expect(receiptMarkdown).not.toContain(headCommitSha);
   });
 
   it('returns refreshed assessment progress after source-backed room events', async () => {

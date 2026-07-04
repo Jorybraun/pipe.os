@@ -11,7 +11,7 @@ import {
   Video,
 } from 'lucide-react';
 import type { RoomAssessmentProgressSnapshot, RoomWorkspace } from '../types';
-import { summarizeChallengePacket } from '../lib/challengePacketSummary';
+import { hidesCandidateSolutionPullRequest, summarizeChallengePacket } from '../lib/challengePacketSummary';
 import { summarizeAssessmentAiUse } from '../lib/aiUseSummary';
 import { assessmentSubmissionActionLabel } from '../lib/assessmentSubmissionState';
 
@@ -167,9 +167,14 @@ export function AssessmentStatusStrip({
     workspaceEnabled: Boolean(workspace?.enabled),
   });
   const ModeIcon = modeIcon(mode);
-  const summary = summarizeChallengePacket(workspace?.challenge.packet ?? null);
+  const challengePacket = workspace?.challenge.packet ?? null;
+  const summary = summarizeChallengePacket(challengePacket);
   const repositoryUrl = summary.repositoryUrl ?? workspace?.repoUrl ?? null;
-  const githubPrNumber = summary.githubPrNumber ?? workspace?.githubPrNumber ?? null;
+  const hideSolutionPullRequest = hidesCandidateSolutionPullRequest({
+    sourceRefType: challengePacket?.sourceRefType,
+    assignmentTrustState: assessmentProgress?.assignmentTrust?.state,
+  });
+  const githubPrNumber = hideSolutionPullRequest ? null : summary.githubPrNumber ?? workspace?.githubPrNumber ?? null;
   const baseCommit = summary.baseCommitSha;
   const statusInfo = workspaceStatusInfo(workspace, workspaceError);
   const workspaceReady = statusInfo.state === 'ready';
@@ -220,6 +225,11 @@ export function AssessmentStatusStrip({
         {repositoryUrl && (
           <span className="assessment-status-repo" title={repositoryUrl} data-testid="assessment-repo">
             {compactRepoLabel(repositoryUrl)}
+          </span>
+        )}
+        {hideSolutionPullRequest && (
+          <span className="assessment-status-pill is-progress" data-testid="assessment-source-context">
+            Source-backed replay
           </span>
         )}
         {githubPrNumber && (

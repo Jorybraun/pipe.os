@@ -152,6 +152,44 @@ describe('AssessmentStatusStrip', () => {
     expect(onOpenSubmission).toHaveBeenCalledTimes(1);
   });
 
+  it('labels source-backed replay challenges without exposing the solution PR badge', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="INTERVIEW"
+        workspace={workspace({
+          githubPrNumber: 144,
+          challenge: {
+            status: 'repo_task_assigned',
+            kind: 'repo_only',
+            source: 'scheduled_interview.challenge_packet',
+            message: null,
+            packet: {
+              ...challengePacket,
+              sourceRefType: 'review_challenge_packet',
+              locator: {
+                ...challengePacket.locator,
+                pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/144',
+                headCommitSha: 'e'.repeat(40),
+              },
+            },
+          },
+        })}
+        assessmentProgress={{
+          ...progress,
+          assignmentTrust: {
+            state: 'matched_challenge',
+            label: 'PIPE-matched challenge',
+            detail: 'Selected from source-backed repo and candidate evidence.',
+            tone: 'matched',
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('assessment-source-context').textContent).toContain('Source-backed replay');
+    expect(screen.queryByTestId('assessment-pr')).toBeNull();
+  });
+
   it('surfaces durable assessment progress after commit submission', () => {
     const onOpenSubmission = vi.fn();
     render(

@@ -1,6 +1,10 @@
 import { ClipboardCheck } from 'lucide-react';
 import type { RoomWorkspaceChallengePacket } from '../types';
-import { summarizeChallengePacket } from '../lib/challengePacketSummary';
+import {
+  candidateSafeChallengeExactText,
+  hidesCandidateSolutionPullRequest,
+  summarizeChallengePacket,
+} from '../lib/challengePacketSummary';
 
 interface ChallengePacketPanelProps {
   packet: RoomWorkspaceChallengePacket;
@@ -12,6 +16,15 @@ export function ChallengePacketPanel({
   compact = false,
 }: ChallengePacketPanelProps): JSX.Element {
   const summary = summarizeChallengePacket(packet);
+  const hideSolutionPullRequest = hidesCandidateSolutionPullRequest({
+    sourceRefType: packet.sourceRefType,
+  });
+  const visibleGithubPrNumber = hideSolutionPullRequest ? null : summary.githubPrNumber;
+  const visiblePullRequestUrl = hideSolutionPullRequest ? null : summary.pullRequestUrl;
+  const candidateSafeExactText = candidateSafeChallengeExactText({
+    sourceRefType: packet.sourceRefType,
+    exactText: packet.exactText,
+  });
   const hasContract = Boolean(
     summary.task
     || summary.verificationCommand
@@ -35,7 +48,7 @@ export function ChallengePacketPanel({
         </div>
       </div>
 
-      {(summary.repositoryUrl || summary.githubPrNumber || summary.baseCommitSha) && (
+      {(summary.repositoryUrl || hideSolutionPullRequest || visibleGithubPrNumber || summary.baseCommitSha) && (
         <dl className="challenge-packet-locator">
           {summary.repositoryUrl && (
             <>
@@ -43,16 +56,22 @@ export function ChallengePacketPanel({
               <dd>{summary.repositoryUrl}</dd>
             </>
           )}
-          {summary.githubPrNumber && (
+          {hideSolutionPullRequest && (
+            <>
+              <dt>Source</dt>
+              <dd>Source-backed replay</dd>
+            </>
+          )}
+          {visibleGithubPrNumber && (
             <>
               <dt>PR</dt>
               <dd>
-                {summary.pullRequestUrl ? (
-                  <a href={summary.pullRequestUrl} target="_blank" rel="noopener noreferrer">
-                    #{summary.githubPrNumber}
+                {visiblePullRequestUrl ? (
+                  <a href={visiblePullRequestUrl} target="_blank" rel="noopener noreferrer">
+                    #{visibleGithubPrNumber}
                   </a>
                 ) : (
-                  <>#{summary.githubPrNumber}</>
+                  <>#{visibleGithubPrNumber}</>
                 )}
               </dd>
             </>
@@ -124,7 +143,7 @@ export function ChallengePacketPanel({
       )}
 
       <pre className="challenge-packet-exact-text" data-testid="challenge-packet-exact-text">
-        {packet.exactText}
+        {candidateSafeExactText}
       </pre>
 
       <div className="challenge-packet-footer">

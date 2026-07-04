@@ -129,6 +129,33 @@ export function normalizeGitHubPullRequestUrl(value: string | null | undefined):
   }
 }
 
+export function hidesCandidateSolutionPullRequest(input: {
+  sourceRefType?: string | null;
+  assignmentTrustState?: string | null;
+}): boolean {
+  return input.sourceRefType === 'review_challenge_packet'
+    || input.assignmentTrustState === 'matched_challenge';
+}
+
+export function candidateSafeChallengeExactText(input: {
+  sourceRefType?: string | null;
+  exactText: string;
+}): string {
+  if (!hidesCandidateSolutionPullRequest({ sourceRefType: input.sourceRefType })) {
+    return input.exactText;
+  }
+
+  const withoutInlineSolutionRefs = input.exactText
+    .replace(/\s*(?:pull request url|pr url)\s*:\s*https:\/\/github\.com\/\S+/gi, '')
+    .replace(/\s*(?:pull request|pr)\s*:\s*(?:#?\d+|https:\/\/github\.com\/\S+)/gi, '')
+    .replace(/\s*(?:head commit|head commit sha|head sha)\s*:\s*[a-f0-9]{7,40}\b/gi, '');
+
+  return withoutInlineSolutionRefs
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*(?:pull request|pr|pull request url|pr url|head commit|head commit sha|head sha)\s*:/i.test(line))
+    .join('\n');
+}
+
 function buildGitHubPullRequestUrl(repositoryUrl: string | null, githubPrNumber: number | null): string | null {
   if (!repositoryUrl || !githubPrNumber) return null;
 

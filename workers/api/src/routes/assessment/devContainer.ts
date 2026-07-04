@@ -41,6 +41,11 @@ import {
   type AssessmentProgressSnapshot,
   type CommitSubmissionChangedFileStatus,
 } from '../../lib/repoTaskInterviewSession';
+import {
+  candidateSafeChallengeExactText,
+  candidateSafeChallengeLocator,
+  candidateSafeEvaluation,
+} from '../../lib/assessmentCandidateSafety';
 import { evaluateRepoTaskAssessmentSession } from '../../lib/repoTaskAssessmentEvaluator';
 import type { AssessmentEvidenceSourceRefInput } from '../../lib/assessmentLayer/persistence';
 import type { JsonObject, JsonValue } from '../../lib/livingContext/types';
@@ -207,28 +212,6 @@ async function loadAssessmentSessionForDevContainer(
   ).first<CandidateAssessmentSessionRow>();
 }
 
-function candidateSafeAssessmentLocator(locator: JsonObject): JsonObject {
-  const safe: JsonObject = {};
-  for (const key of [
-    'repositoryUrl',
-    'githubPrNumber',
-    'pullRequestUrl',
-    'baseCommitSha',
-    'headCommitSha',
-  ]) {
-    const value = locator[key];
-    if (
-      typeof value === 'string'
-      || typeof value === 'number'
-      || typeof value === 'boolean'
-      || value === null
-    ) {
-      safe[key] = value;
-    }
-  }
-  return safe;
-}
-
 function toJsonObject(value: Record<string, unknown>): JsonObject {
   return JSON.parse(JSON.stringify(value)) as JsonObject;
 }
@@ -236,6 +219,7 @@ function toJsonObject(value: Record<string, unknown>): JsonObject {
 function serializeCandidateAssessmentProgress(
   progress: AssessmentProgressSnapshot,
 ): JsonObject {
+  const challengeSourceRefType = progress.challenge?.sourceRefType ?? null;
   return toJsonObject({
     mode: progress.session.mode,
     state: progress.session.state,
@@ -258,14 +242,26 @@ function serializeCandidateAssessmentProgress(
     hasVerificationGap: progress.hasVerificationGap,
     evidenceCounts: progress.evidenceCounts,
     sourceRefCounts: progress.sourceRefCounts,
-    evidenceSnippets: progress.evidenceSnippets,
+    evidenceSnippets: progress.evidenceSnippets.map((snippet) => ({
+      ...snippet,
+      exactText: candidateSafeChallengeExactText({
+        sourceRefType: snippet.sourceRefType,
+        exactText: snippet.exactText,
+      }),
+    })),
     challenge: progress.challenge
       ? {
           sourceRefType: progress.challenge.sourceRefType,
           evidenceRole: progress.challenge.evidenceRole,
-          exactText: progress.challenge.exactText,
+          exactText: candidateSafeChallengeExactText({
+            sourceRefType: progress.challenge.sourceRefType,
+            exactText: progress.challenge.exactText,
+          }),
           contentHash: progress.challenge.contentHash,
-          locator: candidateSafeAssessmentLocator(progress.challenge.locator),
+          locator: candidateSafeChallengeLocator({
+            sourceRefType: progress.challenge.sourceRefType,
+            locator: progress.challenge.locator,
+          }),
         }
       : null,
     latestEvent: progress.latestEvent
@@ -294,15 +290,10 @@ function serializeCandidateAssessmentProgress(
         }
       : null,
     evaluation: progress.evaluation
-      ? {
-          status: progress.evaluation.status,
-          summary: progress.evaluation.summary,
-          recommendation: progress.evaluation.recommendation,
-          createdAt: progress.evaluation.createdAt,
-          evidenceCoverage: progress.evaluation.evidenceCoverage,
-          claims: progress.evaluation.claims,
-          diagnostics: progress.evaluation.diagnostics,
-        }
+      ? candidateSafeEvaluation({
+          challengeSourceRefType,
+          evaluation: progress.evaluation,
+        })
       : null,
   });
 }

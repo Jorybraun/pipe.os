@@ -5,7 +5,7 @@ import {
   buildCommitSubmissionDefaults,
   type CommitSubmissionFormFields,
 } from '../lib/commitSubmission';
-import { summarizeChallengePacket } from '../lib/challengePacketSummary';
+import { hidesCandidateSolutionPullRequest, summarizeChallengePacket } from '../lib/challengePacketSummary';
 import {
   assessmentSubmissionLocked,
   assessmentSubmissionLockedReason,
@@ -118,6 +118,9 @@ function finalEvidenceReceiptMarkdown(progress: RoomAssessmentProgressSnapshot):
   const evaluation = progress.evaluation;
   const commit = progress.commit;
   const challenge = progress.challenge;
+  const hideAssignedChallengePullRequest = hidesCandidateSolutionPullRequest({
+    assignmentTrustState: progress.assignmentTrust?.state,
+  });
   const aiUse = summarizeAssessmentAiUse(progress);
   const snippets = (progress.evidenceSnippets ?? []).slice(0, 6).map((snippet) =>
     markdownBullet(`${formatSourceKind(snippet.sourceRefType)} · ${formatProgressLabel(snippet.evidenceRole)}: ${snippet.exactText}`)
@@ -155,7 +158,7 @@ function finalEvidenceReceiptMarkdown(progress: RoomAssessmentProgressSnapshot):
     `Title: ${challenge?.title ?? 'Not recorded'}`,
     `Repository: ${challenge?.repositoryUrl ?? 'Not recorded'}`,
     `Base commit: ${challenge?.baseCommitSha ?? 'Not recorded'}`,
-    `Pull request: ${challenge?.pullRequestUrl ?? (challenge?.githubPrNumber ? `#${challenge.githubPrNumber}` : 'Not recorded')}`,
+    `Pull request: ${hideAssignedChallengePullRequest ? 'Hidden until recruiter review' : challenge?.pullRequestUrl ?? (challenge?.githubPrNumber ? `#${challenge.githubPrNumber}` : 'Not recorded')}`,
     `Task: ${challenge?.task ?? 'Not recorded'}`,
     `Verification command: ${challenge?.verificationCommand ?? 'Not recorded'}`,
     'Success criteria:',
@@ -530,7 +533,13 @@ function ChallengeCompletionPanel({
   const summary = summarizeChallengePacket(packet);
   const missingFields = challengePacketMissingFields(packet, progress?.challengePacketContract);
   const hasCompletePacket = missingFields.length === 0;
-  const hasLocator = Boolean(summary.repositoryUrl || summary.githubPrNumber || summary.baseCommitSha);
+  const hideSolutionPullRequest = hidesCandidateSolutionPullRequest({
+    sourceRefType: packet?.sourceRefType,
+    assignmentTrustState: progress?.assignmentTrust?.state,
+  });
+  const visibleGithubPrNumber = hideSolutionPullRequest ? null : summary.githubPrNumber;
+  const visiblePullRequestUrl = hideSolutionPullRequest ? null : summary.pullRequestUrl;
+  const hasLocator = Boolean(summary.repositoryUrl || hideSolutionPullRequest || visibleGithubPrNumber || summary.baseCommitSha);
   const hasContract = Boolean(
     summary.task
     || summary.matchProof.length > 0
@@ -562,16 +571,22 @@ function ChallengeCompletionPanel({
               <dd>{summary.repositoryUrl}</dd>
             </>
           )}
-          {summary.githubPrNumber && (
+          {hideSolutionPullRequest && (
+            <>
+              <dt>Source</dt>
+              <dd>Source-backed replay</dd>
+            </>
+          )}
+          {visibleGithubPrNumber && (
             <>
               <dt>PR</dt>
               <dd>
-                {summary.pullRequestUrl ? (
-                  <a href={summary.pullRequestUrl} target="_blank" rel="noopener noreferrer">
-                    #{summary.githubPrNumber}
+                {visiblePullRequestUrl ? (
+                  <a href={visiblePullRequestUrl} target="_blank" rel="noopener noreferrer">
+                    #{visibleGithubPrNumber}
                   </a>
                 ) : (
-                  <>#{summary.githubPrNumber}</>
+                  <>#{visibleGithubPrNumber}</>
                 )}
               </dd>
             </>

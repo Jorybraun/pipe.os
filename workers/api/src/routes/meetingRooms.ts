@@ -31,6 +31,13 @@ import {
   type CommitSubmissionChangedFileStatus,
 } from '../lib/repoTaskInterviewSession';
 import {
+  candidateSafeChallengeExactText,
+  candidateSafeChallengeLocator,
+  candidateSafeChallengeSummary,
+  candidateSafeEvaluation,
+  shouldHideCandidateChallengeSolution,
+} from '../lib/assessmentCandidateSafety';
+import {
   getLatestSessionForRoom,
   getSessionByIdForRoom,
   insertRoomSession,
@@ -1360,8 +1367,14 @@ function serializeRoomWorkspaceChallengePacket(
   return {
     sourceRefType: progress.challenge.sourceRefType,
     evidenceRole: progress.challenge.evidenceRole,
-    exactText: progress.challenge.exactText,
-    locator: progress.challenge.locator,
+    exactText: candidateSafeChallengeExactText({
+      sourceRefType: progress.challenge.sourceRefType,
+      exactText: progress.challenge.exactText,
+    }),
+    locator: candidateSafeChallengeLocator({
+      sourceRefType: progress.challenge.sourceRefType,
+      locator: progress.challenge.locator,
+    }),
     contentHash: progress.challenge.contentHash,
   };
 }
@@ -1406,11 +1419,14 @@ async function buildRoomWorkspacePayload(
   const challengePacket = enabled ? await loadRoomWorkspaceChallengePacket(db, room) : null;
   const repoUrl = interview?.github_repo_url ?? session?.repo_git_url ?? null;
   const challenge = buildRoomWorkspaceChallenge(interview, enabled, challengePacket);
+  const hideChallengeSolution = shouldHideCandidateChallengeSolution({
+    sourceRefType: challengePacket?.sourceRefType,
+  });
   return {
     enabled,
     canLaunch: enabled && room.role === 'HOST' && !roomWorkspaceLaunchBlocker({ enabled, challenge }),
     repoUrl,
-    githubPrNumber: interview?.github_pr_number ?? null,
+    githubPrNumber: hideChallengeSolution ? null : interview?.github_pr_number ?? null,
     matchedRepoId: interview?.matched_repo_id ?? null,
     challenge,
     session: serializeWorkspaceSession(token, session),
@@ -1998,6 +2014,7 @@ async function assessmentSessionsTableExists(db: D1Database): Promise<boolean> {
 function serializeRoomAssessmentProgress(
   progress: AssessmentProgressSnapshot,
 ): RoomAssessmentProgressPayload {
+  const challengeSourceRefType = progress.challenge?.sourceRefType ?? null;
   return {
     mode: progress.session.mode,
     state: progress.session.state,
@@ -2005,7 +2022,12 @@ function serializeRoomAssessmentProgress(
     nextAction: progress.nextAction,
     nextActionLabel: progress.nextActionLabel,
     assignmentTrust: progress.assignmentTrust,
-    challenge: progress.challenge ? assessmentProgressChallengeSummary(progress.challenge) : null,
+    challenge: progress.challenge
+      ? candidateSafeChallengeSummary({
+          sourceRefType: progress.challenge.sourceRefType,
+          summary: assessmentProgressChallengeSummary(progress.challenge),
+        })
+      : null,
     readiness: progress.readiness,
     challengePacketContract: progress.challengePacketContract,
     hasChallengePacket: progress.hasChallengePacket,
@@ -2021,7 +2043,13 @@ function serializeRoomAssessmentProgress(
     hasVerificationGap: progress.hasVerificationGap,
     evidenceCounts: progress.evidenceCounts,
     sourceRefCounts: progress.sourceRefCounts,
-    evidenceSnippets: progress.evidenceSnippets,
+    evidenceSnippets: progress.evidenceSnippets.map((snippet) => ({
+      ...snippet,
+      exactText: candidateSafeChallengeExactText({
+        sourceRefType: snippet.sourceRefType,
+        exactText: snippet.exactText,
+      }),
+    })),
     latestEvent: progress.latestEvent
       ? {
           kind: progress.latestEvent.kind,
@@ -2048,16 +2076,10 @@ function serializeRoomAssessmentProgress(
         }
       : null,
     evaluation: progress.evaluation
-      ? {
-          status: progress.evaluation.status,
-          summary: progress.evaluation.summary,
-          recommendation: progress.evaluation.recommendation,
-          createdAt: progress.evaluation.createdAt,
-          evidenceCoverage: progress.evaluation.evidenceCoverage,
-          claims: progress.evaluation.claims,
-          diagnostics: progress.evaluation.diagnostics,
-          reviewPacket: progress.evaluation.reviewPacket,
-        }
+      ? candidateSafeEvaluation({
+          challengeSourceRefType,
+          evaluation: progress.evaluation,
+        })
       : null,
   };
 }
@@ -2139,6 +2161,9 @@ function assessmentReceiptMarkdown(progress: RoomAssessmentProgressPayload): str
     ...(challenge?.assessmentFit ?? []),
     ...(challenge?.matchProof ?? []),
   ];
+  const assignedPullRequestLabel = progress.assignmentTrust.state === 'matched_challenge'
+    ? 'Hidden until recruiter review'
+    : challenge?.pullRequestUrl ?? (challenge?.githubPrNumber ? `#${challenge.githubPrNumber}` : 'Not recorded');
   const aiState = progress.hasAiInteraction ? 'AI interaction captured' : 'No AI use captured';
   const aiDetail = progress.hasAiInteraction
     ? 'Candidate AI prompts, agent responses, blocked states, or bridge diagnostics are represented only when captured as source-backed evidence.'
@@ -2159,7 +2184,7 @@ function assessmentReceiptMarkdown(progress: RoomAssessmentProgressPayload): str
     `Title: ${challenge?.title ?? 'Not recorded'}`,
     `Repository: ${challenge?.repositoryUrl ?? 'Not recorded'}`,
     `Base commit: ${challenge?.baseCommitSha ?? 'Not recorded'}`,
-    `Pull request: ${challenge?.pullRequestUrl ?? (challenge?.githubPrNumber ? `#${challenge.githubPrNumber}` : 'Not recorded')}`,
+    `Pull request: ${assignedPullRequestLabel}`,
     `Task: ${challenge?.task ?? 'Not recorded'}`,
     `Verification command: ${challenge?.verificationCommand ?? 'Not recorded'}`,
     'Success criteria:',

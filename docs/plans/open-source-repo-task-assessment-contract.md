@@ -54,6 +54,11 @@ The controlling product rule remains:
   `PROVENANCE_INCOMPLETE`, or `NO_ROLE_SAFE_CHALLENGE`.
 - Candidate-facing packets never expose hidden ground truth. Server-only rubric
   and expected-solution refs stay in `serverOnlyEvaluationContext`.
+- Candidate-facing packets created from historical source-backed review packets
+  hide the solution pull request number, pull request URL, and head commit SHA.
+  They may still expose the public repo URL, immutable base commit, task,
+  verification command, success criteria, expected evidence, and candidate-safe
+  match proof. Recruiter audit surfaces keep the upstream source proof.
 
 ## Flow
 

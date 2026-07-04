@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parseChallengePacketContract, summarizeChallengePacket } from './challengePacketSummary';
+import {
+  candidateSafeChallengeExactText,
+  parseChallengePacketContract,
+  summarizeChallengePacket,
+} from './challengePacketSummary';
 
 describe('parseChallengePacketContract', () => {
   it('keeps matched challenge proof separate from success criteria and evidence', () => {
@@ -70,5 +74,25 @@ describe('parseChallengePacketContract', () => {
     });
 
     expect(summary.pullRequestUrl).toBe('https://github.com/pipe/source-backed-worker/pull/144');
+  });
+
+  it('removes solution PR and head commit lines from candidate replay text', () => {
+    const safeText = candidateSafeChallengeExactText({
+      sourceRefType: 'review_challenge_packet',
+      exactText: [
+        'Repo: https://github.com/pipe/source-backed-worker',
+        'Base commit: dddddddddddddddddddddddddddddddddddddddd',
+        'Pull request: #144',
+        'Pull request URL: https://github.com/pipe/source-backed-worker/pull/144',
+        'Head commit: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+        'Task: Fix deterministic retry handling.',
+      ].join('\n'),
+    });
+
+    expect(safeText).toContain('Repo: https://github.com/pipe/source-backed-worker');
+    expect(safeText).toContain('Task: Fix deterministic retry handling.');
+    expect(safeText).not.toContain('#144');
+    expect(safeText).not.toContain('/pull/144');
+    expect(safeText).not.toContain('eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee');
   });
 });

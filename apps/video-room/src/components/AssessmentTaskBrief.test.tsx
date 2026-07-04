@@ -224,6 +224,46 @@ describe('AssessmentTaskBrief', () => {
     expect(onOpenSubmission).toHaveBeenCalledTimes(1);
   });
 
+  it('shows source-backed replay context without exposing the solution PR link', () => {
+    render(
+      <AssessmentTaskBrief
+        packet={{
+          ...packet,
+          sourceRefType: 'review_challenge_packet',
+          locator: {
+            ...packet.locator,
+            headCommitSha: 'e'.repeat(40),
+          },
+        }}
+        workspace={{
+          ...workspace,
+          challenge: {
+            ...workspace.challenge,
+            status: 'repo_task_assigned',
+            kind: 'repo_only',
+            source: 'scheduled_interview.challenge_packet',
+          },
+        }}
+        progress={{
+          ...progress,
+          assignmentTrust: {
+            state: 'matched_challenge',
+            label: 'PIPE-matched challenge',
+            detail: 'Selected from source-backed repo and candidate evidence.',
+            tone: 'matched',
+          },
+        }}
+        workspaceReady
+      />,
+    );
+
+    const briefText = screen.getByTestId('assessment-task-brief').textContent ?? '';
+    expect(briefText).toContain('Source-backed replay');
+    expect(briefText).toContain('Fix the source-backed worker retry path.');
+    expect(briefText).not.toContain('#144');
+    expect(screen.queryByRole('link', { name: '#144' })).toBeNull();
+  });
+
   it('shows a diagnostic instead of inventing a task when the packet is missing', () => {
     render(
       <AssessmentTaskBrief
@@ -493,7 +533,7 @@ describe('AssessmentTaskBrief', () => {
     expect(finalPacket.textContent).toContain('PIPE-matched challenge');
     expect(finalPacket.textContent).toContain('pipe/source-backed-worker');
     expect(finalPacket.textContent).toContain('Base dddddddddd');
-    expect(finalPacket.textContent).toContain('#144');
+    expect(finalPacket.textContent).not.toContain('#144');
     expect(finalPacket.textContent).toContain('Commit cccccccccc');
     expect(finalPacket.textContent).toContain('pipe-assessment/retry-path');
     expect(finalPacket.textContent).toContain('Workspace-captured commit');

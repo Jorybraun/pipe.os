@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, CircleDashed, ClipboardCheck, GitBranch, ShieldCheck, SquareTerminal, Upload } from 'lucide-react';
-import { summarizeChallengePacket } from '../lib/challengePacketSummary';
+import { hidesCandidateSolutionPullRequest, summarizeChallengePacket } from '../lib/challengePacketSummary';
 import { summarizeAssessmentAiUse } from '../lib/aiUseSummary';
 import { assessmentSubmissionActionLabel } from '../lib/assessmentSubmissionState';
 import type { RoomAssessmentProgressSnapshot, RoomWorkspace, RoomWorkspaceChallengePacket } from '../types';
@@ -219,7 +219,12 @@ export function AssessmentTaskBrief({
   const summary = summarizeChallengePacket(packet);
   const repositoryUrl = summary.repositoryUrl ?? workspace?.repoUrl ?? null;
   const baseCommitSha = summary.baseCommitSha ?? progress?.commit?.baseCommitSha ?? null;
-  const pullRequestUrl = summary.pullRequestUrl;
+  const hideSolutionPullRequest = hidesCandidateSolutionPullRequest({
+    sourceRefType: packet?.sourceRefType,
+    assignmentTrustState: progress?.assignmentTrust?.state,
+  });
+  const visibleGithubPrNumber = hideSolutionPullRequest ? null : summary.githubPrNumber;
+  const visiblePullRequestUrl = hideSolutionPullRequest ? null : summary.pullRequestUrl;
   const incompletePacketFields = progress?.challengePacketContract?.isComplete === false
     ? progress.challengePacketContract.missingFields
     : [];
@@ -279,16 +284,22 @@ export function AssessmentTaskBrief({
             <dd title={repositoryUrl}>{repoLabel(repositoryUrl)}</dd>
           </>
         )}
-        {summary.githubPrNumber && (
+        {hideSolutionPullRequest && (
+          <>
+            <dt>Source</dt>
+            <dd>Source-backed replay</dd>
+          </>
+        )}
+        {visibleGithubPrNumber && (
           <>
             <dt>PR</dt>
             <dd>
-              {pullRequestUrl ? (
-                <a href={pullRequestUrl} target="_blank" rel="noopener noreferrer">
-                  #{summary.githubPrNumber}
+              {visiblePullRequestUrl ? (
+                <a href={visiblePullRequestUrl} target="_blank" rel="noopener noreferrer">
+                  #{visibleGithubPrNumber}
                 </a>
               ) : (
-                <>#{summary.githubPrNumber}</>
+                <>#{visibleGithubPrNumber}</>
               )}
             </dd>
           </>
@@ -387,7 +398,11 @@ export function AssessmentTaskBrief({
                 finalReviewPacket.challenge.assignmentTrust.label,
                 repoLabel(finalReviewPacket.challenge.repositoryUrl),
                 finalReviewPacket.challenge.baseCommitSha ? `Base ${shortSha(finalReviewPacket.challenge.baseCommitSha)}` : null,
-                pullRequestLabel(finalReviewPacket.challenge.pullRequestUrl),
+                hidesCandidateSolutionPullRequest({
+                  assignmentTrustState: finalReviewPacket.challenge.assignmentTrust.state,
+                })
+                  ? null
+                  : pullRequestLabel(finalReviewPacket.challenge.pullRequestUrl),
               ].filter(Boolean).join(' · ')}
             </dd>
             {finalReviewPacket.submission && (

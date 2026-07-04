@@ -175,6 +175,39 @@ describe('CommitSubmissionPanel', () => {
     expect(finalizerContract.textContent).toContain('Stores source refs for the commit, diff, tests, and workspace state before evaluation.');
   });
 
+  it('hides source-backed replay solution PR details before submission', () => {
+    render(
+      <CommitSubmissionPanel
+        defaultRepositoryUrl="https://github.com/fallback/repo"
+        challengePacket={{
+          ...richPacket,
+          sourceRefType: 'review_challenge_packet',
+          locator: {
+            ...richPacket.locator,
+            pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/144',
+            headCommitSha: 'e'.repeat(40),
+          },
+        }}
+        assessmentProgress={{
+          ...loadedProgress,
+          assignmentTrust: {
+            state: 'matched_challenge',
+            label: 'PIPE-matched challenge',
+            detail: 'Selected from source-backed repo and candidate evidence.',
+            tone: 'matched',
+          },
+        }}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    const completion = screen.getByTestId('commit-submission-completion');
+    expect(completion.textContent).toContain('Source-backed replay');
+    expect(completion.textContent).toContain('Fix the source-backed worker retry path.');
+    expect(completion.textContent).not.toContain('#144');
+    expect(screen.queryByRole('link', { name: '#144' })).toBeNull();
+  });
+
   it('states that missing AI evidence is unobserved instead of proof of no AI use', () => {
     render(
       <CommitSubmissionPanel
