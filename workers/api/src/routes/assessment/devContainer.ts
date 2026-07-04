@@ -365,6 +365,14 @@ function bridgeErrorMessage(value: unknown): string | null {
   return typeof message === 'string' && message.trim() ? message.trim() : null;
 }
 
+function bridgePayloadHasVerificationEvidence(
+  payload: z.infer<typeof bridgeSubmissionPayloadSchema>,
+): boolean {
+  return payload.sourceRefs.some((sourceRef) =>
+    sourceRef.sourceRefType === 'test_run'
+    || sourceRef.sourceRefType === 'verification_gap');
+}
+
 // ─── Router ──────────────────────────────────────────────────────────────────
 
 export const devContainer = new Hono<{
@@ -759,6 +767,13 @@ devContainer.post('/:sessionId/assessment/finalize', async (c) => {
   }
 
   const payload = parsedBridge.data.submissionPayload;
+  if (!bridgePayloadHasVerificationEvidence(payload)) {
+    return devContainerErrorResponse(
+      'Workspace finalizer returned commit evidence without a test_run or verification_gap source ref.',
+      502,
+    );
+  }
+
   const commitSha = payload.commitSha.trim().toLowerCase();
   try {
     await store.submitCommit({

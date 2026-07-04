@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Candidate workspace finalization now rejects dev-container bridge payloads that omit both `test_run` and `verification_gap` source refs, preventing source-backed commits from silently losing verification evidence.
 - Candidate workspace finalization now pre-fills the assigned challenge packet's verification command, making expected test evidence easier to capture without overwriting candidate edits.
 - Candidate dev-container assessment rooms now render a structured source-backed task brief with task, success criteria, expected evidence, and verification command from the assigned challenge packet instead of showing candidates only raw packet text.
 - Recruiter start-evaluation requests now reject open-source assessment sessions that lack exact `code_diff` proof, preventing direct API calls from evaluating source-incomplete commit submissions.
