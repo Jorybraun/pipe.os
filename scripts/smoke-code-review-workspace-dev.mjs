@@ -462,11 +462,20 @@ function sourceRefCount(rows, kind) {
 }
 
 async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit, expectedBaseCommitSha) {
-  const detail = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}`);
-  const progress = detail?.interview?.assessmentProgress ?? null;
-  const commit = progress?.commit ?? null;
+  const deadline = Date.now() + 60_000;
+  let lastInterview = null;
+  let progress = null;
+  let commit = null;
+  while (Date.now() < deadline) {
+    const detail = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}`);
+    lastInterview = detail?.interview ?? null;
+    progress = lastInterview?.assessmentProgress ?? null;
+    commit = progress?.commit ?? null;
+    if (progress && commit) break;
+    await sleep(2_000);
+  }
   if (!progress || !commit) {
-    throw new Error(`Recruiter detail did not expose assessment commit progress: ${JSON.stringify(detail?.interview)}`);
+    throw new Error(`Recruiter detail did not expose assessment commit progress after polling: ${JSON.stringify(lastInterview)}`);
   }
   if (commit.commitSha !== workspaceCommit.commitSha) {
     throw new Error(`Recruiter detail exposed the wrong submitted commit: ${JSON.stringify(commit)}`);
