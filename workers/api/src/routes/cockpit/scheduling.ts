@@ -4230,11 +4230,11 @@ function scheduledAssessmentReadiness(input: {
   const confidence: NonNullable<AssessmentProgressSnapshot['readiness']>['confidence'] = [
     {
       id: 'test_run',
-      label: 'Test or verification run',
+      label: 'Test or verification evidence',
       required: false,
-      satisfied: input.hasTestEvidence,
-      sourceRefTypes: ['test_run'],
-      missingImpact: 'Test output improves confidence that the commit was exercised.',
+      satisfied: input.hasTestEvidence || input.hasVerificationGap,
+      sourceRefTypes: ['test_run', 'verification_gap'],
+      missingImpact: 'Test output improves confidence that the commit was exercised; an explicit verification gap is better than silence.',
     },
     {
       id: 'workspace_captured_commit',

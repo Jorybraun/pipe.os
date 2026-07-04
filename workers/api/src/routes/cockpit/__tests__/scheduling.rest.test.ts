@@ -2813,6 +2813,7 @@ describe('GET /interviews/:id detail', () => {
     ].join('\n');
     const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nShow list progress.`;
     const diffText = 'diff --git a/src/list.ts b/src/list.ts\n+showAssessmentProgress();';
+    const verificationGapText = 'Candidate could not run the browser regression suite because Playwright browsers were not installed in the assessment container.';
 
     sqlite!.prepare(`
       UPDATE scheduled_interviews
@@ -2908,6 +2909,19 @@ describe('GET /interviews/:id detail', () => {
         refId: `${baseCommitSha}..${commitSha}`,
         locator: { path: 'src/list.ts', baseCommitSha, commitSha },
         text: diffText,
+      },
+      {
+        id: 'assessment-source-list-verification-gap',
+        eventId: 'assessment-event-list-commit',
+        type: 'verification_gap',
+        refId: `${commitSha}:test-evidence-missing`,
+        locator: {
+          repositoryUrl: 'https://github.com/open-source/widgets',
+          baseCommitSha,
+          commitSha,
+          expectedSourceRefType: 'test_run',
+        },
+        text: verificationGapText,
       },
     ]) {
       sqlite!.prepare(`
@@ -3036,6 +3050,16 @@ describe('GET /interviews/:id detail', () => {
             nextAction: string;
             hasChallengePacket: boolean;
             hasCommitSubmission: boolean;
+            readiness: {
+              confidence: Array<{
+                id: string;
+                label: string;
+                satisfied: boolean;
+                sourceRefTypes: string[];
+                missingImpact: string;
+              }>;
+            };
+            sourceRefCounts: Array<{ kind: string; count: number }>;
             challenge: {
               exactText: string | null;
               summary: {
@@ -3085,6 +3109,24 @@ describe('GET /interviews/:id detail', () => {
           branchName: 'pipe-assessment/list-progress',
         },
       });
+      expect(interview?.assessmentProgress?.readiness.confidence).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: 'test_run',
+          label: 'Test or verification evidence',
+          satisfied: true,
+          sourceRefTypes: ['test_run', 'verification_gap'],
+          missingImpact: 'Test output improves confidence that the commit was exercised; an explicit verification gap is better than silence.',
+        }),
+      ]));
+      expect(interview?.assessmentProgress?.sourceRefCounts).toEqual(expect.arrayContaining([
+        { kind: 'code_diff', count: 1 },
+        { kind: 'git_commit', count: 1 },
+        { kind: 'review_challenge_packet', count: 1 },
+        { kind: 'verification_gap', count: 1 },
+      ]));
+      expect(interview?.assessmentProgress?.sourceRefCounts).not.toEqual(expect.arrayContaining([
+        { kind: 'test_run', count: 1 },
+      ]));
       expect(interview?.assessmentProgress?.challenge).toMatchObject({
         exactText: null,
         summary: {

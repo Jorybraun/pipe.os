@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Scheduled interview list/detail progress now treats explicit `verification_gap` source refs as satisfied verification evidence without inventing a `test_run`, keeping dashboard confidence proof aligned with the durable assessment session spine.
 - Deterministic open-source assessment fallback reports now preserve source-backed `verification_gap` notes as explicit warning diagnostics instead of flattening declared blockers into generic missing-test evidence.
 - Assessment progress now treats accepted terminal command/output and code-server editor/file observations as tool activity in both live session progress and recruiter list/detail projections, so real workspace process telemetry is not hidden behind a pending tool-activity flag.
 - Candidate assessment cockpit proof pills now keep partial verification gaps visible even when test output is also captured, so mixed verification states are not mislabeled as fully tested.

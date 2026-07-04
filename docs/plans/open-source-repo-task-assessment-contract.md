@@ -195,6 +195,9 @@ The controlling product rule remains:
   `verification_gap` notes as explicit warnings instead of collapsing declared
   blockers into generic missing-test diagnostics, while still refusing positive
   verification claims without successful `test_run` evidence.
+- Scheduled recruiter list/detail progress treats `verification_gap` as
+  satisfied verification evidence for confidence tracking without claiming a
+  `test_run`, matching the durable session progress behavior.
 - Live assessment-room progress coverage now labels accepted terminal command,
   terminal output, code-server file/editor observations, and room media/tool
   controls as `tool activity`, matching recruiter summaries and preserving the
