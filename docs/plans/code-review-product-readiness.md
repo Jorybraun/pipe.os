@@ -473,8 +473,13 @@ Status 2026-07-04: app-dev packet breadth is now auditable through
 10 review packets, including 8 production-ready packets with persisted
 `reviewProfile` metadata across three real repositories:
 `cloudflare/workers-sdk`, `mui/base-ui`, and `vercel/swr`. This closes the
-earlier single-family proof gap for dev, while still leaving the broader
-production corpus expansion as a product-readiness requirement.
+earlier single-family proof gap for dev. The role-backed deployed smoke also
+passed for interview `e97ec6d1-9b80-4f71-a395-72d1217b15fb`, auto-matching
+`mui/base-ui#973` as `role_backed_auto_match` with `MATCHED`,
+`qualityGate: PASSED`, `assessmentQuality: STRONG`, measured contrast
+separation `1/2`, candidate CODE_REVIEW browser proof, and recruiter readiness
+from `candidate_challenge_assignment`. Broader production corpus expansion
+remains a product-readiness requirement.
 
 ## Production Readiness Gate
 

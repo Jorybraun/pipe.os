@@ -292,6 +292,8 @@ The same deployed API/app pair also passed the roleless full-submit auto-match c
 
 Latest manual app-dev proof on 2026-07-02: render-only smoke passed for interview `8bdd62f1-33d0-470b-88bb-9922134f5b26`, selecting `mui/base-ui#973` with `MATCHED`, `PASSED`, and `USABLE`; post-deploy full-submit smoke passed for interview `edb3b5ef-e6e8-45f4-a654-e4297dc00d2c`, review session `51ab6d6a-da7f-4ad6-9353-3f49ef3ddb3a`, judge replay example `code_review_judge_example_b454c70ea73f5446e32a58d9e0430020`, remote D1 score persistence `54`, review status `scored`, and completed pipeline through durable scoring.
 
+Latest role-backed app-dev proof on 2026-07-04: after the packet-context remote audit reported 10 real review packets, 8 production-ready packets, and persisted review profiles across `cloudflare/workers-sdk`, `mui/base-ui`, and `vercel/swr`, `npm run smoke:code-review-assess-dev:role-backed` passed for interview `e97ec6d1-9b80-4f71-a395-72d1217b15fb`, role context `c7a4a9dfd7fceef8612d4e83adc77252`, pipeline `f05ef82a838d61fd1c504c834bc04322`, and stage `01941a4599f4ec34861d3a3399b54b1a`. The deployed flow auto-matched `mui/base-ui#973`, returned `role_backed_auto_match`, `MATCHED`, `qualityGate: PASSED`, `assessmentQuality: STRONG`, measured contrast separation `1/2` with the selected challenge ahead by 2%, rendered the candidate CODE_REVIEW browser smoke, and verified recruiter detail readiness from `candidate_challenge_assignment`.
+
 Earlier deployed app-dev proof on 2026-07-02 after manual dev deploy API
 `b3030783-70bd-4db9-a210-04e5201063d0`, app
 `9dddf1fb-cb33-4da5-a5f4-f95676296417`, and room
