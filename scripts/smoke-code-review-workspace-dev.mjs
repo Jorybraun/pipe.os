@@ -395,6 +395,83 @@ async function pollAssessmentEvaluationComplete(interviewId) {
   throw new Error(`Workspace assessment evaluation did not complete. Last progress: ${JSON.stringify(lastProgress)}`);
 }
 
+async function assertAssessmentEvidenceBundle({
+  interviewId,
+  workspaceCommit,
+  humanDecision,
+  expectedRepoUrl,
+  expectedBaseCommitSha,
+}) {
+  const response = await requestJson(
+    APP_BASE,
+    `/api/v1/scheduling/interviews/${interviewId}/assessment/evidence-bundle`,
+  );
+  const bundle = response?.bundle ?? null;
+  if (bundle?.schemaVersion !== 'repo-task-final-evidence-bundle-v1') {
+    throw new Error(`Assessment evidence bundle returned the wrong schema: ${JSON.stringify(bundle)}`);
+  }
+  if (bundle?.completeness?.hasChallengePacket !== true || bundle?.completeness?.hasCommitSubmission !== true) {
+    throw new Error(`Assessment evidence bundle is missing challenge or commit proof: ${JSON.stringify(bundle?.completeness)}`);
+  }
+  if (bundle?.completeness?.hasEvaluationReport !== true || bundle?.completeness?.isReviewable !== true) {
+    throw new Error(`Assessment evidence bundle is not reviewable after evaluation: ${JSON.stringify(bundle?.completeness)}`);
+  }
+  if (bundle?.completeness?.hasHumanDecision !== true || bundle?.humanDecision?.decision !== humanDecision.decision) {
+    throw new Error(`Assessment evidence bundle did not include the recorded human decision: ${JSON.stringify(bundle?.humanDecision)}`);
+  }
+  if (bundle?.submission?.commitSha !== workspaceCommit.commitSha) {
+    throw new Error(`Assessment evidence bundle commit mismatch: ${JSON.stringify(bundle?.submission)}`);
+  }
+  if (bundle?.submission?.baseCommitSha !== expectedBaseCommitSha) {
+    throw new Error(`Assessment evidence bundle base commit mismatch: ${JSON.stringify(bundle?.submission)}`);
+  }
+  if ((bundle?.submission?.repositoryUrl ?? '').replace(/\/+$/g, '') !== expectedRepoUrl.replace(/\/+$/g, '')) {
+    throw new Error(`Assessment evidence bundle repo mismatch: ${JSON.stringify(bundle?.submission)}`);
+  }
+  const timeline = Array.isArray(bundle?.timeline) ? bundle.timeline : [];
+  const allSourceRefs = timeline.flatMap((event) => Array.isArray(event.sourceRefs) ? event.sourceRefs : []);
+  const sourceRefTypes = new Set(allSourceRefs.map((sourceRef) => sourceRef.sourceRefType));
+  for (const requiredType of [
+    'review_challenge_packet',
+    'git_commit',
+    'code_diff',
+    'terminal_command',
+    'test_run',
+    'assessment_evaluation_request',
+    'assessment_evaluation_report',
+  ]) {
+    if (!sourceRefTypes.has(requiredType)) {
+      throw new Error(`Assessment evidence bundle missed ${requiredType} source refs: ${JSON.stringify([...sourceRefTypes].sort())}`);
+    }
+  }
+  const commitEvent = timeline.find((event) => event.kind === 'commit_submission');
+  if (!commitEvent?.sourceRefs?.some((sourceRef) =>
+    sourceRef.sourceRefType === 'code_diff'
+    && String(sourceRef.sourceRefId ?? '').includes(workspaceCommit.commitSha)
+    && String(sourceRef.exactText ?? '').includes('diff --git')
+  )) {
+    throw new Error(`Assessment evidence bundle did not expose the committed diff source text: ${JSON.stringify(commitEvent)}`);
+  }
+  if (bundle?.evaluation?.status !== 'EVALUATED') {
+    throw new Error(`Assessment evidence bundle evaluation is not evaluated: ${JSON.stringify(bundle?.evaluation)}`);
+  }
+  const evaluationSourceRefCount = [
+    ...(bundle.evaluation?.claims ?? []),
+    ...(bundle.evaluation?.diagnostics ?? []),
+  ].reduce((count, item) => count + (Array.isArray(item.sourceRefs) ? item.sourceRefs.length : 0), 0);
+  if (evaluationSourceRefCount < 1) {
+    throw new Error(`Assessment evidence bundle evaluation has no cited source refs: ${JSON.stringify(bundle.evaluation)}`);
+  }
+  return {
+    visible: true,
+    timelineEventCount: timeline.length,
+    timelineSourceRefCount: allSourceRefs.length,
+    evaluationClaimCount: bundle.evaluation?.claims?.length ?? 0,
+    evaluationDiagnosticCount: bundle.evaluation?.diagnostics?.length ?? 0,
+    hasHumanDecision: bundle.completeness.hasHumanDecision === true,
+  };
+}
+
 function tokenFromRoomUrl(rawUrl) {
   const url = new URL(rawUrl);
   const match = url.pathname.match(/\/room\/([^/]+)/);
@@ -1687,6 +1764,13 @@ async function main() {
     workspaceCommit,
     recommendation,
   );
+  const evidenceBundleProof = await assertAssessmentEvidenceBundle({
+    interviewId,
+    workspaceCommit,
+    humanDecision,
+    expectedRepoUrl,
+    expectedBaseCommitSha,
+  });
   const recruiterProjection = await assertRecruiterAssessmentProjection(
     interviewId,
     workspaceCommit,
@@ -1774,6 +1858,12 @@ async function main() {
     humanDecisionNextAction: humanDecision.nextAction,
     humanDecisionSourceRefCount: humanDecision.sourceRefCount,
     humanDecisionSourceRefTypes: humanDecision.sourceRefTypes,
+    evidenceBundleVisible: evidenceBundleProof.visible,
+    evidenceBundleTimelineEventCount: evidenceBundleProof.timelineEventCount,
+    evidenceBundleTimelineSourceRefCount: evidenceBundleProof.timelineSourceRefCount,
+    evidenceBundleEvaluationClaimCount: evidenceBundleProof.evaluationClaimCount,
+    evidenceBundleEvaluationDiagnosticCount: evidenceBundleProof.evaluationDiagnosticCount,
+    evidenceBundleHasHumanDecision: evidenceBundleProof.hasHumanDecision,
     recruiterDetailReviewable: true,
     recruiterReviewerReceiptVisible: !recruiterBrowser.skipped,
     recruiterReviewerReceiptSkippedReason: recruiterBrowser.skipped ? recruiterBrowser.reason : null,

@@ -2582,6 +2582,110 @@ describe('GET /interviews/:id detail', () => {
           AND narrative = 'Recruiter requested source-backed assessment evaluation.'`,
     ).get('assessment-session-ai-evaluation')).toEqual({ count: 1 });
 
+    const bundleResponse = await app.request('/interviews/interview-1/assessment/evidence-bundle');
+    expect(bundleResponse.status).toBe(200);
+    const bundleBody = await bundleResponse.json() as {
+      bundle: {
+        schemaVersion: string;
+        interview: { id: string; interviewType: string };
+        assessment: {
+          stage: string;
+          nextAction: string;
+          sourceRefCounts: Array<{ kind: string; count: number }>;
+        };
+        completeness: {
+          hasChallengePacket: boolean;
+          hasCommitSubmission: boolean;
+          hasEvaluationReport: boolean;
+          hasHumanDecision: boolean;
+          isReviewable: boolean;
+        };
+        submission: { commitSha: string; branchName: string } | null;
+        timeline: Array<{
+          kind: string;
+          sourceRefs: Array<{ sourceRefType: string; sourceRefId: string; exactText: string }>;
+        }>;
+        evaluation: {
+          status: string;
+          output: { recommendation?: string | null };
+          claims: Array<{
+            dimension: string;
+            sourceRefs: Array<{ sourceRefType: string; sourceRefId: string; exactText: string }>;
+          }>;
+          diagnostics: Array<{
+            code: string;
+            sourceRefs: Array<{ sourceRefType: string; sourceRefId: string; exactText: string }>;
+          }>;
+        } | null;
+        humanDecision: null;
+      };
+    };
+    expect(bundleBody.bundle.schemaVersion).toBe('repo-task-final-evidence-bundle-v1');
+    expect(bundleBody.bundle.interview).toMatchObject({
+      id: 'interview-1',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+    });
+    expect(bundleBody.bundle.assessment).toMatchObject({
+      stage: 'EVALUATED',
+      nextAction: 'REVIEW_EVALUATION',
+    });
+    expect(bundleBody.bundle.completeness).toEqual({
+      hasChallengePacket: true,
+      hasCommitSubmission: true,
+      hasEvaluationReport: true,
+      hasHumanDecision: false,
+      isReviewable: true,
+    });
+    expect(bundleBody.bundle.submission).toMatchObject({
+      commitSha,
+      branchName: 'pipe-assessment/ai-evaluation',
+    });
+    expect(bundleBody.bundle.assessment.sourceRefCounts).toEqual(expect.arrayContaining([
+      { kind: 'code_diff', count: 1 },
+      { kind: 'git_commit', count: 1 },
+      { kind: 'review_challenge_packet', count: 1 },
+    ]));
+    const commitEvent = bundleBody.bundle.timeline.find((event) => event.kind === 'commit_submission');
+    expect(commitEvent?.sourceRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceRefType: 'code_diff',
+        sourceRefId: diffSourceRefId,
+        exactText: diffText,
+      }),
+      expect.objectContaining({
+        sourceRefType: 'git_commit',
+        sourceRefId: commitSha,
+        exactText: commitText,
+      }),
+    ]));
+    expect(bundleBody.bundle.evaluation).toMatchObject({
+      status: 'EVALUATED',
+      output: {
+        recommendation: 'mixed_evidence_human_review',
+      },
+    });
+    const diffClaim = bundleBody.bundle.evaluation?.claims.find((claim) =>
+      claim.dimension === 'implementation_evidence'
+    );
+    expect(diffClaim?.sourceRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceRefType: 'code_diff',
+        sourceRefId: diffSourceRefId,
+        exactText: diffText,
+      }),
+    ]));
+    const missingTestDiagnostic = bundleBody.bundle.evaluation?.diagnostics.find((diagnostic) =>
+      diagnostic.code === 'MISSING_TEST_EVIDENCE'
+    );
+    expect(missingTestDiagnostic?.sourceRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceRefType: 'code_diff',
+        sourceRefId: diffSourceRefId,
+        exactText: diffText,
+      }),
+    ]));
+    expect(bundleBody.bundle.humanDecision).toBeNull();
+
     expect(sqlite!.prepare(
       `SELECT state FROM assessment_sessions WHERE id = ?`,
     ).get('assessment-session-ai-evaluation')).toEqual({ state: 'EVALUATED' });

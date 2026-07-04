@@ -397,9 +397,13 @@ The controlling product rule remains:
   recruiter detail displays it, showing which expected evidence items were
   machine-supported by source refs and which success criteria still require
   human review.
-- Repo-task route/API integration, full final evidence bundle assembly, and
-  broader final-output views beyond the compact room summary and Report Ready
-  evidence packet remain pending.
+- Recruiter assessment APIs now expose a
+  `repo-task-final-evidence-bundle-v1` audit packet for each scheduled
+  assessment, assembling the assigned challenge, submitted commit, immutable
+  event timeline, event source refs, latest evaluation report, cited claims,
+  diagnostics, and human decision from the source-backed assessment spine.
+- Broader final-output UI/export views beyond the compact room summary, Report
+  Ready evidence packet, and recruiter evidence-bundle API remain pending.
 
 ## Proposed TypeScript Surface
 

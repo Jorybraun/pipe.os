@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter assessment detail now has a final source-backed evidence bundle API and the open-source workspace smoke proves it contains the assigned challenge, submitted commit, timeline source refs, evaluation claims/diagnostics, and recorded human decision.
 - Candidate workspace finalization now automatically records a source-backed evaluation request and queues repo-task assessment evaluation after accepting the submitted commit, while recruiter start-evaluation remains idempotent after evaluation has already started or finished.
 - Open-source assessment containers now configure a deterministic Git author before checkout and the candidate workspace submit panel shows the exact status, verify, add, commit, and finalizer path, preventing assessment work from stalling at `git commit`.
 - Recruiter CODE_REVIEW detail now receives the same computed source-backed quality gate as the candidate assignment path and shows unsafe-match diagnostics such as embedding-only rejection or missing candidate/repo source evidence in the decision readout.

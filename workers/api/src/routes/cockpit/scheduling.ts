@@ -5275,6 +5275,419 @@ async function loadLatestAssessmentEvaluationReport(
   return row ?? null;
 }
 
+interface AssessmentEvidenceBundleSourceRef {
+  sourceRefType: string;
+  sourceRefId: string;
+  sourceSpanId: string | null;
+  evidenceRole: string;
+  locator: JsonObject;
+  exactText: string;
+  contentHash: string;
+  metadata: JsonObject;
+  createdAt: string;
+}
+
+interface AssessmentEvidenceBundleEvent {
+  sequence: number;
+  kind: string;
+  actorType: string;
+  actorId: string | null;
+  narrative: string;
+  payload: JsonObject;
+  occurredAt: string;
+  createdAt: string;
+  sourceRefs: AssessmentEvidenceBundleSourceRef[];
+}
+
+interface AssessmentEvidenceBundleClaim {
+  claimId: string;
+  polarity: string;
+  dimension: string;
+  narrative: string;
+  confidence: number | null;
+  createdAt: string;
+  sourceRefs: AssessmentEvidenceBundleSourceRef[];
+}
+
+interface AssessmentEvidenceBundleDiagnostic {
+  diagnosticId: string;
+  code: string;
+  severity: string;
+  message: string;
+  provider: string | null;
+  retryable: boolean;
+  details: JsonObject;
+  createdAt: string;
+  sourceRefs: AssessmentEvidenceBundleSourceRef[];
+}
+
+interface AssessmentEvidenceBundleEvaluationReport {
+  reportId: string;
+  status: string;
+  summary: string;
+  output: JsonObject;
+  createdAt: string;
+  updatedAt: string;
+  claims: AssessmentEvidenceBundleClaim[];
+  diagnostics: AssessmentEvidenceBundleDiagnostic[];
+}
+
+interface AssessmentEvidenceBundle {
+  schemaVersion: 'repo-task-final-evidence-bundle-v1';
+  generatedAt: string;
+  interview: {
+    id: string;
+    title: string | null;
+    description: string | null;
+    interviewType: string | null;
+    recipientName: string | null;
+    recipientEmail: string | null;
+    candidateId: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  assessment: {
+    mode: string;
+    state: string;
+    stage: string;
+    nextAction: string;
+    nextActionLabel: string;
+    readiness: AssessmentProgressSnapshot['readiness'];
+    assignmentTrust: AssessmentProgressSnapshot['assignmentTrust'];
+    sourceRefCounts: AssessmentProgressSnapshot['sourceRefCounts'];
+    evidenceCounts: AssessmentProgressSnapshot['evidenceCounts'];
+  };
+  completeness: {
+    hasChallengePacket: boolean;
+    hasCommitSubmission: boolean;
+    hasEvaluationReport: boolean;
+    hasHumanDecision: boolean;
+    isReviewable: boolean;
+  };
+  challenge: AssessmentProgressSnapshot['challenge'];
+  challengePacketContract: AssessmentProgressSnapshot['challengePacketContract'];
+  submission: AssessmentProgressSnapshot['commit'];
+  timeline: AssessmentEvidenceBundleEvent[];
+  evaluation: AssessmentEvidenceBundleEvaluationReport | null;
+  humanDecision: AssessmentProgressSnapshot['humanDecision'];
+}
+
+interface AssessmentEvidenceBundleSourceRefRow {
+  source_ref_type: string | null;
+  source_ref_id: string | null;
+  source_span_id: string | null;
+  evidence_role: string | null;
+  locator_json: string | null;
+  exact_text: string | null;
+  content_hash: string | null;
+  metadata_json: string | null;
+  source_created_at: string | null;
+}
+
+function assessmentBundleSourceRefFromRow(
+  row: AssessmentEvidenceBundleSourceRefRow,
+): AssessmentEvidenceBundleSourceRef | null {
+  if (!row.source_ref_type || !row.source_ref_id || !row.exact_text || !row.content_hash) {
+    return null;
+  }
+  return {
+    sourceRefType: row.source_ref_type,
+    sourceRefId: row.source_ref_id,
+    sourceSpanId: row.source_span_id ?? null,
+    evidenceRole: row.evidence_role ?? 'support',
+    locator: parseJsonObject(row.locator_json) as JsonObject,
+    exactText: row.exact_text,
+    contentHash: row.content_hash,
+    metadata: parseJsonObject(row.metadata_json) as JsonObject,
+    createdAt: row.source_created_at ?? '',
+  };
+}
+
+async function loadAssessmentEvidenceBundleTimeline(
+  db: D1Database,
+  sessionId: string,
+): Promise<AssessmentEvidenceBundleEvent[]> {
+  const result = await db.prepare(
+    `SELECT e.id AS event_id,
+            e.sequence,
+            e.kind,
+            e.actor_type,
+            e.actor_id,
+            e.narrative,
+            e.payload_json,
+            e.occurred_at,
+            e.created_at,
+            sr.source_ref_type,
+            sr.source_ref_id,
+            sr.source_span_id,
+            sr.evidence_role,
+            sr.locator_json,
+            sr.exact_text,
+            sr.content_hash,
+            sr.metadata_json,
+            sr.created_at AS source_created_at
+       FROM assessment_evidence_events e
+       LEFT JOIN assessment_event_source_refs sr ON sr.event_id = e.id
+      WHERE e.session_id = ?1
+      ORDER BY e.sequence ASC, sr.created_at ASC, sr.id ASC`,
+  ).bind(sessionId).all<AssessmentEvidenceBundleSourceRefRow & {
+    event_id: string;
+    sequence: number;
+    kind: string;
+    actor_type: string;
+    actor_id: string | null;
+    narrative: string;
+    payload_json: string | null;
+    occurred_at: string;
+    created_at: string;
+  }>();
+
+  const timeline = new Map<string, AssessmentEvidenceBundleEvent>();
+  for (const row of result.results ?? []) {
+    const existing = timeline.get(row.event_id);
+    const event = existing ?? {
+      sequence: row.sequence,
+      kind: row.kind,
+      actorType: row.actor_type,
+      actorId: row.actor_id,
+      narrative: row.narrative,
+      payload: parseJsonObject(row.payload_json) as JsonObject,
+      occurredAt: row.occurred_at,
+      createdAt: row.created_at,
+      sourceRefs: [],
+    };
+    const sourceRef = assessmentBundleSourceRefFromRow(row);
+    if (sourceRef) event.sourceRefs.push(sourceRef);
+    timeline.set(row.event_id, event);
+  }
+  return [...timeline.values()];
+}
+
+async function loadAssessmentEvidenceBundleClaims(
+  db: D1Database,
+  reportId: string,
+): Promise<AssessmentEvidenceBundleClaim[]> {
+  const result = await db.prepare(
+    `SELECT c.id AS claim_id,
+            c.polarity,
+            c.dimension,
+            c.narrative,
+            c.confidence,
+            c.created_at,
+            sr.source_ref_type,
+            sr.source_ref_id,
+            sr.source_span_id,
+            sr.evidence_role,
+            sr.locator_json,
+            sr.exact_text,
+            sr.content_hash,
+            sr.metadata_json,
+            sr.created_at AS source_created_at
+       FROM assessment_evaluation_claims c
+       LEFT JOIN assessment_claim_source_refs sr ON sr.claim_id = c.id
+      WHERE c.report_id = ?1
+      ORDER BY c.created_at ASC, c.id ASC, sr.created_at ASC, sr.id ASC`,
+  ).bind(reportId).all<AssessmentEvidenceBundleSourceRefRow & {
+    claim_id: string;
+    polarity: string;
+    dimension: string;
+    narrative: string;
+    confidence: number | null;
+    created_at: string;
+  }>();
+
+  const claims = new Map<string, AssessmentEvidenceBundleClaim>();
+  for (const row of result.results ?? []) {
+    const existing = claims.get(row.claim_id);
+    const claim = existing ?? {
+      claimId: row.claim_id,
+      polarity: row.polarity,
+      dimension: row.dimension,
+      narrative: row.narrative,
+      confidence: row.confidence,
+      createdAt: row.created_at,
+      sourceRefs: [],
+    };
+    const sourceRef = assessmentBundleSourceRefFromRow(row);
+    if (sourceRef) claim.sourceRefs.push(sourceRef);
+    claims.set(row.claim_id, claim);
+  }
+  return [...claims.values()];
+}
+
+async function loadAssessmentEvidenceBundleDiagnostics(
+  db: D1Database,
+  input: { sessionId: string; reportId: string | null },
+): Promise<AssessmentEvidenceBundleDiagnostic[]> {
+  const result = await db.prepare(
+    `SELECT d.id AS diagnostic_id,
+            d.code,
+            d.severity,
+            d.message,
+            d.provider,
+            d.retryable,
+            d.details_json,
+            d.created_at,
+            sr.source_ref_type,
+            sr.source_ref_id,
+            sr.source_span_id,
+            sr.evidence_role,
+            sr.locator_json,
+            sr.exact_text,
+            sr.content_hash,
+            sr.metadata_json,
+            sr.created_at AS source_created_at
+       FROM assessment_diagnostics d
+       LEFT JOIN assessment_diagnostic_source_refs sr ON sr.diagnostic_id = d.id
+      WHERE d.session_id = ?1
+         OR (?2 IS NOT NULL AND d.report_id = ?2)
+      ORDER BY
+        CASE d.severity
+          WHEN 'blocking' THEN 0
+          WHEN 'error' THEN 1
+          WHEN 'warning' THEN 2
+          WHEN 'info' THEN 3
+          ELSE 4
+        END,
+        d.created_at ASC,
+        d.id ASC,
+        sr.created_at ASC,
+        sr.id ASC`,
+  ).bind(input.sessionId, input.reportId).all<AssessmentEvidenceBundleSourceRefRow & {
+    diagnostic_id: string;
+    code: string;
+    severity: string;
+    message: string;
+    provider: string | null;
+    retryable: number;
+    details_json: string | null;
+    created_at: string;
+  }>();
+
+  const diagnostics = new Map<string, AssessmentEvidenceBundleDiagnostic>();
+  for (const row of result.results ?? []) {
+    const existing = diagnostics.get(row.diagnostic_id);
+    const diagnostic = existing ?? {
+      diagnosticId: row.diagnostic_id,
+      code: row.code,
+      severity: row.severity,
+      message: row.message,
+      provider: row.provider,
+      retryable: row.retryable === 1,
+      details: parseJsonObject(row.details_json) as JsonObject,
+      createdAt: row.created_at,
+      sourceRefs: [],
+    };
+    const sourceRef = assessmentBundleSourceRefFromRow(row);
+    if (sourceRef) diagnostic.sourceRefs.push(sourceRef);
+    diagnostics.set(row.diagnostic_id, diagnostic);
+  }
+  return [...diagnostics.values()];
+}
+
+async function loadAssessmentEvidenceBundleEvaluation(
+  db: D1Database,
+  sessionId: string,
+): Promise<AssessmentEvidenceBundleEvaluationReport | null> {
+  const report = await db.prepare(
+    `SELECT id, status, summary, output_json, created_at, updated_at
+       FROM assessment_evaluation_reports
+      WHERE session_id = ?1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(sessionId).first<{
+    id: string;
+    status: string;
+    summary: string;
+    output_json: string | null;
+    created_at: string;
+    updated_at: string;
+  }>();
+  if (!report) return null;
+  const [claims, diagnostics] = await Promise.all([
+    loadAssessmentEvidenceBundleClaims(db, report.id),
+    loadAssessmentEvidenceBundleDiagnostics(db, {
+      sessionId,
+      reportId: report.id,
+    }),
+  ]);
+  return {
+    reportId: report.id,
+    status: report.status,
+    summary: report.summary,
+    output: parseJsonObject(report.output_json) as JsonObject,
+    createdAt: report.created_at,
+    updatedAt: report.updated_at,
+    claims,
+    diagnostics,
+  };
+}
+
+async function loadAssessmentEvidenceBundle(input: {
+  db: D1Database;
+  interview: {
+    id: string;
+    title: string | null;
+    description: string | null;
+    interview_type: string | null;
+    recipient_name: string | null;
+    recipient_email: string | null;
+    candidate_id: string | null;
+    created_at: string;
+    updated_at: string;
+  };
+  sessionId: string;
+}): Promise<AssessmentEvidenceBundle> {
+  const store = new RepoTaskInterviewSessionStore(input.db);
+  const [progress, timeline, evaluation] = await Promise.all([
+    store.loadProgress(input.sessionId),
+    loadAssessmentEvidenceBundleTimeline(input.db, input.sessionId),
+    loadAssessmentEvidenceBundleEvaluation(input.db, input.sessionId),
+  ]);
+  const isReviewable = progress.hasChallengePacket
+    && progress.hasCommitSubmission
+    && progress.evaluation?.status === 'EVALUATED';
+  return {
+    schemaVersion: 'repo-task-final-evidence-bundle-v1',
+    generatedAt: new Date().toISOString(),
+    interview: {
+      id: input.interview.id,
+      title: input.interview.title,
+      description: input.interview.description,
+      interviewType: input.interview.interview_type,
+      recipientName: input.interview.recipient_name,
+      recipientEmail: input.interview.recipient_email,
+      candidateId: input.interview.candidate_id,
+      createdAt: input.interview.created_at,
+      updatedAt: input.interview.updated_at,
+    },
+    assessment: {
+      mode: progress.session.mode,
+      state: progress.session.state,
+      stage: progress.stage,
+      nextAction: progress.nextAction,
+      nextActionLabel: progress.nextActionLabel,
+      readiness: progress.readiness,
+      assignmentTrust: progress.assignmentTrust,
+      sourceRefCounts: progress.sourceRefCounts,
+      evidenceCounts: progress.evidenceCounts,
+    },
+    completeness: {
+      hasChallengePacket: progress.hasChallengePacket,
+      hasCommitSubmission: progress.hasCommitSubmission,
+      hasEvaluationReport: progress.evaluation !== null,
+      hasHumanDecision: progress.humanDecision !== null,
+      isReviewable,
+    },
+    challenge: progress.challenge,
+    challengePacketContract: progress.challengePacketContract,
+    submission: progress.commit,
+    timeline,
+    evaluation,
+    humanDecision: progress.humanDecision,
+  };
+}
+
 interface ManualOpenSourceChallengePacketInput {
   interviewId: string;
   userId: string;
@@ -7897,6 +8310,58 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       updatedAt: interview.updated_at,
     },
   });
+});
+
+// GET /interviews/:id/assessment/evidence-bundle — recruiter audit packet for source-backed assessment output
+schedulingAuth.get('/interviews/:id/assessment/evidence-bundle', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const interview = await db.prepare(
+    `SELECT id, title, description, interview_type, recipient_name, recipient_email,
+            candidate_id, created_at, updated_at
+       FROM scheduled_interviews
+      WHERE id = ?1
+        AND owner_id = ?2
+      LIMIT 1`,
+  ).bind(id, userId).first<{
+    id: string;
+    title: string | null;
+    description: string | null;
+    interview_type: string | null;
+    recipient_name: string | null;
+    recipient_email: string | null;
+    candidate_id: string | null;
+    created_at: string;
+    updated_at: string;
+  }>();
+  if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
+
+  const sessionId = await loadScheduledAssessmentSessionId(db, id);
+  if (!sessionId) {
+    return apiError(
+      c,
+      'CONFLICT',
+      'This interview is not linked to an assessment session yet.',
+    );
+  }
+
+  try {
+    const bundle = await loadAssessmentEvidenceBundle({
+      db,
+      interview,
+      sessionId,
+    });
+    return c.json({ bundle }, 200);
+  } catch (error) {
+    console.error('[scheduling/loadAssessmentEvidenceBundle] failed:', {
+      interviewId: id,
+      assessmentSessionId: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return apiError(c, 'SERVER_ERROR', 'Unable to load assessment evidence bundle.');
+  }
 });
 
 // POST /interviews/:id/assessment/start-evaluation — recruiter requests source-backed assessment
