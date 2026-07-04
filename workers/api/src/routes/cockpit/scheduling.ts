@@ -3882,13 +3882,22 @@ function buildScheduledAssessmentListProgress(input: {
   const hasTestEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['test_run'])
     || scheduledAssessmentHasKind(input.sourceRefCounts, ['test_run']);
   const hasVerificationGap = scheduledAssessmentHasKind(input.sourceRefCounts, ['verification_gap']);
+  const requiresCommit = scheduledAssessmentModeRequiresCommit(input.session.mode);
+  const hasGitCommit = scheduledAssessmentHasKind(input.sourceRefCounts, ['git_commit']);
+  const hasCodeDiff = scheduledAssessmentHasKind(input.sourceRefCounts, ['code_diff']);
+  const hasReviewableCommitSubmission = !requiresCommit
+    || Boolean(
+      commit
+      && hasGitCommit
+      && hasCodeDiff
+      && commit.challengeBinding.status === 'bound_to_assigned_challenge',
+    );
   const { stage, nextAction } = scheduledAssessmentProgressStageAndAction({
     session: input.session,
     hasCompleteChallengePacket: contract.isComplete,
     hasWorkEvidence,
     hasCommitSubmission,
-    hasBoundCommitSubmission: !scheduledAssessmentModeRequiresCommit(input.session.mode)
-      || commit?.challengeBinding.status === 'bound_to_assigned_challenge',
+    hasReviewableCommitSubmission,
     hasFinalSubmission,
     evaluation: input.evaluation,
     humanDecision: input.humanDecision,
@@ -4016,7 +4025,7 @@ function scheduledAssessmentProgressStageAndAction(input: {
   hasCompleteChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasCommitSubmission: boolean;
-  hasBoundCommitSubmission: boolean;
+  hasReviewableCommitSubmission: boolean;
   hasFinalSubmission: boolean;
   evaluation: ScheduledAssessmentListEvaluation | null;
   humanDecision: ScheduledAssessmentListHumanDecision | null;
@@ -4030,7 +4039,7 @@ function scheduledAssessmentProgressStageAndAction(input: {
   }
   if (input.session.state === 'EVALUATING') return { stage: 'EVALUATING', nextAction: 'WAIT_FOR_EVALUATION' };
   if (!input.hasCompleteChallengePacket) return { stage: 'WAITING_FOR_CHALLENGE', nextAction: 'ASSIGN_CHALLENGE' };
-  if (scheduledAssessmentModeRequiresCommit(input.session.mode) && !input.hasBoundCommitSubmission) {
+  if (scheduledAssessmentModeRequiresCommit(input.session.mode) && !input.hasReviewableCommitSubmission) {
     if (input.hasWorkEvidence || input.hasFinalSubmission) return { stage: 'WORK_IN_PROGRESS', nextAction: 'SUBMIT_COMMIT' };
     return { stage: 'CHALLENGE_READY', nextAction: 'OPEN_ROOM_OR_WORKSPACE' };
   }
@@ -4121,25 +4130,45 @@ function scheduledAssessmentReadiness(input: {
     },
   ];
   if (requiresCommit) {
-    required.push({
-      id: 'assessment_commit',
-      label: 'Assessment branch commit',
-      required: true,
-      satisfied: input.hasCommitSubmission && hasGitCommit,
-      sourceRefTypes: ['git_commit'],
-      missingImpact: 'A real commit hash is required before evaluating open-source implementation work.',
-    });
+    required.push(
+      {
+        id: 'assessment_commit',
+        label: 'Assessment branch commit',
+        required: true,
+        satisfied: input.hasCommitSubmission && hasGitCommit,
+        sourceRefTypes: ['git_commit'],
+        missingImpact: 'A real commit hash is required before evaluating open-source implementation work.',
+      },
+      {
+        id: 'code_diff',
+        label: 'Exact code diff',
+        required: true,
+        satisfied: hasCodeDiff,
+        sourceRefTypes: ['code_diff'],
+        missingImpact: 'The evaluator must inspect the exact diff from base commit to submitted commit.',
+      },
+    );
+
+    if (input.hasCommitSubmission) {
+      required.push({
+        id: 'commit_challenge_binding',
+        label: 'Commit bound to assigned challenge',
+        required: true,
+        satisfied: input.commit?.challengeBinding.status === 'bound_to_assigned_challenge',
+        sourceRefTypes: [
+          'git_commit',
+          'code_diff',
+          'review_challenge_packet',
+          'open_source_challenge_packet',
+          'repo_task_challenge_packet',
+          'challenge_packet',
+        ],
+        missingImpact: 'The submitted commit must match the latest assigned challenge repo and base commit before evaluation.',
+      });
+    }
   }
 
   const confidence: NonNullable<AssessmentProgressSnapshot['readiness']>['confidence'] = [
-    {
-      id: 'code_diff',
-      label: 'Code diff',
-      required: false,
-      satisfied: hasCodeDiff,
-      sourceRefTypes: ['code_diff'],
-      missingImpact: 'A diff makes the implementation reviewable without opening the workspace.',
-    },
     {
       id: 'test_run',
       label: 'Test or verification run',

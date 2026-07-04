@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter assessment list/detail progress now requires exact `code_diff` proof and commit-to-challenge binding before marking open-source implementation work ready for evaluation, matching the durable assessment session spine.
 - Recruiter interview lists now skip repo-match diagnostic enrichment for standard video-call rows, avoiding unnecessary match-run D1 reads on the hottest dashboard path while preserving assessment setup diagnostics for coding assessments.
 - Source-backed open-source challenge packets now preserve and render the upstream GitHub PR URL in recruiter detail and candidate room task surfaces, so candidates and reviewers can open the exact upstream task context instead of seeing only a PR number.
 - Recruiter assessment detail work packets now label the candidate submission review path as a consented upstream PR candidate, fork-backed GitHub commit, workspace-only captured diff, or missing review artifact so reviewers know exactly what can be trusted before scoring.

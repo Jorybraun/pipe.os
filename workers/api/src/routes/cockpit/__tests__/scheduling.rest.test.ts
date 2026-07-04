@@ -2456,6 +2456,181 @@ describe('GET /interviews/:id detail', () => {
     expect(observedQueries.some((query) => query.includes('FROM match_runs'))).toBe(false);
   });
 
+  it('keeps list assessment progress in work-in-progress when commit diff proof is missing', async () => {
+    seedInterviewDetailFixture();
+    const now = '2026-06-22T18:42:00.000Z';
+    const baseCommitSha = '5555555555555555555555555555555555555555';
+    const commitSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const challengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      `Base commit: ${baseCommitSha}`,
+      'Task: fix missing-diff readiness.',
+      'Success: commit a focused patch with a reviewable diff.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the candidate patch',
+    ].join('\n');
+    const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nFix missing-diff readiness.`;
+
+    sqlite!.prepare(`
+      UPDATE scheduled_interviews
+         SET interview_type = 'OPEN_SOURCE_BUG_FIX',
+             github_repo_url = 'https://github.com/open-source/widgets',
+             github_pr_number = NULL,
+             created_at = '2026-06-22T20:00:00.000Z',
+             updated_at = '2026-06-22T20:00:00.000Z'
+       WHERE id = 'interview-1'
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+        metadata_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-session-list-missing-diff',
+      'assessment-session:list-missing-diff',
+      'interview-1',
+      'OPEN_SOURCE_BUG_FIX',
+      'FINAL_SUBMITTED',
+      'candidate-1',
+      'workspace-1',
+      '{}',
+      now,
+      now,
+    );
+    for (const event of [
+      {
+        id: 'assessment-event-list-missing-diff-challenge',
+        ingestionKey: 'assessment-event:list-missing-diff-challenge',
+        sequence: 1,
+        kind: 'recruiter_note',
+        actorType: 'recruiter',
+        actorId: 'owner-1',
+        narrative: 'Recruiter assigned a complete open-source challenge packet.',
+        payload: { repositoryUrl: 'https://github.com/open-source/widgets' },
+      },
+      {
+        id: 'assessment-event-list-missing-diff-commit',
+        ingestionKey: 'assessment-event:list-missing-diff-commit',
+        sequence: 2,
+        kind: 'commit_submission',
+        actorType: 'candidate',
+        actorId: 'candidate-1',
+        narrative: 'Candidate submitted a commit without the exact diff source ref.',
+        payload: {
+          repositoryUrl: 'https://github.com/open-source/widgets',
+          forkRepositoryUrl: 'https://github.com/candidate/widgets',
+          branchName: 'pipe-assessment/missing-diff',
+          baseCommitSha,
+          commitSha,
+          commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+          changedFiles: [{ path: 'src/list.ts', status: 'modified' }],
+        },
+      },
+    ]) {
+      sqlite!.prepare(`
+        INSERT INTO assessment_evidence_events (
+          id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+          narrative, payload_json, context_record_id, occurred_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+      `).run(
+        event.id,
+        event.ingestionKey,
+        'assessment-session-list-missing-diff',
+        event.sequence,
+        event.kind,
+        event.actorType,
+        event.actorId,
+        event.narrative,
+        JSON.stringify(event.payload),
+        now,
+        now,
+      );
+    }
+    for (const sourceRef of [
+      {
+        id: 'assessment-source-list-missing-diff-challenge',
+        eventId: 'assessment-event-list-missing-diff-challenge',
+        type: 'review_challenge_packet',
+        refId: 'challenge-packet-missing-diff',
+        role: 'assigned_challenge',
+        locator: { repositoryUrl: 'https://github.com/open-source/widgets', baseCommitSha },
+        text: challengeText,
+      },
+      {
+        id: 'assessment-source-list-missing-diff-commit',
+        eventId: 'assessment-event-list-missing-diff-commit',
+        type: 'git_commit',
+        refId: commitSha,
+        role: 'submitted_commit',
+        locator: { repositoryUrl: 'https://github.com/candidate/widgets', commitSha },
+        text: commitText,
+      },
+    ]) {
+      sqlite!.prepare(`
+        INSERT INTO assessment_event_source_refs (
+          id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+          locator_json, exact_text, content_hash, metadata_json, created_at
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+      `).run(
+        sourceRef.id,
+        sourceRef.eventId,
+        sourceRef.type,
+        sourceRef.refId,
+        sourceRef.role,
+        JSON.stringify(sourceRef.locator),
+        sourceRef.text,
+        sha256Hex(sourceRef.text),
+        now,
+      );
+    }
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews?limit=5&offset=0&sort=created_desc');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interviews: Array<{
+        id: string;
+        assessmentProgress: {
+          stage: string;
+          nextAction: string;
+          readiness: {
+            status: string;
+            isReadyForEvaluation: boolean;
+            missingRequiredCount: number;
+            required: Array<{ id: string; satisfied: boolean; missingImpact: string }>;
+          };
+          sourceRefCounts: Array<{ kind: string; count: number }>;
+        } | null;
+      }>;
+    };
+    const interview = body.interviews.find((item) => item.id === 'interview-1');
+
+    expect(interview?.assessmentProgress).toMatchObject({
+      stage: 'WORK_IN_PROGRESS',
+      nextAction: 'SUBMIT_COMMIT',
+      readiness: {
+        status: 'WORK_IN_PROGRESS',
+        isReadyForEvaluation: false,
+        missingRequiredCount: 1,
+      },
+    });
+    expect(interview?.assessmentProgress?.readiness.required).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'code_diff',
+        satisfied: false,
+        missingImpact: 'The evaluator must inspect the exact diff from base commit to submitted commit.',
+      }),
+    ]));
+    expect(interview?.assessmentProgress?.sourceRefCounts).toEqual(expect.arrayContaining([
+      { kind: 'git_commit', count: 1 },
+      { kind: 'review_challenge_packet', count: 1 },
+    ]));
+    expect(interview?.assessmentProgress?.sourceRefCounts).not.toEqual(expect.arrayContaining([
+      { kind: 'code_diff', count: 1 },
+    ]));
+  });
+
   it('returns source-backed assessment progress on the interview list', async () => {
     seedInterviewDetailFixture();
     const now = '2026-06-22T18:42:00.000Z';
