@@ -1180,6 +1180,13 @@ async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha) 
     await expect(submissionPanel.getByTestId('commit-submission-ai-use')).toContainText(
       /AI response captured|AI prompt captured|AI prompt blocked|AI bridge diagnostic|AI bridge status|AI bridge trace captured|No AI use captured/,
     );
+    const finalEvidence = page.getByTestId('commit-submission-final-evidence');
+    await expect(finalEvidence).toBeVisible({ timeout: 60_000 });
+    await expect(finalEvidence).toContainText('Final evidence packet');
+    await expect(finalEvidence).toContainText(/Evaluator claims|Evaluator diagnostics/);
+    await expect(finalEvidence).toContainText(
+      /AI response captured|AI prompt captured|AI prompt blocked|AI bridge diagnostic|AI bridge status|AI bridge trace captured|No AI use captured/,
+    );
 
     return { skipped: false };
   } finally {

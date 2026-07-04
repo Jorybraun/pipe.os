@@ -370,6 +370,131 @@ describe('CommitSubmissionPanel', () => {
     expect(onFinalizeWorkspace).not.toHaveBeenCalled();
   });
 
+  it('shows the candidate-safe final evidence packet after evaluation', () => {
+    const commitSha = 'f'.repeat(40);
+    const evaluatedProgress: RoomAssessmentProgressSnapshot = {
+      ...loadedProgress,
+      state: 'EVALUATED',
+      stage: 'EVALUATED',
+      nextAction: 'REVIEW_EVALUATION',
+      nextActionLabel: 'Review the source-backed assessment report.',
+      hasCommitSubmission: true,
+      hasTestEvidence: true,
+      hasVerificationGap: true,
+      sourceRefCounts: [
+        { kind: 'git_commit', count: 1 },
+        { kind: 'code_diff', count: 1 },
+        { kind: 'test_run', count: 1 },
+        { kind: 'verification_gap', count: 1 },
+        { kind: 'room_chat_message', count: 1 },
+        { kind: 'ai_agent_diagnostic', count: 1 },
+      ],
+      evidenceSnippets: [
+        {
+          eventKind: 'commit_submission',
+          sourceRefType: 'git_commit',
+          evidenceRole: 'submitted_commit',
+          exactText: `commit ${commitSha}\nFix retry ordering in source-backed worker.`,
+          occurredAt: '2026-06-29T20:03:00.000Z',
+        },
+        {
+          eventKind: 'workspace_finalize',
+          sourceRefType: 'test_run',
+          evidenceRole: 'verification_output',
+          exactText: 'npm test -- retry\nPASS src/retry.test.ts',
+          occurredAt: '2026-06-29T20:04:00.000Z',
+        },
+        {
+          eventKind: 'workspace_finalize',
+          sourceRefType: 'verification_gap',
+          evidenceRole: 'missing_test_evidence_note',
+          exactText: 'Full browser suite was not run in the assessment container.',
+          occurredAt: '2026-06-29T20:05:00.000Z',
+        },
+      ],
+      commit: {
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        forkRepositoryUrl: null,
+        branchName: 'pipe-assessment/retry-path',
+        baseCommitSha: 'd'.repeat(40),
+        commitSha,
+        commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
+        changedFiles: [{ path: 'src/retry.ts', status: 'modified' }],
+        occurredAt: '2026-06-29T20:03:00.000Z',
+      },
+      evaluation: {
+        status: 'EVALUATED',
+        summary: 'Source-backed report is ready for human review.',
+        recommendation: 'mixed_evidence_human_review',
+        createdAt: '2026-06-29T20:06:00.000Z',
+        claims: [
+          {
+            id: 'assessment_claim_internal_1',
+            polarity: 'positive',
+            dimension: 'verification',
+            narrative: 'Targeted retry verification passed for the submitted commit.',
+            confidence: 0.82,
+            sourceRefCount: 2,
+            sourceRefTypes: ['git_commit', 'test_run'],
+          },
+          {
+            id: 'assessment_claim_internal_2',
+            polarity: 'diagnostic',
+            dimension: 'coverage',
+            narrative: 'Full browser coverage was not captured in the assessment container.',
+            confidence: null,
+            sourceRefCount: 1,
+            sourceRefTypes: ['verification_gap'],
+          },
+        ],
+        diagnostics: [
+          {
+            id: 'diagnostic_internal_missing_browser_suite',
+            code: 'MISSING_BROWSER_SUITE',
+            severity: 'warning',
+            message: 'Full browser suite evidence was not captured; treat the report as human-review evidence.',
+            sourceRefCount: 1,
+            sourceRefTypes: ['verification_gap'],
+          },
+        ],
+      },
+    };
+
+    render(
+      <CommitSubmissionPanel
+        defaultRepositoryUrl="https://github.com/fallback/repo"
+        challengePacket={richPacket}
+        assessmentProgress={evaluatedProgress}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    const finalEvidence = screen.getByTestId('commit-submission-final-evidence');
+    const finalText = finalEvidence.textContent ?? '';
+    expect(finalText).toContain('Final evidence packet');
+    expect(finalText).toContain('Source-backed report is ready for human review.');
+    expect(finalText).toContain('AI bridge diagnostic');
+    expect(finalText).toContain('Selected source evidence');
+    expect(finalText).toContain('Git Commit');
+    expect(finalText).toContain('commit ffffffffffffffffffffffffffffffffffffffff');
+    expect(finalText).toContain('Test Run');
+    expect(finalText).toContain('PASS src/retry.test.ts');
+    expect(finalText).toContain('Verification Gap');
+    expect(finalText).toContain('Full browser suite was not run');
+    expect(finalText).toContain('Evaluator claims');
+    expect(finalText).toContain('Verification');
+    expect(finalText).toContain('Targeted retry verification passed');
+    expect(finalText).toContain('Coverage');
+    expect(finalText).toContain('Full browser coverage was not captured');
+    expect(finalText).toContain('Evaluator diagnostics');
+    expect(finalText).toContain('Warning: Missing Browser Suite');
+    expect(finalText).toContain('1 source ref: Verification Gap');
+    expect(finalText).not.toContain('assessment_claim_internal');
+    expect(finalText).not.toContain('diagnostic_internal');
+    expect(finalText).not.toContain('hidden rubric');
+    expect(finalText).not.toContain('server-only');
+  });
+
   it('submits the current live workspace HEAD through the real finalizer path', async () => {
     const commitSha = 'b'.repeat(40);
     const onSubmit = vi.fn();

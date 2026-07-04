@@ -64,9 +64,27 @@ function formatEvidenceKind(kind: string): string {
   return kind.trim().replace(/[_-]+/g, ' ').toLowerCase();
 }
 
+function formatSourceKind(kind: string): string {
+  return formatProgressLabel(kind).replace(/\bAi\b/g, 'AI');
+}
+
 function shortSha(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed.slice(0, 12) : null;
+}
+
+function sourceRefSummary(sourceRefTypes: readonly string[], sourceRefCount: number): string {
+  const countLabel = sourceRefCount === 1 ? 'source ref' : 'source refs';
+  const sourceTypes = sourceRefTypes.length > 0
+    ? sourceRefTypes.map(formatSourceKind).join(', ')
+    : 'Source refs captured';
+  return `${sourceRefCount} ${countLabel}: ${sourceTypes}`;
+}
+
+function boundedEvidenceText(value: string): string {
+  const normalized = value.trim();
+  if (normalized.length <= 240) return normalized;
+  return `${normalized.slice(0, 237)}...`;
 }
 
 function evidenceFlagLabel(value: boolean): string {
@@ -221,6 +239,86 @@ function AssessmentAiUsePanel({
       <strong>{aiUse.label}</strong>
       <span>{aiUse.detail}</span>
     </div>
+  );
+}
+
+function FinalEvidencePacketPanel({
+  progress,
+}: {
+  progress: RoomAssessmentProgressSnapshot;
+}): JSX.Element | null {
+  if (!progress.evaluation) return null;
+
+  const snippets = (progress.evidenceSnippets ?? []).slice(0, 4);
+  const claims = progress.evaluation.claims?.slice(0, 4) ?? [];
+  const diagnostics = progress.evaluation.diagnostics?.slice(0, 4) ?? [];
+  const aiUse = summarizeAssessmentAiUse(progress);
+  const hasDetailedEvidence = snippets.length > 0 || claims.length > 0 || diagnostics.length > 0;
+  if (!hasDetailedEvidence && !progress.evaluation.summary) return null;
+
+  return (
+    <section
+      className="commit-submission-final-evidence"
+      data-testid="commit-submission-final-evidence"
+      aria-label="Candidate-safe final evidence packet"
+    >
+      <div className="commit-submission-final-evidence-header">
+        <strong>Final evidence packet</strong>
+        <span>{progress.evaluation.summary || progress.nextActionLabel}</span>
+      </div>
+
+      <AssessmentAiUsePanel progress={progress} />
+
+      {snippets.length > 0 && (
+        <div className="commit-submission-final-evidence-block">
+          <strong>Selected source evidence</strong>
+          <ul>
+            {snippets.map((snippet) => (
+              <li key={`${snippet.eventKind}:${snippet.sourceRefType}:${snippet.occurredAt}`}>
+                <span>
+                  {formatSourceKind(snippet.sourceRefType)} · {formatProgressLabel(snippet.evidenceRole)}
+                </span>
+                <pre>{boundedEvidenceText(snippet.exactText)}</pre>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {claims.length > 0 && (
+        <div className="commit-submission-final-evidence-block">
+          <strong>Evaluator claims</strong>
+          <ul>
+            {claims.map((claim) => (
+              <li key={`${claim.dimension}:${claim.narrative}`}>
+                <span>
+                  {formatProgressLabel(claim.dimension)} · {formatProgressLabel(claim.polarity)}
+                </span>
+                <p>{claim.narrative}</p>
+                <small>{sourceRefSummary(claim.sourceRefTypes, claim.sourceRefCount)}</small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {diagnostics.length > 0 && (
+        <div className="commit-submission-final-evidence-block is-diagnostic">
+          <strong>Evaluator diagnostics</strong>
+          <ul>
+            {diagnostics.map((diagnostic) => (
+              <li key={`${diagnostic.code}:${diagnostic.message}`}>
+                <span>
+                  {formatProgressLabel(diagnostic.severity)}: {formatSourceKind(diagnostic.code)}
+                </span>
+                <p>{diagnostic.message}</p>
+                <small>{sourceRefSummary(diagnostic.sourceRefTypes, diagnostic.sourceRefCount)}</small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -487,6 +585,7 @@ function AssessmentProgressPanel({
           ))}
         </ul>
       )}
+      <FinalEvidencePacketPanel progress={progress} />
     </section>
   );
 }

@@ -2866,6 +2866,95 @@ button:focus-visible {
   gap: 4px;
 }
 
+.commit-submission-final-evidence {
+  display: grid;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 6px;
+  background: rgba(8, 47, 73, 0.18);
+}
+
+.commit-submission-final-evidence-header {
+  display: grid;
+  gap: 3px;
+}
+
+.commit-submission-final-evidence-header strong,
+.commit-submission-final-evidence-block > strong {
+  color: #cffafe;
+  font-family: 'Space Mono', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.commit-submission-final-evidence-header span {
+  color: rgba(236, 254, 255, 0.76);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.commit-submission-final-evidence-block {
+  display: grid;
+  gap: 7px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.commit-submission-final-evidence-block ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.commit-submission-final-evidence-block li {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 6px;
+  background: rgba(2, 6, 23, 0.32);
+}
+
+.commit-submission-final-evidence-block li span {
+  color: #f4f8ff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.commit-submission-final-evidence-block li p,
+.commit-submission-final-evidence-block li small {
+  margin: 0;
+  color: rgba(244, 248, 255, 0.72);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.commit-submission-final-evidence-block li pre {
+  max-height: 92px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: rgba(244, 248, 255, 0.80);
+  font-family: 'Space Mono', ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.commit-submission-final-evidence-block.is-diagnostic li {
+  border-color: rgba(250, 204, 21, 0.22);
+  background: rgba(113, 63, 18, 0.20);
+}
+
+.commit-submission-final-evidence-block.is-diagnostic li span {
+  color: #fde68a;
+}
+
 .commit-submission-actions {
   display: flex;
   justify-content: flex-end;
