@@ -915,14 +915,15 @@ function buildSystemPrompt(): string {
     'Assess only the evidence provided in SOURCE_REFS. Do not invent repo behavior, tests, seniority, intent, or correctness.',
     'Every positive or negative claim must cite one or more exact sourceRefKeys from SOURCE_REFS.',
     'Use EVIDENCE_COVERAGE before scoring. Missing expected evidence must become diagnostics or uncertainty, never positive claims.',
-    'Do not make positive test_strategy, verification, AI-usage, process, communication, reasoning, or tradeoff claims when the matching coverage item is unsatisfied.',
+    'Do not make positive test_strategy, verification, implementation correctness, quality, security, reliability, AI-usage, process, communication, reasoning, or tradeoff claims when the matching coverage item is unsatisfied.',
+    'A code_diff proves what changed, not that the implementation is correct. Use implementation_evidence for diff-only claims.',
     'A verification_gap explains why verification is partial or missing; it is not test_run evidence and must not support positive verification claims.',
     'If evidence is missing, uncertain, ungrounded, or insufficient, return diagnostics instead of positive claims.',
     'Keep the response compact: at most 4 claims and 4 diagnostics; summary and narratives must be one short sentence each.',
     'Return only JSON with keys: summary, recommendation, claims, diagnostics.',
     'Do not include analysis, markdown, or prose before or after the JSON object.',
     'Allowed claim polarities: positive, negative, diagnostic.',
-    'Useful dimensions include source_comprehension, implementation_correctness, debugging_reasoning, test_strategy, security_and_reliability, ai_output_verification, communication.',
+    'Useful dimensions include source_comprehension, implementation_evidence, implementation_correctness only when verified, debugging_reasoning, test_strategy, security_and_reliability, ai_output_verification, communication.',
   ].join('\n');
 }
 
@@ -1384,6 +1385,13 @@ function positiveClaimUnsupportedDiagnostic(
       'Positive AI-use claims require real AI prompt, response, blocked-prompt, or agent diagnostic source refs.',
     );
   }
+  if (positiveCorrectnessDimensionRequiresVerification(dimension) && !hasSuccessfulTestRunRef) {
+    return unsupportedPositiveClaimDiagnostic(
+      claim,
+      citedRefs,
+      'Positive implementation correctness, quality, security, reliability, or performance claims require a successful test_run source ref; use implementation_evidence for diff-only claims.',
+    );
+  }
   if (positiveProcessDimensionRequiresEvidence(dimension)
     && sourceRefsOfTypes(citedRefs, PROCESS_EVIDENCE_SOURCE_REF_TYPES).length === 0) {
     return unsupportedPositiveClaimDiagnostic(
@@ -1401,6 +1409,19 @@ function positiveClaimUnsupportedDiagnostic(
     );
   }
   return null;
+}
+
+function positiveCorrectnessDimensionRequiresVerification(dimension: string): boolean {
+  return dimension.includes('correctness')
+    || dimension.includes('correct_')
+    || dimension.endsWith('_correct')
+    || dimension.includes('quality')
+    || dimension.includes('security')
+    || dimension.includes('reliability')
+    || dimension.includes('reliable')
+    || dimension.includes('performance')
+    || dimension.includes('production_readiness')
+    || dimension.includes('upstream_correct');
 }
 
 function positiveProcessDimensionRequiresEvidence(dimension: string): boolean {

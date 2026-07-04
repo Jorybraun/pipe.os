@@ -550,7 +550,10 @@ describe('repo task assessment evaluator integration', () => {
         ORDER BY dimension`,
     ).all(report.id) as Array<{ polarity: string; dimension: string; narrative: string }>;
     expect(claims).toEqual(expect.arrayContaining([
-      expect.objectContaining({ polarity: 'positive', dimension: 'implementation_correctness' }),
+      expect.objectContaining({ polarity: 'positive', dimension: 'implementation_evidence' }),
+    ]));
+    expect(claims).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ dimension: 'implementation_correctness' }),
     ]));
     expect(claims).toEqual(expect.not.arrayContaining([
       expect.objectContaining({ dimension: 'test_strategy' }),
@@ -572,7 +575,7 @@ describe('repo task assessment evaluator integration', () => {
     expect(diagnostics.find((diagnostic) => diagnostic.code === 'VERIFICATION_GAP_DECLARED')?.message)
       .toContain('verification_gap source ref was captured instead of test_run output');
     expect(diagnostics.find((diagnostic) => diagnostic.code === 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE')?.message)
-      .toContain('Positive test-strategy claims require a test_run source ref');
+      .toContain('Positive implementation correctness, quality, security, reliability, or performance claims require a successful test_run source ref');
 
     const diagnosticSourceRefs = sqlite.prepare(
       `SELECT sr.source_ref_type
@@ -587,6 +590,85 @@ describe('repo task assessment evaluator integration', () => {
     ]));
   });
 
+  it('drops unsupported positive implementation correctness claims when the claim cites only final diff evidence', async () => {
+    const fixture = await createReadyAssessmentFixture(store, 'unsupported-correctness-claim');
+    const aiRun = vi.fn(async () => ({
+      response: JSON.stringify({
+        summary: 'The candidate changed the popover root hook, but correctness requires cited verification.',
+        recommendation: 'mixed_evidence_human_review',
+        claims: [
+          {
+            id: 'implementation-evidence-backed-by-diff',
+            polarity: 'positive',
+            dimension: 'implementation_evidence',
+            narrative: 'The submitted diff changes the popover root hook.',
+            confidence: 0.72,
+            sourceRefKeys: ['code_diff'],
+          },
+          {
+            id: 'implementation-correctness-from-diff',
+            polarity: 'positive',
+            dimension: 'implementation_correctness',
+            narrative: 'The implementation is correct based on the submitted diff.',
+            confidence: 0.82,
+            sourceRefKeys: ['code_diff'],
+          },
+        ],
+        diagnostics: [],
+      }),
+    }));
+
+    const result = await evaluateRepoTaskAssessmentSession({
+      db,
+      store,
+      env: {
+        AI: { run: aiRun } as unknown as Ai,
+        CLOUDFLARE_AI_MODEL: '@cf/meta/llama-3.2-3b-instruct',
+      },
+      sessionId: fixture.sessionId,
+      scheduledInterviewId: fixture.scheduledInterviewId,
+      requestedBy: 'recruiter-1',
+      requestedAt: '2026-07-03T00:03:30.000Z',
+      requestEventId: fixture.requestEventId,
+      requestSourceRef: fixture.requestSourceRef,
+    });
+
+    expect(result.kind).toBe('evaluated');
+    const report = sqlite.prepare(
+      `SELECT id, status
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1`,
+    ).get(fixture.sessionId) as { id: string; status: string };
+    expect(report.status).toBe('EVALUATED');
+
+    const claims = sqlite.prepare(
+      `SELECT polarity, dimension, narrative
+         FROM assessment_evaluation_claims
+        WHERE report_id = ?
+        ORDER BY dimension`,
+    ).all(report.id) as Array<{ polarity: string; dimension: string; narrative: string }>;
+    expect(claims).toEqual(expect.arrayContaining([
+      expect.objectContaining({ polarity: 'positive', dimension: 'implementation_evidence' }),
+    ]));
+    expect(claims).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ dimension: 'implementation_correctness' }),
+    ]));
+
+    const diagnostics = sqlite.prepare(
+      `SELECT code, severity, message
+         FROM assessment_diagnostics
+        WHERE report_id = ?
+        ORDER BY code`,
+    ).all(report.id) as Array<{ code: string; severity: string; message: string }>;
+    expect(diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE', severity: 'warning' }),
+    ]));
+    expect(diagnostics.find((diagnostic) => diagnostic.code === 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE')?.message)
+      .toContain('Positive implementation correctness, quality, security, reliability, or performance claims require a successful test_run source ref');
+  });
+
   it('drops unsupported positive process claims when only final diff evidence is cited', async () => {
     const fixture = await createReadyAssessmentFixture(store, 'unsupported-process-claim');
     const aiRun = vi.fn(async () => ({
@@ -597,8 +679,8 @@ describe('repo task assessment evaluator integration', () => {
           {
             id: 'implementation-backed-by-diff',
             polarity: 'positive',
-            dimension: 'implementation_correctness',
-            narrative: 'The candidate changed the popover root hook in the submitted diff.',
+            dimension: 'implementation_evidence',
+            narrative: 'The submitted diff changes the popover root hook.',
             confidence: 0.72,
             sourceRefKeys: ['code_diff'],
           },
@@ -647,7 +729,7 @@ describe('repo task assessment evaluator integration', () => {
         ORDER BY dimension`,
     ).all(report.id) as Array<{ polarity: string; dimension: string; narrative: string }>;
     expect(claims).toEqual(expect.arrayContaining([
-      expect.objectContaining({ polarity: 'positive', dimension: 'implementation_correctness' }),
+      expect.objectContaining({ polarity: 'positive', dimension: 'implementation_evidence' }),
     ]));
     expect(claims).toEqual(expect.not.arrayContaining([
       expect.objectContaining({ dimension: 'debugging_reasoning' }),
@@ -676,8 +758,8 @@ describe('repo task assessment evaluator integration', () => {
           {
             id: 'implementation-backed-by-diff',
             polarity: 'positive',
-            dimension: 'implementation_correctness',
-            narrative: 'The candidate changed the popover root hook in the submitted diff.',
+            dimension: 'implementation_evidence',
+            narrative: 'The submitted diff changes the popover root hook.',
             confidence: 0.72,
             sourceRefKeys: ['code_diff'],
           },
@@ -726,7 +808,7 @@ describe('repo task assessment evaluator integration', () => {
         ORDER BY dimension`,
     ).all(report.id) as Array<{ polarity: string; dimension: string; narrative: string }>;
     expect(claims).toEqual(expect.arrayContaining([
-      expect.objectContaining({ polarity: 'positive', dimension: 'implementation_correctness' }),
+      expect.objectContaining({ polarity: 'positive', dimension: 'implementation_evidence' }),
     ]));
     expect(claims).toEqual(expect.not.arrayContaining([
       expect.objectContaining({ dimension: 'tradeoff_reasoning' }),

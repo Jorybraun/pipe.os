@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Source-backed evaluator normalization now drops positive implementation correctness, quality, security, reliability, or performance claims unless the claim cites a successful `test_run`, keeping diff-only submissions as implementation evidence rather than proven correctness.
 - Source-backed evaluator normalization now drops positive communication, reasoning, collaboration, explanation, or tradeoff claims unless they cite transcript, chat, candidate plan, or candidate-authored AI-prompt evidence, preventing final diffs from being misread as explanation proof.
 - Source-backed evaluator normalization now drops positive debugging/process claims unless they cite terminal, code-editor, workspace, transcript, chat, or candidate AI-prompt evidence, preventing final diffs from being misread as workflow proof.
 - Source-backed evaluator prompts now expose `verification_gap` as its own high-confidence coverage signal while keeping `test_run` unsatisfied, so AI reports can cite declared verification limits without treating them as passing tests.

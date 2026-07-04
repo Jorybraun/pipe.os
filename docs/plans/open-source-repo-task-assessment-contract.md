@@ -201,6 +201,10 @@ The controlling product rule remains:
 - Source-backed evaluator prompts expose `verification_gap` separately from
   `test_run`, allowing reports to cite declared verification limits while
   preserving the no-positive-verification-without-test-output rule.
+- Source-backed evaluator normalization drops positive implementation
+  correctness, quality, security, reliability, or performance claims unless the
+  claim cites a successful `test_run`. A final diff alone can support
+  `implementation_evidence`, not proven correctness.
 - Source-backed evaluator normalization drops positive debugging/process claims
   unless the claim cites terminal, code-editor, workspace, transcript, chat, or
   candidate AI-prompt evidence. A final diff alone proves implementation
