@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Standalone open-source/code-review auto-assignment now emits explicit source-backed quality-gate diagnostics for missing candidate evidence, missing repo evidence, and embedding-only recalls, and blocks those matches before challenge-session materialization while showing the diagnostics in the match proof UI.
 - Recruiter assessment detail, the candidate room task brief, and live open-source workspace smoke now expose the persisted `repo-task-review-packet-v1` as a safe final review packet, showing the assigned challenge, submitted commit, evidence readiness, claim count, and diagnostic count without leaking hidden rubric data.
 - Candidate Report Ready panels now include a candidate-safe final evidence packet that separates selected source evidence, evaluator claims, evaluator diagnostics, and AI-use state without exposing internal claim or diagnostic ids.
 - Recruiter assessment detail now shows an AI-use receipt beside the final review packet, separating real Clippy/Devin prompt/response source refs, bridge telemetry, and missing-evidence boundaries without implying silence proves no AI use.

@@ -108,6 +108,7 @@ export interface CodeReviewMatchExplanation {
   qualityGate?: {
     verdict?: string;
     checks?: string[];
+    diagnostics?: string[];
   };
   candidateSourceCount?: number;
   repoSourceCount?: number;
@@ -730,6 +731,7 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
     ?? firstHyperedgeSource(evidenceHyperedges, 'repo_challenge');
   const hasSourceBridge = Boolean(roleSource || candidateSource || repoSource);
   const checks = matchExplanation.qualityGate?.checks ?? [];
+  const diagnostics = matchExplanation.qualityGate?.diagnostics ?? [];
   const verdict = matchExplanation.qualityGate?.verdict ?? matchExplanation.status ?? 'SOURCE_BACKED';
   const validatorAgent = matchExplanation.validatorAgent;
   const validatorChecks = validatorAgent?.checks ?? [];
@@ -938,7 +940,7 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
       </div>
 
       {checks.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: hasSourceBridge ? 10 : 0 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: diagnostics.length > 0 || hasSourceBridge ? 10 : 0 }}>
           {checks.map((check) => (
             <span
               key={check}
@@ -953,6 +955,35 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
               }}
             >
               {formatMatchCheckLabel(check)}
+            </span>
+          ))}
+        </div>
+      )}
+      {diagnostics.length > 0 && (
+        <div
+          data-testid="code-review-match-diagnostics"
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 6,
+            marginBottom: hasSourceBridge ? 10 : 0,
+          }}
+        >
+          {diagnostics.map((diagnostic) => (
+            <span
+              key={diagnostic}
+              style={{
+                fontSize: 8,
+                fontFamily: 'Space Mono',
+                color: '#fbbf24',
+                border: '1px solid rgba(251,191,36,0.24)',
+                background: 'rgba(251,191,36,0.08)',
+                borderRadius: 4,
+                padding: '3px 6px',
+                wordBreak: 'break-word',
+              }}
+            >
+              {formatMatchCheckLabel(diagnostic)}
             </span>
           ))}
         </div>

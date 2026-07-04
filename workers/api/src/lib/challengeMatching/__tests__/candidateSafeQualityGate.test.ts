@@ -23,6 +23,7 @@ describe('candidateSafeQualityGateFor', () => {
         'contrast_separation_verified',
         'agent_validated_match',
       ],
+      diagnostics: [],
     });
   });
 
@@ -46,6 +47,7 @@ describe('candidateSafeQualityGateFor', () => {
         'assessment_quality_verified',
         'agent_validated_match',
       ],
+      diagnostics: ['CONTRAST_SEPARATION_UNVERIFIED'],
     });
   });
 
@@ -70,6 +72,7 @@ describe('candidateSafeQualityGateFor', () => {
         'contrast_separation_not_required_roleless',
         'agent_validated_match',
       ],
+      diagnostics: [],
     });
   });
 
@@ -93,6 +96,7 @@ describe('candidateSafeQualityGateFor', () => {
         'contrast_separation_verified',
         'agent_validated_match',
       ],
+      diagnostics: ['MATCH_QUALITY_NOT_USABLE'],
     });
   });
 
@@ -115,6 +119,7 @@ describe('candidateSafeQualityGateFor', () => {
         'assessment_quality_verified',
         'contrast_separation_verified',
       ],
+      diagnostics: ['PROVENANCE_INCOMPLETE'],
     });
   });
 
@@ -133,6 +138,62 @@ describe('candidateSafeQualityGateFor', () => {
         'role_context_alignment',
         'agent_validated_match',
       ],
+      diagnostics: ['MATCH_QUALITY_NOT_USABLE', 'CONTRAST_SEPARATION_UNVERIFIED'],
     });
+  });
+
+  it('rejects embedding-only matched recalls with explicit source-backed diagnostics', () => {
+    expect(candidateSafeQualityGateFor({
+      status: 'MATCHED',
+      candidateSourceCount: 0,
+      repoSourceCount: 0,
+      roleSourceCount: 0,
+      validatorVerdict: 'PASSED',
+      assessmentQualityVerdict: 'USABLE',
+      assessmentQualityMetrics: [
+        { id: 'contrast_separation', score: 0 },
+      ],
+      requireContrastSeparation: false,
+    })).toEqual({
+      verdict: 'NEEDS_REVIEW',
+      checks: [
+        'assessment_quality_verified',
+        'contrast_separation_not_required_roleless',
+        'agent_validated_match',
+      ],
+      diagnostics: [
+        'MISSING_CANDIDATE_SOURCE_EVIDENCE',
+        'MISSING_REPO_SOURCE_EVIDENCE',
+        'EMBEDDING_ONLY_MATCH_REJECTED',
+      ],
+    });
+  });
+
+  it('keeps candidate-source and repo-source gaps separate for matcher repair', () => {
+    expect(candidateSafeQualityGateFor({
+      status: 'MATCHED',
+      candidateSourceCount: 0,
+      repoSourceCount: 2,
+      roleSourceCount: 0,
+      validatorVerdict: 'PASSED',
+      assessmentQualityVerdict: 'USABLE',
+      assessmentQualityMetrics: [
+        { id: 'contrast_separation', score: 0 },
+      ],
+      requireContrastSeparation: false,
+    }).diagnostics).toEqual(['MISSING_CANDIDATE_SOURCE_EVIDENCE']);
+
+    expect(candidateSafeQualityGateFor({
+      status: 'MATCHED',
+      candidateSourceCount: 2,
+      repoSourceCount: 0,
+      roleSourceCount: 0,
+      validatorVerdict: 'PASSED',
+      assessmentQualityVerdict: 'USABLE',
+      assessmentQualityMetrics: [
+        { id: 'contrast_separation', score: 0 },
+      ],
+      requireContrastSeparation: false,
+    }).diagnostics).toEqual(['MISSING_REPO_SOURCE_EVIDENCE']);
   });
 });

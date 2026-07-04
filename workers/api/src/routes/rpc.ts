@@ -43,6 +43,7 @@ import {
 } from '../lib/challengeMatching';
 import {
   candidateSafeQualityGateFor,
+  type CandidateSafeQualityGateDiagnostic,
   type CandidateSafeQualityGateVerdict,
   type CandidateSafeMatchStatus,
 } from '../lib/challengeMatching/candidateSafeQualityGate';
@@ -991,6 +992,7 @@ interface CandidateSafeMatchExplanation {
   qualityGate: {
     verdict: CandidateSafeQualityGateVerdict;
     checks: string[];
+    diagnostics: CandidateSafeQualityGateDiagnostic[];
   };
   candidateSourceCount: number;
   repoSourceCount: number;
@@ -1394,6 +1396,13 @@ function standaloneAutomaticMatchPasses(
     && contrastAccepted;
 }
 
+function qualityGateDiagnosticLabel(
+  explanation: CandidateSafeMatchExplanation | null | undefined,
+): string {
+  const diagnostics = explanation?.qualityGate.diagnostics ?? [];
+  return diagnostics.length > 0 ? diagnostics.join(',') : 'none';
+}
+
 function sanitizeMatchExplanation(explanation: MatchExplanation | undefined): CandidateSafeMatchExplanation | null {
   if (!explanation) return null;
   const evidence = explanation.evidence.flatMap((entry) => {
@@ -1650,6 +1659,7 @@ function sourceBackedManualReviewExplanation(prNumber: number): CandidateSafeMat
     qualityGate: {
       verdict: 'PASSED',
       checks: ['repo_source_spans', 'source_backed_manual_override', 'agent_validated_match'],
+      diagnostics: [],
     },
     repoSourceCount: 1,
     validatorAgent,
@@ -2252,7 +2262,7 @@ async function matchStandaloneSourceBackedAssignment(
           };
         }
         console.warn(
-          `[${options.logLabel}] refreshing cached automatic PR ${interview.github_pr_number} for ${candidateId} because its quality gate is ${cachedExplanation.qualityGate.verdict} and contrast score is ${contrastSeparationScore(cachedExplanation) ?? 'missing'}`,
+          `[${options.logLabel}] refreshing cached automatic PR ${interview.github_pr_number} for ${candidateId} because its quality gate is ${cachedExplanation.qualityGate.verdict}, diagnostics=${qualityGateDiagnosticLabel(cachedExplanation)}, contrast score is ${contrastSeparationScore(cachedExplanation) ?? 'missing'}`,
         );
         await clearStandaloneReviewCachedMatch(db, interview.id);
       } else {
@@ -2288,7 +2298,7 @@ async function matchStandaloneSourceBackedAssignment(
   const matchExplanation = sanitizeMatchExplanation(match.explanation);
   if (!standaloneAutomaticMatchPasses(matchExplanation)) {
     console.warn(
-      `[${options.logLabel}] deterministic matcher selected ${match.repoId}#${match.prNumber} for ${candidateId}, but standalone quality gate did not pass (gate=${matchExplanation?.qualityGate.verdict ?? 'missing'}, contrast=${contrastSeparationScore(matchExplanation) ?? 'missing'})`,
+      `[${options.logLabel}] deterministic matcher selected ${match.repoId}#${match.prNumber} for ${candidateId}, but standalone quality gate did not pass (gate=${matchExplanation?.qualityGate.verdict ?? 'missing'}, diagnostics=${qualityGateDiagnosticLabel(matchExplanation)}, contrast=${contrastSeparationScore(matchExplanation) ?? 'missing'})`,
     );
     return null;
   }

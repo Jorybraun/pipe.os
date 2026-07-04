@@ -158,6 +158,12 @@ The controlling product rule remains:
   If the packet is missing repo provenance, concept links, exact commits, PR
   identity, success criteria, or expected evidence, the candidate remains at the
   safe profile-received handoff instead of seeing a generic repo dump.
+- Standalone open-source/code-review auto-assignment now carries explicit
+  source-backed quality-gate diagnostics for missing candidate evidence, missing
+  repo evidence, incomplete provenance, unusable assessment quality, unverified
+  contrast separation, and embedding-only recalls. Matches with those
+  diagnostics are blocked before challenge-session materialization, and the
+  match proof UI surfaces the diagnostics separately from passing proof checks.
 - Meeting-room workspace provisioning treats it as a workspace-backed interview.
 - Host room end now replays the authoritative Durable Object chat, media,
   recording, workspace, terminal, and code-server activity logs into
