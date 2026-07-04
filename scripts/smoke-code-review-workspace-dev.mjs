@@ -981,6 +981,10 @@ async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha) 
     await expect(brief.getByTestId('assessment-task-brief-submission')).toContainText(
       expectedCommitSha.slice(0, 10),
     );
+    const submissionPanel = page.getByTestId('commit-submission-completion');
+    await expect(submissionPanel).toContainText('Assessment fit');
+    await expect(submissionPanel).toContainText('minute target from deterministic engineering prior');
+    await expect(submissionPanel).toContainText(/Issue context is present|No issue context in the source-backed PR packet/);
 
     return { skipped: false };
   } finally {

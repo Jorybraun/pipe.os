@@ -30,6 +30,10 @@ const richPacket: RoomWorkspaceChallengePacket = {
     'Match proof:',
     '- Review packet quality 92% from source-backed repo analysis.',
     '- 2 source-backed repo demands in the selected PR packet.',
+    'Assessment fit:',
+    '- focused review calibrated for senior candidates.',
+    '- 30 minute target from deterministic engineering prior.',
+    '- No issue context in the source-backed PR packet; assess from code demand evidence.',
     'Success criteria:',
     '- Retry order remains deterministic',
     '- Existing worker tests pass',
@@ -135,6 +139,10 @@ describe('CommitSubmissionPanel', () => {
     expect(completion.textContent).toContain('Match proof');
     expect(completion.textContent).toContain('Review packet quality 92% from source-backed repo analysis.');
     expect(completion.textContent).toContain('2 source-backed repo demands in the selected PR packet.');
+    expect(completion.textContent).toContain('Assessment fit');
+    expect(completion.textContent).toContain('focused review calibrated for senior candidates.');
+    expect(completion.textContent).toContain('30 minute target from deterministic engineering prior.');
+    expect(completion.textContent).toContain('No issue context in the source-backed PR packet; assess from code demand evidence.');
     expect(completion.textContent).toContain('Retry order remains deterministic');
     expect(completion.textContent).toContain('Commit SHA on assessment branch');
 
