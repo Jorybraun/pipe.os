@@ -203,6 +203,10 @@ The controlling product rule remains:
   own declared limitation and keeps `test_run` confidence unsatisfied until
   actual test output is captured, matching the durable session progress
   behavior.
+- Scheduled recruiter lists must preserve evaluated assessment evidence
+  coverage, cited claim previews, and diagnostic previews from the latest
+  report, so scan-level cards show why a commit assessment is trustworthy or
+  limited instead of collapsing the report into status-only text.
 - Readiness details must make lower-confidence review states explicit: a session
   may be ready to start evaluation with a declared verification gap or manual
   commit evidence, but the recruiter readout must say that missing test output

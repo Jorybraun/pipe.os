@@ -44,6 +44,8 @@ import { AssessmentLayerStore, type AssessmentEvidenceSourceRefInput } from '../
 import { recordAssessmentCandidateProfileEvidence } from '../../lib/assessmentLayer/candidateProfileEvidence';
 import {
   RepoTaskInterviewSessionStore,
+  type AssessmentEvidenceCoverageItem,
+  type AssessmentEvidenceCoverageSnapshot,
   type AssessmentProgressSnapshot,
   type HumanAssessmentDecisionValue,
 } from '../../lib/repoTaskInterviewSession';
@@ -3493,6 +3495,8 @@ type ScheduledAssessmentListEvaluation = NonNullable<AssessmentProgressSnapshot[
 type ScheduledAssessmentListHumanDecision = NonNullable<AssessmentProgressSnapshot['humanDecision']>;
 type ScheduledAssessmentListStage = AssessmentProgressSnapshot['stage'];
 type ScheduledAssessmentListNextAction = AssessmentProgressSnapshot['nextAction'];
+type ScheduledAssessmentListEvaluationClaim = ScheduledAssessmentListEvaluation['claims'][number];
+type ScheduledAssessmentListEvaluationDiagnostic = ScheduledAssessmentListEvaluation['diagnostics'][number];
 const SCHEDULED_ASSESSMENT_TRANSCRIPT_SOURCE_REF_TYPES = [
   'meeting_transcript_segment',
   'transcript_span',
@@ -3507,6 +3511,63 @@ const SCHEDULED_ASSESSMENT_TOOL_ACTIVITY_SOURCE_REF_TYPES = [
 
 function scheduledAssessmentPlaceholders(count: number): string {
   return Array.from({ length: count }, (_, index) => `?${index + 1}`).join(', ');
+}
+
+function scheduledAssessmentJsonRecord(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
+}
+
+function scheduledAssessmentJsonBoolean(value: unknown): boolean {
+  return value === true;
+}
+
+function scheduledAssessmentCoverageTypeCounts(value: unknown): Record<string, number> {
+  const record = scheduledAssessmentJsonRecord(value);
+  if (!record) return {};
+  const counts: Record<string, number> = {};
+  for (const [key, rawValue] of Object.entries(record)) {
+    const count = numberOrNull(rawValue);
+    if (count !== null) counts[key] = count;
+  }
+  return counts;
+}
+
+function scheduledAssessmentCoverageItem(value: unknown): AssessmentEvidenceCoverageItem | null {
+  const item = scheduledAssessmentJsonRecord(value);
+  if (!item) return null;
+  const label = optionalString(item.label);
+  if (!label) return null;
+  return {
+    label,
+    required: scheduledAssessmentJsonBoolean(item.required),
+    sourceRefTypes: stringArray(item.sourceRefTypes),
+    satisfied: scheduledAssessmentJsonBoolean(item.satisfied),
+    sourceRefKeys: stringArray(item.sourceRefKeys),
+    missingImpact: optionalString(item.missingImpact) ?? '',
+  };
+}
+
+function scheduledAssessmentCoverageItems(value: unknown): AssessmentEvidenceCoverageItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(scheduledAssessmentCoverageItem)
+    .filter((item): item is AssessmentEvidenceCoverageItem => Boolean(item));
+}
+
+function scheduledAssessmentEvidenceCoverage(
+  output: Record<string, unknown>,
+): AssessmentEvidenceCoverageSnapshot | null {
+  const coverage = scheduledAssessmentJsonRecord(output.evidenceCoverage);
+  if (!coverage) return null;
+  const schemaVersion = optionalString(coverage.schemaVersion);
+  if (schemaVersion !== 'assessment-evidence-coverage-v1') return null;
+  return {
+    schemaVersion,
+    sourceRefCount: numberOrNull(coverage.sourceRefCount) ?? 0,
+    sourceRefTypeCounts: scheduledAssessmentCoverageTypeCounts(coverage.sourceRefTypeCounts),
+    requiredForEvaluation: scheduledAssessmentCoverageItems(coverage.requiredForEvaluation),
+    expectedForHighConfidence: scheduledAssessmentCoverageItems(coverage.expectedForHighConfidence),
+  };
 }
 
 function toScheduledAssessmentListSession(row: ScheduledAssessmentListSessionRow): ScheduledAssessmentListSession {
@@ -3808,12 +3869,159 @@ async function loadScheduledAssessmentEvaluations(
       summary: row.summary,
       recommendation: optionalString(output.recommendation) ?? null,
       createdAt: row.created_at,
-      evidenceCoverage: null,
+      evidenceCoverage: scheduledAssessmentEvidenceCoverage(output),
       claims: [],
       diagnostics: [],
     });
   }
+  const reportIds = [...evaluations.values()].map((evaluation) => evaluation.id);
+  if (reportIds.length === 0) return evaluations;
+
+  const [
+    claimsByReportId,
+    diagnosticsByReportId,
+  ] = await Promise.all([
+    loadScheduledAssessmentEvaluationClaims(db, reportIds),
+    loadScheduledAssessmentEvaluationDiagnostics(db, reportIds),
+  ]);
+
+  for (const [sessionId, evaluation] of evaluations) {
+    evaluations.set(sessionId, {
+      ...evaluation,
+      claims: claimsByReportId.get(evaluation.id) ?? [],
+      diagnostics: diagnosticsByReportId.get(evaluation.id) ?? [],
+    });
+  }
   return evaluations;
+}
+
+async function loadScheduledAssessmentEvaluationClaims(
+  db: D1Database,
+  reportIds: readonly string[],
+): Promise<Map<string, ScheduledAssessmentListEvaluationClaim[]>> {
+  const placeholders = scheduledAssessmentPlaceholders(reportIds.length);
+  const result = await db.prepare(
+    `SELECT id, report_id, polarity, dimension, narrative, confidence,
+            source_ref_count, source_ref_types
+       FROM (
+         SELECT c.id,
+                c.report_id,
+                c.polarity,
+                c.dimension,
+                c.narrative,
+                c.confidence,
+                COUNT(sr.id) AS source_ref_count,
+                GROUP_CONCAT(DISTINCT sr.source_ref_type) AS source_ref_types,
+                ROW_NUMBER() OVER (
+                  PARTITION BY c.report_id
+                  ORDER BY
+                    CASE c.polarity
+                      WHEN 'positive' THEN 0
+                      WHEN 'negative' THEN 1
+                      WHEN 'neutral' THEN 2
+                      ELSE 3
+                    END,
+                    c.created_at,
+                    c.id
+                ) AS rn
+           FROM assessment_evaluation_claims c
+           LEFT JOIN assessment_claim_source_refs sr ON sr.claim_id = c.id
+          WHERE c.report_id IN (${placeholders})
+          GROUP BY c.id, c.report_id, c.polarity, c.dimension, c.narrative, c.confidence, c.created_at
+         HAVING COUNT(sr.id) > 0
+       )
+      WHERE rn <= 3
+      ORDER BY report_id, rn`,
+  ).bind(...reportIds).all<{
+    id: string;
+    report_id: string;
+    polarity: ScheduledAssessmentListEvaluationClaim['polarity'];
+    dimension: string;
+    narrative: string;
+    confidence: number | null;
+    source_ref_count: number;
+    source_ref_types: string | null;
+  }>();
+  const byReportId = new Map<string, ScheduledAssessmentListEvaluationClaim[]>();
+  for (const row of result.results ?? []) {
+    const claims = byReportId.get(row.report_id) ?? [];
+    claims.push({
+      id: row.id,
+      polarity: row.polarity,
+      dimension: row.dimension,
+      narrative: row.narrative,
+      confidence: row.confidence,
+      sourceRefCount: row.source_ref_count,
+      sourceRefTypes: row.source_ref_types
+        ? row.source_ref_types.split(',').map((value) => value.trim()).filter(Boolean)
+        : [],
+    });
+    byReportId.set(row.report_id, claims);
+  }
+  return byReportId;
+}
+
+async function loadScheduledAssessmentEvaluationDiagnostics(
+  db: D1Database,
+  reportIds: readonly string[],
+): Promise<Map<string, ScheduledAssessmentListEvaluationDiagnostic[]>> {
+  const placeholders = scheduledAssessmentPlaceholders(reportIds.length);
+  const result = await db.prepare(
+    `SELECT id, report_id, code, severity, message, source_ref_count, source_ref_types
+       FROM (
+         SELECT d.id,
+                d.report_id,
+                d.code,
+                d.severity,
+                d.message,
+                COUNT(sr.id) AS source_ref_count,
+                GROUP_CONCAT(DISTINCT sr.source_ref_type) AS source_ref_types,
+                ROW_NUMBER() OVER (
+                  PARTITION BY d.report_id
+                  ORDER BY
+                    CASE d.severity
+                      WHEN 'blocking' THEN 0
+                      WHEN 'error' THEN 1
+                      WHEN 'warning' THEN 2
+                      WHEN 'info' THEN 3
+                      ELSE 4
+                    END,
+                    d.created_at,
+                    d.id
+                ) AS rn
+           FROM assessment_diagnostics d
+           LEFT JOIN assessment_diagnostic_source_refs sr ON sr.diagnostic_id = d.id
+          WHERE d.report_id IN (${placeholders})
+          GROUP BY d.id, d.report_id, d.code, d.severity, d.message, d.created_at
+       )
+      WHERE rn <= 4
+      ORDER BY report_id, rn`,
+  ).bind(...reportIds).all<{
+    id: string;
+    report_id: string;
+    code: string;
+    severity: string;
+    message: string;
+    source_ref_count: number;
+    source_ref_types: string | null;
+  }>();
+  const byReportId = new Map<string, ScheduledAssessmentListEvaluationDiagnostic[]>();
+  for (const row of result.results ?? []) {
+    if (!row.report_id) continue;
+    const diagnostics = byReportId.get(row.report_id) ?? [];
+    diagnostics.push({
+      id: row.id,
+      code: row.code,
+      severity: row.severity,
+      message: row.message,
+      sourceRefCount: row.source_ref_count,
+      sourceRefTypes: row.source_ref_types
+        ? row.source_ref_types.split(',').map((value) => value.trim()).filter(Boolean)
+        : [],
+    });
+    byReportId.set(row.report_id, diagnostics);
+  }
+  return byReportId;
 }
 
 async function loadScheduledAssessmentHumanDecisions(

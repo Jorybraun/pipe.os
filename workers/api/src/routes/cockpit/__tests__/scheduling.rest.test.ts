@@ -2960,6 +2960,113 @@ describe('GET /interviews/:id detail', () => {
         now,
       );
     }
+    sqlite!.prepare(`
+      INSERT INTO assessment_evaluation_reports (
+        id, ingestion_key, session_id, status, summary, output_json,
+        diagnostics_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-report-list-evaluated',
+      'assessment-report:progress-list-evaluated',
+      'assessment-session-progress-list',
+      'EVALUATED',
+      'PIPE produced a source-backed assessment report with a cited implementation claim and a declared verification limitation.',
+      JSON.stringify({
+        recommendation: 'mixed_evidence_human_review',
+        evidenceCoverage: {
+          schemaVersion: 'assessment-evidence-coverage-v1',
+          sourceRefCount: 4,
+          sourceRefTypeCounts: {
+            review_challenge_packet: 1,
+            git_commit: 1,
+            code_diff: 1,
+            verification_gap: 1,
+          },
+          requiredForEvaluation: [
+            {
+              label: 'Submitted commit',
+              required: true,
+              sourceRefTypes: ['git_commit'],
+              satisfied: true,
+              sourceRefKeys: ['git_commit:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:support:'],
+              missingImpact: 'A real commit is required before assessment.',
+            },
+          ],
+          expectedForHighConfidence: [
+            {
+              label: 'Test output',
+              required: false,
+              sourceRefTypes: ['test_run'],
+              satisfied: false,
+              sourceRefKeys: [],
+              missingImpact: 'A verification gap was declared, so correctness needs human review.',
+            },
+          ],
+        },
+      }),
+      '[]',
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_evaluation_claims (
+        id, report_id, polarity, dimension, narrative, confidence, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-claim-list-focused-diff',
+      'assessment-report-list-evaluated',
+      'positive',
+      'implementation_evidence',
+      'The submitted diff touches the list progress path with a focused implementation change.',
+      0.82,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_claim_source_refs (
+        id, claim_id, source_ref_type, source_ref_id, source_span_id,
+        evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+    `).run(
+      'assessment-claim-source-list-diff',
+      'assessment-claim-list-focused-diff',
+      'code_diff',
+      `${baseCommitSha}..${commitSha}`,
+      'support',
+      JSON.stringify({ path: 'src/list.ts', baseCommitSha, commitSha }),
+      diffText,
+      sha256Hex(diffText),
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_diagnostics (
+        id, session_id, report_id, event_id, code, severity, message,
+        provider, retryable, details_json, metadata_json, created_at
+      ) VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, 0, '{}', '{}', ?)
+    `).run(
+      'assessment-diagnostic-list-verification-gap',
+      'assessment-session-progress-list',
+      'assessment-report-list-evaluated',
+      'MISSING_TEST_EVIDENCE',
+      'warning',
+      'No test_run source ref was attached; use the declared verification gap as a limitation, not proof of correctness.',
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_diagnostic_source_refs (
+        id, diagnostic_id, source_ref_type, source_ref_id, source_span_id,
+        evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+    `).run(
+      'assessment-diagnostic-source-list-gap',
+      'assessment-diagnostic-list-verification-gap',
+      'verification_gap',
+      `${commitSha}:test-evidence-missing`,
+      'support',
+      JSON.stringify({ repositoryUrl: 'https://github.com/open-source/widgets', baseCommitSha, commitSha }),
+      verificationGapText,
+      sha256Hex(verificationGapText),
+      now,
+    );
     for (let index = 0; index < 105; index += 1) {
       sqlite!.prepare(`
         INSERT INTO scheduled_interviews (
@@ -3080,6 +3187,30 @@ describe('GET /interviews/:id detail', () => {
               }>;
             };
             sourceRefCounts: Array<{ kind: string; count: number }>;
+            evaluation: {
+              status: string;
+              recommendation: string | null;
+              evidenceCoverage: {
+                schemaVersion: string;
+                requiredForEvaluation: Array<{ label: string; satisfied: boolean }>;
+                expectedForHighConfidence: Array<{ label: string; satisfied: boolean }>;
+              } | null;
+              claims: Array<{
+                id: string;
+                polarity: string;
+                dimension: string;
+                narrative: string;
+                sourceRefCount: number;
+                sourceRefTypes: string[];
+              }>;
+              diagnostics: Array<{
+                code: string;
+                severity: string;
+                message: string;
+                sourceRefCount: number;
+                sourceRefTypes: string[];
+              }>;
+            } | null;
             challenge: {
               exactText: string | null;
               summary: {
@@ -3120,10 +3251,10 @@ describe('GET /interviews/:id detail', () => {
       expect(body.interviews[1]?.id).toBe('interview-1');
       const interview = body.interviews.find((item) => item.id === 'interview-1');
       expect(interview?.assessmentProgress).toMatchObject({
-        stage: 'READY_FOR_EVALUATION',
-        nextAction: 'START_EVALUATION',
+        stage: 'EVALUATED',
+        nextAction: 'REVIEW_EVALUATION',
         readiness: {
-          detail: 'Required evidence is captured, but commit provenance still needs repository or workspace verification and test output is missing and only a declared verification gap is available; start evaluation as lower-confidence and do not treat correctness as proven.',
+          detail: 'A source-backed evaluation report is available for review.',
         },
         hasChallengePacket: true,
         hasCommitSubmission: true,
@@ -3131,6 +3262,29 @@ describe('GET /interviews/:id detail', () => {
           commitSha,
           branchName: 'pipe-assessment/list-progress',
         },
+      });
+      expect(interview?.assessmentProgress?.evaluation).toMatchObject({
+        status: 'EVALUATED',
+        recommendation: 'mixed_evidence_human_review',
+        evidenceCoverage: {
+          schemaVersion: 'assessment-evidence-coverage-v1',
+          expectedForHighConfidence: expect.arrayContaining([
+            expect.objectContaining({ label: 'Test output', satisfied: false }),
+          ]),
+        },
+        claims: [expect.objectContaining({
+          id: 'assessment-claim-list-focused-diff',
+          polarity: 'positive',
+          dimension: 'implementation_evidence',
+          sourceRefCount: 1,
+          sourceRefTypes: ['code_diff'],
+        })],
+        diagnostics: [expect.objectContaining({
+          code: 'MISSING_TEST_EVIDENCE',
+          severity: 'warning',
+          sourceRefCount: 1,
+          sourceRefTypes: ['verification_gap'],
+        })],
       });
       expect(interview?.assessmentProgress?.readiness.confidence).toEqual(expect.arrayContaining([
         expect.objectContaining({
