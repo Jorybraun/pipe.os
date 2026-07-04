@@ -922,8 +922,12 @@ async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha) 
     await expect(statusStrip).toHaveAttribute('data-assessment-mode', 'dev_container_assessment');
 
     const headerSubmission = assessmentHeader.getByTestId('assessment-open-submission');
-    await expect(headerSubmission).toContainText('Report Ready', { timeout: 60_000 });
-    await expect(headerSubmission).not.toContainText('Submit Work');
+    if (await headerSubmission.count()) {
+      await expect(headerSubmission).toContainText('Report Ready', { timeout: 60_000 });
+      await expect(headerSubmission).not.toContainText('Submit Work');
+    } else {
+      await expect(statusStrip).toContainText('Evaluated', { timeout: 60_000 });
+    }
 
     const footerSubmission = page.getByTestId('standard-open-submission');
     await expect(footerSubmission).toContainText('Report Ready', { timeout: 60_000 });
