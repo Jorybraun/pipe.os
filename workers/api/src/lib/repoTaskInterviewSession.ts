@@ -1399,7 +1399,7 @@ function progressStageAndAction(input: {
   hasCompleteChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasCommitSubmission: boolean;
-  hasBoundCommitSubmission: boolean;
+  hasReviewableCommitSubmission: boolean;
   hasFinalSubmission: boolean;
   evaluation: AssessmentProgressEvaluation | null;
   humanDecision: AssessmentProgressHumanDecision | null;
@@ -1425,7 +1425,7 @@ function progressStageAndAction(input: {
   if (!input.hasCompleteChallengePacket) {
     return { stage: 'WAITING_FOR_CHALLENGE', nextAction: 'ASSIGN_CHALLENGE' };
   }
-  if (modeRequiresCommit(input.session.mode) && !input.hasBoundCommitSubmission) {
+  if (modeRequiresCommit(input.session.mode) && !input.hasReviewableCommitSubmission) {
     if (input.hasWorkEvidence || input.hasFinalSubmission) {
       return { stage: 'WORK_IN_PROGRESS', nextAction: 'SUBMIT_COMMIT' };
     }
@@ -2126,6 +2126,16 @@ export class RepoTaskInterviewSessionStore {
       || hasEventKind(sourceRefCounts, ['test_run']);
     const hasVerificationGap = hasEventKind(sourceRefCounts, ['verification_gap']);
     const hasChallengePacket = challenge !== null;
+    const requiresCommit = modeRequiresCommit(session.mode);
+    const hasGitCommit = hasEventKind(sourceRefCounts, ['git_commit']);
+    const hasCodeDiff = hasEventKind(sourceRefCounts, ['code_diff']);
+    const hasReviewableCommitSubmission = !requiresCommit
+      || Boolean(
+        commit
+        && hasGitCommit
+        && hasCodeDiff
+        && commit.challengeBinding.status === 'bound_to_assigned_challenge',
+      );
     const readiness = buildAssessmentReadiness({
       session,
       hasChallengePacket,
@@ -2150,8 +2160,7 @@ export class RepoTaskInterviewSessionStore {
       hasCompleteChallengePacket: contract.isComplete,
       hasWorkEvidence,
       hasCommitSubmission,
-      hasBoundCommitSubmission: !modeRequiresCommit(session.mode)
-        || commit?.challengeBinding.status === 'bound_to_assigned_challenge',
+      hasReviewableCommitSubmission,
       hasFinalSubmission,
       evaluation,
       humanDecision,

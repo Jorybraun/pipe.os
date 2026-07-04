@@ -1717,6 +1717,150 @@ describe('GET /interviews/:id detail', () => {
     ]));
   });
 
+  it('rejects starting assessment evaluation when commit diff proof is missing', async () => {
+    seedInterviewDetailFixture();
+    const now = '2026-06-22T18:43:00.000Z';
+    const baseCommitSha = '6666666666666666666666666666666666666666';
+    const commitSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const challengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      `Base commit: ${baseCommitSha}`,
+      'Task: fix the start-evaluation missing-diff regression.',
+      'Success: commit a focused patch with a reviewable diff.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the candidate patch',
+    ].join('\n');
+    const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nFix without captured diff.`;
+
+    sqlite!.prepare(`
+      UPDATE scheduled_interviews
+         SET interview_type = 'OPEN_SOURCE_BUG_FIX',
+             github_repo_url = 'https://github.com/open-source/widgets'
+       WHERE id = 'interview-1'
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+        metadata_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-session-start-evaluation-missing-diff',
+      'assessment-session:start-evaluation-missing-diff',
+      'interview-1',
+      'OPEN_SOURCE_BUG_FIX',
+      'FINAL_SUBMITTED',
+      'candidate-1',
+      'workspace-1',
+      '{}',
+      now,
+      now,
+    );
+    for (const event of [
+      {
+        id: 'assessment-event-start-evaluation-missing-diff-challenge',
+        ingestionKey: 'assessment-event:start-evaluation-missing-diff-challenge',
+        sequence: 1,
+        kind: 'recruiter_note',
+        actorType: 'recruiter',
+        actorId: 'owner-1',
+        narrative: 'Recruiter assigned a complete open-source challenge packet.',
+        payload: { repositoryUrl: 'https://github.com/open-source/widgets' },
+      },
+      {
+        id: 'assessment-event-start-evaluation-missing-diff-commit',
+        ingestionKey: 'assessment-event:start-evaluation-missing-diff-commit',
+        sequence: 2,
+        kind: 'commit_submission',
+        actorType: 'candidate',
+        actorId: 'candidate-1',
+        narrative: 'Candidate submitted a commit without the exact diff source ref.',
+        payload: {
+          repositoryUrl: 'https://github.com/open-source/widgets',
+          forkRepositoryUrl: 'https://github.com/candidate/widgets',
+          branchName: 'pipe-assessment/missing-diff',
+          baseCommitSha,
+          commitSha,
+          commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+          changedFiles: [{ path: 'src/evaluation.ts', status: 'modified' }],
+        },
+      },
+    ]) {
+      sqlite!.prepare(`
+        INSERT INTO assessment_evidence_events (
+          id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+          narrative, payload_json, context_record_id, occurred_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+      `).run(
+        event.id,
+        event.ingestionKey,
+        'assessment-session-start-evaluation-missing-diff',
+        event.sequence,
+        event.kind,
+        event.actorType,
+        event.actorId,
+        event.narrative,
+        JSON.stringify(event.payload),
+        now,
+        now,
+      );
+    }
+    for (const sourceRef of [
+      {
+        id: 'assessment-source-start-evaluation-missing-diff-challenge',
+        eventId: 'assessment-event-start-evaluation-missing-diff-challenge',
+        type: 'review_challenge_packet',
+        refId: 'challenge-packet-start-evaluation-missing-diff',
+        role: 'assigned_challenge',
+        locator: { repositoryUrl: 'https://github.com/open-source/widgets', baseCommitSha },
+        text: challengeText,
+      },
+      {
+        id: 'assessment-source-start-evaluation-missing-diff-commit',
+        eventId: 'assessment-event-start-evaluation-missing-diff-commit',
+        type: 'git_commit',
+        refId: commitSha,
+        role: 'submitted_commit',
+        locator: { commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}` },
+        text: commitText,
+      },
+    ]) {
+      sqlite!.prepare(`
+        INSERT INTO assessment_event_source_refs (
+          id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+          locator_json, exact_text, content_hash, metadata_json, created_at
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+      `).run(
+        sourceRef.id,
+        sourceRef.eventId,
+        sourceRef.type,
+        sourceRef.refId,
+        sourceRef.role,
+        JSON.stringify(sourceRef.locator),
+        sourceRef.text,
+        sha256Hex(sourceRef.text),
+        now,
+      );
+    }
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-1/assessment/start-evaluation', {
+      method: 'POST',
+    });
+    expect(response.status).toBe(409);
+    const body = await response.json() as { error: { message: string } };
+    expect(body.error.message).toContain('next action is SUBMIT_COMMIT');
+    expect(sqlite!.prepare(
+      `SELECT state FROM assessment_sessions WHERE id = ?`,
+    ).get('assessment-session-start-evaluation-missing-diff')).toEqual({ state: 'FINAL_SUBMITTED' });
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND narrative = 'Recruiter requested source-backed assessment evaluation.'`,
+    ).get('assessment-session-start-evaluation-missing-diff')).toEqual({ count: 0 });
+  });
+
   it('starts assessment evaluation through the interview route and records a source-backed AI-unavailable diagnostic when no AI binding exists', async () => {
     seedInterviewDetailFixture();
     const now = '2026-06-22T18:44:00.000Z';
