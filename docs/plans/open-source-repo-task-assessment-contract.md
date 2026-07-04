@@ -191,10 +191,10 @@ The controlling product rule remains:
 - Candidate manual commit submission preserves partial verification gaps even
   when test output is present, so "unit tests passed but browser e2e could not
   run" remains source-backed as both `test_run` and `verification_gap` evidence.
-- Live assessment-room progress coverage must label accepted terminal, code,
-  and tool evidence as `tool activity`, matching recruiter summaries and
-  preserving the distinction between generic room presence and actual assessment
-  work proof.
+- Live assessment-room progress coverage now labels accepted terminal command,
+  terminal output, code-server file/editor observations, and room media/tool
+  controls as `tool activity`, matching recruiter summaries and preserving the
+  distinction between generic room presence and actual assessment work proof.
 - Live assessment-room progress coverage must label accepted agent evidence as
   `AI use`, matching recruiter summaries and making transparent candidate AI
   assistance observable instead of implying generic platform AI.

@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Assessment progress now treats accepted terminal command/output and code-server editor/file observations as tool activity in both live session progress and recruiter list/detail projections, so real workspace process telemetry is not hidden behind a pending tool-activity flag.
 - Candidate assessment cockpit proof pills now keep partial verification gaps visible even when test output is also captured, so mixed verification states are not mislabeled as fully tested.
 - Candidate manual commit submission now preserves a `verification_gap` source ref even when test output is also pasted, so partial verification gaps remain visible instead of being overwritten by the first captured `test_run`.
 - Devin bridge smoke now prints the exact `assessmentSessionId` and replay/audit commands for real response and auth-needed paths, keeping AI-use transparency tied to living-context proof instead of only room telemetry.

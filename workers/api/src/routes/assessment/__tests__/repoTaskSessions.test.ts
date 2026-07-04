@@ -817,6 +817,68 @@ describe('repo task assessment session routes', () => {
     ]));
   });
 
+  it('treats accepted terminal and code-server source refs as tool activity progress', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:workspace-tool-activity',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-tool-activity',
+    });
+
+    const terminalText = 'npm test -- popover\nPASS popover cleanup regression';
+    const fileObservationText = 'Saved src/popover.ts with cleanupStaleHandler applied.';
+    const eventResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:workspace-tool-activity',
+        kind: 'dev_container_event',
+        actorType: 'dev_container',
+        actorId: 'workspace-session-tool-activity',
+        narrative: 'Dev container captured terminal and editor telemetry for candidate work.',
+        payload: { workspaceSessionId: 'workspace-session-tool-activity' },
+        sourceRefs: [
+          await sourceRef('terminal_command', 'terminal-command-tool-activity', terminalText),
+          await sourceRef('code_server_file_observation', 'file-observation-tool-activity', fileObservationText),
+        ],
+      }),
+      env,
+    );
+    expect(eventResponse.status).toBe(201);
+
+    const progressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(progressResponse.status).toBe(200);
+    const progressBody = await progressResponse.json() as {
+      progress: {
+        hasWorkEvidence: boolean;
+        hasDevContainerEvidence: boolean;
+        hasToolUsageEvidence: boolean;
+        sourceRefCounts: Array<{ kind: string; count: number }>;
+        readiness: {
+          confidence: Array<{ id: string; satisfied: boolean; sourceRefTypes: string[] }>;
+        };
+      };
+    };
+    expect(progressBody.progress).toMatchObject({
+      hasWorkEvidence: true,
+      hasDevContainerEvidence: true,
+      hasToolUsageEvidence: true,
+    });
+    expect(progressBody.progress.sourceRefCounts).toEqual(expect.arrayContaining([
+      { kind: 'terminal_command', count: 1 },
+      { kind: 'code_server_file_observation', count: 1 },
+    ]));
+    expect(progressBody.progress.readiness.confidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'workspace_activity',
+        satisfied: true,
+        sourceRefTypes: expect.arrayContaining(['terminal_command', 'code_server_file_observation']),
+      }),
+    ]));
+  });
+
   it('counts room transcript source refs as transcript evidence even when the event kind is not transcript_span', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:room-transcript-source-ref',

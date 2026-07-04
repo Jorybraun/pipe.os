@@ -3497,6 +3497,13 @@ const SCHEDULED_ASSESSMENT_TRANSCRIPT_SOURCE_REF_TYPES = [
   'meeting_transcript_segment',
   'transcript_span',
 ] as const;
+const SCHEDULED_ASSESSMENT_TOOL_ACTIVITY_SOURCE_REF_TYPES = [
+  'terminal_command',
+  'terminal_output',
+  'code_server_file_observation',
+  'code_server_editor_open',
+  'room_media_control',
+] as const;
 
 function scheduledAssessmentPlaceholders(count: number): string {
   return Array.from({ length: count }, (_, index) => `?${index + 1}`).join(', ');
@@ -3928,7 +3935,7 @@ function buildScheduledAssessmentListProgress(input: {
       'code_server_editor_open',
     ]);
   const hasToolUsageEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['tool_usage'])
-    || scheduledAssessmentHasKind(input.sourceRefCounts, ['room_media_control']);
+    || scheduledAssessmentHasKind(input.sourceRefCounts, SCHEDULED_ASSESSMENT_TOOL_ACTIVITY_SOURCE_REF_TYPES);
   const hasTranscriptEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['transcript_span'])
     || scheduledAssessmentHasKind(input.sourceRefCounts, SCHEDULED_ASSESSMENT_TRANSCRIPT_SOURCE_REF_TYPES);
   const hasTestEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['test_run'])

@@ -604,6 +604,13 @@ const TRANSCRIPT_SOURCE_REF_TYPES = [
   'meeting_transcript_segment',
   'transcript_span',
 ] as const;
+const WORKSPACE_TOOL_ACTIVITY_SOURCE_REF_TYPES = [
+  'terminal_command',
+  'terminal_output',
+  'code_server_file_observation',
+  'code_server_editor_open',
+  'room_media_control',
+] as const;
 const MAX_ASSESSMENT_PROGRESS_SNIPPETS = 6;
 const MAX_ASSESSMENT_PROGRESS_SNIPPET_CHARS = 1_200;
 const HUMAN_ASSESSMENT_DECISIONS = new Set<HumanAssessmentDecisionValue>([
@@ -2239,9 +2246,7 @@ export class RepoTaskInterviewSessionStore {
         'code_server_editor_open',
       ]);
     const hasToolUsageEvidence = hasEventKind(evidenceCounts, ['tool_usage'])
-      || hasEventKind(sourceRefCounts, [
-        'room_media_control',
-      ]);
+      || hasEventKind(sourceRefCounts, WORKSPACE_TOOL_ACTIVITY_SOURCE_REF_TYPES);
     const hasTranscriptEvidence = hasEventKind(evidenceCounts, ['transcript_span'])
       || hasEventKind(sourceRefCounts, TRANSCRIPT_SOURCE_REF_TYPES);
     const hasTestEvidence = hasEventKind(evidenceCounts, ['test_run'])

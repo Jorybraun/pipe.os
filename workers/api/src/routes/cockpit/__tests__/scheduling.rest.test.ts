@@ -1606,6 +1606,24 @@ describe('GET /interviews/:id detail', () => {
       JSON.stringify({ source: 'agent_bridge_workspace_finalize' }),
       now,
     );
+    const terminalCommandText = 'git diff --check HEAD~1 HEAD && npm test -- popover';
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+        locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-source-progress-terminal-command',
+      'assessment-event-progress-commit',
+      'terminal_command',
+      `${commitSha}:terminal-command:finalizer`,
+      'workspace_terminal_command',
+      JSON.stringify({ command: terminalCommandText, commitSha }),
+      terminalCommandText,
+      sha256Hex(terminalCommandText),
+      JSON.stringify({ source: 'agent_bridge_workspace_finalize' }),
+      now,
+    );
     const transcriptText = 'Speaker candidate: I picked the focused cleanup patch because it keeps the public API stable.';
     sqlite!.prepare(`
       INSERT INTO assessment_event_source_refs (
@@ -1642,6 +1660,7 @@ describe('GET /interviews/:id detail', () => {
           };
           hasChallengePacket: boolean;
           hasCommitSubmission: boolean;
+          hasToolUsageEvidence: boolean;
           hasTranscriptEvidence: boolean;
           sourceRefCounts: Array<{ kind: string; count: number }>;
           challenge: { sourceRefId: string } | null;
@@ -1677,6 +1696,7 @@ describe('GET /interviews/:id detail', () => {
       },
       hasChallengePacket: true,
       hasCommitSubmission: true,
+      hasToolUsageEvidence: true,
       hasTranscriptEvidence: true,
       challenge: { sourceRefId: 'challenge-packet-progress-detail' },
       commit: {
@@ -1699,6 +1719,7 @@ describe('GET /interviews/:id detail', () => {
     ]));
     expect(body.interview.assessmentProgress?.sourceRefCounts).toEqual(expect.arrayContaining([
       { kind: 'meeting_transcript_segment', count: 1 },
+      { kind: 'terminal_command', count: 1 },
     ]));
     expect(body.interview.assessmentProgress?.evidenceSnippets).toEqual(expect.arrayContaining([
       expect.objectContaining({
