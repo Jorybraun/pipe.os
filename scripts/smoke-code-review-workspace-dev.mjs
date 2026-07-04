@@ -1289,8 +1289,9 @@ async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha) 
     await expect(finalEvidence).toContainText(
       /AI response captured|AI prompt captured|AI prompt blocked|AI bridge diagnostic|AI bridge status|AI bridge trace captured|No AI use captured/,
     );
+    await expect(finalEvidence.getByRole('button', { name: 'Download receipt' })).toBeVisible({ timeout: 60_000 });
 
-    return { skipped: false };
+    return { skipped: false, candidateReceiptDownloadVisible: true };
   } finally {
     await context.close();
     await browser.close();
@@ -1839,6 +1840,7 @@ async function main() {
     candidateAssessmentStatusSkippedReason: candidateBrowser.skipped ? candidateBrowser.reason : null,
     candidateTerminalStateVisible: !candidateTerminalBrowser.skipped,
     candidateTerminalStateSkippedReason: candidateTerminalBrowser.skipped ? candidateTerminalBrowser.reason : null,
+    candidateReceiptDownloadVisible: candidateTerminalBrowser.candidateReceiptDownloadVisible === true,
     roomChatEvidenceCaptured: true,
     roomChatEvidenceNodeId: roomChatEvidence.nodeId,
     roomChatEvidenceSourceRefs: roomChatEvidence.sourceRefTypes,

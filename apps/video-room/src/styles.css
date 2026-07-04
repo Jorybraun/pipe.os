@@ -2876,8 +2876,16 @@ button:focus-visible {
 }
 
 .commit-submission-final-evidence-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.commit-submission-final-evidence-header > div {
   display: grid;
   gap: 3px;
+  min-width: 0;
 }
 
 .commit-submission-final-evidence-header strong,
@@ -2893,6 +2901,31 @@ button:focus-visible {
   color: rgba(236, 254, 255, 0.76);
   font-size: 11px;
   line-height: 1.4;
+}
+
+.commit-submission-final-evidence-download {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid rgba(103, 232, 249, 0.36);
+  border-radius: 5px;
+  background: rgba(8, 145, 178, 0.16);
+  color: #e0faff;
+  font-family: 'Space Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.commit-submission-final-evidence-download:hover {
+  border-color: rgba(103, 232, 249, 0.62);
+  background: rgba(8, 145, 178, 0.28);
 }
 
 .commit-submission-final-evidence-block {
@@ -2989,6 +3022,14 @@ button:focus-visible {
 
   .commit-submission-workspace-finalize-header span {
     text-align: left;
+  }
+
+  .commit-submission-final-evidence-header {
+    display: grid;
+  }
+
+  .commit-submission-final-evidence-download {
+    justify-self: start;
   }
 }
 

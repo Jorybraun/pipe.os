@@ -495,6 +495,128 @@ describe('CommitSubmissionPanel', () => {
     expect(finalText).not.toContain('server-only');
   });
 
+  it('downloads a candidate-safe assessment receipt from the final evidence packet', async () => {
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    const createObjectURL = vi.fn<(object: Blob | MediaSource) => string>(() => 'blob:candidate-assessment-receipt');
+    const revokeObjectURL = vi.fn();
+    const appendChild = vi.spyOn(document.body, 'appendChild');
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
+
+    const commitSha = 'a'.repeat(40);
+    const evaluatedProgress: RoomAssessmentProgressSnapshot = {
+      ...loadedProgress,
+      state: 'EVALUATED',
+      stage: 'EVALUATED',
+      nextAction: 'REVIEW_EVALUATION',
+      nextActionLabel: 'Review the source-backed assessment report.',
+      hasCommitSubmission: true,
+      hasTestEvidence: true,
+      sourceRefCounts: [
+        { kind: 'git_commit', count: 1 },
+        { kind: 'code_diff', count: 1 },
+        { kind: 'ai_agent_response', count: 1 },
+      ],
+      evidenceSnippets: [
+        {
+          eventKind: 'workspace_finalize',
+          sourceRefType: 'code_diff',
+          evidenceRole: 'submitted_diff',
+          exactText: 'diff --git a/src/retry.ts b/src/retry.ts\n+return retryInOrder();',
+          occurredAt: '2026-06-29T20:03:00.000Z',
+        },
+      ],
+      commit: {
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        forkRepositoryUrl: 'https://github.com/ada/source-backed-worker',
+        branchName: 'pipe-assessment/retry-path',
+        baseCommitSha: 'd'.repeat(40),
+        commitSha,
+        commitUrl: `https://github.com/ada/source-backed-worker/commit/${commitSha}`,
+        changedFiles: [{ path: 'src/retry.ts', status: 'modified' }],
+        occurredAt: '2026-06-29T20:03:00.000Z',
+      },
+      evaluation: {
+        status: 'EVALUATED',
+        summary: 'Source-backed report is ready for human review.',
+        recommendation: 'mixed_evidence_human_review',
+        createdAt: '2026-06-29T20:06:00.000Z',
+        claims: [
+          {
+            id: 'assessment_claim_internal_receipt',
+            polarity: 'positive',
+            dimension: 'verification',
+            narrative: 'Targeted retry verification passed for the submitted commit.',
+            confidence: 0.82,
+            sourceRefCount: 2,
+            sourceRefTypes: ['git_commit', 'code_diff'],
+          },
+        ],
+        diagnostics: [
+          {
+            id: 'diagnostic_internal_receipt',
+            code: 'MISSING_BROWSER_SUITE',
+            severity: 'warning',
+            message: 'Full browser suite evidence was not captured.',
+            sourceRefCount: 1,
+            sourceRefTypes: ['verification_gap'],
+          },
+        ],
+      },
+    };
+
+    try {
+      render(
+        <CommitSubmissionPanel
+          defaultRepositoryUrl="https://github.com/fallback/repo"
+          challengePacket={richPacket}
+          assessmentProgress={evaluatedProgress}
+          onSubmit={vi.fn()}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('commit-submission-final-evidence-download'));
+
+      expect(createObjectURL).toHaveBeenCalledTimes(1);
+      const blob = createObjectURL.mock.calls[0]?.[0];
+      expect(blob).toBeInstanceOf(Blob);
+      if (!(blob instanceof Blob)) {
+        throw new Error('Expected receipt download to create a Blob.');
+      }
+      const anchor = appendChild.mock.calls
+        .map((call) => call[0])
+        .find((node): node is HTMLAnchorElement => node instanceof HTMLAnchorElement);
+      expect(anchor).toBeTruthy();
+      expect(anchor?.download).toBe('pipe-assessment-receipt-aaaaaaaaaaaa.md');
+
+      const markdown = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error ?? new Error('Unable to read receipt blob.'));
+        reader.onload = () => resolve(String(reader.result ?? ''));
+        reader.readAsText(blob);
+      });
+      expect(markdown).toContain('# PIPE Candidate Assessment Receipt');
+      expect(markdown).toContain('Status: Evaluated');
+      expect(markdown).toContain('Commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+      expect(markdown).toContain('Repository: https://github.com/pipe/source-backed-worker');
+      expect(markdown).toContain('AI state: AI response captured');
+      expect(markdown).toContain('Targeted retry verification passed');
+      expect(markdown).toContain('Warning Missing Browser Suite');
+      expect(markdown).toContain('Use this as your candidate receipt, not as an automatic hiring decision.');
+      expect(markdown).not.toContain('assessment_claim_internal_receipt');
+      expect(markdown).not.toContain('diagnostic_internal_receipt');
+      expect(markdown).not.toContain('hidden rubric');
+      expect(markdown).not.toContain('server-only');
+    } finally {
+      appendChild.mockRestore();
+      click.mockRestore();
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
+    }
+  });
+
   it('submits the current live workspace HEAD through the real finalizer path', async () => {
     const commitSha = 'b'.repeat(40);
     const onSubmit = vi.fn();

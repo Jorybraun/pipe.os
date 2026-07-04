@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { CheckCircle2, Loader2, Send, TriangleAlert } from 'lucide-react';
+import { CheckCircle2, Download, Loader2, Send, TriangleAlert } from 'lucide-react';
 import {
   buildCommitSubmissionPayload,
   buildCommitSubmissionDefaults,
@@ -85,6 +85,127 @@ function boundedEvidenceText(value: string): string {
   const normalized = value.trim();
   if (normalized.length <= 240) return normalized;
   return `${normalized.slice(0, 237)}...`;
+}
+
+function compactMarkdownText(value: string, maxLength = 360): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function markdownBullet(value: string): string {
+  return `- ${compactMarkdownText(value)}`;
+}
+
+function markdownBulletList(values: string[], fallback: string): string[] {
+  const cleaned = values.map((value) => value.trim()).filter((value) => value.length > 0);
+  return cleaned.length > 0 ? cleaned.map(markdownBullet) : [markdownBullet(fallback)];
+}
+
+function finalEvidenceReceiptFilename(progress: RoomAssessmentProgressSnapshot): string {
+  const commit = shortSha(progress.commit?.commitSha ?? null);
+  const basis = commit ?? formatProgressLabel(progress.stage).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  return `pipe-assessment-receipt-${basis || 'report'}.md`;
+}
+
+function finalEvidenceReceiptMarkdown(progress: RoomAssessmentProgressSnapshot): string {
+  const evaluation = progress.evaluation;
+  const commit = progress.commit;
+  const aiUse = summarizeAssessmentAiUse(progress);
+  const snippets = (progress.evidenceSnippets ?? []).slice(0, 6).map((snippet) =>
+    markdownBullet(`${formatSourceKind(snippet.sourceRefType)} · ${formatProgressLabel(snippet.evidenceRole)}: ${snippet.exactText}`)
+  );
+  const claims = (evaluation?.claims ?? []).slice(0, 6).map((claim) => {
+    const confidence = claim.confidence === null ? '' : ` (${Math.round(claim.confidence * 100)}% confidence)`;
+    return markdownBullet(`${formatProgressLabel(claim.dimension)} · ${formatProgressLabel(claim.polarity)}${confidence}: ${claim.narrative} [${sourceRefSummary(claim.sourceRefTypes, claim.sourceRefCount)}]`);
+  });
+  const diagnostics = (evaluation?.diagnostics ?? []).slice(0, 6).map((diagnostic) =>
+    markdownBullet(`${formatProgressLabel(diagnostic.severity)} ${formatSourceKind(diagnostic.code)}: ${diagnostic.message} [${sourceRefSummary(diagnostic.sourceRefTypes, diagnostic.sourceRefCount)}]`)
+  );
+  const sourceCounts = progress.sourceRefCounts.map((sourceRef) =>
+    markdownBullet(`${formatEvidenceKind(sourceRef.kind)}: ${sourceRef.count}`)
+  );
+  const readinessRequired = (progress.readiness?.required ?? []).map((item) =>
+    markdownBullet(`${item.label}: ${item.satisfied ? 'Captured' : 'Missing'}${item.satisfied ? '' : ` - ${item.missingImpact}`}`)
+  );
+
+  return [
+    '# PIPE Candidate Assessment Receipt',
+    '',
+    `Status: ${formatProgressLabel(progress.stage)}`,
+    `State: ${formatProgressLabel(progress.state)}`,
+    `Next action: ${progress.nextActionLabel}`,
+    `Evaluation: ${evaluation ? formatProgressLabel(evaluation.status) : 'Not available'}`,
+    `Summary: ${evaluation?.summary ?? 'No evaluator summary is available yet.'}`,
+    `Recommendation: ${evaluation?.recommendation ? formatProgressLabel(evaluation.recommendation) : 'Not shared'}`,
+    '',
+    '## Submitted Work',
+    '',
+    `Repository: ${commit?.repositoryUrl ?? 'Not recorded'}`,
+    `Fork: ${commit?.forkRepositoryUrl ?? 'Not recorded'}`,
+    `Branch: ${commit?.branchName ?? 'Not recorded'}`,
+    `Base commit: ${commit?.baseCommitSha ?? 'Not recorded'}`,
+    `Commit: ${commit?.commitSha ?? 'Not recorded'}`,
+    `Commit URL: ${commit?.commitUrl ?? 'Not recorded'}`,
+    `Changed files: ${commit?.changedFiles.length ?? 0}`,
+    '',
+    '## AI Use',
+    '',
+    `AI state: ${aiUse.label}`,
+    `AI detail: ${aiUse.detail}`,
+    '',
+    '## Evidence Coverage',
+    '',
+    `Readiness: ${progress.readiness?.label ?? 'Not recorded'}`,
+    `Readiness detail: ${progress.readiness?.detail ?? 'Not recorded'}`,
+    `Ready for evaluation: ${progress.readiness?.isReadyForEvaluation === true ? 'Yes' : 'No'}`,
+    `Usable hiring signal: ${progress.readiness?.isUsableHiringSignal === true ? 'Yes' : 'No'}`,
+    'Required proof:',
+    ...markdownBulletList(readinessRequired.map((item) => item.replace(/^- /, '')), 'No required proof checklist was attached.'),
+    'Source refs:',
+    ...(sourceCounts.length > 0 ? sourceCounts : [markdownBullet('No source refs recorded.')]),
+    '',
+    '## Evaluator Claims',
+    '',
+    ...(claims.length > 0 ? claims : [markdownBullet('No candidate-safe evaluator claims recorded.')]),
+    '',
+    '## Evaluator Diagnostics',
+    '',
+    ...(diagnostics.length > 0 ? diagnostics : [markdownBullet('No candidate-safe evaluator diagnostics recorded.')]),
+    '',
+    '## Source Preview',
+    '',
+    ...(snippets.length > 0 ? snippets : [markdownBullet('No exact source snippets are included in this candidate-safe receipt.')]),
+    '',
+    '## Use Guidance',
+    '',
+    '- Use this as your candidate receipt, not as an automatic hiring decision.',
+    '- The recruiter still needs to inspect the source-backed report, commit, diff, tests, transcript/chat, AI-use trail, and diagnostics.',
+    '- Missing evidence should reduce confidence instead of being treated as positive signal.',
+    '',
+  ].join('\n');
+}
+
+function downloadTextFile(filename: string, contents: string, mimeType: string): void {
+  const blob = new Blob([contents], { type: mimeType });
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => {
+    URL.revokeObjectURL(objectUrl);
+  }, 0);
+}
+
+function downloadFinalEvidenceReceipt(progress: RoomAssessmentProgressSnapshot): void {
+  downloadTextFile(
+    finalEvidenceReceiptFilename(progress),
+    finalEvidenceReceiptMarkdown(progress),
+    'text/markdown',
+  );
 }
 
 function evidenceFlagLabel(value: boolean): string {
@@ -263,8 +384,19 @@ function FinalEvidencePacketPanel({
       aria-label="Candidate-safe final evidence packet"
     >
       <div className="commit-submission-final-evidence-header">
-        <strong>Final evidence packet</strong>
-        <span>{progress.evaluation.summary || progress.nextActionLabel}</span>
+        <div>
+          <strong>Final evidence packet</strong>
+          <span>{progress.evaluation.summary || progress.nextActionLabel}</span>
+        </div>
+        <button
+          type="button"
+          className="commit-submission-final-evidence-download"
+          data-testid="commit-submission-final-evidence-download"
+          onClick={() => downloadFinalEvidenceReceipt(progress)}
+        >
+          <Download size={13} />
+          Download receipt
+        </button>
       </div>
 
       <AssessmentAiUsePanel progress={progress} />
