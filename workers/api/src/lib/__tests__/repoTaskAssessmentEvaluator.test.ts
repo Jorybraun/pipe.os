@@ -18,6 +18,8 @@ async function sourceRef(input: {
   role?: string;
   exactText: string;
   sequence?: number;
+  locator?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }): Promise<SessionSourceRef> {
   return {
     eventId: `event-${input.sequence ?? 1}`,
@@ -27,8 +29,10 @@ async function sourceRef(input: {
     sourceRefType: input.type,
     sourceRefId: input.id,
     evidenceRole: input.role ?? 'support',
+    locator: input.locator,
     exactText: input.exactText,
     contentHash: await sha256Hex(input.exactText),
+    metadata: input.metadata,
   };
 }
 
@@ -200,6 +204,74 @@ describe('repo task assessment evaluator output parsing', () => {
     ]));
     expect(fallback?.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'MISSING_TEST_EVIDENCE', severity: 'warning' }),
+    ]));
+  });
+
+  it('preserves PIPE-matched challenge provenance in deterministic fallback reports', async () => {
+    const requestText = 'Recruiter requested source-backed evaluation.';
+    const fallback = buildDeterministicAssessmentFallback({
+      sessionId: 'assessment-session-matched-assignment',
+      requestSourceRef: {
+        sourceRefType: 'assessment_evaluation_request',
+        sourceRefId: 'request-matched',
+        exactText: requestText,
+        contentHash: await sha256Hex(requestText),
+      },
+      sourceRefs: [
+        await sourceRef({
+          type: 'review_challenge_packet',
+          id: 'challenge-packet-973',
+          role: 'assigned_challenge',
+          sequence: 1,
+          locator: {
+            matchedRepoId: 973,
+            repositoryUrl: 'https://github.com/mui/base-ui',
+            baseCommitSha: '58dff8444fa56e4444a3a1dd991c76b49cf4ab7e',
+            githubPrNumber: 973,
+          },
+          metadata: {
+            source: 'matched_review_challenge_packet',
+            qualityScore: 0.91,
+          },
+          exactText: [
+            'Repo: https://github.com/mui/base-ui',
+            'Base commit: 58dff8444fa56e4444a3a1dd991c76b49cf4ab7e',
+            'Pull request: #973',
+            'Task: Fix Base UI popover impatient click handling',
+            'Match proof:',
+            '- Review packet quality 0.91.',
+            '- Demand families: popover, pointer interaction.',
+            'Success criteria:',
+            '- Change popover behavior.',
+            'Expected evidence:',
+            '- git_commit',
+            '- code_diff',
+            '- test_run',
+          ].join('\n'),
+        }),
+        await sourceRef({
+          type: 'git_commit',
+          id: '81c11363a3b6e31b34b3777fd150de7fe462c64f',
+          sequence: 2,
+          exactText: 'commit 81c11363a3b6e31b34b3777fd150de7fe462c64f\nfix popover impatient click handling',
+        }),
+        await sourceRef({
+          type: 'code_diff',
+          id: 'base..head',
+          sequence: 2,
+          exactText: 'diff --git a/packages/react/src/popover/root/usePopoverRoot.ts b/packages/react/src/popover/root/usePopoverRoot.ts\n+PATIENT_CLICK_THRESHOLD',
+        }),
+      ],
+    });
+
+    expect(fallback).not.toBeNull();
+    expect(fallback?.summary).toContain('PIPE-matched challenge packet');
+    expect(fallback?.claims).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        polarity: 'positive',
+        dimension: 'assignment_fit_provenance',
+        narrative: 'The assigned challenge packet preserves source-backed PIPE match proof for reviewer calibration.',
+      }),
     ]));
   });
 

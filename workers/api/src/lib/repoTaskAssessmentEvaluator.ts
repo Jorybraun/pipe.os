@@ -316,6 +316,31 @@ function challengeFocusSummary(sourceRefs: readonly SessionSourceRef[]): string 
   return challengeFocusFromExactText(challengeRef.exactText);
 }
 
+function matchedChallengeAssignmentRef(sourceRefs: readonly SessionSourceRef[]): SessionSourceRef | null {
+  const challengeRef = sourceRefs.find((ref) =>
+    CHALLENGE_REF_TYPES.has(ref.sourceRefType) || ref.evidenceRole === 'assigned_challenge');
+  if (!challengeRef) return null;
+
+  const locator = challengeRef.locator ?? {};
+  const metadata = challengeRef.metadata ?? {};
+  const source = stringValue(metadata.source);
+  const matchedRepoId = locator.matchedRepoId;
+  const hasMatchedRepoId = typeof matchedRepoId === 'number'
+    || (typeof matchedRepoId === 'string' && matchedRepoId.trim().length > 0);
+  const hasMatchProofSection = /^\s*Match proof\s*:?\s*$/im.test(challengeRef.exactText ?? '');
+
+  if (
+    challengeRef.sourceRefType === 'review_challenge_packet'
+    || source === 'matched_review_challenge_packet'
+    || hasMatchedRepoId
+    || hasMatchProofSection
+  ) {
+    return challengeRef;
+  }
+
+  return null;
+}
+
 function truncateEvaluationSummary(value: string): string {
   const normalized = value.replace(/\s+/g, ' ').trim();
   if (normalized.length <= MAX_EVALUATION_SUMMARY_CHARS) return normalized;
@@ -541,9 +566,10 @@ function deterministicFallbackSummary(sourceRefs: readonly SessionSourceRef[]): 
   const focus = challengeFocusSummary(sourceRefs) ?? 'Open-source assessment';
   const captured: string[] = [];
   const gaps: string[] = [];
+  const matchedAssignmentRef = matchedChallengeAssignmentRef(sourceRefs);
 
   if (challengePacketContractMissingFields(sourceRefs).length === 0) {
-    captured.push('complete challenge packet');
+    captured.push(matchedAssignmentRef ? 'PIPE-matched challenge packet' : 'complete challenge packet');
   }
   if (hasSourceRefsOfTypes(sourceRefs, ['git_commit'])) captured.push('assessment commit');
   if (hasSourceRefsOfTypes(sourceRefs, ['code_diff'])) captured.push('exact diff');
@@ -635,6 +661,18 @@ export function buildDeterministicAssessmentFallback(input: {
     confidence: 0.78,
     sourceRefs: [diffRef],
   }];
+
+  const matchedAssignmentRef = matchedChallengeAssignmentRef(input.sourceRefs);
+  if (matchedAssignmentRef) {
+    claims.push({
+      id: `repo_task_eval_${input.sessionId}_assignment_fit_provenance`.replace(/[^A-Za-z0-9:_-]/g, '_'),
+      polarity: 'positive',
+      dimension: 'assignment_fit_provenance',
+      narrative: 'The assigned challenge packet preserves source-backed PIPE match proof for reviewer calibration.',
+      confidence: 0.7,
+      sourceRefs: [matchedAssignmentRef],
+    });
+  }
 
   const verificationRef = firstSourceRefOfType(input.sourceRefs, 'test_run');
   if (verificationRef && hasSuccessfulVerification(input.sourceRefs)) {
