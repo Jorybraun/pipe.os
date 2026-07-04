@@ -584,6 +584,47 @@ async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit,
   };
 }
 
+async function assertRecruiterListApiEvaluationProof(interviewId) {
+  const body = await requestJson(
+    APP_BASE,
+    `/api/v1/scheduling/interviews?limit=20&offset=0&sort=created_desc&workspaceSmoke=${Date.now()}`,
+  );
+  const interviews = Array.isArray(body?.interviews) ? body.interviews : [];
+  const interview = interviews.find((item) => item?.id === interviewId);
+  if (!interview) {
+    throw new Error(`Recruiter list API did not include the fresh workspace smoke interview ${interviewId}: ${JSON.stringify(body?.pagination ?? body)}`);
+  }
+  const progress = interview.assessmentProgress;
+  const evaluation = progress?.evaluation;
+  if (progress?.stage !== 'EVALUATED' || progress?.nextAction !== 'NONE') {
+    throw new Error(`Recruiter list API did not expose the final reviewed assessment state: ${JSON.stringify(progress)}`);
+  }
+  if (evaluation?.status !== 'EVALUATED') {
+    throw new Error(`Recruiter list API did not expose the evaluated report: ${JSON.stringify(evaluation)}`);
+  }
+  if (evaluation.evidenceCoverage?.schemaVersion !== 'assessment-evidence-coverage-v1') {
+    throw new Error(`Recruiter list API did not expose assessment evidence coverage: ${JSON.stringify(evaluation)}`);
+  }
+  const claims = Array.isArray(evaluation.claims) ? evaluation.claims : [];
+  if (!claims.some((claim) => claim.sourceRefCount > 0 && Array.isArray(claim.sourceRefTypes) && claim.sourceRefTypes.length > 0)) {
+    throw new Error(`Recruiter list API did not expose cited evaluation claim previews: ${JSON.stringify(evaluation.claims)}`);
+  }
+  const diagnostics = Array.isArray(evaluation.diagnostics) ? evaluation.diagnostics : [];
+  if (!diagnostics.some((diagnostic) => Array.isArray(diagnostic.sourceRefTypes))) {
+    throw new Error(`Recruiter list API did not expose evaluation diagnostic previews: ${JSON.stringify(evaluation.diagnostics)}`);
+  }
+  return {
+    visible: true,
+    stage: progress.stage,
+    nextAction: progress.nextAction,
+    evaluationStatus: evaluation.status,
+    recommendation: evaluation.recommendation ?? null,
+    coverageSchema: evaluation.evidenceCoverage.schemaVersion,
+    claimCount: claims.length,
+    diagnosticCount: diagnostics.length,
+  };
+}
+
 function humanDecisionForRecommendation(recommendation) {
   if (recommendation === 'strong_evidence_to_advance') return 'advance';
   if (recommendation === 'insufficient_evidence' || recommendation === 'not_demonstrated') {
@@ -1531,6 +1572,7 @@ async function main() {
   if (recruiterProjection.humanDecision?.decision !== humanDecision.decision) {
     throw new Error(`Recruiter detail did not expose the recorded human decision: ${JSON.stringify(recruiterProjection.humanDecision)}`);
   }
+  const recruiterListApiProof = await assertRecruiterListApiEvaluationProof(interviewId);
   const recruiterBrowser = await assertRecruiterReviewerReceiptBrowser(
     interviewId,
     workspaceCommit,
@@ -1606,6 +1648,12 @@ async function main() {
     recruiterReviewerReceiptSkippedReason: recruiterBrowser.skipped ? recruiterBrowser.reason : null,
     recruiterMatchedDecisionVisible: recruiterBrowser.matchedDecisionVisible === true,
     recruiterMatchedValidityVisible: recruiterBrowser.matchedValidityVisible === true,
+    recruiterListApiProofVisible: recruiterListApiProof.visible,
+    recruiterListApiEvaluationStatus: recruiterListApiProof.evaluationStatus,
+    recruiterListApiEvaluationRecommendation: recruiterListApiProof.recommendation,
+    recruiterListApiEvidenceCoverageSchema: recruiterListApiProof.coverageSchema,
+    recruiterListApiClaimCount: recruiterListApiProof.claimCount,
+    recruiterListApiDiagnosticCount: recruiterListApiProof.diagnosticCount,
     recruiterListCardVisible: !recruiterListBrowser.skipped,
     recruiterListCardSkippedReason: recruiterListBrowser.skipped ? recruiterListBrowser.reason : null,
     recruiterCompareUrl: recruiterProjection.compareUrl,

@@ -344,19 +344,22 @@ final decision, source-report anchor, reviewed commit, repo/branch, and no raw
 reviewer ID, then verifies the deployed interview list card shows the
 assessment mode, task, repo/base, source-backed commit trust, final decision,
 and next action. Latest deployed proof on 2026-07-04 passed for interview
-`80f9aac2-541b-410c-8157-110caf3153c2`, assessment session
-`assessment_session_6cea7a23f24ba616780e6990f1d55c37`, repo `mui/base-ui`,
+`60da2a12-f1fd-48c2-a10a-8fb51aa7ba8f`, assessment session
+`assessment_session_ff96117c444a3e8f78bfa7778bca7187`, repo `mui/base-ui`,
 matched PR `#973`, candidate task brief visible, recruiter detail/list visible,
-workspace commit `98ff4360d1da783b10fe22bb3a6ee57035c0bef3`, bridge revision
+workspace commit `14996d601e0119637b01e8eb1d4dd9b12c837f52`, bridge revision
 `2026-06-30-assessment-branch-v1`, and evaluation report
-`assessment_evaluation_report_d00cd26dbf25de9c22174678dcaffb7b` with
+`assessment_evaluation_report_19e4c2ed70bb87fbe7ce57fdbe6339e7` with
 recommendation `mixed_evidence_human_review`. The recruiter projection was
 reviewable from source-backed `git_commit`, `code_diff`, `test_run`,
 `terminal_command`, `room_chat_message`, `meeting_session_event`,
 `review_challenge_packet`, workspace launch, and file-observation refs; the
 smoke also recorded a source-backed human `hold` decision anchored to the
-`assessment_evaluation_report`. `recruiterCompareUrl` was correctly `null`
-because workspace-only finalizer commits are not pushed to GitHub by default.
+`assessment_evaluation_report`. The deployed interview-list API also exposed
+`assessment-evidence-coverage-v1`, 3 cited claim previews, and 3 diagnostic
+previews for the fresh evaluated row. `recruiterCompareUrl` was correctly
+`null` because workspace-only finalizer commits are not pushed to GitHub by
+default.
 
 Latest deployed upstream-PR progress proof on 2026-07-02 passed for assessment
 session `assessment_session_d6172ba3d55b5035f0ecb250985c814a`: the live
