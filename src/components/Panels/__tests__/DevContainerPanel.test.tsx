@@ -171,6 +171,28 @@ describe('DevContainerPanel assessment submission', () => {
     expect(screen.getByTestId('assessment-commit-panel')).toBeInTheDocument();
   });
 
+  it('keeps partial verification gaps visible when test evidence is also captured', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = input.toString();
+      if (url.endsWith('/rpc/assessment/progress')) {
+        return new Response(JSON.stringify(progressResponse({
+          hasTestEvidence: true,
+          hasVerificationGap: true,
+        })), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DevContainerPanel challengeId="challenge-1" />);
+
+    const proofPills = await screen.findByTestId('assessment-workspace-proof-pills');
+    expect(proofPills).toHaveTextContent('Tests captured + gap declared');
+  });
+
   it('lets candidates submit source-backed commit evidence from a ready dev container', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = input.toString();

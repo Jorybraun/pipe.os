@@ -213,17 +213,19 @@ function AssessmentWorkspaceStatusStrip({
     : progress?.hasChallengePacket
       ? 'Task packet incomplete'
       : 'Task packet missing';
-  const testsLabel = progress?.hasTestEvidence
-    ? 'Tests captured'
-    : progress?.hasVerificationGap
-      ? 'Test gap declared'
-      : 'Tests missing';
+  const testsLabel = progress?.hasTestEvidence && progress?.hasVerificationGap
+    ? 'Tests captured + gap declared'
+    : progress?.hasTestEvidence
+      ? 'Tests captured'
+      : progress?.hasVerificationGap
+        ? 'Test gap declared'
+        : 'Tests missing';
   const proofItems = [
     { label: packetLabel, tone: proofTone(packetComplete, true) },
     { label: progress?.hasDevContainerEvidence ? 'Workspace evidence' : 'Workspace pending', tone: proofTone(progress?.hasDevContainerEvidence === true) },
     { label: progress?.hasToolUsageEvidence ? 'Tool activity' : 'Tool activity pending', tone: proofTone(progress?.hasToolUsageEvidence === true) },
     { label: progress?.hasAiInteraction ? 'AI use captured' : 'No AI use captured', tone: progress?.hasAiInteraction ? 'good' : 'quiet' },
-    { label: testsLabel, tone: proofTone(progress?.hasTestEvidence === true, progress?.hasVerificationGap === true) },
+    { label: testsLabel, tone: progress?.hasVerificationGap ? 'warn' : proofTone(progress?.hasTestEvidence === true) },
     { label: progress?.hasCommitSubmission ? 'Commit submitted' : 'Commit required', tone: proofTone(progress?.hasCommitSubmission === true, true) },
   ] as const;
 
