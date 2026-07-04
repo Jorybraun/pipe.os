@@ -1354,6 +1354,9 @@ async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha, 
     if (expectedChallengeTitle && !receiptMarkdown.includes(expectedChallengeTitle)) {
       throw new Error('Candidate receipt download did not include the assigned challenge title.');
     }
+    if (!receiptMarkdown.includes('Upstream PR boundary: PIPE assessment receipts do not imply automatic upstream PR submission')) {
+      throw new Error('Candidate receipt download did not include the upstream PR consent boundary.');
+    }
     if (!receiptMarkdown.includes('Use this as the candidate receipt')) {
       throw new Error('Candidate receipt did not come from the server-backed receipt endpoint.');
     }

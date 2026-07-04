@@ -548,6 +548,8 @@ describe('CommitSubmissionPanel', () => {
         baseCommitSha: 'd'.repeat(40),
         commitSha,
         commitUrl: `https://github.com/ada/source-backed-worker/commit/${commitSha}`,
+        upstreamPullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/42',
+        upstreamPrConsent: true,
         changedFiles: [{ path: 'src/retry.ts', status: 'modified' }],
         occurredAt: '2026-06-29T20:03:00.000Z',
       },
@@ -621,6 +623,9 @@ describe('CommitSubmissionPanel', () => {
       expect(markdown).toContain('Candidate evidence aligns to retry-path debugging.');
       expect(markdown).toContain('Commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
       expect(markdown).toContain('Repository: https://github.com/pipe/source-backed-worker');
+      expect(markdown).toContain('Upstream PR: https://github.com/pipe/source-backed-worker/pull/42');
+      expect(markdown).toContain('Upstream PR consent: Yes');
+      expect(markdown).toContain('Upstream PR boundary: PIPE assessment receipts do not imply automatic upstream PR submission');
       expect(markdown).toContain('AI state: AI response captured');
       expect(markdown).toContain('Targeted retry verification passed');
       expect(markdown).toContain('Warning Missing Browser Suite');

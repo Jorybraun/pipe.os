@@ -394,10 +394,13 @@ The controlling product rule remains:
   room assessment progress serializer. The artifact gives candidates a
   portable summary of the assigned challenge title, repo URL, base commit,
   task, success criteria, expected evidence, verification command, submitted
-  commit, AI-use state, source previews, evaluator claims, diagnostics, and use
-  guidance without exposing internal session/event/claim identifiers or hidden
-  rubric data, and the live open-source workspace smoke verifies the deployed
-  download path.
+  commit, upstream PR tracking URL and candidate consent status, AI-use state,
+  source previews, evaluator claims, diagnostics, and use guidance without
+  exposing internal session/event/claim identifiers or hidden rubric data. The
+  artifact explicitly states that PIPE does not imply automatic upstream PR
+  submission; upstream tracking is recorded only when a candidate-approved PR
+  URL is source-backed, and the live open-source workspace smoke verifies the
+  deployed download path.
 - Recruiter assessment detail now shows an AI-use receipt beside the final
   review packet, separating real prompt/response source refs, Clippy/Devin
   bridge telemetry, and missing-evidence boundaries without implying silence

@@ -4541,6 +4541,7 @@ describe('meeting room recording living-context route', () => {
     ].join('\n');
     const commitEvidenceText = `commit ${commitSha}\nAuthor: Commit Candidate\n\nFix retry path`;
     const testRunText = 'npm test -- retry-path\nPASS src/retry.test.ts';
+    const upstreamPullRequestUrl = 'https://github.com/pipe/source-backed-worker/pull/42';
     const commitSourceRef = {
       sourceRefType: 'git_commit',
       sourceRefId: commitSha,
@@ -4577,6 +4578,22 @@ describe('meeting room recording living-context route', () => {
       exactText: testRunText,
       contentHash: await sha256ContentHash(testRunText),
     };
+    const upstreamPullRequestSourceRef = {
+      sourceRefType: 'upstream_pull_request',
+      sourceRefId: upstreamPullRequestUrl,
+      evidenceRole: 'optional_upstream_pr_tracking',
+      locator: {
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        forkRepositoryUrl: 'https://github.com/candidate/source-backed-worker',
+        commitSha,
+        upstreamPullRequestUrl,
+      },
+      exactText: upstreamPullRequestUrl,
+      contentHash: await sha256ContentHash(upstreamPullRequestUrl),
+      metadata: {
+        upstreamPrConsent: true,
+      },
+    };
     const tamperedHashRes = await app.request(`/meeting/${guestToken}/assessment/commit-submission`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -4588,7 +4605,8 @@ describe('meeting room recording living-context route', () => {
         baseCommitSha,
         commitSha,
         commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
-        upstreamPrConsent: false,
+        upstreamPullRequestUrl,
+        upstreamPrConsent: true,
         changedFiles: [{
           path: 'src/retry.ts',
           status: 'modified',
@@ -4625,7 +4643,8 @@ describe('meeting room recording living-context route', () => {
         baseCommitSha,
         commitSha,
         commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
-        upstreamPrConsent: false,
+        upstreamPullRequestUrl,
+        upstreamPrConsent: true,
         changedFiles: [{
           path: 'src/retry.ts',
           status: 'modified',
@@ -4637,6 +4656,7 @@ describe('meeting room recording living-context route', () => {
           commitSourceRef,
           diffSourceRef,
           testRunSourceRef,
+          upstreamPullRequestSourceRef,
         ],
       }),
     }, env, ctx);
@@ -4648,6 +4668,8 @@ describe('meeting room recording living-context route', () => {
         branchName: string;
         commitSha: string;
         commitUrl: string;
+        upstreamPullRequestUrl: string | null;
+        upstreamPrConsent: boolean;
       };
       progress: {
         mode: string;
@@ -4674,6 +4696,8 @@ describe('meeting room recording living-context route', () => {
       branchName: 'pipe-assessment/retry-path',
       commitSha,
       commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
+      upstreamPullRequestUrl,
+      upstreamPrConsent: true,
     });
     expect(body.progress).toMatchObject({
       mode: 'OPEN_SOURCE_BUG_FIX',
@@ -4722,7 +4746,13 @@ describe('meeting room recording living-context route', () => {
           successCriteria: string[];
           expectedEvidence: string[];
         } | null;
-        commit: { commitSha: string; branchName: string; changedFiles: unknown[] };
+        commit: {
+          commitSha: string;
+          branchName: string;
+          upstreamPullRequestUrl?: string | null;
+          upstreamPrConsent?: boolean;
+          changedFiles: unknown[];
+        };
       };
     };
     expect(progressBody.progress).toMatchObject({
@@ -4742,6 +4772,8 @@ describe('meeting room recording living-context route', () => {
     expect(progressBody.progress.commit).toMatchObject({
       commitSha,
       branchName: 'pipe-assessment/retry-path',
+      upstreamPullRequestUrl,
+      upstreamPrConsent: true,
     });
     const serializedResponse = JSON.stringify(body);
     expect(serializedResponse).not.toContain(assessmentSessionId);
@@ -4770,6 +4802,9 @@ describe('meeting room recording living-context route', () => {
     expect(receiptMarkdown).toContain('- Existing worker tests pass');
     expect(receiptMarkdown).toContain('- Commit SHA on assessment branch');
     expect(receiptMarkdown).toContain(`Commit: ${commitSha}`);
+    expect(receiptMarkdown).toContain(`Upstream PR: ${upstreamPullRequestUrl}`);
+    expect(receiptMarkdown).toContain('Upstream PR consent: Yes');
+    expect(receiptMarkdown).toContain('Upstream PR boundary: PIPE assessment receipts do not imply automatic upstream PR submission');
     expect(receiptMarkdown).toContain('Source refs:');
     expect(receiptMarkdown).toContain('Use this as the candidate receipt');
     expect(receiptMarkdown).not.toContain(assessmentSessionId);
@@ -4797,7 +4832,7 @@ describe('meeting room recording living-context route', () => {
       actor_type: 'candidate',
       actor_id: created.meeting.contactId,
       narrative: 'Candidate submitted a focused retry-path fix with tests passing locally.',
-      source_ref_count: 3,
+      source_ref_count: 4,
     });
     expect(JSON.parse(persistedCommit.payload_json)).toMatchObject({
       repositoryUrl: 'https://github.com/pipe/source-backed-worker',
@@ -4805,7 +4840,8 @@ describe('meeting room recording living-context route', () => {
       branchName: 'pipe-assessment/retry-path',
       baseCommitSha,
       commitSha,
-      upstreamPrConsent: false,
+      upstreamPullRequestUrl,
+      upstreamPrConsent: true,
     });
     expect(sqlite.prepare(
       'SELECT state FROM assessment_sessions WHERE id = ?',
