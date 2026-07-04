@@ -731,7 +731,7 @@ describe('repo task assessment session routes', () => {
         id: 'ai_usage_transparency',
         satisfied: true,
         sourceRefTypes: expect.arrayContaining(['ai_user_prompt', 'ai_user_prompt_blocked', 'ai_agent_response']),
-        missingImpact: 'If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly.',
+        missingImpact: 'If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly. Silence is not proof of no AI use.',
       }),
     ]));
 

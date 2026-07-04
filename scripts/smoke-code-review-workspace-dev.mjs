@@ -894,6 +894,11 @@ async function assertCandidateTaskBriefBrowser(
     }
     await expect(brief).toContainText('Success criteria');
     await expect(brief).toContainText('Expected evidence');
+    const proofChecklist = brief.getByTestId('assessment-task-brief-proof');
+    await expect(proofChecklist).toContainText('AI-use transparency');
+    await expect(proofChecklist).toContainText(
+      /real agent bridge|no agent response is counted as assistance|silence is not proof of no AI use/i,
+    );
     await expect(assessmentHeader.getByTestId('assessment-progress-coverage')).toContainText('challenge', {
       timeout: 60_000,
     });

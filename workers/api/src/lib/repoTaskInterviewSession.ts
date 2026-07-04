@@ -1610,7 +1610,7 @@ function buildAssessmentReadiness(input: {
       required: false,
       satisfied: input.hasAiInteraction,
       sourceRefTypes: [...AI_INTERACTION_SOURCE_REF_TYPES],
-      missingImpact: 'If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly.',
+      missingImpact: 'If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly. Silence is not proof of no AI use.',
     },
     {
       id: 'transcript_context',

@@ -104,21 +104,41 @@ function submissionStatus(progress: RoomAssessmentProgressSnapshot): SubmissionS
   };
 }
 
+function aiUseTransparencyProofItem(progress: RoomAssessmentProgressSnapshot): ProofChecklistItem {
+  const aiUse = summarizeAssessmentAiUse(progress);
+  return {
+    label: 'AI-use transparency',
+    captured: progress.hasAiInteraction,
+    detail: progress.hasAiInteraction
+      ? aiUse.detail
+      : 'Optional: use AI if helpful. PIPE records only real agent bridge prompts, blocked attempts, bridge statuses, diagnostics, and agent responses; silence is not proof of no AI use.',
+    required: false,
+  };
+}
+
 function proofChecklistItems(progress: RoomAssessmentProgressSnapshot): ProofChecklistItem[] {
   if (progress.readiness) {
-    return [
+    const readinessItems = [
       ...progress.readiness.required,
       ...progress.readiness.confidence,
     ].map((item) => ({
       label: item.label,
       captured: item.satisfied,
-      detail: item.satisfied ? 'Captured as source-backed assessment evidence.' : item.missingImpact,
+      detail: item.id === 'ai_usage_transparency'
+        ? item.satisfied
+          ? summarizeAssessmentAiUse(progress).detail
+          : item.missingImpact
+        : item.satisfied ? 'Captured as source-backed assessment evidence.' : item.missingImpact,
       required: item.required,
     }));
+    const hasAiUseReadiness = [
+      ...progress.readiness.required,
+      ...progress.readiness.confidence,
+    ].some((item) => item.id === 'ai_usage_transparency');
+    return hasAiUseReadiness ? readinessItems : [...readinessItems, aiUseTransparencyProofItem(progress)];
   }
 
   const testOrGapCaptured = progress.hasTestEvidence || progress.hasVerificationGap === true;
-  const aiUse = summarizeAssessmentAiUse(progress);
   return [
     {
       label: 'Challenge packet',
@@ -152,12 +172,7 @@ function proofChecklistItems(progress: RoomAssessmentProgressSnapshot): ProofChe
         : 'Test output or an explicit verification note is attached to the submission.',
       required: true,
     },
-    {
-      label: 'AI use transparency',
-      captured: progress.hasAiInteraction,
-      detail: progress.hasAiInteraction ? aiUse.detail : 'Use AI if helpful; only real agent interactions will be recorded.',
-      required: false,
-    },
+    aiUseTransparencyProofItem(progress),
     {
       label: 'Interview context',
       captured: Boolean(progress.hasMessageEvidence || progress.hasTranscriptEvidence || progress.hasToolUsageEvidence),

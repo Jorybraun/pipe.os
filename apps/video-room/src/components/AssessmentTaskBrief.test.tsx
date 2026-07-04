@@ -195,6 +195,8 @@ describe('AssessmentTaskBrief', () => {
     expect(briefText).toContain('Assessment branch commit: Captured');
     expect(briefText).toContain('Tests or verification note: Captured');
     expect(briefText).toContain('Candidate explanation: Captured');
+    expect(briefText).toContain('AI-use transparency: Captured');
+    expect(briefText).toContain('AI prompts, responses, or bridge traces are part of the source-backed evidence trail.');
     expect(briefText).toContain('Commit cccccccccc');
     expect(screen.getByTestId('assessment-brief-open-submission').textContent).toContain('Review Submission');
     expect(screen.getByTestId('assessment-brief-open-submission').textContent).not.toContain('Submit work');
@@ -331,9 +333,47 @@ describe('AssessmentTaskBrief', () => {
     );
 
     const proof = screen.getByTestId('assessment-task-brief-proof');
-    expect(proof.textContent).toContain('AI use transparency: Captured');
+    expect(proof.textContent).toContain('AI-use transparency: Captured');
     expect(proof.textContent).toContain('A prompt was blocked or the bridge was unavailable; no agent response is counted as assistance.');
     expect(proof.textContent).not.toContain('Agent messages or responses are captured as assessment evidence.');
+  });
+
+  it('preserves precise AI transparency copy when server readiness is present', () => {
+    render(
+      <AssessmentTaskBrief
+        packet={packet}
+        workspace={workspace}
+        progress={{
+          ...progress,
+          hasAiInteraction: true,
+          sourceRefCounts: [
+            { kind: 'ai_user_prompt_blocked', count: 1 },
+            { kind: 'test_run', count: 1 },
+          ],
+          readiness: {
+            ...progress.readiness!,
+            confidence: [
+              ...progress.readiness!.confidence,
+              {
+                id: 'ai_usage_transparency',
+                label: 'AI-use transparency',
+                required: false,
+                satisfied: true,
+                sourceRefTypes: ['ai_user_prompt_blocked'],
+                missingImpact: 'If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly. Silence is not proof of no AI use.',
+              },
+            ],
+          },
+        }}
+        workspaceReady
+      />,
+    );
+
+    const proof = screen.getByTestId('assessment-task-brief-proof');
+    expect(proof.textContent).toContain('AI-use transparency: Captured');
+    expect(proof.textContent).toContain('1 blocked prompt captured.');
+    expect(proof.textContent).toContain('no agent response is counted as assistance.');
+    expect(proof.textContent).not.toContain('AI-use transparency: CapturedCaptured as source-backed assessment evidence.');
   });
 
   it('shows evaluated workspace submissions as report-ready without exposing recruiter-only scoring', () => {
