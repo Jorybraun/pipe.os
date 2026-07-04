@@ -384,7 +384,7 @@ describe('AssessmentTaskBrief', () => {
     expect(proof.textContent).not.toContain('AI-use transparency: CapturedCaptured as source-backed assessment evidence.');
   });
 
-  it('shows evaluated workspace submissions as report-ready without exposing recruiter-only scoring', () => {
+  it('keeps evaluated workspace reports reachable even after the workspace stops', () => {
     render(
       <AssessmentTaskBrief
         packet={packet}
@@ -403,7 +403,7 @@ describe('AssessmentTaskBrief', () => {
             createdAt: '2026-06-29T22:03:00.000Z',
           },
         }}
-        workspaceReady
+        workspaceReady={false}
         onOpenSubmission={vi.fn()}
       />,
     );

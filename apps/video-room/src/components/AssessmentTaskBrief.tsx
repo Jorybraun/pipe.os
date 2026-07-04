@@ -218,11 +218,12 @@ export function AssessmentTaskBrief({
       ? 'Verification gap captured'
       : 'No test evidence captured';
   const evaluationDiagnostics = progress?.evaluation?.diagnostics?.slice(0, 3) ?? [];
-  const canOpenSubmission = workspaceReady && !challengeSetupStep;
   const submissionActionLabel = assessmentSubmissionActionLabel(progress, 'Submit work');
+  const canOpenSubmission = (workspaceReady || submissionActionLabel !== 'Submit work') && !challengeSetupStep;
   const hasContract = Boolean(
     summary.task
     || summary.matchProof.length > 0
+    || summary.assessmentFit.length > 0
     || summary.successCriteria.length > 0
     || summary.expectedEvidence.length > 0,
   );
