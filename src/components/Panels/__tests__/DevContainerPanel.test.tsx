@@ -273,6 +273,29 @@ describe('DevContainerPanel assessment submission', () => {
     expect(payload.sourceRefs.every((ref) => ref.metadata?.source === 'assessment_commit_submission_panel')).toBe(true);
   });
 
+  it('prefills the workspace finalizer with the assigned verification command', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = input.toString();
+      if (url.endsWith('/rpc/assessment/progress')) {
+        return new Response(JSON.stringify(progressResponse()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DevContainerPanel challengeId="challenge-1" />);
+
+    await screen.findByTestId('assessment-submit-toggle');
+    fireEvent.click(screen.getByTestId('assessment-submit-toggle'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('assessment-workspace-finalize-test-command')).toHaveValue('npm test -- retry');
+    });
+  });
+
   it('finalizes the committed workspace HEAD through the live dev-container bridge', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = input.toString();

@@ -455,6 +455,11 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
       branchName: current.branchName.trim() ? current.branchName : defaults.branchName,
       baseCommitSha: current.baseCommitSha.trim() ? current.baseCommitSha : defaults.baseCommitSha,
     }));
+
+    const verificationCommand = assessmentProgress?.challenge?.summary?.verificationCommand?.trim();
+    if (verificationCommand) {
+      setWorkspaceTestCommand((current) => current.trim() ? current : verificationCommand);
+    }
   }, [assessmentProgress]);
 
   const remaining = formatRemaining(expiresAt);
