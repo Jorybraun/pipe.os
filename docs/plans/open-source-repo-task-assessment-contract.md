@@ -402,8 +402,10 @@ The controlling product rule remains:
   assessment, assembling the assigned challenge, submitted commit, immutable
   event timeline, event source refs, latest evaluation report, cited claims,
   diagnostics, and human decision from the source-backed assessment spine.
-- Broader final-output UI/export views beyond the compact room summary, Report
-  Ready evidence packet, and recruiter evidence-bundle API remain pending.
+- Recruiter assessment detail now renders that final evidence bundle after
+  evaluation, showing reviewability, timeline events, source-ref counts, exact
+  source previews, evaluator output, and human-decision state from the audit
+  packet. Broader export/download views remain pending.
 
 ## Proposed TypeScript Surface
 

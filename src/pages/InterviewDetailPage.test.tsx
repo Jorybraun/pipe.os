@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import InterviewDetailPage from './InterviewDetailPage';
-import type { ScheduledInterviewDetail } from '../lib/scheduling/types';
+import type { AssessmentEvidenceBundle, ScheduledInterviewDetail } from '../lib/scheduling/types';
 
 const mocks = vi.hoisted(() => ({
   api: {
@@ -222,6 +222,241 @@ function makeWorkspaceAssessmentProgress(
     },
     ...overrides,
   };
+}
+
+function makeAssessmentEvidenceBundle(
+  overrides: Partial<AssessmentEvidenceBundle> = {},
+): AssessmentEvidenceBundle {
+  return {
+    schemaVersion: 'repo-task-final-evidence-bundle-v1',
+    generatedAt: '2026-06-23T00:25:00.000Z',
+    interview: {
+      id: 'interview-1',
+      title: 'Fix Base UI popover impatient click handling',
+      description: 'Investigate the hover-open popover trigger behavior and submit a focused regression fix.',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      recipientName: 'Ada Candidate',
+      recipientEmail: 'ada@example.com',
+      candidateId: 'candidate-1',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:22:00.000Z',
+    },
+    assessment: {
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      state: 'EVALUATED',
+      stage: 'EVALUATED',
+      nextAction: 'REVIEW_EVALUATION',
+      nextActionLabel: 'Review the assessment report and evidence.',
+      sourceRefCounts: [
+        { kind: 'review_challenge_packet', count: 1 },
+        { kind: 'git_commit', count: 1 },
+        { kind: 'code_diff', count: 1 },
+      ],
+      evidenceCounts: [
+        { kind: 'commit_submission', count: 1 },
+        { kind: 'assessment_evaluation_report', count: 1 },
+      ],
+    },
+    completeness: {
+      hasChallengePacket: true,
+      hasCommitSubmission: true,
+      hasEvaluationReport: true,
+      hasHumanDecision: false,
+      isReviewable: true,
+    },
+    challenge: null,
+    challengePacketContract: undefined,
+    submission: null,
+    timeline: [],
+    evaluation: null,
+    humanDecision: null,
+    ...overrides,
+  };
+}
+
+function makeSourceBackedReportEvidenceBundle(
+  progress: NonNullable<ScheduledInterviewDetail['assessmentProgress']>,
+): AssessmentEvidenceBundle {
+  return makeAssessmentEvidenceBundle({
+    challenge: progress.challenge,
+    challengePacketContract: progress.challengePacketContract,
+    submission: progress.commit,
+    assessment: {
+      mode: progress.session.mode,
+      state: progress.session.state,
+      stage: progress.stage,
+      nextAction: progress.nextAction,
+      nextActionLabel: progress.nextActionLabel,
+      assignmentTrust: progress.assignmentTrust,
+      sourceRefCounts: progress.sourceRefCounts,
+      evidenceCounts: progress.evidenceCounts,
+    },
+    completeness: {
+      hasChallengePacket: true,
+      hasCommitSubmission: true,
+      hasEvaluationReport: true,
+      hasHumanDecision: false,
+      isReviewable: true,
+    },
+    timeline: [
+      {
+        sequence: 1,
+        kind: 'challenge_assigned',
+        actorType: 'system',
+        actorId: null,
+        narrative: 'PIPE assigned a source-backed open-source challenge packet.',
+        payload: {},
+        occurredAt: '2026-06-23T00:00:00.000Z',
+        createdAt: '2026-06-23T00:00:00.000Z',
+        sourceRefs: [{
+          sourceRefType: 'review_challenge_packet',
+          sourceRefId: 'challenge-packet-ready',
+          sourceSpanId: null,
+          evidenceRole: 'assigned_challenge',
+          locator: { repositoryUrl: 'https://github.com/open-source/widgets' },
+          exactText: 'Task: fix the popover cleanup regression.',
+          contentHash: 'hash-challenge',
+          metadata: {},
+          createdAt: '2026-06-23T00:00:00.000Z',
+        }],
+      },
+      {
+        sequence: 2,
+        kind: 'commit_submission',
+        actorType: 'candidate',
+        actorId: 'candidate-1',
+        narrative: 'Candidate submitted assessment branch commit abcdef1234567890abcdef1234567890abcdef12.',
+        payload: {},
+        occurredAt: '2026-06-23T00:18:00.000Z',
+        createdAt: '2026-06-23T00:18:00.000Z',
+        sourceRefs: [
+          {
+            sourceRefType: 'git_commit',
+            sourceRefId: 'abcdef1234567890abcdef1234567890abcdef12',
+            sourceSpanId: null,
+            evidenceRole: 'support',
+            locator: { branchName: 'pipe-assessment/popover-cleanup' },
+            exactText: 'commit abcdef1234567890abcdef1234567890abcdef12',
+            contentHash: 'hash-commit',
+            metadata: {},
+            createdAt: '2026-06-23T00:18:00.000Z',
+          },
+          {
+            sourceRefType: 'code_diff',
+            sourceRefId: '1111111111111111111111111111111111111111..abcdef1234567890abcdef1234567890abcdef12',
+            sourceSpanId: null,
+            evidenceRole: 'submitted_diff',
+            locator: { file: 'src/popover.ts' },
+            exactText: 'diff --git a/src/popover.ts b/src/popover.ts\n+cleanupStaleHandler();',
+            contentHash: 'hash-diff',
+            metadata: {},
+            createdAt: '2026-06-23T00:18:00.000Z',
+          },
+          {
+            sourceRefType: 'test_run',
+            sourceRefId: 'pnpm-test-popover',
+            sourceSpanId: null,
+            evidenceRole: 'verification_test_output',
+            locator: { command: 'pnpm test popover' },
+            exactText: 'pnpm test popover passed the impatient click regression.',
+            contentHash: 'hash-test',
+            metadata: {},
+            createdAt: '2026-06-23T00:19:00.000Z',
+          },
+        ],
+      },
+      {
+        sequence: 3,
+        kind: 'assessment_evaluation_requested',
+        actorType: 'recruiter',
+        actorId: 'user-1',
+        narrative: 'Recruiter requested source-backed evaluation from the captured challenge, commit, diff, and verification evidence.',
+        payload: {},
+        occurredAt: '2026-06-23T00:21:00.000Z',
+        createdAt: '2026-06-23T00:21:00.000Z',
+        sourceRefs: [{
+          sourceRefType: 'assessment_evaluation_request',
+          sourceRefId: 'assessment-evaluation-request-source-backed',
+          sourceSpanId: null,
+          evidenceRole: 'support',
+          locator: {},
+          exactText: 'Evaluate only source-backed challenge, commit, diff, test, transcript, chat, and AI-use evidence.',
+          contentHash: 'hash-request',
+          metadata: {},
+          createdAt: '2026-06-23T00:21:00.000Z',
+        }],
+      },
+      {
+        sequence: 4,
+        kind: 'assessment_evaluation_completed',
+        actorType: 'system',
+        actorId: null,
+        narrative: 'PIPE produced a conservative source-backed assessment report.',
+        payload: {},
+        occurredAt: '2026-06-23T00:22:00.000Z',
+        createdAt: '2026-06-23T00:22:00.000Z',
+        sourceRefs: [{
+          sourceRefType: 'assessment_evaluation_report',
+          sourceRefId: 'assessment-report-source-backed',
+          sourceSpanId: null,
+          evidenceRole: 'support',
+          locator: {},
+          exactText: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
+          contentHash: 'hash-report',
+          metadata: {},
+          createdAt: '2026-06-23T00:22:00.000Z',
+        }],
+      },
+    ],
+    evaluation: {
+      reportId: 'assessment-report-source-backed',
+      status: 'EVALUATED',
+      summary: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
+      output: { recommendation: 'mixed_evidence_human_review' },
+      createdAt: '2026-06-23T00:22:00.000Z',
+      updatedAt: '2026-06-23T00:22:00.000Z',
+      claims: [{
+        claimId: 'claim-focused-diff',
+        polarity: 'positive',
+        dimension: 'commit_quality',
+        narrative: 'The candidate produced a focused patch backed by the submitted diff.',
+        confidence: 0.82,
+        createdAt: '2026-06-23T00:22:00.000Z',
+        sourceRefs: [{
+          sourceRefType: 'code_diff',
+          sourceRefId: '1111111111111111111111111111111111111111..abcdef1234567890abcdef1234567890abcdef12',
+          sourceSpanId: null,
+          evidenceRole: 'submitted_diff',
+          locator: { file: 'src/popover.ts' },
+          exactText: 'diff --git a/src/popover.ts b/src/popover.ts\n+cleanupStaleHandler();',
+          contentHash: 'hash-diff',
+          metadata: {},
+          createdAt: '2026-06-23T00:18:00.000Z',
+        }],
+      }],
+      diagnostics: [{
+        diagnosticId: 'diagnostic-missing-runner',
+        code: 'VERIFICATION_UNOBSERVED',
+        severity: 'info',
+        message: 'The test evidence shows changed files but no test runner output.',
+        provider: 'workers-ai',
+        retryable: false,
+        details: {},
+        createdAt: '2026-06-23T00:22:00.000Z',
+        sourceRefs: [{
+          sourceRefType: 'test_run',
+          sourceRefId: 'pnpm-test-popover',
+          sourceSpanId: null,
+          evidenceRole: 'verification_test_output',
+          locator: { command: 'pnpm test popover' },
+          exactText: 'pnpm test popover passed the impatient click regression.',
+          contentHash: 'hash-test',
+          metadata: {},
+          createdAt: '2026-06-23T00:19:00.000Z',
+        }],
+      }],
+    },
+  });
 }
 
 describe('InterviewDetailPage', () => {
@@ -1274,6 +1509,7 @@ describe('InterviewDetailPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /start evaluation/i }));
     await flushAsyncUpdates();
+    await flushAsyncUpdates();
 
     expect(mocks.api.post).toHaveBeenCalledWith(
       '/api/v1/scheduling/interviews/interview-1/assessment/start-evaluation',
@@ -1578,8 +1814,10 @@ describe('InterviewDetailPage', () => {
         },
       },
     };
-    mocks.api.get.mockResolvedValueOnce({
-      interview: makeInterview({
+    const evidenceBundle = makeSourceBackedReportEvidenceBundle(evaluatedProgress);
+    mocks.api.get
+      .mockResolvedValueOnce({
+        interview: makeInterview({
         interviewType: 'OPEN_SOURCE_BUG_FIX',
         status: 'COMPLETED',
         assessmentSetup: {
@@ -1598,7 +1836,8 @@ describe('InterviewDetailPage', () => {
         },
         assessmentProgress: readyProgress,
       }),
-    });
+      })
+      .mockResolvedValueOnce({ bundle: evidenceBundle });
     mocks.api.post.mockResolvedValueOnce({
       progress: evaluatedProgress,
       report: {
@@ -1684,6 +1923,24 @@ describe('InterviewDetailPage', () => {
     expect(reviewPacket).toHaveTextContent('4 source refs');
     expect(reviewPacket).toHaveTextContent('1 claim');
     expect(reviewPacket).toHaveTextContent('1 diagnostic');
+    const evidenceBundlePanel = screen.getByTestId('interview-assessment-evidence-bundle');
+    expect(evidenceBundlePanel).toHaveTextContent('Final evidence bundle');
+    expect(evidenceBundlePanel).toHaveTextContent('repo-task-final-evidence-bundle-v1');
+    expect(evidenceBundlePanel).toHaveTextContent('Reviewable, decision pending');
+    expect(evidenceBundlePanel).toHaveTextContent('Still missing human decision.');
+    expect(evidenceBundlePanel).toHaveTextContent('4 events · 6 source refs');
+    expect(evidenceBundlePanel).toHaveTextContent('Candidate made a focused source-backed change and cited the submitted diff evidence. 1 cited claim and 1 diagnostic.');
+    expect(evidenceBundlePanel).toHaveTextContent('Human decision');
+    expect(evidenceBundlePanel).toHaveTextContent('Not recorded');
+    expect(evidenceBundlePanel).toHaveTextContent('Timeline');
+    expect(evidenceBundlePanel).toHaveTextContent('Challenge assigned');
+    expect(evidenceBundlePanel).toHaveTextContent('Commit submitted');
+    expect(evidenceBundlePanel).toHaveTextContent('3 source refs');
+    expect(evidenceBundlePanel).toHaveTextContent('Evaluation requested');
+    expect(evidenceBundlePanel).toHaveTextContent('Evaluation completed');
+    expect(evidenceBundlePanel).toHaveTextContent('Source preview');
+    expect(evidenceBundlePanel).toHaveTextContent('Diff evidence · Submitted diff');
+    expect(evidenceBundlePanel).toHaveTextContent('cleanupStaleHandler');
     const contractReceipt = screen.getByTestId('interview-assessment-contract-receipt');
     expect(contractReceipt).toHaveTextContent('Evidence contract receipt');
     expect(contractReceipt).toHaveTextContent('2 of 3 expected evidence items machine-supported');
@@ -3516,7 +3773,7 @@ describe('InterviewDetailPage', () => {
     });
     await flushAsyncUpdates();
 
-    expect(mocks.api.get).toHaveBeenCalledTimes(2);
+    expect(mocks.api.get).toHaveBeenCalledTimes(3);
     const refreshedValidity = screen.getByTestId('interview-workspace-assessment-validity-proof');
     expect(refreshedValidity).toHaveTextContent('Score validity');
     expect(refreshedValidity).toHaveTextContent('Required proof is source-backed');

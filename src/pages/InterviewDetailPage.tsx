@@ -16,12 +16,15 @@ import {
   Video,
 } from 'lucide-react';
 import { useApiClient } from '../hooks/useApiClient';
+import { ApiError } from '../lib/api/types';
 import { asCodeReviewReviewProfile, ReviewProfileCard } from '../components/Assessment/CodeReviewChallenge';
 import {
   summarizeResolvedAssessmentAssignment,
   type AssessmentAssignmentSummary,
 } from '../lib/scheduling/assessmentChallenge';
 import type {
+  AssessmentEvidenceBundle,
+  AssessmentEvidenceBundleEvent,
   AssessmentEvidenceCoverageItem,
   AssessmentProgressSnapshot,
   AssessmentProgressReviewPacketSummary,
@@ -143,6 +146,10 @@ interface AssessmentProofChecklistItem {
 interface RecordHumanAssessmentDecisionResponse {
   decision: NonNullable<NonNullable<AssessmentProgressSnapshot['humanDecision']>>;
   progress: AssessmentProgressSnapshot;
+}
+
+interface AssessmentEvidenceBundleResponse {
+  bundle: AssessmentEvidenceBundle;
 }
 
 interface CodeReviewAnnotationDetail {
@@ -1943,6 +1950,170 @@ function workspaceAssessmentReviewPacketItems(
   ];
 }
 
+function assessmentEvidenceBundleSourceRefCount(bundle: AssessmentEvidenceBundle): number {
+  return bundle.timeline.reduce((total, event) => total + event.sourceRefs.length, 0);
+}
+
+function assessmentEvidenceBundleSourceRefTypeCounts(bundle: AssessmentEvidenceBundle): Array<{ kind: string; count: number }> {
+  const counts = new Map<string, number>();
+  bundle.timeline.forEach((event) => {
+    event.sourceRefs.forEach((sourceRef) => {
+      counts.set(sourceRef.sourceRefType, (counts.get(sourceRef.sourceRefType) ?? 0) + 1);
+    });
+  });
+  return [...counts.entries()]
+    .map(([kind, count]) => ({ kind, count }))
+    .sort((a, b) => b.count - a.count || a.kind.localeCompare(b.kind));
+}
+
+function assessmentEvidenceBundleTopSourceRefs(bundle: AssessmentEvidenceBundle): string {
+  const parts = assessmentEvidenceBundleSourceRefTypeCounts(bundle)
+    .slice(0, 5)
+    .map((item) => sourceRefCountLabel(
+      item.count,
+      workspaceAssessmentSourceRefBasisLabel(item.kind, null),
+    ))
+    .filter((item): item is string => Boolean(item));
+  return parts.length > 0 ? readableList(parts) : 'No source refs are attached to the final bundle.';
+}
+
+function assessmentEvidenceBundleMissingProof(bundle: AssessmentEvidenceBundle): string[] {
+  return [
+    bundle.completeness.hasChallengePacket ? null : 'challenge packet',
+    bundle.completeness.hasCommitSubmission ? null : 'submitted commit',
+    bundle.completeness.hasEvaluationReport ? null : 'evaluation report',
+    bundle.completeness.hasHumanDecision ? null : 'human decision',
+  ].filter((item): item is string => Boolean(item));
+}
+
+function assessmentEvidenceBundleReviewabilityItem(bundle: AssessmentEvidenceBundle): WorkspaceAssessmentReadoutItem {
+  const missing = assessmentEvidenceBundleMissingProof(bundle);
+  if (bundle.completeness.isReviewable && missing.length === 0) {
+    return {
+      label: 'Reviewability',
+      value: 'Final packet reviewable',
+      detail: 'Challenge, commit, evaluator report, source refs, and human decision are assembled into one audit packet.',
+      tone: 'positive',
+    };
+  }
+  if (bundle.completeness.isReviewable) {
+    return {
+      label: 'Reviewability',
+      value: 'Reviewable, decision pending',
+      detail: `The candidate work and evaluator report are present. Still missing ${readableList(missing)}.`,
+      tone: 'watch',
+    };
+  }
+  return {
+    label: 'Reviewability',
+    value: 'Packet incomplete',
+    detail: `Missing ${readableList(missing)} before this is a final buyer-ready assessment packet.`,
+    tone: 'blocked',
+  };
+}
+
+function assessmentEvidenceBundleReadout(bundle: AssessmentEvidenceBundle): WorkspaceAssessmentReadoutItem[] {
+  const sourceRefCount = assessmentEvidenceBundleSourceRefCount(bundle);
+  const evaluationClaimCount = bundle.evaluation?.claims.length ?? 0;
+  const evaluationDiagnosticCount = bundle.evaluation?.diagnostics.length ?? 0;
+  return [
+    {
+      label: 'Bundle artifact',
+      value: bundle.schemaVersion,
+      detail: `Generated ${formatDate(bundle.generatedAt, 'just now')} from the durable assessment session in state ${sentenceCaseToken(bundle.assessment.state)}.`,
+      tone: 'positive',
+    },
+    assessmentEvidenceBundleReviewabilityItem(bundle),
+    {
+      label: 'Timeline',
+      value: `${bundle.timeline.length} event${bundle.timeline.length === 1 ? '' : 's'} · ${sourceRefCount} source ${sourceRefCount === 1 ? 'ref' : 'refs'}`,
+      detail: assessmentEvidenceBundleTopSourceRefs(bundle),
+      tone: sourceRefCount > 0 ? 'positive' : 'blocked',
+    },
+    {
+      label: 'Evaluation',
+      value: bundle.evaluation
+        ? assessmentEvaluationStatusLabel(bundle.evaluation.status)
+        : 'No report',
+      detail: bundle.evaluation
+        ? `${bundle.evaluation.summary} ${evaluationClaimCount} cited ${evaluationClaimCount === 1 ? 'claim' : 'claims'} and ${evaluationDiagnosticCount} ${evaluationDiagnosticCount === 1 ? 'diagnostic' : 'diagnostics'}.`
+        : 'Run source-backed evaluation before relying on the submitted work.',
+      tone: bundle.evaluation?.status === 'EVALUATED' ? 'positive' : 'watch',
+    },
+    {
+      label: 'Human decision',
+      value: bundle.humanDecision
+        ? assessmentHumanDecisionLabel(bundle.humanDecision.decision)
+        : 'Not recorded',
+      detail: bundle.humanDecision
+        ? `${bundle.humanDecision.summary} Anchored to ${bundle.humanDecision.sourceRefCount} source ${bundle.humanDecision.sourceRefCount === 1 ? 'ref' : 'refs'}.`
+        : 'A reviewer still needs to inspect the report, diff, evidence gaps, and commit before finalizing the hiring decision.',
+      tone: bundle.humanDecision
+        ? bundle.humanDecision.decision === 'advance' ? 'positive' : 'watch'
+        : 'watch',
+    },
+  ];
+}
+
+function assessmentEvidenceBundlePreviewEvents(bundle: AssessmentEvidenceBundle): AssessmentEvidenceBundleEvent[] {
+  return [...bundle.timeline]
+    .sort((a, b) => b.sequence - a.sequence)
+    .slice(0, 5)
+    .reverse();
+}
+
+function assessmentEvidenceBundleEventLabel(event: AssessmentEvidenceBundleEvent): string {
+  switch (event.kind) {
+    case 'challenge_assigned':
+      return 'Challenge assigned';
+    case 'commit_submission':
+      return 'Commit submitted';
+    case 'assessment_evaluation_requested':
+      return 'Evaluation requested';
+    case 'assessment_evaluation_completed':
+      return 'Evaluation completed';
+    case 'human_decision':
+      return 'Human decision';
+    case 'room_chat_message':
+      return 'Room chat';
+    case 'terminal_command':
+      return 'Terminal command';
+    case 'ai_interaction':
+      return 'AI interaction';
+    default:
+      return sentenceCaseToken(event.kind);
+  }
+}
+
+function assessmentEvidenceBundleSourceSnippets(bundle: AssessmentEvidenceBundle): Array<{
+  id: string;
+  label: string;
+  exactText: string;
+}> {
+  const priority = new Map<string, number>([
+    ['code_diff', 0],
+    ['test_run', 1],
+    ['git_commit', 2],
+    ['terminal_command', 3],
+    ['room_chat_message', 4],
+    ['ai_user_prompt', 5],
+    ['ai_agent_response', 6],
+    ['assessment_evaluation_report', 7],
+    ['review_challenge_packet', 8],
+  ]);
+  return bundle.timeline
+    .flatMap((event) => event.sourceRefs.map((sourceRef) => ({
+      id: `${event.sequence}:${sourceRef.sourceRefType}:${sourceRef.sourceRefId}:${sourceRef.evidenceRole}`,
+      label: `${assessmentEvidenceSnippetLabel(sourceRef.sourceRefType)} · ${sentenceCaseToken(sourceRef.evidenceRole)}`,
+      exactText: sourceRef.exactText,
+      priority: priority.get(sourceRef.sourceRefType) ?? 100,
+    })))
+    .filter((sourceRef) => sourceRef.exactText.trim().length > 0)
+    .sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label))
+    .slice(0, 4)
+    .map(({ id, label, exactText }) => ({ id, label, exactText }));
+}
+
 type ContractEvidenceReceipt = NonNullable<AssessmentProgressReviewPacketSummary['evidence']['contractEvidence']>;
 
 function contractEvidenceStatusLabel(
@@ -3572,6 +3743,9 @@ export default function InterviewDetailPage(): JSX.Element {
   const [humanDecisionError, setHumanDecisionError] = useState<string | null>(null);
   const [humanDecisionNotice, setHumanDecisionNotice] = useState<string | null>(null);
   const [isRecordingHumanDecision, setIsRecordingHumanDecision] = useState(false);
+  const [assessmentEvidenceBundle, setAssessmentEvidenceBundle] = useState<AssessmentEvidenceBundle | null>(null);
+  const [isLoadingAssessmentEvidenceBundle, setIsLoadingAssessmentEvidenceBundle] = useState(false);
+  const [assessmentEvidenceBundleError, setAssessmentEvidenceBundleError] = useState<string | null>(null);
   const [workspaceRepoUrl, setWorkspaceRepoUrl] = useState('');
   const [workspacePrNumber, setWorkspacePrNumber] = useState('');
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
@@ -3617,7 +3791,58 @@ export default function InterviewDetailPage(): JSX.Element {
     setHumanDecisionError(null);
     setHumanDecisionNotice(null);
     setHumanDecisionValue('advance');
+    setAssessmentEvidenceBundle(null);
+    setAssessmentEvidenceBundleError(null);
   }, [interviewId]);
+
+  useEffect(() => {
+    const progress = interview?.assessmentProgress ?? null;
+    const shouldLoadBundle = Boolean(
+      interviewId
+        && progress?.session.id
+        && (progress.evaluation || progress.humanDecision),
+    );
+    if (!shouldLoadBundle) {
+      setAssessmentEvidenceBundle(null);
+      setAssessmentEvidenceBundleError(null);
+      setIsLoadingAssessmentEvidenceBundle(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setIsLoadingAssessmentEvidenceBundle(true);
+    setAssessmentEvidenceBundleError(null);
+    Promise.resolve(api.get<AssessmentEvidenceBundleResponse>(
+      `/api/v1/scheduling/interviews/${interviewId}/assessment/evidence-bundle`,
+    )).then((result) => {
+      if (cancelled) return;
+      setAssessmentEvidenceBundle(result?.bundle ?? null);
+    }).catch((err: unknown) => {
+      if (cancelled) return;
+      setAssessmentEvidenceBundle(null);
+      if (err instanceof ApiError && err.code === 'CONFLICT') {
+        setAssessmentEvidenceBundleError(null);
+        return;
+      }
+      setAssessmentEvidenceBundleError(
+        err instanceof Error ? err.message : 'Unable to load final assessment evidence bundle',
+      );
+    }).finally(() => {
+      if (!cancelled) setIsLoadingAssessmentEvidenceBundle(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    api,
+    interviewId,
+    interview?.assessmentProgress?.commit?.commitSha,
+    interview?.assessmentProgress?.evaluation?.id,
+    interview?.assessmentProgress?.evaluation?.status,
+    interview?.assessmentProgress?.humanDecision?.eventId,
+    interview?.assessmentProgress?.session.id,
+  ]);
 
   const transcriptEntries = useMemo(() => {
     const meetingEntries = parseTranscriptJson(interview?.linkedMeeting?.transcriptJson);
@@ -4277,6 +4502,21 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentContractReceipt = assessmentReviewPacket?.evidence.contractEvidence ?? null;
   const assessmentContractReceiptItems = workspaceAssessmentContractReceiptItems(assessmentContractReceipt);
   const assessmentAiUseReceipt = workspaceAssessmentAiUseReceipt(assessmentProgress);
+  const assessmentEvidenceBundleReadoutItems = assessmentEvidenceBundle
+    ? assessmentEvidenceBundleReadout(assessmentEvidenceBundle)
+    : [];
+  const assessmentEvidenceBundleEvents = assessmentEvidenceBundle
+    ? assessmentEvidenceBundlePreviewEvents(assessmentEvidenceBundle)
+    : [];
+  const assessmentEvidenceBundleSnippets = assessmentEvidenceBundle
+    ? assessmentEvidenceBundleSourceSnippets(assessmentEvidenceBundle)
+    : [];
+  const showsAssessmentEvidenceBundle = usesWorkspaceInterview && Boolean(
+    assessmentEvidenceBundle
+      || isLoadingAssessmentEvidenceBundle
+      || assessmentEvidenceBundleError
+      || assessmentProgress?.evaluation,
+  );
   const workspaceAssessmentReadout = workspaceAssessmentHiringReadout({
     progress: assessmentProgress,
     setup: interview.assessmentSetup,
@@ -5000,6 +5240,86 @@ export default function InterviewDetailPage(): JSX.Element {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+              {showsAssessmentEvidenceBundle && (
+                <div data-testid="interview-assessment-evidence-bundle" style={DECISION_COCKPIT}>
+                  <div style={DECISION_HEADER}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={FIELD_LABEL}>Final evidence bundle</div>
+                      <div style={ROOM_LINK_TEXT}>
+                        Buyer-reviewable audit packet assembled from immutable assessment events, exact source refs, evaluator output, and human review.
+                      </div>
+                    </div>
+                    {assessmentEvidenceBundle && (
+                      <span style={MATCH_BADGE}>{sentenceCaseToken(assessmentEvidenceBundle.assessment.stage)}</span>
+                    )}
+                  </div>
+                  {isLoadingAssessmentEvidenceBundle && (
+                    <div style={SMALL_NOTE}>Loading final source-backed evidence bundle...</div>
+                  )}
+                  {assessmentEvidenceBundleError && (
+                    <div style={ERROR_NOTE}>{assessmentEvidenceBundleError}</div>
+                  )}
+                  {!isLoadingAssessmentEvidenceBundle && !assessmentEvidenceBundleError && !assessmentEvidenceBundle && (
+                    <div style={EMPTY_TEXT}>
+                      Final evidence bundle will appear after challenge, commit, evaluation, and review evidence are assembled.
+                    </div>
+                  )}
+                  {assessmentEvidenceBundle && (
+                    <>
+                      <div style={DECISION_COCKPIT_GRID}>
+                        {assessmentEvidenceBundleReadoutItems.map((item) => (
+                          <div
+                            key={item.label}
+                            style={{
+                              ...DECISION_COCKPIT_ITEM,
+                              ...DECISION_NEXT_STEP_TONE[item.tone],
+                            }}
+                          >
+                            <div style={FIELD_LABEL}>{item.label}</div>
+                            <div style={DECISION_COCKPIT_VALUE}>{item.value}</div>
+                            <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {assessmentEvidenceBundleEvents.length > 0 && (
+                        <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                          <span style={FIELD_LABEL}>Timeline</span>
+                          <span style={{ ...FIELD_VALUE, ...ASSESSMENT_CLAIM_LIST }}>
+                            {assessmentEvidenceBundleEvents.map((event) => (
+                              <span key={`${event.sequence}:${event.kind}`} style={ASSESSMENT_CLAIM_ROW}>
+                                <span style={ASSESSMENT_CLAIM_HEAD}>
+                                  <span>{assessmentEvidenceBundleEventLabel(event)}</span>
+                                  <span>{event.sourceRefs.length} source {event.sourceRefs.length === 1 ? 'ref' : 'refs'}</span>
+                                </span>
+                                <span style={ASSESSMENT_CLAIM_NARRATIVE}>
+                                  {compactEvidenceText(event.narrative, 280) ?? sentenceCaseToken(event.kind)}
+                                </span>
+                              </span>
+                            ))}
+                          </span>
+                        </div>
+                      )}
+                      {assessmentEvidenceBundleSnippets.length > 0 && (
+                        <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                          <span style={FIELD_LABEL}>Source preview</span>
+                          <span style={{ ...FIELD_VALUE, ...ASSESSMENT_CLAIM_LIST }}>
+                            {assessmentEvidenceBundleSnippets.map((snippet) => (
+                              <span key={snippet.id} style={ASSESSMENT_CLAIM_ROW}>
+                                <span style={ASSESSMENT_CLAIM_HEAD}>
+                                  <span>{snippet.label}</span>
+                                </span>
+                                <span style={ASSESSMENT_CLAIM_NARRATIVE}>
+                                  {compactEvidenceText(snippet.exactText, 360)}
+                                </span>
+                              </span>
+                            ))}
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
               {assessmentContractReceipt && assessmentContractReceiptItems.length > 0 && (

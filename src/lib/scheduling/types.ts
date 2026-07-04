@@ -397,6 +397,103 @@ export interface AssessmentEvaluationDiagnosticPreview {
   sourceRefTypes: string[];
 }
 
+export interface AssessmentEvidenceBundleSourceRef {
+  sourceRefType: string;
+  sourceRefId: string;
+  sourceSpanId: string | null;
+  evidenceRole: string;
+  locator: Record<string, unknown>;
+  exactText: string;
+  contentHash: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AssessmentEvidenceBundleEvent {
+  sequence: number;
+  kind: string;
+  actorType: string;
+  actorId: string | null;
+  narrative: string;
+  payload: Record<string, unknown>;
+  occurredAt: string;
+  createdAt: string;
+  sourceRefs: AssessmentEvidenceBundleSourceRef[];
+}
+
+export interface AssessmentEvidenceBundleClaim {
+  claimId: string;
+  polarity: string;
+  dimension: string;
+  narrative: string;
+  confidence: number | null;
+  createdAt: string;
+  sourceRefs: AssessmentEvidenceBundleSourceRef[];
+}
+
+export interface AssessmentEvidenceBundleDiagnostic {
+  diagnosticId: string;
+  code: string;
+  severity: string;
+  message: string;
+  provider: string | null;
+  retryable: boolean;
+  details: Record<string, unknown>;
+  createdAt: string;
+  sourceRefs: AssessmentEvidenceBundleSourceRef[];
+}
+
+export interface AssessmentEvidenceBundleEvaluationReport {
+  reportId: string;
+  status: string;
+  summary: string;
+  output: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  claims: AssessmentEvidenceBundleClaim[];
+  diagnostics: AssessmentEvidenceBundleDiagnostic[];
+}
+
+export interface AssessmentEvidenceBundle {
+  schemaVersion: 'repo-task-final-evidence-bundle-v1';
+  generatedAt: string;
+  interview: {
+    id: string;
+    title: string | null;
+    description: string | null;
+    interviewType: string | null;
+    recipientName: string | null;
+    recipientEmail: string | null;
+    candidateId: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  assessment: {
+    mode: string;
+    state: string;
+    stage: string;
+    nextAction: string;
+    nextActionLabel: string;
+    readiness?: AssessmentProgressReadinessSnapshot;
+    assignmentTrust?: AssessmentProgressSnapshot['assignmentTrust'];
+    sourceRefCounts: Array<{ kind: string; count: number }>;
+    evidenceCounts: Array<{ kind: string; count: number }>;
+  };
+  completeness: {
+    hasChallengePacket: boolean;
+    hasCommitSubmission: boolean;
+    hasEvaluationReport: boolean;
+    hasHumanDecision: boolean;
+    isReviewable: boolean;
+  };
+  challenge: AssessmentProgressSnapshot['challenge'];
+  challengePacketContract: AssessmentProgressSnapshot['challengePacketContract'];
+  submission: AssessmentProgressSnapshot['commit'];
+  timeline: AssessmentEvidenceBundleEvent[];
+  evaluation: AssessmentEvidenceBundleEvaluationReport | null;
+  humanDecision: AssessmentProgressSnapshot['humanDecision'];
+}
+
 export interface WorkspaceSessionSummary {
   status: string;
   errorMessage: string | null;
