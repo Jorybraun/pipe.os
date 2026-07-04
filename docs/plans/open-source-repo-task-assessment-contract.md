@@ -105,6 +105,11 @@ The controlling product rule remains:
 - The list endpoint returns global interview-mode facets so recruiter filters
   show real owned-history counts even when the current page is filtered or only
   partially loaded.
+- The deployed open-source workspace smoke verifies the mode-filter contract by
+  requesting the recruiter list with `interviewType=OPEN_SOURCE_BUG_FIX`,
+  requiring only open-source rows, matching filtered pagination totals to the
+  open-source facet count, and proving the fresh assessment remains visible in
+  that filtered list.
 - The list endpoint loads source-backed assessment progress only for the
   returned interview page. Detail views remain the place for full evidence
   audit trails, evaluation claims, and human-decision records.

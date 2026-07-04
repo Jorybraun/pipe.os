@@ -811,6 +811,59 @@ async function assertRecruiterListApiEvaluationProof(interviewId, expectedRepoUr
   };
 }
 
+function recruiterModeFacetKey(interviewType) {
+  switch (interviewType) {
+    case 'CODE_REVIEW':
+      return 'codeReview';
+    case 'DEV_CONTAINER_CHALLENGE':
+      return 'devContainerChallenge';
+    case 'OPEN_SOURCE_BUG_FIX':
+      return 'openSourceBugFix';
+    default:
+      return 'standardCalls';
+  }
+}
+
+async function assertRecruiterListModeFilterApi(interviewId) {
+  const filter = INTERVIEW_TYPE;
+  const body = await requestJson(
+    APP_BASE,
+    `/api/v1/scheduling/interviews?limit=100&offset=0&sort=created_desc&interviewType=${encodeURIComponent(filter)}&workspaceSmokeModeFilter=${Date.now()}`,
+  );
+  const interviews = Array.isArray(body?.interviews) ? body.interviews : [];
+  const pagination = body?.pagination ?? null;
+  const facets = body?.facets?.interviewTypes ?? null;
+  if (pagination?.interviewType !== filter) {
+    throw new Error(`Recruiter list mode filter did not echo ${filter}: ${JSON.stringify(pagination)}`);
+  }
+  if (!facets || typeof facets !== 'object') {
+    throw new Error(`Recruiter list mode filter did not return interview-type facets: ${JSON.stringify(body?.facets)}`);
+  }
+  const mismatched = interviews.filter((item) => item?.interviewType !== filter);
+  if (mismatched.length > 0) {
+    throw new Error(`Recruiter list mode filter returned rows outside ${filter}: ${JSON.stringify(mismatched.slice(0, 3))}`);
+  }
+  const facetKey = recruiterModeFacetKey(filter);
+  const filteredFacetCount = facets[facetKey];
+  if (!Number.isFinite(filteredFacetCount) || filteredFacetCount < interviews.length) {
+    throw new Error(`Recruiter list mode facets are inconsistent for ${filter}: ${JSON.stringify({ facets, pageCount: interviews.length })}`);
+  }
+  if (pagination.total !== filteredFacetCount) {
+    throw new Error(`Recruiter list mode filter total did not match the ${facetKey} facet: ${JSON.stringify({ pagination, facets })}`);
+  }
+  if (!interviews.some((item) => item?.id === interviewId)) {
+    throw new Error(`Recruiter list mode filter did not include the fresh ${filter} workspace smoke interview ${interviewId}: ${JSON.stringify({ pagination, facets })}`);
+  }
+  return {
+    visible: true,
+    filter,
+    total: pagination.total,
+    facetCount: filteredFacetCount,
+    allCount: facets.all,
+    pageCount: interviews.length,
+  };
+}
+
 function humanDecisionForRecommendation(recommendation) {
   if (recommendation === 'strong_evidence_to_advance') return 'advance';
   if (recommendation === 'insufficient_evidence' || recommendation === 'not_demonstrated') {
@@ -1877,6 +1930,7 @@ async function main() {
     expectedRepoUrl,
     expectedBaseCommitSha,
   );
+  const recruiterListModeFilterProof = await assertRecruiterListModeFilterApi(interviewId);
   const recruiterBrowser = await assertRecruiterReviewerReceiptBrowser(
     interviewId,
     workspaceCommit,
@@ -1965,6 +2019,12 @@ async function main() {
     recruiterListApiEvidenceCoverageSchema: recruiterListApiProof.coverageSchema,
     recruiterListApiClaimCount: recruiterListApiProof.claimCount,
     recruiterListApiDiagnosticCount: recruiterListApiProof.diagnosticCount,
+    recruiterListModeFilterVisible: recruiterListModeFilterProof.visible,
+    recruiterListModeFilter: recruiterListModeFilterProof.filter,
+    recruiterListModeFilterTotal: recruiterListModeFilterProof.total,
+    recruiterListModeFilterFacetCount: recruiterListModeFilterProof.facetCount,
+    recruiterListModeFilterAllCount: recruiterListModeFilterProof.allCount,
+    recruiterListModeFilterPageCount: recruiterListModeFilterProof.pageCount,
     recruiterListCardVisible: !recruiterListBrowser.skipped,
     recruiterListCardSkippedReason: recruiterListBrowser.skipped ? recruiterListBrowser.reason : null,
     recruiterCompareUrl: recruiterProjection.compareUrl,
