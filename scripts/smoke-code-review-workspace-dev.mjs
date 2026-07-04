@@ -985,6 +985,9 @@ async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha) 
     await expect(submissionPanel).toContainText('Assessment fit');
     await expect(submissionPanel).toContainText('minute target from deterministic engineering prior');
     await expect(submissionPanel).toContainText(/Issue context is present|No issue context in the source-backed PR packet/);
+    await expect(submissionPanel.getByTestId('commit-submission-ai-use')).toContainText(
+      /AI response captured|AI prompt captured|AI prompt blocked|AI bridge diagnostic|AI bridge status|AI bridge trace captured|No AI use captured/,
+    );
 
     return { skipped: false };
   } finally {

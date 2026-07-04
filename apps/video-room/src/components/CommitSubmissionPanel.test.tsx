@@ -156,6 +156,9 @@ describe('CommitSubmissionPanel', () => {
     expect(flags.textContent).toContain('Commit submission: Missing');
     expect(flags.textContent).toContain('Test evidence: Missing');
     expect(flags.textContent).toContain('AI interaction: Captured');
+    const aiUse = screen.getByTestId('commit-submission-ai-use');
+    expect(aiUse.textContent).toContain('AI bridge trace captured');
+    expect(aiUse.textContent).toContain('source-backed evidence trail');
 
     const progress = screen.getByTestId('commit-submission-progress');
     expect(progress.textContent).toContain('Submit the assessment branch commit.');
@@ -169,6 +172,61 @@ describe('CommitSubmissionPanel', () => {
     expect(finalizerContract.textContent).toContain('Verifies repository and base commit against the assigned challenge packet.');
     expect(finalizerContract.textContent).toContain('Captures changed files, source diff, and configured verification output or an explicit gap.');
     expect(finalizerContract.textContent).toContain('Stores source refs for the commit, diff, tests, and workspace state before evaluation.');
+  });
+
+  it('states that missing AI evidence is unobserved instead of proof of no AI use', () => {
+    render(
+      <CommitSubmissionPanel
+        defaultRepositoryUrl="https://github.com/fallback/repo"
+        challengePacket={richPacket}
+        assessmentProgress={{
+          ...loadedProgress,
+          hasAiInteraction: false,
+          evidenceCounts: [
+            { kind: 'challenge_packet', count: 1 },
+            { kind: 'terminal_command', count: 3 },
+          ],
+          sourceRefCounts: [
+            { kind: 'open_source_challenge_packet', count: 1 },
+          ],
+        }}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    const aiUse = screen.getByTestId('commit-submission-ai-use');
+    expect(aiUse.textContent).toContain('No AI use captured');
+    expect(aiUse.textContent).toContain('treat AI use as unobserved, not absent');
+    const flags = screen.getByTestId('commit-submission-completion-flags');
+    expect(flags.textContent).toContain('AI interaction: Missing');
+  });
+
+  it('shows blocked AI prompts without counting them as assistance', () => {
+    render(
+      <CommitSubmissionPanel
+        defaultRepositoryUrl="https://github.com/fallback/repo"
+        challengePacket={richPacket}
+        assessmentProgress={{
+          ...loadedProgress,
+          hasAiInteraction: true,
+          evidenceCounts: [
+            { kind: 'challenge_packet', count: 1 },
+            { kind: 'ai_prompt_blocked', count: 1 },
+          ],
+          sourceRefCounts: [
+            { kind: 'open_source_challenge_packet', count: 1 },
+            { kind: 'ai_user_prompt_blocked', count: 1 },
+          ],
+        }}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    const aiUse = screen.getByTestId('commit-submission-ai-use');
+    expect(aiUse.textContent).toContain('AI prompt blocked');
+    expect(aiUse.textContent).toContain('no agent response is counted as assistance');
+    const flags = screen.getByTestId('commit-submission-completion-flags');
+    expect(flags.textContent).toContain('AI interaction: Captured');
   });
 
   it('prefills source-backed repo, base commit, and assessment branch without inventing commit evidence', () => {

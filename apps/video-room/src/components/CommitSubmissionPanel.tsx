@@ -10,6 +10,7 @@ import {
   assessmentSubmissionLocked,
   assessmentSubmissionLockedReason,
 } from '../lib/assessmentSubmissionState';
+import { summarizeAssessmentAiUse } from '../lib/aiUseSummary';
 import type {
   RoomCommitSubmissionRequest,
   RoomCommitSubmissionResponse,
@@ -204,6 +205,25 @@ function AssessmentReadinessPanel({
   );
 }
 
+function AssessmentAiUsePanel({
+  progress,
+}: {
+  progress: RoomAssessmentProgressSnapshot;
+}): JSX.Element {
+  const aiUse = summarizeAssessmentAiUse(progress);
+
+  return (
+    <div
+      className={`commit-submission-ai-use is-${aiUse.tone}`}
+      data-testid="commit-submission-ai-use"
+      aria-label="Assessment AI-use evidence"
+    >
+      <strong>{aiUse.label}</strong>
+      <span>{aiUse.detail}</span>
+    </div>
+  );
+}
+
 function ChallengeCompletionPanel({
   packet,
   progress,
@@ -317,6 +337,7 @@ function ChallengeCompletionPanel({
           <EvidenceStatusChip label="Transcript evidence" captured={progress.hasTranscriptEvidence} />
         </div>
       )}
+      {progress && <AssessmentAiUsePanel progress={progress} />}
       {missingFields.length > 0 && (
         <div className="commit-submission-status is-blocked" data-testid="commit-submission-challenge-warning">
           <TriangleAlert size={16} />

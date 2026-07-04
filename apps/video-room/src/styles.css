@@ -2482,6 +2482,42 @@ button:focus-visible {
   background: rgba(250, 204, 21, 0.12);
 }
 
+.commit-submission-ai-use {
+  display: grid;
+  grid-template-columns: minmax(130px, max-content) minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.commit-submission-ai-use strong {
+  color: rgba(244, 248, 255, 0.92);
+  text-transform: uppercase;
+}
+
+.commit-submission-ai-use span {
+  min-width: 0;
+  color: rgba(244, 248, 255, 0.74);
+}
+
+.commit-submission-ai-use.is-captured {
+  border-color: rgba(74, 222, 128, 0.34);
+  background: rgba(74, 222, 128, 0.10);
+}
+
+.commit-submission-ai-use.is-blocked {
+  border-color: rgba(248, 113, 113, 0.34);
+  background: rgba(248, 113, 113, 0.10);
+}
+
+.commit-submission-ai-use.is-waiting {
+  border-color: rgba(250, 204, 21, 0.34);
+  background: rgba(250, 204, 21, 0.10);
+}
+
 .commit-submission-workspace-finalize {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 0.5fr) auto;
