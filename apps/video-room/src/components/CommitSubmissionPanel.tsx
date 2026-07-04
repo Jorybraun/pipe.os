@@ -117,6 +117,7 @@ function finalEvidenceReceiptFilename(progress: RoomAssessmentProgressSnapshot):
 function finalEvidenceReceiptMarkdown(progress: RoomAssessmentProgressSnapshot): string {
   const evaluation = progress.evaluation;
   const commit = progress.commit;
+  const challenge = progress.challenge;
   const aiUse = summarizeAssessmentAiUse(progress);
   const snippets = (progress.evidenceSnippets ?? []).slice(0, 6).map((snippet) =>
     markdownBullet(`${formatSourceKind(snippet.sourceRefType)} · ${formatProgressLabel(snippet.evidenceRole)}: ${snippet.exactText}`)
@@ -134,6 +135,10 @@ function finalEvidenceReceiptMarkdown(progress: RoomAssessmentProgressSnapshot):
   const readinessRequired = (progress.readiness?.required ?? []).map((item) =>
     markdownBullet(`${item.label}: ${item.satisfied ? 'Captured' : 'Missing'}${item.satisfied ? '' : ` - ${item.missingImpact}`}`)
   );
+  const challengeMatchProof = [
+    ...(challenge?.assessmentFit ?? []),
+    ...(challenge?.matchProof ?? []),
+  ];
 
   return [
     '# PIPE Candidate Assessment Receipt',
@@ -144,6 +149,20 @@ function finalEvidenceReceiptMarkdown(progress: RoomAssessmentProgressSnapshot):
     `Evaluation: ${evaluation ? formatProgressLabel(evaluation.status) : 'Not available'}`,
     `Summary: ${evaluation?.summary ?? 'No evaluator summary is available yet.'}`,
     `Recommendation: ${evaluation?.recommendation ? formatProgressLabel(evaluation.recommendation) : 'Not shared'}`,
+    '',
+    '## Assigned Challenge',
+    '',
+    `Repository: ${challenge?.repositoryUrl ?? 'Not recorded'}`,
+    `Base commit: ${challenge?.baseCommitSha ?? 'Not recorded'}`,
+    `Pull request: ${challenge?.pullRequestUrl ?? (challenge?.githubPrNumber ? `#${challenge.githubPrNumber}` : 'Not recorded')}`,
+    `Task: ${challenge?.task ?? 'Not recorded'}`,
+    `Verification command: ${challenge?.verificationCommand ?? 'Not recorded'}`,
+    'Success criteria:',
+    ...markdownBulletList(challenge?.successCriteria ?? [], 'No success criteria were attached to the candidate-safe challenge packet.'),
+    'Expected evidence:',
+    ...markdownBulletList(challenge?.expectedEvidence ?? [], 'No expected evidence list was attached to the candidate-safe challenge packet.'),
+    'Match proof:',
+    ...markdownBulletList(challengeMatchProof, 'No candidate-safe match proof was attached to the challenge packet.'),
     '',
     '## Submitted Work',
     '',

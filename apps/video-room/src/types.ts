@@ -263,6 +263,18 @@ export interface RoomAssessmentProgressSnapshot {
     detail: string;
     tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
   };
+  challenge?: {
+    repositoryUrl: string | null;
+    githubPrNumber: number | null;
+    pullRequestUrl: string | null;
+    baseCommitSha: string | null;
+    task: string | null;
+    assessmentFit: string[];
+    matchProof: string[];
+    successCriteria: string[];
+    expectedEvidence: string[];
+    verificationCommand: string | null;
+  } | null;
   challengePacketContract?: RoomAssessmentChallengePacketContract;
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;

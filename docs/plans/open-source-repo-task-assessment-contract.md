@@ -392,10 +392,12 @@ The controlling product rule remains:
 - Candidate Report Ready panels now download that same candidate-safe final
   evidence packet from a server-backed Markdown receipt endpoint built from the
   room assessment progress serializer. The artifact gives candidates a
-  portable summary of the submitted commit, AI-use state, source previews,
-  evaluator claims, diagnostics, and use guidance without exposing internal
-  session/event/claim identifiers or hidden rubric data, and the live
-  open-source workspace smoke verifies the deployed download path.
+  portable summary of the assigned challenge, repo URL, base commit, task,
+  success criteria, expected evidence, verification command, submitted commit,
+  AI-use state, source previews, evaluator claims, diagnostics, and use
+  guidance without exposing internal session/event/claim identifiers or hidden
+  rubric data, and the live open-source workspace smoke verifies the deployed
+  download path.
 - Recruiter assessment detail now shows an AI-use receipt beside the final
   review packet, separating real prompt/response source refs, Clippy/Devin
   bridge telemetry, and missing-evidence boundaries without implying silence

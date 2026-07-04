@@ -514,6 +514,18 @@ describe('CommitSubmissionPanel', () => {
       nextActionLabel: 'Review the source-backed assessment report.',
       hasCommitSubmission: true,
       hasTestEvidence: true,
+      challenge: {
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        githubPrNumber: 973,
+        pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/973',
+        baseCommitSha: 'd'.repeat(40),
+        task: 'Fix the source-backed worker retry path.',
+        assessmentFit: ['Candidate evidence aligns to retry-path debugging.'],
+        matchProof: ['Matched from source-backed transcript and repo demand evidence.'],
+        successCriteria: ['Existing worker tests pass'],
+        expectedEvidence: ['Commit SHA on assessment branch', 'Code diff for the retry path fix', 'Test command output'],
+        verificationCommand: 'npm test -- retry',
+      },
       sourceRefCounts: [
         { kind: 'git_commit', count: 1 },
         { kind: 'code_diff', count: 1 },
@@ -599,6 +611,12 @@ describe('CommitSubmissionPanel', () => {
       });
       expect(markdown).toContain('# PIPE Candidate Assessment Receipt');
       expect(markdown).toContain('Status: Evaluated');
+      expect(markdown).toContain('## Assigned Challenge');
+      expect(markdown).toContain('Task: Fix the source-backed worker retry path.');
+      expect(markdown).toContain('Verification command: npm test -- retry');
+      expect(markdown).toContain('Existing worker tests pass');
+      expect(markdown).toContain('Commit SHA on assessment branch');
+      expect(markdown).toContain('Candidate evidence aligns to retry-path debugging.');
       expect(markdown).toContain('Commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
       expect(markdown).toContain('Repository: https://github.com/pipe/source-backed-worker');
       expect(markdown).toContain('AI state: AI response captured');

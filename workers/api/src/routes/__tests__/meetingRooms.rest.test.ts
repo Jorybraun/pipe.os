@@ -4656,6 +4656,13 @@ describe('meeting room recording living-context route', () => {
         nextAction: string;
         hasChallengePacket: boolean;
         hasCommitSubmission: boolean;
+        challenge: {
+          repositoryUrl: string | null;
+          baseCommitSha: string | null;
+          task: string | null;
+          successCriteria: string[];
+          expectedEvidence: string[];
+        } | null;
         latestEvent: { kind: string; sequence: number };
         commit: { commitSha: string; branchName: string; changedFiles: unknown[] };
       };
@@ -4675,6 +4682,17 @@ describe('meeting room recording living-context route', () => {
       nextAction: 'START_EVALUATION',
       hasChallengePacket: true,
       hasCommitSubmission: true,
+      challenge: {
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+        task: 'Fix the source-backed worker retry path.',
+        successCriteria: ['Existing worker tests pass'],
+        expectedEvidence: [
+          'Commit SHA on assessment branch',
+          'Code diff for the retry path fix',
+          'Test command output',
+        ],
+      },
       latestEvent: { kind: 'commit_submission', sequence: 2 },
     });
     expect(body.progress.commit).toMatchObject({
@@ -4695,6 +4713,13 @@ describe('meeting room recording living-context route', () => {
         nextAction: string;
         hasChallengePacket: boolean;
         hasCommitSubmission: boolean;
+        challenge: {
+          repositoryUrl: string | null;
+          baseCommitSha: string | null;
+          task: string | null;
+          successCriteria: string[];
+          expectedEvidence: string[];
+        } | null;
         commit: { commitSha: string; branchName: string; changedFiles: unknown[] };
       };
     };
@@ -4705,6 +4730,11 @@ describe('meeting room recording living-context route', () => {
       nextAction: 'START_EVALUATION',
       hasChallengePacket: true,
       hasCommitSubmission: true,
+      challenge: {
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+        task: 'Fix the source-backed worker retry path.',
+      },
     });
     expect(progressBody.progress.commit).toMatchObject({
       commitSha,
@@ -4729,7 +4759,12 @@ describe('meeting room recording living-context route', () => {
     const receiptMarkdown = await receiptRes.text();
     expect(receiptMarkdown).toContain('# PIPE Candidate Assessment Receipt');
     expect(receiptMarkdown).toContain('Status: Ready For Evaluation');
+    expect(receiptMarkdown).toContain('## Assigned Challenge');
     expect(receiptMarkdown).toContain('Repository: https://github.com/pipe/source-backed-worker');
+    expect(receiptMarkdown).toContain('Base commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(receiptMarkdown).toContain('Task: Fix the source-backed worker retry path.');
+    expect(receiptMarkdown).toContain('- Existing worker tests pass');
+    expect(receiptMarkdown).toContain('- Commit SHA on assessment branch');
     expect(receiptMarkdown).toContain(`Commit: ${commitSha}`);
     expect(receiptMarkdown).toContain('Source refs:');
     expect(receiptMarkdown).toContain('Use this as the candidate receipt');

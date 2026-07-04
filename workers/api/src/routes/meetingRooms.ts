@@ -23,8 +23,10 @@ import {
 } from '../lib/devContainerTtl';
 import {
   RepoTaskInterviewSessionStore,
+  assessmentProgressChallengeSummary,
   challengePacketContract,
   type AssessmentActorType,
+  type AssessmentProgressChallengeSummary,
   type AssessmentProgressSnapshot,
   type CommitSubmissionChangedFileStatus,
 } from '../lib/repoTaskInterviewSession';
@@ -1919,6 +1921,7 @@ interface RoomAssessmentProgressPayload {
   nextAction: AssessmentProgressSnapshot['nextAction'];
   nextActionLabel: string;
   assignmentTrust: AssessmentProgressSnapshot['assignmentTrust'];
+  challenge: AssessmentProgressChallengeSummary | null;
   readiness: AssessmentProgressSnapshot['readiness'];
   challengePacketContract: AssessmentProgressSnapshot['challengePacketContract'];
   hasChallengePacket: boolean;
@@ -2002,6 +2005,7 @@ function serializeRoomAssessmentProgress(
     nextAction: progress.nextAction,
     nextActionLabel: progress.nextActionLabel,
     assignmentTrust: progress.assignmentTrust,
+    challenge: progress.challenge ? assessmentProgressChallengeSummary(progress.challenge) : null,
     readiness: progress.readiness,
     challengePacketContract: progress.challengePacketContract,
     hasChallengePacket: progress.hasChallengePacket,
@@ -2106,6 +2110,7 @@ function assessmentReceiptFilename(progress: RoomAssessmentProgressPayload): str
 function assessmentReceiptMarkdown(progress: RoomAssessmentProgressPayload): string {
   const evaluation = progress.evaluation;
   const commit = progress.commit;
+  const challenge = progress.challenge;
   const snippets = progress.evidenceSnippets.slice(0, 6).map((snippet) =>
     assessmentReceiptBullet(
       `${assessmentReceiptLabel(snippet.sourceRefType)} - ${assessmentReceiptLabel(snippet.evidenceRole)}: ${snippet.exactText}`,
@@ -2128,6 +2133,12 @@ function assessmentReceiptMarkdown(progress: RoomAssessmentProgressPayload): str
   const readinessRequired = progress.readiness.required.map((item) =>
     `${item.label}: ${item.satisfied ? 'Captured' : 'Missing'}${item.satisfied ? '' : ` - ${item.missingImpact}`}`
   );
+  const successCriteria = challenge?.successCriteria ?? [];
+  const expectedEvidence = challenge?.expectedEvidence ?? [];
+  const matchProof = [
+    ...(challenge?.assessmentFit ?? []),
+    ...(challenge?.matchProof ?? []),
+  ];
   const aiState = progress.hasAiInteraction ? 'AI interaction captured' : 'No AI use captured';
   const aiDetail = progress.hasAiInteraction
     ? 'Candidate AI prompts, agent responses, blocked states, or bridge diagnostics are represented only when captured as source-backed evidence.'
@@ -2142,6 +2153,20 @@ function assessmentReceiptMarkdown(progress: RoomAssessmentProgressPayload): str
     `Evaluation: ${evaluation ? assessmentReceiptLabel(evaluation.status) : 'Not available'}`,
     `Summary: ${evaluation?.summary ?? 'No evaluator summary is available yet.'}`,
     `Recommendation: ${evaluation?.recommendation ? assessmentReceiptLabel(evaluation.recommendation) : 'Not shared'}`,
+    '',
+    '## Assigned Challenge',
+    '',
+    `Repository: ${challenge?.repositoryUrl ?? 'Not recorded'}`,
+    `Base commit: ${challenge?.baseCommitSha ?? 'Not recorded'}`,
+    `Pull request: ${challenge?.pullRequestUrl ?? (challenge?.githubPrNumber ? `#${challenge.githubPrNumber}` : 'Not recorded')}`,
+    `Task: ${challenge?.task ?? 'Not recorded'}`,
+    `Verification command: ${challenge?.verificationCommand ?? 'Not recorded'}`,
+    'Success criteria:',
+    ...assessmentReceiptBulletList(successCriteria, 'No success criteria were attached to the candidate-safe challenge packet.'),
+    'Expected evidence:',
+    ...assessmentReceiptBulletList(expectedEvidence, 'No expected evidence list was attached to the candidate-safe challenge packet.'),
+    'Match proof:',
+    ...assessmentReceiptBulletList(matchProof, 'No candidate-safe match proof was attached to the challenge packet.'),
     '',
     '## Submitted Work',
     '',

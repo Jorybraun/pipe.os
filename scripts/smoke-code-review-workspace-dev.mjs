@@ -1320,6 +1320,15 @@ async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha) 
     if (!receiptMarkdown.includes(expectedCommitSha)) {
       throw new Error('Candidate receipt download did not include the submitted commit SHA.');
     }
+    if (!receiptMarkdown.includes(REPO_URL)) {
+      throw new Error('Candidate receipt download did not include the assigned repository URL.');
+    }
+    if (BASE_COMMIT_SHA && !receiptMarkdown.includes(BASE_COMMIT_SHA)) {
+      throw new Error('Candidate receipt download did not include the assigned base commit SHA.');
+    }
+    if (CHANGE_PROFILE?.challengeTitle && !receiptMarkdown.includes(CHANGE_PROFILE.challengeTitle)) {
+      throw new Error('Candidate receipt download did not include the assigned challenge title.');
+    }
     if (!receiptMarkdown.includes('Use this as the candidate receipt')) {
       throw new Error('Candidate receipt did not come from the server-backed receipt endpoint.');
     }
