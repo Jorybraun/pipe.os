@@ -93,6 +93,9 @@ const REQUIRE_ROOM = process.env.WORKSPACE_SMOKE_REQUIRE_ROOM === '1';
 const SKIP_RECRUITER_BROWSER = process.env.WORKSPACE_SMOKE_SKIP_RECRUITER_BROWSER === '1';
 const SKIP_CANDIDATE_BROWSER = process.env.WORKSPACE_SMOKE_SKIP_CANDIDATE_BROWSER === '1';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
+const DEV_D1_DATABASE_ID = process.env.WORKSPACE_SMOKE_D1_DATABASE_ID
+  || '0abe92df-9296-46f5-9f9d-a1fb1bcd3be1';
+const EVALUATION_WAIT_MS = Number(process.env.WORKSPACE_SMOKE_EVALUATION_WAIT_MS || 600_000);
 
 function assertEnv() {
   if (MATCHED_REPO_ID !== null && (!Number.isInteger(MATCHED_REPO_ID) || MATCHED_REPO_ID <= 0)) {
@@ -103,6 +106,9 @@ function assertEnv() {
   }
   if (!['placeholder', 'mui-popover-fix'].includes(CHANGE_MODE)) {
     throw new Error('WORKSPACE_SMOKE_CHANGE_MODE must be placeholder or mui-popover-fix.');
+  }
+  if (!Number.isFinite(EVALUATION_WAIT_MS) || EVALUATION_WAIT_MS < 60_000) {
+    throw new Error('WORKSPACE_SMOKE_EVALUATION_WAIT_MS must be a number >= 60000.');
   }
   if (CHANGE_PROFILE && INTERVIEW_TYPE !== 'OPEN_SOURCE_BUG_FIX') {
     throw new Error(`${CHANGE_MODE} is a task-aligned OPEN_SOURCE_BUG_FIX smoke profile; set WORKSPACE_SMOKE_INTERVIEW_TYPE=OPEN_SOURCE_BUG_FIX.`);
@@ -368,7 +374,7 @@ async function startAssessmentEvaluationWithRetry(interviewId) {
 }
 
 async function pollAssessmentEvaluationComplete(interviewId) {
-  const deadline = Date.now() + 300_000;
+  const deadline = Date.now() + EVALUATION_WAIT_MS;
   let lastProgress = null;
   while (Date.now() < deadline) {
     const detail = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}`);
@@ -420,6 +426,39 @@ function cleanMaybeAssessUrl(rawUrl) {
   } catch {
     return null;
   }
+}
+
+function assessmentSessionIdFromProgress(progress, label) {
+  const id = progress?.session?.id;
+  if (typeof id !== 'string' || id.trim().length === 0) {
+    throw new Error(`${label} did not expose recruiter-only assessment session id: ${JSON.stringify(progress)}`);
+  }
+  return id;
+}
+
+function assertSameAssessmentSessionId(expected, progress, label) {
+  const actual = assessmentSessionIdFromProgress(progress, label);
+  if (actual !== expected) {
+    throw new Error(`${label} used assessment session ${actual}, expected ${expected}`);
+  }
+  return actual;
+}
+
+function assessmentEvidenceProofCommands(assessmentSessionId) {
+  if (!REMOTE) {
+    return {
+      target: 'local-app',
+      replay: null,
+      audit: null,
+      note: 'Local workspace smokes use the local dev database; run the assessment evidence replay/audit scripts against that database manually.',
+    };
+  }
+  const envPrefix = `CLOUDFLARE_D1_DATABASE_ID=${DEV_D1_DATABASE_ID}`;
+  return {
+    target: 'app-dev remote D1',
+    replay: `cd workers/api && ${envPrefix} npm run assessment-evidence:replay -- --remote --session-id ${assessmentSessionId}`,
+    audit: `cd workers/api && ${envPrefix} npm run assessment-evidence:audit -- --remote --session-id ${assessmentSessionId}`,
+  };
 }
 
 function githubCompareUrl({ commitUrl, baseCommitSha, commitSha }) {
@@ -537,6 +576,7 @@ async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit,
   }
 
   return {
+    assessmentSessionId: assessmentSessionIdFromProgress(progress, 'recruiter detail assessment progress'),
     compareUrl,
     capturedDiffSnippet,
     sourceRefCounts: progress.sourceRefCounts ?? [],
@@ -1256,6 +1296,10 @@ async function main() {
   });
   const interviewId = created?.interview?.id;
   if (!interviewId) throw new Error(`Create response missing interview id: ${JSON.stringify(created)}`);
+  const assessmentSessionId = assessmentSessionIdFromProgress(
+    created?.interview?.assessmentProgress,
+    'create interview assessment progress',
+  );
   const expectedRepoUrl = useMatchedRepo
     ? created?.interview?.githubRepoUrl
     : REPO_URL;
@@ -1449,6 +1493,11 @@ async function main() {
   if (evaluationProgress?.evaluation?.status !== 'EVALUATED') {
     throw new Error(`Workspace assessment progress did not expose evaluated status: ${JSON.stringify(evaluationProgress?.evaluation)}`);
   }
+  assertSameAssessmentSessionId(
+    assessmentSessionId,
+    evaluationProgress,
+    'evaluation progress',
+  );
   const candidateTerminalBrowser = await assertCandidateTerminalStateBrowser(
     invited.room.guestUrl,
     workspaceCommit.commitSha,
@@ -1476,6 +1525,9 @@ async function main() {
     workspaceCommit,
     expectedBaseCommitSha,
   );
+  if (recruiterProjection.assessmentSessionId !== assessmentSessionId) {
+    throw new Error(`Recruiter detail returned assessment session ${recruiterProjection.assessmentSessionId}, expected ${assessmentSessionId}`);
+  }
   if (recruiterProjection.humanDecision?.decision !== humanDecision.decision) {
     throw new Error(`Recruiter detail did not expose the recorded human decision: ${JSON.stringify(recruiterProjection.humanDecision)}`);
   }
@@ -1502,6 +1554,7 @@ async function main() {
   console.log(JSON.stringify({
     ok: true,
     interviewId,
+    assessmentSessionId,
     hostUrl: cleanRoomUrl(invited.room.hostUrl),
     guestUrl: cleanRoomUrl(invited.room.guestUrl),
     repoUrl: workspace.repoUrl,
@@ -1559,6 +1612,7 @@ async function main() {
     recruiterCapturedDiffVisible: !recruiterProjection.compareUrl && !recruiterBrowser.skipped,
     recruiterCapturedDiffExactTextLength: recruiterProjection.capturedDiffSnippet?.exactText?.length ?? 0,
     recruiterSourceRefCounts: recruiterProjection.sourceRefCounts,
+    assessmentEvidenceProofCommands: assessmentEvidenceProofCommands(assessmentSessionId),
   }, null, 2));
 }
 

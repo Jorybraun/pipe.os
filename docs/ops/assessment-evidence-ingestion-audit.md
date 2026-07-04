@@ -80,6 +80,13 @@ For app-dev, prefix remote proof commands with
 `CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1`; otherwise
 the shell may audit a different configured D1 target.
 
+The open-source workspace smoke prints the exact `assessmentSessionId` it
+created plus scoped replay and audit commands. Treat that final JSON as the
+handoff from live candidate-work proof to living-context ingestion proof. The
+printed commands default to the app-dev D1 above; set
+`WORKSPACE_SMOKE_D1_DATABASE_ID` only when intentionally targeting a different
+remote database.
+
 The goal is not that every environment has every evidence family populated, but
 that a real open-source assessment session shows captured and projected rows for
 the evidence it actually produced, has zero source-less positive claims, and has
@@ -276,3 +283,17 @@ Final post-deploy app-dev proof on 2026-07-02:
 Dangling synthetic smoke rows with no real `candidates` record remain in raw
 assessment tables, but they are not person-projectable evidence and are no
 longer counted as living-context debt.
+
+Latest open-source workspace smoke proof on 2026-07-04:
+
+- `interviewId: 53fc9818-4678-43cc-929e-597dcc127f59`
+- `assessmentSessionId: assessment_session_fe7ff1df4504d21984b1e38a1cb7bfb0`
+- replay `ok: true`
+- replay projected `context_record_count: 17` and `source_ref_count: 42`
+- `answers.missingPersonProjectionCount: 0`
+- scoped audit `status: ready`
+- scoped audit `sourceLessPositiveClaimCount: 0`
+- scoped audit `duplicateProjectedEdgeCount: 0`
+- scoped audit `failures: []`
+- scoped audit reports the expected gap that this smoke did not exercise
+  Clippy/Devin interactions.
