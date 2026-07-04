@@ -539,7 +539,13 @@ function assertRecruiterRuntimeProjection(interview, label, expected) {
     throw new Error(`${label} workspaceSession did not expose a status: ${JSON.stringify(workspace)}`);
   }
   if (workspace.status === 'ERROR') {
-    throw new Error(`${label} workspaceSession is in ERROR state: ${JSON.stringify(workspace)}`);
+    const progress = interview.assessmentProgress ?? null;
+    const cleanExitAfterEvaluation = progress?.stage === 'EVALUATED'
+      && (progress.nextAction === 'NONE' || progress.nextAction === 'REVIEW_EVALUATION')
+      && isRecoverableWorkspaceStartFailure(workspace.errorMessage ?? '');
+    if (!cleanExitAfterEvaluation) {
+      throw new Error(`${label} workspaceSession is in ERROR state: ${JSON.stringify(workspace)}`);
+    }
   }
 
   const actualRepo = normalizeRuntimeRepoUrl(workspace.repoGitUrl);
@@ -679,6 +685,9 @@ async function assertRecruiterListApiEvaluationProof(interviewId, expectedRepoUr
   }
   if (evaluation.evidenceCoverage?.schemaVersion !== 'assessment-evidence-coverage-v1') {
     throw new Error(`Recruiter list API did not expose assessment evidence coverage: ${JSON.stringify(evaluation)}`);
+  }
+  if (evaluation.reviewPacket?.schemaVersion !== 'repo-task-review-packet-v1') {
+    throw new Error(`Recruiter list API did not expose the final repo-task review packet: ${JSON.stringify(evaluation.reviewPacket)}`);
   }
   const claims = Array.isArray(evaluation.claims) ? evaluation.claims : [];
   if (!claims.some((claim) => claim.sourceRefCount > 0 && Array.isArray(claim.sourceRefTypes) && claim.sourceRefTypes.length > 0)) {
