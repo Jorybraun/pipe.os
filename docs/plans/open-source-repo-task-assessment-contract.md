@@ -379,6 +379,10 @@ The controlling product rule remains:
   review packet, separating real prompt/response source refs, Clippy/Devin
   bridge telemetry, and missing-evidence boundaries without implying silence
   proves no AI use.
+- Final repo-task review packets now persist an evidence-contract receipt and
+  recruiter detail displays it, showing which expected evidence items were
+  machine-supported by source refs and which success criteria still require
+  human review.
 - Repo-task route/API integration, full final evidence bundle assembly, and
   broader final-output views beyond the compact room summary and Report Ready
   evidence packet remain pending.

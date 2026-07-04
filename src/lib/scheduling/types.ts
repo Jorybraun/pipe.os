@@ -176,6 +176,28 @@ export interface AssessmentProgressReviewPacketSummary {
   evidence: {
     sourceRefCount: number;
     sourceRefTypeCounts: Record<string, number>;
+    contractEvidence?: {
+      schemaVersion: 'assessment-contract-evidence-receipt-v1';
+      expectedEvidence: Array<{
+        label: string;
+        status: 'captured' | 'gap_declared' | 'needs_human_review';
+        expectedSourceRefTypes: string[];
+        matchedSourceRefTypes: string[];
+        sourceRefCount: number;
+        detail: string;
+      }>;
+      successCriteria: Array<{
+        label: string;
+        status: 'needs_human_review';
+        detail: string;
+      }>;
+      summary: {
+        expectedEvidenceCount: number;
+        capturedCount: number;
+        gapDeclaredCount: number;
+        needsHumanReviewCount: number;
+      };
+    };
     readiness: {
       status: string;
       label: string;

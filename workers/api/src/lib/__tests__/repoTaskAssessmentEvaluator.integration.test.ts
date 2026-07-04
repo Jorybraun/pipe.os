@@ -376,6 +376,24 @@ describe('repo task assessment evaluator integration', () => {
         evidence?: {
           sourceRefTypeCounts?: Record<string, number>;
           readiness?: { isReadyForEvaluation?: boolean; missingRequiredCount?: number };
+          contractEvidence?: {
+            schemaVersion?: string;
+            expectedEvidence?: Array<{
+              label?: string;
+              status?: string;
+              matchedSourceRefTypes?: string[];
+              sourceRefCount?: number;
+            }>;
+            successCriteria?: Array<{
+              label?: string;
+              status?: string;
+            }>;
+            summary?: {
+              expectedEvidenceCount?: number;
+              capturedCount?: number;
+              needsHumanReviewCount?: number;
+            };
+          };
           highConfidenceSignals?: { testEvidence?: boolean; verificationGap?: boolean };
         };
       };
@@ -411,6 +429,44 @@ describe('repo task assessment evaluator integration', () => {
           test_run: 1,
         }),
         readiness: { isReadyForEvaluation: true, missingRequiredCount: 0 },
+        contractEvidence: {
+          schemaVersion: 'assessment-contract-evidence-receipt-v1',
+          expectedEvidence: [
+            {
+              label: 'git_commit',
+              status: 'captured',
+              matchedSourceRefTypes: ['git_commit'],
+              sourceRefCount: 1,
+            },
+            {
+              label: 'code_diff',
+              status: 'captured',
+              matchedSourceRefTypes: ['code_diff'],
+              sourceRefCount: 1,
+            },
+            {
+              label: 'test_run',
+              status: 'captured',
+              matchedSourceRefTypes: ['test_run'],
+              sourceRefCount: 1,
+            },
+          ],
+          successCriteria: [
+            {
+              label: 'Preserve existing popover behavior while preventing premature close.',
+              status: 'needs_human_review',
+            },
+            {
+              label: 'Add a targeted regression test for impatient clicks.',
+              status: 'needs_human_review',
+            },
+          ],
+          summary: {
+            expectedEvidenceCount: 3,
+            capturedCount: 3,
+            needsHumanReviewCount: 2,
+          },
+        },
         highConfidenceSignals: { testEvidence: true, verificationGap: false },
       },
     });

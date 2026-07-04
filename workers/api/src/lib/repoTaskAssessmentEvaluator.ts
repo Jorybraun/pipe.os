@@ -581,6 +581,139 @@ function sourceRefTypeCountsFromCoverage(evidenceCoverage: JsonObject): JsonObje
   return counts;
 }
 
+function challengeSourceRef(sourceRefs: readonly SessionSourceRef[]): SessionSourceRef | null {
+  return sourceRefs.find((ref) =>
+    CHALLENGE_REF_TYPES.has(ref.sourceRefType) || ref.evidenceRole === 'assigned_challenge') ?? null;
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values.filter((value) => value.trim().length > 0))];
+}
+
+function readableList(parts: readonly string[]): string {
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0] ?? '';
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+}
+
+function expectedEvidenceSourceTypes(label: string): string[] {
+  const raw = label.toLowerCase();
+  const normalized = raw.replace(/[_-]+/g, ' ');
+  const has = (terms: readonly string[]): boolean =>
+    terms.some((term) => raw.includes(term) || normalized.includes(term.replace(/[_-]+/g, ' ')));
+  const types: string[] = [];
+
+  if (has(['git_commit', 'commit sha', 'commit hash', 'commit'])) types.push('git_commit');
+  if (has(['code_diff', 'diff', 'patch'])) types.push('code_diff');
+  if (has(['test_run', 'test output', 'test', 'verification', 'ci'])) types.push('test_run');
+  if (has(['terminal_command', 'terminal_output', 'terminal', 'shell command', 'command output'])) {
+    types.push('terminal_command', 'terminal_output');
+  }
+  if (has(['room_chat_message', 'chat', 'message', 'discussion'])) types.push('room_chat_message');
+  if (has(['transcript_span', 'transcript', 'video'])) types.push('transcript_span');
+  if (has(['code_server_file_observation', 'code_editor_save', 'file change', 'file observation', 'code-server', 'vscode'])) {
+    types.push('code_server_file_observation', 'code_editor_save');
+  }
+  if (has(['ai_user_prompt', 'ai_agent_response', 'clippy', 'devin', 'ai', 'agent'])) {
+    types.push(
+      'ai_user_prompt',
+      'ai_user_prompt_blocked',
+      'ai_agent_response',
+      'ai_agent_diagnostic',
+      'agent_response',
+      'agent_diagnostic',
+      'agent_status',
+    );
+  }
+  if (has(['dev_container_workspace_launch', 'dev container', 'workspace', 'container'])) {
+    types.push('dev_container_workspace_launch', 'dev_container_event');
+  }
+  if (has(['upstream_pull_request', 'pull request', 'pr'])) types.push('upstream_pull_request');
+
+  return uniqueStrings(types);
+}
+
+function sourceRefCountForTypes(
+  sourceRefs: readonly SessionSourceRef[],
+  sourceRefTypes: readonly string[],
+): number {
+  const allowedTypes = new Set(sourceRefTypes);
+  return sourceRefs.filter((ref) => allowedTypes.has(ref.sourceRefType)).length;
+}
+
+function contractEvidenceStatusDetail(input: {
+  status: 'captured' | 'gap_declared' | 'needs_human_review';
+  matchedSourceRefTypes: readonly string[];
+  sourceRefCount: number;
+}): string {
+  if (input.status === 'captured') {
+    return `Captured from ${readableList(input.matchedSourceRefTypes.map((type) => type.replace(/_/g, ' ')))} source refs.`;
+  }
+  if (input.status === 'gap_declared') {
+    return 'A verification gap was declared instead of complete test evidence, so the item remains lower-confidence.';
+  }
+  if (input.matchedSourceRefTypes.length === 0) {
+    return 'No deterministic source-ref mapping exists for this expected evidence item; reviewer must inspect the packet.';
+  }
+  return `Expected ${readableList(input.matchedSourceRefTypes.map((type) => type.replace(/_/g, ' ')))} source refs, but none were captured.`;
+}
+
+function buildContractEvidenceReceipt(sourceRefs: readonly SessionSourceRef[]): JsonObject {
+  const challengeRef = challengeSourceRef(sourceRefs);
+  const exactText = challengeRef?.exactText ?? '';
+  const expectedLabels = challengePacketSectionItems(exactText, ['Expected evidence']);
+  const successCriteriaLabels = challengePacketSectionItems(exactText, ['Success criteria']);
+  const expectedEvidence = expectedLabels.map((label): JsonObject => {
+    const expectedSourceRefTypes = expectedEvidenceSourceTypes(label);
+    const capturedSourceRefTypes = expectedSourceRefTypes.filter((type) =>
+      sourceRefCountForTypes(sourceRefs, [type]) > 0);
+    const hasVerificationGap = expectedSourceRefTypes.includes('test_run')
+      && capturedSourceRefTypes.length === 0
+      && sourceRefCountForTypes(sourceRefs, ['verification_gap']) > 0;
+    const matchedSourceRefTypes = hasVerificationGap ? ['verification_gap'] : capturedSourceRefTypes;
+    const sourceRefCount = sourceRefCountForTypes(sourceRefs, matchedSourceRefTypes);
+    const status = capturedSourceRefTypes.length > 0
+      ? 'captured'
+      : hasVerificationGap
+        ? 'gap_declared'
+        : 'needs_human_review';
+    return {
+      label,
+      status,
+      expectedSourceRefTypes,
+      matchedSourceRefTypes,
+      sourceRefCount,
+      detail: contractEvidenceStatusDetail({
+        status,
+        matchedSourceRefTypes: status === 'captured' ? matchedSourceRefTypes : expectedSourceRefTypes,
+        sourceRefCount,
+      }),
+    };
+  });
+  const successCriteria = successCriteriaLabels.map((label): JsonObject => ({
+    label,
+    status: 'needs_human_review',
+    detail: 'Success criteria are preserved from the challenge packet; they are not auto-passed.',
+  }));
+  const capturedCount = expectedEvidence.filter((item) => item.status === 'captured').length;
+  const gapDeclaredCount = expectedEvidence.filter((item) => item.status === 'gap_declared').length;
+  const needsHumanReviewCount = expectedEvidence.filter((item) => item.status !== 'captured').length
+    + successCriteria.length;
+
+  return {
+    schemaVersion: 'assessment-contract-evidence-receipt-v1',
+    expectedEvidence,
+    successCriteria,
+    summary: {
+      expectedEvidenceCount: expectedEvidence.length,
+      capturedCount,
+      gapDeclaredCount,
+      needsHumanReviewCount,
+    },
+  };
+}
+
 function buildReviewPacketOutput(input: {
   progress: AssessmentProgressSnapshot;
   sourceRefs: readonly SessionSourceRef[];
@@ -667,6 +800,7 @@ function buildReviewPacketOutput(input: {
         isUsableHiringSignal: input.progress.readiness.isUsableHiringSignal,
         missingRequiredCount: input.progress.readiness.missingRequiredCount,
       },
+      contractEvidence: buildContractEvidenceReceipt(input.sourceRefs),
       highConfidenceSignals: {
         messageEvidence: input.progress.hasMessageEvidence,
         devContainerEvidence: input.progress.hasDevContainerEvidence,

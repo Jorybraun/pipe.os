@@ -3593,6 +3593,70 @@ function scheduledAssessmentReviewPacketToneBlock(value: unknown): {
   };
 }
 
+function scheduledAssessmentContractEvidenceStatus(
+  value: unknown,
+): 'captured' | 'gap_declared' | 'needs_human_review' | null {
+  if (value === 'captured' || value === 'gap_declared' || value === 'needs_human_review') return value;
+  return null;
+}
+
+function scheduledAssessmentReviewPacketContractEvidence(value: unknown): NonNullable<
+  NonNullable<ScheduledAssessmentListEvaluation['reviewPacket']>['evidence']['contractEvidence']
+> | undefined {
+  const receipt = scheduledAssessmentJsonRecord(value);
+  if (!receipt) return undefined;
+  if (optionalString(receipt.schemaVersion) !== 'assessment-contract-evidence-receipt-v1') return undefined;
+  const summary = scheduledAssessmentJsonRecord(receipt.summary);
+  if (!summary) return undefined;
+
+  const expectedEvidence = Array.isArray(receipt.expectedEvidence)
+    ? receipt.expectedEvidence.map((item) => {
+      const record = scheduledAssessmentJsonRecord(item);
+      if (!record) return null;
+      const label = optionalString(record.label);
+      const status = scheduledAssessmentContractEvidenceStatus(record.status);
+      const detail = optionalString(record.detail);
+      if (!label || !status || !detail) return null;
+      return {
+        label,
+        status,
+        expectedSourceRefTypes: stringArray(record.expectedSourceRefTypes),
+        matchedSourceRefTypes: stringArray(record.matchedSourceRefTypes),
+        sourceRefCount: numberOrNull(record.sourceRefCount) ?? 0,
+        detail,
+      };
+    }).filter((item): item is NonNullable<typeof item> => Boolean(item))
+    : [];
+
+  const successCriteria = Array.isArray(receipt.successCriteria)
+    ? receipt.successCriteria.map((item) => {
+      const record = scheduledAssessmentJsonRecord(item);
+      if (!record) return null;
+      const label = optionalString(record.label);
+      const detail = optionalString(record.detail);
+      if (!label || !detail) return null;
+      return {
+        label,
+        status: 'needs_human_review' as const,
+        detail,
+      };
+    }).filter((item): item is NonNullable<typeof item> => Boolean(item))
+    : [];
+
+  return {
+    schemaVersion: 'assessment-contract-evidence-receipt-v1',
+    expectedEvidence,
+    successCriteria,
+    summary: {
+      expectedEvidenceCount: numberOrNull(summary.expectedEvidenceCount) ?? expectedEvidence.length,
+      capturedCount: numberOrNull(summary.capturedCount) ?? expectedEvidence.filter((item) => item.status === 'captured').length,
+      gapDeclaredCount: numberOrNull(summary.gapDeclaredCount) ?? expectedEvidence.filter((item) => item.status === 'gap_declared').length,
+      needsHumanReviewCount: numberOrNull(summary.needsHumanReviewCount)
+        ?? (expectedEvidence.filter((item) => item.status !== 'captured').length + successCriteria.length),
+    },
+  };
+}
+
 function scheduledAssessmentReviewPacket(
   output: Record<string, unknown>,
 ): ScheduledAssessmentListEvaluation['reviewPacket'] {
@@ -3669,6 +3733,7 @@ function scheduledAssessmentReviewPacket(
     evidence: {
       sourceRefCount: numberOrNull(evidence.sourceRefCount) ?? 0,
       sourceRefTypeCounts: scheduledAssessmentCoverageTypeCounts(evidence.sourceRefTypeCounts),
+      contractEvidence: scheduledAssessmentReviewPacketContractEvidence(evidence.contractEvidence),
       readiness: {
         status: readinessStatus,
         label: readinessLabel,

@@ -857,6 +857,15 @@ async function assertRecruiterReviewerReceiptBrowser(
     await expect(reviewPacket).toContainText(workspaceCommit.commitSha.slice(0, 10));
     await expect(reviewPacket).toContainText('Evidence packet');
     await expect(reviewPacket).toContainText('source');
+    const contractReceipt = page.getByTestId('interview-assessment-contract-receipt');
+    await expect(contractReceipt).toBeVisible({ timeout: 60_000 });
+    await expect(contractReceipt).toContainText('Evidence contract receipt');
+    await expect(contractReceipt).toContainText('expected evidence items machine-supported');
+    await expect(contractReceipt).toContainText(/git_commit|git commit/);
+    await expect(contractReceipt).toContainText(/code_diff|code diff/);
+    await expect(contractReceipt).toContainText(/test_run|test run|Gap declared/);
+    await expect(contractReceipt).toContainText('Success criteria are preserved from the challenge packet; they are not auto-passed.');
+    await expect(contractReceipt).not.toContainText('Auto-passed');
     const aiUseReceipt = page.getByTestId('interview-assessment-ai-use-receipt');
     await expect(aiUseReceipt).toBeVisible({ timeout: 60_000 });
     await expect(aiUseReceipt).toContainText('AI-use receipt');

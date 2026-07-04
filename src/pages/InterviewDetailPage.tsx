@@ -1943,6 +1943,54 @@ function workspaceAssessmentReviewPacketItems(
   ];
 }
 
+type ContractEvidenceReceipt = NonNullable<AssessmentProgressReviewPacketSummary['evidence']['contractEvidence']>;
+
+function contractEvidenceStatusLabel(
+  status: ContractEvidenceReceipt['expectedEvidence'][number]['status'],
+): string {
+  switch (status) {
+    case 'captured':
+      return 'Captured';
+    case 'gap_declared':
+      return 'Gap declared';
+    case 'needs_human_review':
+      return 'Needs human review';
+  }
+}
+
+function contractEvidenceTone(
+  status: ContractEvidenceReceipt['expectedEvidence'][number]['status'],
+): CodeReviewNextStepTone {
+  switch (status) {
+    case 'captured':
+      return 'positive';
+    case 'gap_declared':
+      return 'watch';
+    case 'needs_human_review':
+      return 'neutral';
+  }
+}
+
+function workspaceAssessmentContractReceiptItems(
+  receipt: ContractEvidenceReceipt | null | undefined,
+): WorkspaceAssessmentReadoutItem[] {
+  if (!receipt) return [];
+  return [
+    ...receipt.expectedEvidence.map((item): WorkspaceAssessmentReadoutItem => ({
+      label: item.label,
+      value: contractEvidenceStatusLabel(item.status),
+      detail: item.detail,
+      tone: contractEvidenceTone(item.status),
+    })),
+    ...receipt.successCriteria.map((item): WorkspaceAssessmentReadoutItem => ({
+      label: item.label,
+      value: 'Needs human review',
+      detail: item.detail,
+      tone: 'neutral',
+    })),
+  ];
+}
+
 function workspaceAssessmentHiringReadout(input: {
   progress: AssessmentProgressSnapshot | null;
   setup: AssessmentSetupProjection | null | undefined;
@@ -4212,6 +4260,8 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentReviewerReceipt = workspaceAssessmentReviewerReceipt(assessmentProgress);
   const assessmentReviewPacket = assessmentProgress?.evaluation?.reviewPacket ?? null;
   const assessmentReviewPacketItems = workspaceAssessmentReviewPacketItems(assessmentReviewPacket);
+  const assessmentContractReceipt = assessmentReviewPacket?.evidence.contractEvidence ?? null;
+  const assessmentContractReceiptItems = workspaceAssessmentContractReceiptItems(assessmentContractReceipt);
   const assessmentAiUseReceipt = workspaceAssessmentAiUseReceipt(assessmentProgress);
   const workspaceAssessmentReadout = workspaceAssessmentHiringReadout({
     progress: assessmentProgress,
@@ -4925,6 +4975,32 @@ export default function InterviewDetailPage(): JSX.Element {
                     {assessmentReviewPacketItems.map((item) => (
                       <div
                         key={item.label}
+                        style={{
+                          ...DECISION_COCKPIT_ITEM,
+                          ...DECISION_NEXT_STEP_TONE[item.tone],
+                        }}
+                      >
+                        <div style={FIELD_LABEL}>{item.label}</div>
+                        <div style={DECISION_COCKPIT_VALUE}>{item.value}</div>
+                        <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {assessmentContractReceipt && assessmentContractReceiptItems.length > 0 && (
+                <div data-testid="interview-assessment-contract-receipt" style={DECISION_COCKPIT}>
+                  <div style={FIELD_LABEL}>Evidence contract receipt</div>
+                  <div style={ROOM_LINK_TEXT}>
+                    {assessmentContractReceipt.summary.capturedCount} of {assessmentContractReceipt.summary.expectedEvidenceCount} expected evidence items machine-supported
+                    {assessmentContractReceipt.summary.needsHumanReviewCount > 0
+                      ? ` · ${assessmentContractReceipt.summary.needsHumanReviewCount} ${assessmentContractReceipt.summary.needsHumanReviewCount === 1 ? 'item still needs' : 'items still need'} human review`
+                      : ' · no contract receipt gaps declared'}
+                  </div>
+                  <div style={DECISION_COCKPIT_GRID}>
+                    {assessmentContractReceiptItems.map((item) => (
+                      <div
+                        key={`${item.label}:${item.value}`}
                         style={{
                           ...DECISION_COCKPIT_ITEM,
                           ...DECISION_NEXT_STEP_TONE[item.tone],

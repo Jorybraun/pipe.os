@@ -498,6 +498,28 @@ export interface AssessmentProgressReviewPacketSummary {
   evidence: {
     sourceRefCount: number;
     sourceRefTypeCounts: Record<string, number>;
+    contractEvidence?: {
+      schemaVersion: 'assessment-contract-evidence-receipt-v1';
+      expectedEvidence: Array<{
+        label: string;
+        status: 'captured' | 'gap_declared' | 'needs_human_review';
+        expectedSourceRefTypes: string[];
+        matchedSourceRefTypes: string[];
+        sourceRefCount: number;
+        detail: string;
+      }>;
+      successCriteria: Array<{
+        label: string;
+        status: 'needs_human_review';
+        detail: string;
+      }>;
+      summary: {
+        expectedEvidenceCount: number;
+        capturedCount: number;
+        gapDeclaredCount: number;
+        needsHumanReviewCount: number;
+      };
+    };
     readiness: {
       status: string;
       label: string;
@@ -1266,6 +1288,70 @@ function parseReviewPacketToneBlock(value: JsonValue | undefined): {
   };
 }
 
+function parseContractEvidenceStatus(
+  value: JsonValue | undefined,
+): 'captured' | 'gap_declared' | 'needs_human_review' | null {
+  if (value === 'captured' || value === 'gap_declared' || value === 'needs_human_review') return value;
+  return null;
+}
+
+function parseReviewPacketContractEvidence(
+  value: JsonValue | undefined,
+): NonNullable<AssessmentProgressReviewPacketSummary['evidence']['contractEvidence']> | undefined {
+  const receipt = jsonObjectValue(value);
+  if (!receipt) return undefined;
+  if (jsonStringValue(receipt.schemaVersion) !== 'assessment-contract-evidence-receipt-v1') return undefined;
+  const summary = jsonObjectValue(receipt.summary);
+  if (!summary) return undefined;
+
+  const expectedEvidence = jsonArrayValue(receipt.expectedEvidence)
+    .map((item) => {
+      const record = jsonObjectValue(item);
+      if (!record) return null;
+      const label = jsonStringValue(record.label);
+      const status = parseContractEvidenceStatus(record.status);
+      const detail = jsonStringValue(record.detail);
+      if (!label || !status || !detail) return null;
+      return {
+        label,
+        status,
+        expectedSourceRefTypes: jsonStringArrayValue(record.expectedSourceRefTypes),
+        matchedSourceRefTypes: jsonStringArrayValue(record.matchedSourceRefTypes),
+        sourceRefCount: jsonNumberValue(record.sourceRefCount) ?? 0,
+        detail,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  const successCriteria = jsonArrayValue(receipt.successCriteria)
+    .map((item) => {
+      const record = jsonObjectValue(item);
+      if (!record) return null;
+      const label = jsonStringValue(record.label);
+      const detail = jsonStringValue(record.detail);
+      if (!label || !detail) return null;
+      return {
+        label,
+        status: 'needs_human_review' as const,
+        detail,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  return {
+    schemaVersion: 'assessment-contract-evidence-receipt-v1',
+    expectedEvidence,
+    successCriteria,
+    summary: {
+      expectedEvidenceCount: jsonNumberValue(summary.expectedEvidenceCount) ?? expectedEvidence.length,
+      capturedCount: jsonNumberValue(summary.capturedCount) ?? expectedEvidence.filter((item) => item.status === 'captured').length,
+      gapDeclaredCount: jsonNumberValue(summary.gapDeclaredCount) ?? expectedEvidence.filter((item) => item.status === 'gap_declared').length,
+      needsHumanReviewCount: jsonNumberValue(summary.needsHumanReviewCount)
+        ?? (expectedEvidence.filter((item) => item.status !== 'captured').length + successCriteria.length),
+    },
+  };
+}
+
 function parseReviewPacketSummary(output: JsonObject): AssessmentProgressReviewPacketSummary | null {
   const packet = jsonObjectValue(output.reviewPacket);
   if (!packet) return null;
@@ -1340,6 +1426,7 @@ function parseReviewPacketSummary(output: JsonObject): AssessmentProgressReviewP
     evidence: {
       sourceRefCount: jsonNumberValue(evidence.sourceRefCount) ?? 0,
       sourceRefTypeCounts: parseCoverageTypeCounts(evidence.sourceRefTypeCounts),
+      contractEvidence: parseReviewPacketContractEvidence(evidence.contractEvidence),
       readiness: {
         status: readinessStatus,
         label: readinessLabel,

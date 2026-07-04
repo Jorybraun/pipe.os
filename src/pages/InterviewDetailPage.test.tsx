@@ -1527,6 +1527,48 @@ describe('InterviewDetailPage', () => {
               isUsableHiringSignal: true,
               missingRequiredCount: 0,
             },
+            contractEvidence: {
+              schemaVersion: 'assessment-contract-evidence-receipt-v1',
+              expectedEvidence: [
+                {
+                  label: 'git_commit',
+                  status: 'captured',
+                  expectedSourceRefTypes: ['git_commit'],
+                  matchedSourceRefTypes: ['git_commit'],
+                  sourceRefCount: 1,
+                  detail: 'Captured from git commit source refs.',
+                },
+                {
+                  label: 'code_diff',
+                  status: 'captured',
+                  expectedSourceRefTypes: ['code_diff'],
+                  matchedSourceRefTypes: ['code_diff'],
+                  sourceRefCount: 1,
+                  detail: 'Captured from code diff source refs.',
+                },
+                {
+                  label: 'Explain tradeoffs in chat',
+                  status: 'needs_human_review',
+                  expectedSourceRefTypes: [],
+                  matchedSourceRefTypes: [],
+                  sourceRefCount: 0,
+                  detail: 'No deterministic source-ref mapping exists for this expected evidence item; reviewer must inspect the packet.',
+                },
+              ],
+              successCriteria: [
+                {
+                  label: 'Preserve popover cleanup behavior.',
+                  status: 'needs_human_review',
+                  detail: 'Success criteria are preserved from the challenge packet; they are not auto-passed.',
+                },
+              ],
+              summary: {
+                expectedEvidenceCount: 3,
+                capturedCount: 2,
+                gapDeclaredCount: 0,
+                needsHumanReviewCount: 2,
+              },
+            },
           },
           evaluation: {
             recommendation: 'hire_now',
@@ -1642,6 +1684,18 @@ describe('InterviewDetailPage', () => {
     expect(reviewPacket).toHaveTextContent('4 source refs');
     expect(reviewPacket).toHaveTextContent('1 claim');
     expect(reviewPacket).toHaveTextContent('1 diagnostic');
+    const contractReceipt = screen.getByTestId('interview-assessment-contract-receipt');
+    expect(contractReceipt).toHaveTextContent('Evidence contract receipt');
+    expect(contractReceipt).toHaveTextContent('2 of 3 expected evidence items machine-supported');
+    expect(contractReceipt).toHaveTextContent('git_commit');
+    expect(contractReceipt).toHaveTextContent('Captured from git commit source refs.');
+    expect(contractReceipt).toHaveTextContent('code_diff');
+    expect(contractReceipt).toHaveTextContent('Captured from code diff source refs.');
+    expect(contractReceipt).toHaveTextContent('Explain tradeoffs in chat');
+    expect(contractReceipt).toHaveTextContent('Needs human review');
+    expect(contractReceipt).toHaveTextContent('Preserve popover cleanup behavior.');
+    expect(contractReceipt).toHaveTextContent('Success criteria are preserved from the challenge packet; they are not auto-passed.');
+    expect(contractReceipt).not.toHaveTextContent('Auto-passed');
     const aiUseReceipt = screen.getByTestId('interview-assessment-ai-use-receipt');
     expect(aiUseReceipt).toHaveTextContent('AI-use receipt');
     expect(aiUseReceipt).toHaveTextContent('AI bridge observed');
