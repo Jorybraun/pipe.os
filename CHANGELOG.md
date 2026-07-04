@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter assessment detail now shows room activity next to workspace state, and the detail API exposes the same guest-waiting signal as the interview list so reviewers can see whether the candidate is currently in the controlled room.
 - Matched open-source repo-task assignment trust now uses the same source-backed match-fit wording across the durable session API, recruiter list/detail projections, and frontend summaries, avoiding stale role-context or code-review-only language for dev-container implementation assessments.
 - Devin bridge smoke now requires recruiter interview lists to expose the same source-backed AI-use proof as the room/detail flow, so auth-needed bridge diagnostics cannot disappear from the buyer-facing queue without failing app-dev verification.
 - Open-source workspace dev smoke now requires the deployed interview list API to expose evaluated assessment evidence coverage, cited claim previews, and diagnostic previews for the fresh workspace run, protecting recruiter scan-level proof from regressing to status-only text.

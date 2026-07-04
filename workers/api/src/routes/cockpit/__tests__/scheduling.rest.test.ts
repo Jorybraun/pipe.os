@@ -996,6 +996,15 @@ describe('GET /interviews/:id detail', () => {
         '2026-06-22T18:05:00.000Z', '2026-06-22T18:06:00.000Z'
       )
     `).run();
+    sqlite!.prepare(`
+      INSERT INTO meeting_participants (
+        id, meeting_id, contact_id, role, joined_at, left_at, created_at, updated_at
+      ) VALUES (
+        'guest-participant-ready', 'meeting-1', 'contact-guest', 'ATTENDEE',
+        '2026-06-22T18:07:00.000Z', NULL,
+        '2026-06-22T18:07:00.000Z', '2026-06-22T18:07:00.000Z'
+      )
+    `).run();
     const app = mountSchedulingApp();
 
     const listResponse = await app.request('/interviews');
@@ -1003,6 +1012,8 @@ describe('GET /interviews/:id detail', () => {
     const listBody = await listResponse.json() as {
       interviews: Array<{
         id: string;
+        roomStatus: string | null;
+        guestWaiting: boolean;
         workspaceSession: {
           status: string;
           repoGitUrl: string | null;
@@ -1012,6 +1023,10 @@ describe('GET /interviews/:id detail', () => {
       }>;
     };
     const listedInterview = listBody.interviews.find((item) => item.id === 'interview-1');
+    expect(listedInterview).toMatchObject({
+      roomStatus: 'ACTIVE',
+      guestWaiting: true,
+    });
     expect(listedInterview?.workspaceSession).toMatchObject({
       status: 'READY',
       repoGitUrl: 'https://github.com/open-source/widgets',
@@ -1024,6 +1039,14 @@ describe('GET /interviews/:id detail', () => {
     expect(detailResponse.status).toBe(200);
     const detailBody = await detailResponse.json() as {
       interview: {
+        roomStatus: string | null;
+        guestWaiting: boolean;
+        linkedMeeting: {
+          room: {
+            status: string | null;
+            guestWaiting: boolean;
+          } | null;
+        } | null;
         workspaceSession: {
           status: string;
           repoGitUrl: string | null;
@@ -1032,6 +1055,16 @@ describe('GET /interviews/:id detail', () => {
         } | null;
       };
     };
+    expect(detailBody.interview).toMatchObject({
+      roomStatus: 'ACTIVE',
+      guestWaiting: true,
+      linkedMeeting: {
+        room: {
+          status: 'ACTIVE',
+          guestWaiting: true,
+        },
+      },
+    });
     expect(detailBody.interview.workspaceSession).toMatchObject({
       status: 'READY',
       repoGitUrl: 'https://github.com/open-source/widgets',

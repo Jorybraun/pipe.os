@@ -583,6 +583,7 @@ export interface LinkedMeetingSummary {
     id: string;
     sessionId: string | null;
     status: string | null;
+    guestWaiting?: boolean;
   } | null;
   createdAt: string;
   updatedAt: string;

@@ -7389,7 +7389,16 @@ schedulingAuth.get('/interviews/:id', async (c) => {
                 m.transcript_json, m.transcript_analysis_json, m.transcript_error,
                 m.recording_r2_key, m.created_at, m.updated_at,
                 mr.id AS room_id, mr.session_id, mr.status AS room_status,
-                ${workspaceSessionSelect}
+                ${workspaceSessionSelect},
+                EXISTS (
+                  SELECT 1
+                    FROM meeting_participants guest_mp
+                   WHERE guest_mp.meeting_id = m.id
+                     AND guest_mp.role = 'ATTENDEE'
+                     AND guest_mp.joined_at IS NOT NULL
+                     AND guest_mp.left_at IS NULL
+                     AND COALESCE(mr.status, '') <> 'ENDED'
+                ) AS guest_waiting
          FROM meetings m
          LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
          ${workspaceSessionJoin}
@@ -7422,6 +7431,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         room_id: string | null;
         session_id: string | null;
         room_status: string | null;
+        guest_waiting: number | null;
         workspace_status: string | null;
         workspace_error_message: string | null;
         workspace_expires_at: string | null;
@@ -7585,10 +7595,13 @@ schedulingAuth.get('/interviews/:id', async (c) => {
           id: linkedMeeting.room_id,
           sessionId: linkedMeeting.session_id,
           status: linkedMeeting.room_status,
+          guestWaiting: Boolean(linkedMeeting.guest_waiting),
         } : null,
         createdAt: linkedMeeting.created_at,
         updatedAt: linkedMeeting.updated_at,
       } : null,
+      roomStatus: linkedMeeting?.room_status ?? null,
+      guestWaiting: Boolean(linkedMeeting?.guest_waiting),
       workspaceSession: linkedMeeting ? buildWorkspaceSessionProjection(linkedMeeting) : null,
       livingContext: redactScheduledInterviewLivingContext(livingContext),
       relatedEvidenceInterviews,

@@ -543,6 +543,15 @@ function workspaceSessionSummary(interview: ScheduledInterviewDetail): string | 
   return details.length > 0 ? `${status} · ${details.join(' · ')}` : status;
 }
 
+function roomSessionSummary(interview: ScheduledInterviewDetail): string | null {
+  const roomStatus = interview.roomStatus ?? interview.linkedMeeting?.room?.status ?? null;
+  const guestWaiting = Boolean(interview.guestWaiting ?? interview.linkedMeeting?.room?.guestWaiting);
+  const status = roomStatus ? sentenceCaseToken(roomStatus) : null;
+  const guest = guestWaiting ? 'guest waiting' : null;
+  const parts = [status, guest].filter((value): value is string => Boolean(value));
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
 function compactEvidenceText(value: string, maxLength = 160): string | null {
   const trimmed = value.replace(/\s+/g, ' ').trim();
   if (!trimmed) return null;
@@ -4065,6 +4074,7 @@ export default function InterviewDetailPage(): JSX.Element {
     challengeText: assessmentChallengeText,
   });
   const workspaceAssessmentValidity = workspaceAssessmentValidityProof(assessmentProgress);
+  const assessmentRoomSummary = roomSessionSummary(interview);
   const showsRoomPanel = !isCodeReviewInterview;
   const hasCallRecordEvidence = Boolean(
     interview.transcriptArtifact
@@ -4683,6 +4693,10 @@ export default function InterviewDetailPage(): JSX.Element {
             <div style={ASSESSMENT_PROGRESS_CARD}>
               <div style={FIELD_LABEL}>Workspace</div>
               <div style={ASSESSMENT_PROGRESS_VALUE}>{assessmentWorkspaceSummary ?? 'Not launched'}</div>
+            </div>
+            <div style={ASSESSMENT_PROGRESS_CARD}>
+              <div style={FIELD_LABEL}>Room</div>
+              <div style={ASSESSMENT_PROGRESS_VALUE}>{assessmentRoomSummary ?? 'No room activity'}</div>
             </div>
             <div style={ASSESSMENT_PROGRESS_CARD}>
               <div style={FIELD_LABEL}>Commit</div>

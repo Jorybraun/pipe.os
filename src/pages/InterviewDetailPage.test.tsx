@@ -339,6 +339,34 @@ describe('InterviewDetailPage', () => {
           repoGitUrl: 'https://github.com/open-source/widgets',
           baseCommitSha: '1111111111111111111111111111111111111111',
         },
+        roomStatus: 'ACTIVE',
+        guestWaiting: true,
+        linkedMeeting: {
+          id: 'meeting-workspace-progress',
+          title: 'Ada Candidate workspace',
+          description: null,
+          status: 'ACTIVE',
+          scheduledAt: null,
+          startedAt: '2026-06-23T00:10:00.000Z',
+          endedAt: null,
+          durationSecs: null,
+          meetingUrl: 'https://room-dev.hire-pipe.com/room/guest-token',
+          meetingType: 'INTERVIEW',
+          transcriptStatus: 'PROCESSING',
+          transcriptSummary: null,
+          transcriptJson: null,
+          transcriptAnalysisJson: null,
+          transcriptError: null,
+          recordingR2Key: null,
+          room: {
+            id: 'room-workspace-progress',
+            sessionId: 'session-workspace-progress',
+            status: 'ACTIVE',
+            guestWaiting: true,
+          },
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:10:00.000Z',
+        },
         assessmentProgress: {
           session: {
             id: 'assessment-session-1',
@@ -494,6 +522,8 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, tool activity, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('Workspace');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 1111111111');
+    expect(progress).toHaveTextContent('Room');
+    expect(progress).toHaveTextContent('Active · guest waiting');
     expect(progress).toHaveTextContent('abcdef1234');
     expect(progress).toHaveTextContent('Commit integrity');
     expect(progress).toHaveTextContent('Workspace-captured commit');
@@ -567,6 +597,7 @@ describe('InterviewDetailPage', () => {
     expect(snippets).toHaveTextContent('passed the impatient click regression');
     expect(progress).toHaveTextContent('pipe-assessment/popover-cleanup');
     expect(progress).not.toHaveTextContent('challenge-packet-popover');
+    expect(progress).not.toHaveTextContent('room-workspace-progress');
   });
 
   it('labels ready open-source assessments with missing confidence proof as limited on detail', async () => {

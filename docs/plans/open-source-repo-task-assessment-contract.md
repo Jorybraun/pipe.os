@@ -138,6 +138,11 @@ The controlling product rule remains:
   evidence for the assigned challenge, but the hiring signal still depends on
   captured candidate work: commit, diff, tests or verification gap,
   transcript/chat, AI-use trail, evaluator report, and human review.
+- Recruiter detail and list projections expose room status, current
+  guest-waiting state, and latest workspace status together, so reviewers can
+  tell whether the candidate is in the controlled room, the dev container is
+  ready or failed, and the next action is to launch, observe, recover, or
+  evaluate.
 - The invite modal renders a live packet-contract checklist for those required
   fields and tells recruiters the candidate should work on an assessment branch
   or fork, with any upstream PR gated behind later review.
