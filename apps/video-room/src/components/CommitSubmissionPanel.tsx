@@ -28,9 +28,15 @@ interface CommitSubmissionPanelProps {
   disabledReason?: string | null;
   onSubmit: (payload: RoomCommitSubmissionRequest) => Promise<RoomCommitSubmissionResponse>;
   onProgressChange?: (progress: RoomAssessmentProgressSnapshot) => void;
+  onDownloadReceipt?: () => Promise<RoomAssessmentReceiptDownload>;
   workspaceFinalizeAvailable?: boolean;
   workspaceFinalizeDisabledReason?: string | null;
   onFinalizeWorkspace?: (payload: RoomWorkspaceFinalizeRequest) => Promise<RoomWorkspaceFinalizeResponse>;
+}
+
+interface RoomAssessmentReceiptDownload {
+  filename: string;
+  markdown: string;
 }
 
 const EMPTY_FIELDS: CommitSubmissionFormFields = {
@@ -365,9 +371,14 @@ function AssessmentAiUsePanel({
 
 function FinalEvidencePacketPanel({
   progress,
+  onDownloadReceipt,
 }: {
   progress: RoomAssessmentProgressSnapshot;
+  onDownloadReceipt?: () => Promise<RoomAssessmentReceiptDownload>;
 }): JSX.Element | null {
+  const [downloadingReceipt, setDownloadingReceipt] = useState(false);
+  const [receiptWarning, setReceiptWarning] = useState<string | null>(null);
+
   if (!progress.evaluation) return null;
 
   const snippets = (progress.evidenceSnippets ?? []).slice(0, 4);
@@ -376,6 +387,26 @@ function FinalEvidencePacketPanel({
   const aiUse = summarizeAssessmentAiUse(progress);
   const hasDetailedEvidence = snippets.length > 0 || claims.length > 0 || diagnostics.length > 0;
   if (!hasDetailedEvidence && !progress.evaluation.summary) return null;
+
+  const handleDownloadReceipt = async (): Promise<void> => {
+    setReceiptWarning(null);
+    if (!onDownloadReceipt) {
+      downloadFinalEvidenceReceipt(progress);
+      return;
+    }
+
+    setDownloadingReceipt(true);
+    try {
+      const receipt = await onDownloadReceipt();
+      downloadTextFile(receipt.filename, receipt.markdown, 'text/markdown');
+    } catch (error) {
+      console.error('[CommitSubmissionPanel] receipt download failed:', error);
+      setReceiptWarning('Server receipt unavailable. Downloaded a candidate-safe local receipt instead.');
+      downloadFinalEvidenceReceipt(progress);
+    } finally {
+      setDownloadingReceipt(false);
+    }
+  };
 
   return (
     <section
@@ -392,12 +423,24 @@ function FinalEvidencePacketPanel({
           type="button"
           className="commit-submission-final-evidence-download"
           data-testid="commit-submission-final-evidence-download"
-          onClick={() => downloadFinalEvidenceReceipt(progress)}
+          disabled={downloadingReceipt}
+          onClick={() => {
+            void handleDownloadReceipt();
+          }}
         >
-          <Download size={13} />
-          Download receipt
+          {downloadingReceipt ? <Loader2 size={13} className="spin" /> : <Download size={13} />}
+          {downloadingReceipt ? 'Downloading...' : 'Download receipt'}
         </button>
       </div>
+
+      {receiptWarning && (
+        <div
+          className="commit-submission-final-evidence-warning"
+          data-testid="commit-submission-final-evidence-download-warning"
+        >
+          {receiptWarning}
+        </div>
+      )}
 
       <AssessmentAiUsePanel progress={progress} />
 
@@ -592,8 +635,10 @@ function ChallengeCompletionPanel({
 
 function AssessmentProgressPanel({
   progress,
+  onDownloadReceipt,
 }: {
   progress: RoomAssessmentProgressSnapshot;
+  onDownloadReceipt?: () => Promise<RoomAssessmentReceiptDownload>;
 }): JSX.Element {
   const commitSha = shortSha(progress.commit?.commitSha ?? null);
   const baseSha = shortSha(progress.commit?.baseCommitSha ?? null);
@@ -717,7 +762,7 @@ function AssessmentProgressPanel({
           ))}
         </ul>
       )}
-      <FinalEvidencePacketPanel progress={progress} />
+      <FinalEvidencePacketPanel progress={progress} onDownloadReceipt={onDownloadReceipt} />
     </section>
   );
 }
@@ -729,6 +774,7 @@ export function CommitSubmissionPanel({
   disabledReason,
   onSubmit,
   onProgressChange,
+  onDownloadReceipt,
   workspaceFinalizeAvailable = false,
   workspaceFinalizeDisabledReason = null,
   onFinalizeWorkspace,
@@ -1114,7 +1160,7 @@ export function CommitSubmissionPanel({
         </div>
       )}
       {displayedProgress && (
-        <AssessmentProgressPanel progress={displayedProgress} />
+        <AssessmentProgressPanel progress={displayedProgress} onDownloadReceipt={onDownloadReceipt} />
       )}
 
       <div className="commit-submission-actions">

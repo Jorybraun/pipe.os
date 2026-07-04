@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -1138,6 +1138,7 @@ async function assertCandidateTaskBriefBrowser(
     ...(REMOTE && roomCredentials
       ? { httpCredentials: roomCredentials }
       : {}),
+    acceptDownloads: true,
     viewport: { width: 1440, height: 1000 },
   });
 
@@ -1229,6 +1230,7 @@ async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha) 
     ...(REMOTE && roomCredentials
       ? { httpCredentials: roomCredentials }
       : {}),
+    acceptDownloads: true,
     viewport: { width: 1440, height: 1000 },
   });
 
@@ -1289,9 +1291,43 @@ async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha) 
     await expect(finalEvidence).toContainText(
       /AI response captured|AI prompt captured|AI prompt blocked|AI bridge diagnostic|AI bridge status|AI bridge trace captured|No AI use captured/,
     );
-    await expect(finalEvidence.getByRole('button', { name: 'Download receipt' })).toBeVisible({ timeout: 60_000 });
+    const receiptButton = finalEvidence.getByRole('button', { name: 'Download receipt' });
+    await expect(receiptButton).toBeVisible({ timeout: 60_000 });
+    const receiptDownload = page.waitForEvent('download');
+    await receiptButton.click();
+    const download = await receiptDownload;
+    const suggestedFilename = download.suggestedFilename();
+    if (!suggestedFilename.endsWith('.md')) {
+      throw new Error(`Expected markdown receipt download, got ${suggestedFilename}`);
+    }
+    let receiptMarkdown = '';
+    const receiptPath = await download.path();
+    if (receiptPath) {
+      receiptMarkdown = await readFile(receiptPath, 'utf8');
+    } else {
+      const receiptTempDir = await mkdtemp(join(tmpdir(), 'pipe-receipt-'));
+      try {
+        const savedReceiptPath = join(receiptTempDir, suggestedFilename);
+        await download.saveAs(savedReceiptPath);
+        receiptMarkdown = await readFile(savedReceiptPath, 'utf8');
+      } finally {
+        await rm(receiptTempDir, { recursive: true, force: true });
+      }
+    }
+    if (!receiptMarkdown.includes('# PIPE Candidate Assessment Receipt')) {
+      throw new Error('Candidate receipt download did not include the receipt heading.');
+    }
+    if (!receiptMarkdown.includes(expectedCommitSha)) {
+      throw new Error('Candidate receipt download did not include the submitted commit SHA.');
+    }
+    if (!receiptMarkdown.includes('Use this as the candidate receipt')) {
+      throw new Error('Candidate receipt did not come from the server-backed receipt endpoint.');
+    }
+    if (/assessment[-_ ]session|assessment_claim_internal|diagnostic_internal/i.test(receiptMarkdown)) {
+      throw new Error('Candidate receipt leaked internal assessment identifiers.');
+    }
 
-    return { skipped: false, candidateReceiptDownloadVisible: true };
+    return { skipped: false, candidateReceiptDownloadVisible: true, candidateReceiptDownloadVerified: true };
   } finally {
     await context.close();
     await browser.close();
@@ -1841,6 +1877,7 @@ async function main() {
     candidateTerminalStateVisible: !candidateTerminalBrowser.skipped,
     candidateTerminalStateSkippedReason: candidateTerminalBrowser.skipped ? candidateTerminalBrowser.reason : null,
     candidateReceiptDownloadVisible: candidateTerminalBrowser.candidateReceiptDownloadVisible === true,
+    candidateReceiptDownloadVerified: candidateTerminalBrowser.candidateReceiptDownloadVerified === true,
     roomChatEvidenceCaptured: true,
     roomChatEvidenceNodeId: roomChatEvidence.nodeId,
     roomChatEvidenceSourceRefs: roomChatEvidence.sourceRefTypes,

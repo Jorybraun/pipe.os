@@ -15,6 +15,7 @@ import {
   Video,
 } from 'lucide-react';
 import {
+  downloadRoomAssessmentReceipt,
   finalizeRoomWorkspaceAssessment,
   getRoomWorkspace,
   launchRoomWorkspace,
@@ -1231,6 +1232,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       return response;
     });
 
+  const downloadAssessmentReceiptFromRoom = (): ReturnType<typeof downloadRoomAssessmentReceipt> =>
+    downloadRoomAssessmentReceipt(token);
+
   const finalizeCommitFromWorkspace = (
     payload: RoomWorkspaceFinalizeRequest,
   ): Promise<RoomWorkspaceFinalizeResponse> => {
@@ -1512,6 +1516,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
               : 'Commit submission is only available for dev-container assessment rooms.'}
             onSubmit={submitCommitFromRoom}
             onProgressChange={setAssessmentProgress}
+            onDownloadReceipt={downloadAssessmentReceiptFromRoom}
             workspaceFinalizeAvailable={Boolean(workspace?.enabled && hasActiveWorkspace)}
             workspaceFinalizeDisabledReason={workspace?.enabled && !hasActiveWorkspace
               ? 'Launch the workspace before finalizing the assessment commit.'

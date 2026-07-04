@@ -4719,6 +4719,24 @@ describe('meeting room recording living-context route', () => {
     expect(serializedProgressResponse).not.toContain(`assessment-session:open-source:${scheduledInterviewId}`);
     expect(serializedProgressResponse).not.toContain(created.meeting.contactId);
 
+    const receiptRes = await app.request(`/meeting/${guestToken}/assessment/receipt`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(receiptRes.status).toBe(200);
+    expect(receiptRes.headers.get('Content-Type')).toContain('text/markdown');
+    expect(receiptRes.headers.get('Cache-Control')).toBe('no-store');
+    expect(receiptRes.headers.get('Content-Disposition')).toContain('pipe-assessment-receipt-');
+    const receiptMarkdown = await receiptRes.text();
+    expect(receiptMarkdown).toContain('# PIPE Candidate Assessment Receipt');
+    expect(receiptMarkdown).toContain('Status: Ready For Evaluation');
+    expect(receiptMarkdown).toContain('Repository: https://github.com/pipe/source-backed-worker');
+    expect(receiptMarkdown).toContain(`Commit: ${commitSha}`);
+    expect(receiptMarkdown).toContain('Source refs:');
+    expect(receiptMarkdown).toContain('Use this as the candidate receipt');
+    expect(receiptMarkdown).not.toContain(assessmentSessionId);
+    expect(receiptMarkdown).not.toContain(`assessment-session:open-source:${scheduledInterviewId}`);
+    expect(receiptMarkdown).not.toContain(created.meeting.contactId);
+
     const persistedCommit = sqlite.prepare(
       `SELECT e.kind, e.actor_type, e.actor_id, e.narrative, e.payload_json,
               COUNT(sr.id) AS source_ref_count
@@ -4842,6 +4860,16 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(progressRes.status).toBe(200);
     await expect(progressRes.json()).resolves.toEqual({ progress: null });
+    const receiptRes = await app.request(`/meeting/${guestToken}/assessment/receipt`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(receiptRes.status).toBe(404);
+    await expect(receiptRes.json()).resolves.toMatchObject({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Assessment receipt is not available for this room yet.',
+      },
+    });
     expect(sqlite.prepare(
       `SELECT COUNT(*) AS count
          FROM assessment_evidence_events

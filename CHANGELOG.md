@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
-- Candidate Report Ready panels can now download a candidate-safe Markdown assessment receipt from the final evidence packet, including submitted commit, AI-use state, source snippets, evaluator claims, diagnostics, and use guidance without exposing internal claim ids or hidden rubric data.
+- Candidate Report Ready panels now download a server-backed candidate-safe Markdown assessment receipt from the final evidence packet, and the open-source workspace dev smoke verifies the live download includes submitted commit proof while excluding internal assessment identifiers and hidden rubric data.
 - Recruiter assessment detail can now export a Markdown hiring-manager brief from the final evidence bundle, summarizing the candidate, challenge, submitted commit, evaluator recommendation, claims, diagnostics, timeline, source previews, human decision, and missing-proof guidance without inventing new signals.
 - Open-source workspace dev smoke now verifies the deployed recruiter detail page exposes both `EXPORT BRIEF` and `EXPORT JSON` actions for the final source-backed assessment artifact.
 - Recruiter assessment detail can now download the final `repo-task-final-evidence-bundle-v1` JSON audit packet, giving reviewers a portable source-backed artifact with the exact challenge, commit, event timeline, source refs, evaluator output, and human decision state.

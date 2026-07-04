@@ -2058,6 +2058,138 @@ function serializeRoomAssessmentProgress(
   };
 }
 
+function assessmentReceiptLabel(value: string | null | undefined): string {
+  const normalized = value?.trim();
+  if (!normalized) return 'Unknown';
+  return normalized
+    .replace(/[_-]+/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .replace(/\bAi\b/g, 'AI');
+}
+
+function assessmentReceiptShortSha(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized ? normalized.slice(0, 12) : null;
+}
+
+function assessmentReceiptCompactText(value: string, maxLength = 360): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function assessmentReceiptBullet(value: string): string {
+  return `- ${assessmentReceiptCompactText(value)}`;
+}
+
+function assessmentReceiptBulletList(values: string[], fallback: string): string[] {
+  const cleaned = values.map((value) => value.trim()).filter((value) => value.length > 0);
+  return cleaned.length > 0 ? cleaned.map(assessmentReceiptBullet) : [assessmentReceiptBullet(fallback)];
+}
+
+function assessmentReceiptSourceRefSummary(sourceRefTypes: readonly string[], sourceRefCount: number): string {
+  const countLabel = sourceRefCount === 1 ? 'source ref' : 'source refs';
+  const sourceTypes = sourceRefTypes.length > 0
+    ? sourceRefTypes.map(assessmentReceiptLabel).join(', ')
+    : 'Source refs captured';
+  return `${sourceRefCount} ${countLabel}: ${sourceTypes}`;
+}
+
+function assessmentReceiptFilename(progress: RoomAssessmentProgressPayload): string {
+  const commit = assessmentReceiptShortSha(progress.commit?.commitSha ?? null);
+  const stage = assessmentReceiptLabel(progress.stage).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const basis = commit ?? (stage || 'report');
+  return `pipe-assessment-receipt-${basis}.md`;
+}
+
+function assessmentReceiptMarkdown(progress: RoomAssessmentProgressPayload): string {
+  const evaluation = progress.evaluation;
+  const commit = progress.commit;
+  const snippets = progress.evidenceSnippets.slice(0, 6).map((snippet) =>
+    assessmentReceiptBullet(
+      `${assessmentReceiptLabel(snippet.sourceRefType)} - ${assessmentReceiptLabel(snippet.evidenceRole)}: ${snippet.exactText}`,
+    )
+  );
+  const claims = (evaluation?.claims ?? []).slice(0, 6).map((claim) => {
+    const confidence = claim.confidence === null ? '' : ` (${Math.round(claim.confidence * 100)}% confidence)`;
+    return assessmentReceiptBullet(
+      `${assessmentReceiptLabel(claim.dimension)} - ${assessmentReceiptLabel(claim.polarity)}${confidence}: ${claim.narrative} [${assessmentReceiptSourceRefSummary(claim.sourceRefTypes, claim.sourceRefCount)}]`,
+    );
+  });
+  const diagnostics = (evaluation?.diagnostics ?? []).slice(0, 6).map((diagnostic) =>
+    assessmentReceiptBullet(
+      `${assessmentReceiptLabel(diagnostic.severity)} ${assessmentReceiptLabel(diagnostic.code)}: ${diagnostic.message} [${assessmentReceiptSourceRefSummary(diagnostic.sourceRefTypes, diagnostic.sourceRefCount)}]`,
+    )
+  );
+  const sourceCounts = progress.sourceRefCounts.map((sourceRef) =>
+    assessmentReceiptBullet(`${assessmentReceiptLabel(sourceRef.kind)}: ${sourceRef.count}`)
+  );
+  const readinessRequired = progress.readiness.required.map((item) =>
+    `${item.label}: ${item.satisfied ? 'Captured' : 'Missing'}${item.satisfied ? '' : ` - ${item.missingImpact}`}`
+  );
+  const aiState = progress.hasAiInteraction ? 'AI interaction captured' : 'No AI use captured';
+  const aiDetail = progress.hasAiInteraction
+    ? 'Candidate AI prompts, agent responses, blocked states, or bridge diagnostics are represented only when captured as source-backed evidence.'
+    : 'No candidate AI interaction has been captured in the source-backed event trail.';
+
+  return [
+    '# PIPE Candidate Assessment Receipt',
+    '',
+    `Status: ${assessmentReceiptLabel(progress.stage)}`,
+    `State: ${assessmentReceiptLabel(progress.state)}`,
+    `Next action: ${progress.nextActionLabel}`,
+    `Evaluation: ${evaluation ? assessmentReceiptLabel(evaluation.status) : 'Not available'}`,
+    `Summary: ${evaluation?.summary ?? 'No evaluator summary is available yet.'}`,
+    `Recommendation: ${evaluation?.recommendation ? assessmentReceiptLabel(evaluation.recommendation) : 'Not shared'}`,
+    '',
+    '## Submitted Work',
+    '',
+    `Repository: ${commit?.repositoryUrl ?? 'Not recorded'}`,
+    `Fork: ${commit?.forkRepositoryUrl ?? 'Not recorded'}`,
+    `Branch: ${commit?.branchName ?? 'Not recorded'}`,
+    `Base commit: ${commit?.baseCommitSha ?? 'Not recorded'}`,
+    `Commit: ${commit?.commitSha ?? 'Not recorded'}`,
+    `Commit URL: ${commit?.commitUrl ?? 'Not recorded'}`,
+    `Changed files: ${commit?.changedFiles.length ?? 0}`,
+    '',
+    '## AI Use',
+    '',
+    `AI state: ${aiState}`,
+    `AI detail: ${aiDetail}`,
+    '',
+    '## Evidence Coverage',
+    '',
+    `Readiness: ${progress.readiness.label}`,
+    `Readiness detail: ${progress.readiness.detail}`,
+    `Ready for evaluation: ${progress.readiness.isReadyForEvaluation ? 'Yes' : 'No'}`,
+    `Usable hiring signal: ${progress.readiness.isUsableHiringSignal ? 'Yes' : 'No'}`,
+    'Required proof:',
+    ...assessmentReceiptBulletList(readinessRequired, 'No required proof checklist was attached.'),
+    'Source refs:',
+    ...(sourceCounts.length > 0 ? sourceCounts : [assessmentReceiptBullet('No source refs recorded.')]),
+    '',
+    '## Evaluator Claims',
+    '',
+    ...(claims.length > 0 ? claims : [assessmentReceiptBullet('No candidate-safe evaluator claims recorded.')]),
+    '',
+    '## Evaluator Diagnostics',
+    '',
+    ...(diagnostics.length > 0 ? diagnostics : [assessmentReceiptBullet('No candidate-safe evaluator diagnostics recorded.')]),
+    '',
+    '## Source Preview',
+    '',
+    ...(snippets.length > 0 ? snippets : [assessmentReceiptBullet('No exact source snippets are included in this candidate-safe receipt.')]),
+    '',
+    '## Use Guidance',
+    '',
+    '- Use this as the candidate receipt, not as an automatic hiring decision.',
+    '- The recruiter still needs to inspect the source-backed report, commit, diff, tests, transcript/chat, AI-use trail, and diagnostics.',
+    '- Missing evidence should reduce confidence instead of being treated as positive signal.',
+    '',
+  ].join('\n');
+}
+
 function roomAssessmentActor(room: ResolvedRoom): { actorType: AssessmentActorType; actorId: string | null } {
   if (room.role === 'GUEST') {
     return { actorType: 'candidate', actorId: room.guest_contact_id };
@@ -2237,6 +2369,40 @@ meetingRooms.get('/:token/assessment/progress', async (c) => {
       error: error instanceof Error ? error.message : String(error),
     });
     return apiError(c, 'INTERNAL_ERROR', 'Assessment progress failed.');
+  }
+});
+
+meetingRooms.get('/:token/assessment/receipt', async (c) => {
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
+  if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+
+  const assessmentSession = await loadLatestAssessmentSessionForRoom(c.env.DB, room);
+  if (!assessmentSession) {
+    return apiError(c, 'NOT_FOUND', 'Assessment receipt is not available for this room yet.');
+  }
+
+  try {
+    const progress = serializeRoomAssessmentProgress(
+      await new RepoTaskInterviewSessionStore(c.env.DB).loadProgress(assessmentSession.id),
+    );
+    const filename = assessmentReceiptFilename(progress);
+    return new Response(assessmentReceiptMarkdown(progress), {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/markdown; charset=UTF-8',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+  } catch (error) {
+    console.error('[meetingRooms.assessment.receipt] failed:', {
+      roomId: room.room_id,
+      interviewId: room.scheduled_interview_id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return apiError(c, 'INTERNAL_ERROR', 'Assessment receipt download failed.');
   }
 });
 

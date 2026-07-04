@@ -617,6 +617,96 @@ describe('CommitSubmissionPanel', () => {
     }
   });
 
+  it('uses the server-backed receipt callback when available', async () => {
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    const createObjectURL = vi.fn<(object: Blob | MediaSource) => string>(() => 'blob:server-assessment-receipt');
+    const revokeObjectURL = vi.fn();
+    const appendChild = vi.spyOn(document.body, 'appendChild');
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
+
+    const evaluatedProgress: RoomAssessmentProgressSnapshot = {
+      ...loadedProgress,
+      state: 'EVALUATED',
+      stage: 'EVALUATED',
+      nextAction: 'REVIEW_EVALUATION',
+      nextActionLabel: 'Review the source-backed assessment report.',
+      hasCommitSubmission: true,
+      hasTestEvidence: true,
+      evidenceSnippets: [
+        {
+          eventKind: 'workspace_finalize',
+          sourceRefType: 'code_diff',
+          evidenceRole: 'submitted_diff',
+          exactText: 'diff --git a/src/retry.ts b/src/retry.ts',
+          occurredAt: '2026-06-29T20:03:00.000Z',
+        },
+      ],
+      evaluation: {
+        status: 'EVALUATED',
+        summary: 'Source-backed report is ready for human review.',
+        recommendation: 'strong_evidence_to_advance',
+        createdAt: '2026-06-29T20:06:00.000Z',
+        claims: [{
+          id: 'server_callback_claim_internal',
+          polarity: 'positive',
+          dimension: 'verification',
+          narrative: 'Server report says verification evidence is present.',
+          confidence: 0.9,
+          sourceRefCount: 1,
+          sourceRefTypes: ['test_run'],
+        }],
+        diagnostics: [],
+      },
+    };
+    const onDownloadReceipt = vi.fn(async () => ({
+      filename: 'server-receipt.md',
+      markdown: '# Server Receipt\n\nCommit: server-backed',
+    }));
+
+    try {
+      render(
+        <CommitSubmissionPanel
+          defaultRepositoryUrl="https://github.com/fallback/repo"
+          challengePacket={richPacket}
+          assessmentProgress={evaluatedProgress}
+          onSubmit={vi.fn()}
+          onDownloadReceipt={onDownloadReceipt}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('commit-submission-final-evidence-download'));
+      await waitFor(() => expect(onDownloadReceipt).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1));
+
+      const blob = createObjectURL.mock.calls[0]?.[0];
+      expect(blob).toBeInstanceOf(Blob);
+      if (!(blob instanceof Blob)) {
+        throw new Error('Expected server receipt download to create a Blob.');
+      }
+      const anchor = appendChild.mock.calls
+        .map((call) => call[0])
+        .find((node): node is HTMLAnchorElement => node instanceof HTMLAnchorElement);
+      expect(anchor?.download).toBe('server-receipt.md');
+
+      const markdown = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error ?? new Error('Unable to read receipt blob.'));
+        reader.onload = () => resolve(String(reader.result ?? ''));
+        reader.readAsText(blob);
+      });
+      expect(markdown).toBe('# Server Receipt\n\nCommit: server-backed');
+      expect(markdown).not.toContain('server_callback_claim_internal');
+    } finally {
+      appendChild.mockRestore();
+      click.mockRestore();
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
+    }
+  });
+
   it('submits the current live workspace HEAD through the real finalizer path', async () => {
     const commitSha = 'b'.repeat(40);
     const onSubmit = vi.fn();

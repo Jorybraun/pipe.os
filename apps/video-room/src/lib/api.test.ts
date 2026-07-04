@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  downloadRoomAssessmentReceipt,
   finalizeRoomWorkspaceAssessment,
   getRoomAssessmentProgress,
   launchRoomWorkspace,
@@ -332,6 +333,35 @@ describe('getRoomAssessmentProgress', () => {
     ));
 
     await expect(getRoomAssessmentProgress('room-token')).resolves.toBeNull();
+    fetchSpy.mockRestore();
+  });
+});
+
+describe('downloadRoomAssessmentReceipt', () => {
+  it('downloads the server-backed candidate receipt as markdown', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      '# PIPE Candidate Assessment Receipt\n\nCommit: abc123',
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/markdown; charset=UTF-8',
+          'Content-Disposition': 'attachment; filename="pipe-assessment-receipt-abc123.md"',
+        },
+      },
+    ));
+
+    await expect(downloadRoomAssessmentReceipt('room-token')).resolves.toEqual({
+      filename: 'pipe-assessment-receipt-abc123.md',
+      markdown: '# PIPE Candidate Assessment Receipt\n\nCommit: abc123',
+    });
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy.mock.calls[0]?.[0]).toContain('/api/v1/meeting-rooms/room-token/assessment/receipt');
+    expect(fetchSpy.mock.calls[0]?.[1]).toMatchObject({
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: { Accept: 'text/markdown' },
+    });
     fetchSpy.mockRestore();
   });
 });

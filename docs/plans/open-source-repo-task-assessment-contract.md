@@ -389,10 +389,13 @@ The controlling product rule remains:
   evidence packet view that separates selected evidence snippets, evaluator
   claims, evaluator diagnostics, and AI-use state without exposing internal
   claim or diagnostic ids.
-- Candidate Report Ready panels can now download that same candidate-safe final
-  evidence packet as a Markdown receipt, giving candidates a portable summary
-  of the submitted commit, AI-use state, source previews, evaluator claims,
-  diagnostics, and use guidance without exposing hidden rubric data.
+- Candidate Report Ready panels now download that same candidate-safe final
+  evidence packet from a server-backed Markdown receipt endpoint built from the
+  room assessment progress serializer. The artifact gives candidates a
+  portable summary of the submitted commit, AI-use state, source previews,
+  evaluator claims, diagnostics, and use guidance without exposing internal
+  session/event/claim identifiers or hidden rubric data, and the live
+  open-source workspace smoke verifies the deployed download path.
 - Recruiter assessment detail now shows an AI-use receipt beside the final
   review packet, separating real prompt/response source refs, Clippy/Devin
   bridge telemetry, and missing-evidence boundaries without implying silence

@@ -18,6 +18,11 @@ export const API_BASE = import.meta.env.VITE_API_BASE_URL || localApiBase;
 const TURN_CREDENTIAL_ATTEMPTS = 3;
 const TURN_RETRY_DELAY_MS = 350;
 
+export interface RoomAssessmentReceiptDownload {
+  filename: string;
+  markdown: string;
+}
+
 function apiUrl(path: string): string {
   return new URL(path, API_BASE).toString();
 }
@@ -34,6 +39,22 @@ async function parseResponse<T>(response: Response): Promise<T> {
     error?: { message?: string };
   } | null;
   throw new Error(body?.error?.message ?? `Request failed (${response.status})`);
+}
+
+function filenameFromContentDisposition(value: string | null): string | null {
+  const filenameStar = value?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (filenameStar) return decodeURIComponent(filenameStar.trim().replace(/^"|"$/g, ''));
+  const filename = value?.match(/filename="?([^";]+)"?/i)?.[1];
+  return filename?.trim() || null;
+}
+
+async function parseTextErrorResponse(response: Response): Promise<Error> {
+  const body = await response.clone().json().catch(() => null) as {
+    error?: { message?: string };
+  } | null;
+  if (body?.error?.message) return new Error(body.error.message);
+  const text = await response.text().catch(() => '');
+  return new Error(text.trim() || `Request failed (${response.status})`);
 }
 
 export async function loadRoom(token: string): Promise<RoomMetadata> {
@@ -170,6 +191,22 @@ export async function getRoomAssessmentProgress(token: string): Promise<RoomAsse
   });
   const body = await parseResponse<{ progress: RoomAssessmentProgressSnapshot | null }>(response);
   return body.progress;
+}
+
+export async function downloadRoomAssessmentReceipt(token: string): Promise<RoomAssessmentReceiptDownload> {
+  const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/assessment/receipt`), {
+    cache: 'no-store',
+    credentials: 'same-origin',
+    headers: {
+      Accept: 'text/markdown',
+    },
+  });
+  if (!response.ok) throw await parseTextErrorResponse(response);
+  return {
+    filename: filenameFromContentDisposition(response.headers.get('Content-Disposition'))
+      ?? 'pipe-assessment-receipt.md',
+    markdown: await response.text(),
+  };
 }
 
 export async function submitRoomAssessmentCommit(

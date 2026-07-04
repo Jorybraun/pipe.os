@@ -87,6 +87,11 @@ function isDevContainerRoomRuntimeRequest(pathname: string, method: string): boo
     && /^\/api\/v1\/meeting-rooms\/[^/]+\/assessment\/commit-submission$/.test(pathname)
   ) return true;
 
+  if (
+    method === 'GET'
+    && /^\/api\/v1\/meeting-rooms\/[^/]+\/assessment\/receipt$/.test(pathname)
+  ) return true;
+
   return false;
 }
 
