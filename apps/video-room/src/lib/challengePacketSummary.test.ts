@@ -85,12 +85,22 @@ describe('parseChallengePacketContract', () => {
         'Pull request: #144',
         'Pull request URL: https://github.com/pipe/source-backed-worker/pull/144',
         'Head commit: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+        'Instructions: Use https://github.com/pipe/source-backed-worker/pull/144 as source-backed context without copying hidden ground truth.',
+        'Source-backed demands:',
+        '- Review source artifact in pull request #144. Source evidence: src/retry.ts:@@ -1 +1',
         'Task: Fix deterministic retry handling.',
+        'Success criteria:',
+        '- Retry handling remains deterministic.',
       ].join('\n'),
     });
 
     expect(safeText).toContain('Repo: https://github.com/pipe/source-backed-worker');
     expect(safeText).toContain('Task: Fix deterministic retry handling.');
+    expect(safeText).toContain('Instructions: Use [hidden source-backed task] as source-backed context without copying hidden ground truth.');
+    expect(safeText).toContain('Success criteria:');
+    expect(safeText).toContain('Retry handling remains deterministic.');
+    expect(safeText).not.toContain('Source-backed demands');
+    expect(safeText).not.toContain('Source evidence');
     expect(safeText).not.toContain('#144');
     expect(safeText).not.toContain('/pull/144');
     expect(safeText).not.toContain('eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee');

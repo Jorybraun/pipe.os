@@ -3859,6 +3859,9 @@ describe('meeting room recording living-context route', () => {
       'Pull request URL: https://github.com/pipe/source-backed-worker/pull/5110',
       `Head commit: ${headCommitSha}`,
       'Task: Fix the matched retry scheduler packet.',
+      'Instructions: Use the selected upstream pull request context as the source-backed task brief: https://github.com/pipe/source-backed-worker/pull/5110.',
+      'Source-backed demands:',
+      '- Review source artifact in pull request #5110. Source evidence: src/retry.ts:@@ -1 +1',
       `Verification command: ${verificationCommand}`,
       'Success criteria:',
       '- Launch uses the immutable base commit',
@@ -4004,7 +4007,10 @@ describe('meeting room recording living-context route', () => {
     expect(workspaceBody.workspace.challenge.packet?.locator).not.toHaveProperty('scheduledInterviewId');
     expect(workspaceBody.workspace.challenge.packet?.locator).not.toHaveProperty('repoSnapshotId');
     expect(workspaceBody.workspace.challenge.packet?.exactText).toContain('Fix the matched retry scheduler packet.');
+    expect(workspaceBody.workspace.challenge.packet?.exactText).toContain('[hidden source-backed task]');
     expect(workspaceBody.workspace.challenge.packet?.exactText).toContain(verificationCommand);
+    expect(workspaceBody.workspace.challenge.packet?.exactText).not.toContain('Source-backed demands');
+    expect(workspaceBody.workspace.challenge.packet?.exactText).not.toContain('Source evidence');
     expect(workspaceBody.workspace.challenge.packet?.exactText).not.toContain('Pull request');
     expect(workspaceBody.workspace.challenge.packet?.exactText).not.toContain('5110');
     expect(workspaceBody.workspace.challenge.packet?.exactText).not.toContain(headCommitSha);

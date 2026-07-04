@@ -47,6 +47,39 @@ const CANDIDATE_SAFE_CHALLENGE_LOCATOR_KEYS = new Set([
   'taskTitle',
 ]);
 
+const CANDIDATE_HIDDEN_CHALLENGE_ALLOWED_LINE_LABELS = new Set([
+  'repo',
+  'repository',
+  'base commit',
+  'base commit sha',
+  'base',
+  'task',
+  'title',
+  'instructions',
+  'verification command',
+]);
+
+const CANDIDATE_HIDDEN_CHALLENGE_ALLOWED_SECTIONS = new Set([
+  'match proof',
+  'assessment fit',
+  'success criteria',
+  'expected evidence',
+  'demand families',
+]);
+
+const CANDIDATE_HIDDEN_CHALLENGE_BLOCKED_SECTIONS = new Set([
+  'source-backed demands',
+  'source backed demands',
+  'source evidence',
+  'solution evidence',
+  'upstream pull request',
+  'pull request',
+  'pr',
+  'head commit',
+  'head commit sha',
+  'head sha',
+]);
+
 export function shouldHideCandidateChallengeSolution(input: {
   sourceRefType?: string | null;
 }): boolean {
@@ -99,15 +132,55 @@ export function candidateSafeChallengeExactText(input: {
     return input.exactText;
   }
 
-  const withoutInlineSolutionRefs = input.exactText
-    .replace(/\s*(?:pull request url|pr url)\s*:\s*https:\/\/github\.com\/\S+/gi, '')
-    .replace(/\s*(?:pull request|pr)\s*:\s*(?:#?\d+|https:\/\/github\.com\/\S+)/gi, '')
-    .replace(/\s*(?:head commit|head commit sha|head sha)\s*:\s*[a-f0-9]{7,40}\b/gi, '');
+  return candidateSafeHiddenChallengeText(input.exactText);
+}
 
-  return withoutInlineSolutionRefs
-    .split(/\r?\n/)
-    .filter((line) => !/^\s*(?:pull request|pr|pull request url|pr url|head commit|head commit sha|head sha)\s*:/i.test(line))
-    .join('\n');
+function candidateSafeHiddenChallengeText(exactText: string): string {
+  const normalized = exactText
+    .replace(/\s+(?=(?:Repo|Repository|Base commit|Base commit SHA|Base|Task|Title|Instructions|Verification command|Match proof|Assessment fit|Success criteria|Expected evidence|Demand families|Source-backed demands|Source backed demands|Source evidence|Solution evidence|Upstream pull request|Pull request|PR|Head commit|Head commit SHA|Head SHA)\s*:)/gi, '\n');
+  const safeLines: string[] = [];
+  let keepSection = false;
+
+  for (const rawLine of normalized.split(/\r?\n/)) {
+    const line = sanitizeHiddenChallengeLine(rawLine);
+    if (!line) continue;
+
+    const labelMatch = line.match(/^([A-Za-z][A-Za-z\s-]{1,48})\s*:\s*(.*)$/);
+    if (labelMatch?.[1]) {
+      const label = labelMatch[1].trim().toLowerCase();
+      const value = labelMatch[2]?.trim() ?? '';
+      if (CANDIDATE_HIDDEN_CHALLENGE_BLOCKED_SECTIONS.has(label)) {
+        keepSection = false;
+        continue;
+      }
+      if (CANDIDATE_HIDDEN_CHALLENGE_ALLOWED_SECTIONS.has(label)) {
+        keepSection = true;
+        safeLines.push(value ? `${labelMatch[1].trim()}: ${value}` : `${labelMatch[1].trim()}:`);
+        continue;
+      }
+      keepSection = false;
+      if (CANDIDATE_HIDDEN_CHALLENGE_ALLOWED_LINE_LABELS.has(label)) {
+        safeLines.push(value ? `${labelMatch[1].trim()}: ${value}` : `${labelMatch[1].trim()}:`);
+      }
+      continue;
+    }
+
+    if (!keepSection) continue;
+    safeLines.push(line);
+  }
+
+  return safeLines.join('\n');
+}
+
+function sanitizeHiddenChallengeLine(value: string): string {
+  return value
+    .replace(/https:\/\/github\.com\/[^\s).]+\/pull\/\d+[^\s).]*/gi, '[hidden source-backed task]')
+    .replace(/\bupstream\s+pull request\s+context\b/gi, 'source-backed task context')
+    .replace(/\bpull request\s+context\b/gi, 'source-backed task context')
+    .replace(/\bupstream\s+pull request\b/gi, 'source-backed task')
+    .replace(/\b(?:pull request|pr)\s*#?\d+\b/gi, 'source-backed task')
+    .replace(/\b(?:head commit|head commit sha|head sha)\s*:\s*[a-f0-9]{7,40}\b/gi, '')
+    .trim();
 }
 
 export function candidateSafeEvaluation(input: {

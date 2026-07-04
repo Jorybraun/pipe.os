@@ -530,6 +530,100 @@ function cleanMaybeAssessUrl(rawUrl) {
   }
 }
 
+function candidateSolutionRefNeedles(input) {
+  const needles = [];
+  const githubPrNumber = Number(input?.githubPrNumber ?? 0);
+  if (Number.isInteger(githubPrNumber) && githubPrNumber > 0) {
+    needles.push(
+      `#${githubPrNumber}`,
+      `/pull/${githubPrNumber}`,
+      `pull/${githubPrNumber}/head`,
+    );
+  }
+  const headCommitSha = typeof input?.headCommitSha === 'string'
+    ? input.headCommitSha.trim()
+    : '';
+  if (headCommitSha) needles.push(headCommitSha);
+  return needles;
+}
+
+function assertNoCandidateSolutionRefs(label, value, input) {
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  for (const needle of candidateSolutionRefNeedles(input)) {
+    if (text.includes(needle)) {
+      throw new Error(`${label} leaked candidate-hidden solution reference ${needle}: ${text.slice(0, 1200)}`);
+    }
+  }
+}
+
+function assertCandidateWorkspaceSolutionSafe(workspace, input) {
+  if (!input?.hideSolutionRefs) return;
+  if (workspace?.githubPrNumber !== null) {
+    throw new Error(`Candidate workspace exposed hidden githubPrNumber: ${JSON.stringify(workspace)}`);
+  }
+  const locator = workspace?.challenge?.packet?.locator ?? {};
+  for (const hiddenKey of [
+    'githubPrNumber',
+    'pullRequestNumber',
+    'prNumber',
+    'pullRequestUrl',
+    'githubPullRequestUrl',
+    'prUrl',
+    'headCommitSha',
+    'headCommit',
+    'headSha',
+    'scheduledInterviewId',
+    'repoSnapshotId',
+    'internalAssessmentSessionId',
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(locator, hiddenKey)) {
+      throw new Error(`Candidate workspace packet locator exposed hidden key ${hiddenKey}: ${JSON.stringify(locator)}`);
+    }
+  }
+  assertNoCandidateSolutionRefs('Candidate workspace packet', workspace?.challenge?.packet ?? workspace, input);
+}
+
+async function assertCandidateRoomSolutionSafety(token, headers, input) {
+  if (!input?.hideSolutionRefs) {
+    return {
+      workspaceSolutionRefsHidden: false,
+      progressSolutionRefsHidden: false,
+      receiptSolutionRefsHidden: false,
+    };
+  }
+
+  const workspaceBody = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/workspace`, {
+    headers,
+  });
+  assertCandidateWorkspaceSolutionSafe(workspaceBody?.workspace, input);
+
+  const progressBody = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/assessment/progress`, {
+    headers,
+  });
+  const progress = progressBody?.progress ?? null;
+  if (progress?.challenge?.githubPrNumber !== null || progress?.challenge?.pullRequestUrl !== null) {
+    throw new Error(`Candidate assessment progress exposed hidden solution PR: ${JSON.stringify(progress?.challenge)}`);
+  }
+  assertNoCandidateSolutionRefs('Candidate assessment progress', progress, input);
+
+  const receiptMarkdown = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/assessment/receipt`, {
+    headers,
+  });
+  if (typeof receiptMarkdown !== 'string') {
+    throw new Error(`Candidate receipt endpoint returned non-markdown payload: ${JSON.stringify(receiptMarkdown)}`);
+  }
+  if (!receiptMarkdown.includes('Pull request: Hidden until recruiter review')) {
+    throw new Error(`Candidate receipt did not label hidden solution PR correctly: ${receiptMarkdown.slice(0, 1200)}`);
+  }
+  assertNoCandidateSolutionRefs('Candidate assessment receipt', receiptMarkdown, input);
+
+  return {
+    workspaceSolutionRefsHidden: true,
+    progressSolutionRefsHidden: true,
+    receiptSolutionRefsHidden: true,
+  };
+}
+
 function assessmentSessionIdFromProgress(progress, label) {
   const id = progress?.session?.id;
   if (typeof id !== 'string' || id.trim().length === 0) {
@@ -1205,7 +1299,11 @@ async function assertCandidateTaskBriefBrowser(
   expectedBaseCommitSha,
   options = {},
 ) {
-  const { expectMatchedChallenge = false, expectWorkspaceReady = false } = options;
+  const {
+    expectMatchedChallenge = false,
+    expectWorkspaceReady = false,
+    solutionSafety = null,
+  } = options;
   if (SKIP_CANDIDATE_BROWSER) {
     return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_CANDIDATE_BROWSER=1' };
   }
@@ -1253,6 +1351,14 @@ async function assertCandidateTaskBriefBrowser(
     }
     await expect(brief).toContainText('Task');
     if (expectMatchedChallenge) {
+      if (solutionSafety?.hideSolutionRefs) {
+        await expect(assessmentHeader.getByTestId('assessment-source-context')).toContainText('Source-backed replay');
+        await expect(assessmentHeader.getByTestId('assessment-pr')).toHaveCount(0);
+        for (const needle of candidateSolutionRefNeedles(solutionSafety)) {
+          await expect(brief).not.toContainText(needle);
+          await expect(statusStrip).not.toContainText(needle);
+        }
+      }
       await expect(brief).toContainText('Match proof');
       await expect(brief).toContainText('Review packet quality');
       await expect(brief).toContainText('source-backed repo demand');
@@ -1297,7 +1403,13 @@ async function assertCandidateTaskBriefBrowser(
   }
 }
 
-async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha, expectedChallengeTitle) {
+async function assertCandidateTerminalStateBrowser(
+  guestUrl,
+  expectedCommitSha,
+  expectedChallengeTitle,
+  options = {},
+) {
+  const { solutionSafety = null } = options;
   if (SKIP_CANDIDATE_BROWSER) {
     return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_CANDIDATE_BROWSER=1' };
   }
@@ -1356,6 +1468,13 @@ async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha, 
     await expect(finalReviewPacket).toContainText('source');
     await expect(finalReviewPacket).toContainText('claim');
     const submissionPanel = page.getByTestId('commit-submission-completion');
+    if (solutionSafety?.hideSolutionRefs) {
+      for (const needle of candidateSolutionRefNeedles(solutionSafety)) {
+        await expect(brief).not.toContainText(needle);
+        await expect(finalReviewPacket).not.toContainText(needle);
+        await expect(submissionPanel).not.toContainText(needle);
+      }
+    }
     await expect(submissionPanel).toContainText('Assessment fit');
     await expect(submissionPanel).toContainText('minute target from deterministic engineering prior');
     await expect(submissionPanel).toContainText(/Issue context is present|No issue context in the source-backed PR packet/);
@@ -1415,6 +1534,12 @@ async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha, 
     }
     if (/assessment[-_ ]session|assessment_claim_internal|diagnostic_internal/i.test(receiptMarkdown)) {
       throw new Error('Candidate receipt leaked internal assessment identifiers.');
+    }
+    if (solutionSafety?.hideSolutionRefs) {
+      if (!receiptMarkdown.includes('Pull request: Hidden until recruiter review')) {
+        throw new Error(`Candidate receipt download did not label hidden solution PR correctly: ${receiptMarkdown.slice(0, 1200)}`);
+      }
+      assertNoCandidateSolutionRefs('Candidate downloaded receipt', receiptMarkdown, solutionSafety);
     }
 
     return { skipped: false, candidateReceiptDownloadVisible: true, candidateReceiptDownloadVerified: true };
@@ -1689,6 +1814,11 @@ async function main() {
   const expectedBaseCommitSha = useMatchedRepo
     ? created?.interview?.assessmentProgress?.challenge?.locator?.baseCommitSha ?? ''
     : BASE_COMMIT_SHA;
+  const candidateSolutionSafety = {
+    hideSolutionRefs: useMatchedRepo,
+    githubPrNumber: expectedGithubPrNumber,
+    headCommitSha: CHANGE_PROFILE?.expectedHeadCommitSha ?? null,
+  };
   let matchedAssignmentProofText = null;
   if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
     const setup = created?.interview?.assessmentSetup;
@@ -1799,7 +1929,13 @@ async function main() {
     if (challenge?.packet?.locator?.baseCommitSha !== expectedBaseCommitSha) {
       throw new Error(`Workspace packet base commit mismatch: ${JSON.stringify(challenge?.packet)}`);
     }
+    assertCandidateWorkspaceSolutionSafe(workspace, candidateSolutionSafety);
   }
+  const candidateRoomSolutionSafety = await assertCandidateRoomSolutionSafety(
+    hostToken,
+    roomAuthHeaders,
+    candidateSolutionSafety,
+  );
   let readySession = await launchWorkspaceUntilReady(hostToken, roomAuthHeaders);
   if (!readySession.proxyPath) {
     throw new Error(`Ready workspace did not expose a proxy path: ${JSON.stringify(readySession)}`);
@@ -1810,7 +1946,11 @@ async function main() {
     invited.room.guestUrl,
     expectedRepoUrl,
     expectedBaseCommitSha,
-    { expectMatchedChallenge: useMatchedRepo, expectWorkspaceReady: true },
+    {
+      expectMatchedChallenge: useMatchedRepo,
+      expectWorkspaceReady: true,
+      solutionSafety: candidateSolutionSafety,
+    },
   );
   const guestToken = tokenFromRoomUrl(invited?.room?.guestUrl ?? '');
   const guestRoomAuthHeaders = authHeadersFromUrl(invited?.room?.guestUrl ?? '');
@@ -1887,6 +2027,7 @@ async function main() {
     invited.room.guestUrl,
     workspaceCommit.commitSha,
     expectedReceiptChallengeTitle,
+    { solutionSafety: candidateSolutionSafety },
   );
   const recommendation = evaluationProgress?.evaluation?.recommendation
     ?? null;
@@ -1972,6 +2113,9 @@ async function main() {
     candidateTerminalStateSkippedReason: candidateTerminalBrowser.skipped ? candidateTerminalBrowser.reason : null,
     candidateReceiptDownloadVisible: candidateTerminalBrowser.candidateReceiptDownloadVisible === true,
     candidateReceiptDownloadVerified: candidateTerminalBrowser.candidateReceiptDownloadVerified === true,
+    candidateWorkspaceSolutionRefsHidden: candidateRoomSolutionSafety.workspaceSolutionRefsHidden === true,
+    candidateProgressSolutionRefsHidden: candidateRoomSolutionSafety.progressSolutionRefsHidden === true,
+    candidateReceiptSolutionRefsHidden: candidateRoomSolutionSafety.receiptSolutionRefsHidden === true,
     roomChatEvidenceCaptured: true,
     roomChatEvidenceNodeId: roomChatEvidence.nodeId,
     roomChatEvidenceSourceRefs: roomChatEvidence.sourceRefTypes,
