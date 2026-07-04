@@ -53,6 +53,12 @@ import {
 import { evaluateRepoTaskAssessmentSession } from '../../lib/repoTaskAssessmentEvaluator';
 import * as d1Matcher from '../../lib/challengeMatching/d1Matcher';
 import type { CandidateReviewChallengeOptions } from '../../lib/challengeMatching/d1Matcher';
+import {
+  candidateSafeQualityGateFor,
+  type CandidateSafeMatchStatus,
+  type CandidateSafeQualityGateDiagnostic,
+  type CandidateSafeQualityGateVerdict,
+} from '../../lib/challengeMatching/candidateSafeQualityGate';
 import { loadRoleChallengeSemantics } from '../../lib/challengeMatching/roleGuardrails';
 import type { ChallengePacket, ChallengeReviewProfile } from '../../lib/repoSemanticGraph';
 import type { Env, Variables } from '../../types';
@@ -1361,6 +1367,12 @@ interface ScheduledCodeReviewAssessmentQuality {
   metrics: ScheduledCodeReviewQualityMetric[];
 }
 
+interface ScheduledCodeReviewQualityGate {
+  verdict: CandidateSafeQualityGateVerdict;
+  checks: string[];
+  diagnostics: CandidateSafeQualityGateDiagnostic[];
+}
+
 type ScheduledCodeReviewDifficultyBand = 'introductory' | 'focused' | 'advanced' | 'oversized';
 type ScheduledCodeReviewExpectedSeniority = 'mid' | 'senior' | 'staff';
 
@@ -1455,6 +1467,7 @@ interface ScheduledCodeReviewMatchDetail {
   summary: string;
   score: number | null;
   assessmentQuality: ScheduledCodeReviewAssessmentQuality | null;
+  qualityGate: ScheduledCodeReviewQualityGate | null;
   reviewProfile: ScheduledCodeReviewReviewProfile | null;
   validatorAgent: ScheduledCodeReviewValidatorAgent | null;
   roleSources: ScheduledCodeReviewRoleSource[];
@@ -2158,6 +2171,82 @@ function normalizeScheduledCodeReviewValidatorAgent(
   };
 }
 
+function scheduledCandidateSafeMatchStatus(status: string): CandidateSafeMatchStatus {
+  if (status === 'MATCHED') return 'MATCHED';
+  if (status === 'NO_ROLE_SAFE_CHALLENGE') return 'NO_ROLE_SAFE_CHALLENGE';
+  return 'NEEDS_MORE_EVIDENCE';
+}
+
+function scheduledValidatorVerdict(
+  verdict: string | undefined,
+): 'PASSED' | 'NEEDS_REVIEW' | 'REJECTED' | undefined {
+  const normalized = verdict?.toUpperCase();
+  if (normalized === 'PASSED' || normalized === 'NEEDS_REVIEW' || normalized === 'REJECTED') {
+    return normalized;
+  }
+  return undefined;
+}
+
+function scheduledSourceRefKey(ref: ScheduledCodeReviewSourceRef): string | null {
+  const key = [
+    ref.sourceRefType,
+    ref.sourceRefId,
+    ref.sourceSpanId,
+    ref.locator,
+    ref.contentHash,
+    ref.exactText,
+  ].map((part) => part?.trim() ?? '').join('\u001f');
+  return key.replace(/\u001f/g, '').trim().length > 0 ? key : null;
+}
+
+function countScheduledCodeReviewSourceRefs(refs: ScheduledCodeReviewSourceRef[]): number {
+  const keys = new Set<string>();
+  for (const ref of refs) {
+    const key = scheduledSourceRefKey(ref);
+    if (key) keys.add(key);
+  }
+  return keys.size;
+}
+
+function scheduledCodeReviewQualityGateFor(input: {
+  status: string;
+  selected: ScheduledCodeReviewRankedResult | null;
+  assessmentQuality: ScheduledCodeReviewAssessmentQuality | null;
+  validatorAgent: ScheduledCodeReviewValidatorAgent | null;
+  roleSources: ScheduledCodeReviewRoleSource[];
+}): ScheduledCodeReviewQualityGate {
+  const alignments = input.selected?.alignments ?? [];
+  const candidateSourceCount = countScheduledCodeReviewSourceRefs(
+    alignments.flatMap((alignment) => alignment.candidateSourceRefs),
+  );
+  const repoSourceCount = countScheduledCodeReviewSourceRefs(
+    alignments.flatMap((alignment) => alignment.challengeSourceRefs),
+  );
+  const roleSourceCount = countScheduledCodeReviewSourceRefs([
+    ...alignments.flatMap((alignment) => alignment.roleSourceRefs),
+    ...input.roleSources,
+  ]);
+
+  return candidateSafeQualityGateFor({
+    status: scheduledCandidateSafeMatchStatus(input.status),
+    candidateSourceCount,
+    repoSourceCount,
+    roleSourceCount,
+    validatorVerdict: scheduledValidatorVerdict(input.validatorAgent?.verdict),
+    assessmentQualityVerdict: input.assessmentQuality?.verdict.toUpperCase(),
+    assessmentQualityMetrics: input.assessmentQuality?.metrics,
+    requireContrastSeparation: roleSourceCount > 0,
+  });
+}
+
+function scheduledManualCodeReviewQualityGate(): ScheduledCodeReviewQualityGate {
+  return {
+    verdict: 'PASSED',
+    checks: ['repo_source_spans', 'source_backed_manual_override', 'agent_validated_match'],
+    diagnostics: [],
+  };
+}
+
 function buildScheduledCodeReviewHyperedges(
   alignments: ScheduledCodeReviewAlignment[],
   roleSources: ScheduledCodeReviewRoleSource[],
@@ -2329,6 +2418,7 @@ async function loadManualCodeReviewMatchDetail(
     summary: 'Manual override: recruiter-selected source-backed review challenge. PIPE validated that the PR is reviewable and source-backed, but did not infer candidate-specific CV alignment.',
     score: numberOrNull(packet.quality_score),
     assessmentQuality: scheduledManualCodeReviewAssessmentQuality(),
+    qualityGate: scheduledManualCodeReviewQualityGate(),
     reviewProfile: parseScheduledCodeReviewPacketReviewProfile(packet.packet_json),
     validatorAgent: scheduledManualCodeReviewValidator(interview.github_pr_number),
     roleSources: [],
@@ -3249,10 +3339,21 @@ async function loadScheduledCodeReviewMatchDetail(
   const selectedPacketId = selected?.challengeId ?? run.selected_packet_id;
   const reviewProfile = selected?.reviewProfile
     ?? await loadScheduledCodeReviewPacketReviewProfile(db, selectedPacketId);
+  const assessmentQuality = normalizeScheduledCodeReviewAssessmentQuality(selected, roleSources);
+  const validatorAgent = normalizeScheduledCodeReviewValidatorAgent(selected, roleSources);
+  const qualityGate = scheduledCodeReviewQualityGateFor({
+    status: run.status,
+    selected,
+    assessmentQuality,
+    validatorAgent,
+    roleSources,
+  });
   const contrastGap = roleBackedContrastGapReason(selected, roleSources);
+  const qualityGateGaps = run.status === 'MATCHED' ? qualityGate.diagnostics : [];
   const gaps = [
     ...summary.gaps,
     ...(contrastGap ? [contrastGap] : []),
+    ...qualityGateGaps,
   ];
   const uniqueGaps = [...new Set(gaps)];
 
@@ -3262,9 +3363,10 @@ async function loadScheduledCodeReviewMatchDetail(
     packetId: selectedPacketId,
     summary: summary.summary,
     score: selected?.score ?? null,
-    assessmentQuality: normalizeScheduledCodeReviewAssessmentQuality(selected, roleSources),
+    assessmentQuality,
+    qualityGate,
     reviewProfile,
-    validatorAgent: normalizeScheduledCodeReviewValidatorAgent(selected, roleSources),
+    validatorAgent,
     roleSources,
     evidence,
     evidenceHyperedges: buildScheduledCodeReviewHyperedges(evidence, roleSources),

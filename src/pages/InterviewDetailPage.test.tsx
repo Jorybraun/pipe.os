@@ -2866,6 +2866,88 @@ describe('InterviewDetailPage', () => {
     expect(decision).not.toHaveTextContent('The PR assignment is ready. Wait for the candidate review');
   });
 
+  it('shows quality-gate diagnostics when a matched code-review assignment lacks source evidence', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'match-run-embedding-only',
+          packetId: 'packet-embedding-only',
+          summary: 'Embedding recall selected a challenge without source-backed alignment.',
+          score: 0.7,
+          assessmentQuality: {
+            verdict: 'USABLE',
+            score: 9,
+            maxScore: 12,
+            metrics: [{
+              id: 'contrast_separation',
+              label: 'Contrast separation',
+              score: 0,
+              maxScore: 2,
+              reason: 'Roleless recall did not measure candidate-specific contrast.',
+            }],
+          },
+          qualityGate: {
+            verdict: 'NEEDS_REVIEW',
+            checks: ['assessment_quality_verified'],
+            diagnostics: [
+              'MISSING_CANDIDATE_SOURCE_EVIDENCE',
+              'MISSING_REPO_SOURCE_EVIDENCE',
+              'EMBEDDING_ONLY_MATCH_REJECTED',
+            ],
+          },
+          reviewProfile: null,
+          validatorAgent: {
+            agentName: 'quality-gate',
+            agentVersion: '1',
+            mode: 'source_backed',
+            verdict: 'PASSED',
+            rationale: 'Embedding recall did not produce source-backed candidate or repository spans.',
+            checks: [],
+            sourceBridge: {
+              prNumber: 973,
+              candidateSourceCount: 0,
+              roleSourceCount: 0,
+              repoSourceCount: 0,
+              alignedDemandCount: 0,
+              stretchCount: 0,
+              provenanceComplete: false,
+            },
+          },
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: [],
+          evidencePlan: [],
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const decision = screen.getByTestId('interview-code-review-decision-summary');
+    expect(decision).toHaveTextContent('No confident repo match yet');
+    expect(decision).toHaveTextContent('No safe challenge');
+    expect(decision).toHaveTextContent('Missing Candidate Source Evidence');
+    expect(decision).toHaveTextContent('Missing Repo Source Evidence');
+    expect(decision).toHaveTextContent('Embedding Only Match Rejected');
+    expect(decision).toHaveTextContent('Quality gate: Missing Candidate Source Evidence');
+    expect(decision).not.toHaveTextContent('The PR assignment is ready. Wait for the candidate review');
+
+    const diagnostics = screen.getByTestId('interview-code-review-match-diagnostics');
+    expect(diagnostics).toHaveTextContent('Match diagnostics');
+    expect(diagnostics).toHaveTextContent('The assignment is blocked');
+    expect(diagnostics).toHaveTextContent('Embedding Only Match Rejected');
+    const qualityDiagnostics = screen.getByTestId('interview-code-review-quality-diagnostics');
+    expect(qualityDiagnostics).toHaveTextContent('Quality diagnostics');
+    expect(qualityDiagnostics).toHaveTextContent('Missing Repo Source Evidence');
+  });
+
   it('keeps accumulated person context out of the meeting evidence timeline', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({

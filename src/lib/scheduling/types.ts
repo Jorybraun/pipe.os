@@ -486,6 +486,12 @@ export interface CodeReviewMatchAssessmentQuality {
   metrics: CodeReviewMatchQualityMetric[];
 }
 
+export interface CodeReviewMatchQualityGate {
+  verdict: string;
+  checks: string[];
+  diagnostics: string[];
+}
+
 export interface CodeReviewMatchReviewProfile {
   source: 'deterministic_engineering_prior';
   difficultyBand: 'introductory' | 'focused' | 'advanced' | 'oversized';
@@ -573,6 +579,7 @@ export interface CodeReviewMatchDetail {
   summary: string;
   score: number | null;
   assessmentQuality: CodeReviewMatchAssessmentQuality | null;
+  qualityGate?: CodeReviewMatchQualityGate | null;
   reviewProfile?: CodeReviewMatchReviewProfile | null;
   validatorAgent: CodeReviewMatchValidatorAgent | null;
   roleSources: CodeReviewMatchRoleSource[];

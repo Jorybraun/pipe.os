@@ -164,6 +164,10 @@ The controlling product rule remains:
   contrast separation, and embedding-only recalls. Matches with those
   diagnostics are blocked before challenge-session materialization, and the
   match proof UI surfaces the diagnostics separately from passing proof checks.
+- Recruiter CODE_REVIEW detail now recomputes that same source-backed quality
+  gate from the selected match-run evidence and surfaces unsafe-match
+  diagnostics in the hiring-manager decision readout, so a selected PR cannot
+  look usable when it is embedding-only or missing candidate/repo source spans.
 - Meeting-room workspace provisioning treats it as a workspace-backed interview.
 - Host room end now replays the authoritative Durable Object chat, media,
   recording, workspace, terminal, and code-server activity logs into

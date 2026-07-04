@@ -3648,6 +3648,10 @@ describe('GET /interviews/:id detail', () => {
       packetId: 'packet-code-review-314',
       summary: 'Matched 2 source-backed demands (0 stretch).',
       score: 0.88,
+      qualityGate: {
+        verdict: 'PASSED',
+        diagnostics: [],
+      },
       reviewProfile: {
         difficultyBand: 'advanced',
         expectedSeniority: 'staff',
@@ -3704,6 +3708,123 @@ describe('GET /interviews/:id detail', () => {
         metricCount: 3,
       },
     });
+  });
+
+  it('returns quality-gate diagnostics when a matched CODE_REVIEW run lacks source-backed alignment', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-embedding-only', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, 77, 'https://github.com/pipe-labs/orders', 314,
+        NULL, NULL, '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO review_challenge_packets (
+        id, repo_snapshot_id, repo_id, pr_number, production_ready,
+        quality_score, packet_json, updated_at
+      ) VALUES (
+        'packet-code-review-embedding-only', 'snapshot-orders', 77, 314, 1,
+        0.91, '{}', 1
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-code-review-embedding-only', 'candidate-1', 'standalone-code-review-v1',
+        'MATCHED', ?, 'packet-code-review-embedding-only', '{}', '2026-06-22T17:46:00.000Z'
+      )
+    `).run(JSON.stringify([{
+      rank: 1,
+      challengeId: 'packet-code-review-embedding-only',
+      repoId: '77',
+      prNumber: 314,
+      score: 0.88,
+      alignedDemandCount: 1,
+      stretchCount: 0,
+      provenanceComplete: false,
+      eligible: true,
+      assessmentQuality: {
+        verdict: 'USABLE',
+        score: 9,
+        maxScore: 12,
+        metrics: [
+          {
+            id: 'contrast_separation',
+            label: 'Contrast separation',
+            score: 0,
+            maxScore: 2,
+            reason: 'Roleless recall did not measure a candidate-specific contrast.',
+          },
+        ],
+      },
+      validatorAgent: {
+        agentName: 'deterministic-code-review-match-gate',
+        agentVersion: 'test-v1',
+        mode: 'deterministic',
+        verdict: 'passed',
+        rationale: 'Embedding recall selected a challenge without source-backed spans.',
+        checks: [],
+        sourceBridge: {
+          prNumber: 314,
+          candidateSourceCount: 0,
+          repoSourceCount: 0,
+          roleSourceCount: 0,
+          alignedDemandCount: 0,
+          stretchCount: 0,
+          provenanceComplete: false,
+        },
+      },
+      alignments: [],
+      rejectionReasons: [],
+    }]));
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-embedding-only');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        codeReviewMatch: {
+          qualityGate: {
+            verdict: string;
+            checks: string[];
+            diagnostics: string[];
+          } | null;
+          gaps: string[];
+        } | null;
+      };
+    };
+
+    expect(body.interview.codeReviewMatch?.qualityGate).toEqual({
+      verdict: 'NEEDS_REVIEW',
+      checks: [
+        'assessment_quality_verified',
+        'contrast_separation_not_required_roleless',
+        'agent_validated_match',
+      ],
+      diagnostics: [
+        'MISSING_CANDIDATE_SOURCE_EVIDENCE',
+        'MISSING_REPO_SOURCE_EVIDENCE',
+        'EMBEDDING_ONLY_MATCH_REJECTED',
+      ],
+    });
+    expect(body.interview.codeReviewMatch?.gaps).toEqual(expect.arrayContaining([
+      'MISSING_CANDIDATE_SOURCE_EVIDENCE',
+      'MISSING_REPO_SOURCE_EVIDENCE',
+      'EMBEDDING_ONLY_MATCH_REJECTED',
+    ]));
   });
 
   it('projects role-backed CODE_REVIEW assignment repo fields on recruiter list and detail', async () => {

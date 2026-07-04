@@ -2227,9 +2227,16 @@ function codeReviewVerdictLabel(
 
 function codeReviewMatchIsQualityGated(match: CodeReviewMatchDetail | null): boolean {
   if (!match || match.status !== 'MATCHED') return false;
+  if (match.qualityGate) return match.qualityGate.verdict === 'PASSED';
   const qualityVerdict = match.assessmentQuality?.verdict?.toUpperCase() ?? null;
   if (!qualityVerdict) return true;
   return qualityVerdict === 'STRONG' || qualityVerdict === 'USABLE' || qualityVerdict === 'PASSED';
+}
+
+function codeReviewQualityGateDiagnostics(match: CodeReviewMatchDetail | null): string[] {
+  return uniqueTextParts(
+    (match?.qualityGate?.diagnostics ?? []).map(readableGapLabel),
+  );
 }
 
 function codeReviewActionText(
@@ -2269,6 +2276,8 @@ function codeReviewFitLabel(match: CodeReviewMatchDetail | null): string {
 }
 
 function codeReviewFitDetail(match: CodeReviewMatchDetail | null): string {
+  const diagnostics = codeReviewQualityGateDiagnostics(match);
+  if (diagnostics.length > 0) return diagnostics[0]!;
   if (match?.assessmentQuality) {
     return `${match.assessmentQuality.score}/${match.assessmentQuality.maxScore}`;
   }
@@ -2671,12 +2680,15 @@ function codeReviewMatchExplanation(input: {
     match: input.match,
   });
   if (!input.match || !codeReviewMatchIsQualityGated(input.match)) {
+    const diagnostics = codeReviewQualityGateDiagnostics(input.match);
     return {
       selectedChallenge,
       whyThisChallenge: input.match?.summary
         || 'PIPE has not selected a quality-gated, source-backed repo challenge for this interview.',
       proofLabel: 'Missing proof',
-      proofSummary: input.risk.missingContext[0]
+      proofSummary: diagnostics[0]
+        ? `Quality gate: ${diagnostics.join(' · ')}`
+        : input.risk.missingContext[0]
         ? `Missing: ${input.risk.missingContext[0]}`
         : 'Missing source-backed candidate, role, or repo evidence.',
       riskSummary: input.validity.detail,
@@ -2872,7 +2884,7 @@ function readableGapLabel(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return 'Missing source-backed evidence';
   if (/^[A-Z0-9_:-]+$/.test(trimmed)) {
-    return titleCaseToken(trimmed).replace(/\bPr\b/g, 'PR');
+    return titleCaseToken(trimmed.toLowerCase()).replace(/\bPr\b/g, 'PR');
   }
   return trimmed;
 }
@@ -2900,7 +2912,9 @@ function codeReviewDecisionRiskSummary(
   }
 
   if (!hasMatchedChallenge) {
+    const diagnostics = codeReviewQualityGateDiagnostics(match);
     missingContext.push(
+      ...diagnostics,
       ...(match.gaps.length > 0
         ? match.gaps.slice(0, 3).map(readableGapLabel)
         : ['Source-backed candidate work evidence']),
@@ -2910,7 +2924,7 @@ function codeReviewDecisionRiskSummary(
         value: 'Repo fit not proven',
         detail: match.summary || 'PIPE needs more source-backed person evidence before this meeting can assign a fair PR challenge.',
       },
-      missingContext,
+      missingContext: uniqueTextParts(missingContext).slice(0, 4),
     };
   }
 
@@ -6245,6 +6259,16 @@ export default function InterviewDetailPage(): JSX.Element {
                         </div>
                       ))}
                     </div>
+                    {codeReviewMatch.qualityGate?.diagnostics?.length ? (
+                      <div data-testid="interview-code-review-quality-diagnostics" style={CONTEXT_RECORD}>
+                        <div style={FIELD_LABEL}>Quality diagnostics</div>
+                        <div style={TAG_ROW}>
+                          {codeReviewQualityGateDiagnostics(codeReviewMatch).map((diagnostic) => (
+                            <span key={diagnostic} style={TAG}>{diagnostic}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </details>
               )}
@@ -6253,7 +6277,7 @@ export default function InterviewDetailPage(): JSX.Element {
                 <ReviewProfileCard profile={codeReviewProfile} />
               )}
 
-              {(codeReviewMatch.validatorAgent || matchHyperedges.length > 0 || primaryMatchEvidence || codeReviewMatch.gaps.length > 0) && (
+              {(codeReviewMatch.validatorAgent || matchHyperedges.length > 0 || primaryMatchEvidence || codeReviewMatch.gaps.length > 0 || (codeReviewMatch.qualityGate?.diagnostics?.length ?? 0) > 0) && (
                 <details style={DETAILS_CARD}>
                   <summary style={DETAILS_SUMMARY}>
                     Source proof
@@ -6300,6 +6324,20 @@ export default function InterviewDetailPage(): JSX.Element {
                   )}
                     </div>
                   )}
+
+                  {codeReviewMatch.qualityGate?.diagnostics?.length ? (
+                    <div data-testid="interview-code-review-match-diagnostics" style={CONTEXT_RECORD}>
+                      <div style={FIELD_LABEL}>Match diagnostics</div>
+                      <div style={CONTEXT_RECORD_NARRATIVE}>
+                        The assignment is blocked until these source-backed gate failures are resolved.
+                      </div>
+                      <div style={TAG_ROW}>
+                        {codeReviewQualityGateDiagnostics(codeReviewMatch).map((diagnostic) => (
+                          <span key={diagnostic} style={TAG}>{diagnostic}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
 
                   {matchHyperedges.length > 0 && (
                     <div data-testid="interview-code-review-match-hyperedges" style={CONTEXT_RECORD}>
