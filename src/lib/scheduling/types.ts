@@ -83,6 +83,13 @@ export interface AssessmentSetupProjection {
   message: string | null;
   nextAction?: AssessmentSetupNextAction;
   nextActionLabel?: string | null;
+  selectionRationale?: {
+    summary: string;
+    whyThisChallenge: string;
+    whyNotAlternatives: string;
+    residualRisk: string;
+    nextAction: string;
+  } | null;
   lastDeliveredUrl?: string | null;
   lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null;
   lastDeliveredUrlMessage?: string | null;

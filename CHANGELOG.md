@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter assessment setup now includes a compact challenge-selection rationale for matched, manual, held-back, and blocked repo tasks, and the workspace decision panel renders why the task was chosen, why alternatives were not used, residual risk, and the next action.
 - Open-source workspace dev smoke now waits through the recruiter detail's bounded assessment-progress refresh before asserting source-backed score-validity proof, avoiding false failures from the first eventual-consistency read.
 - Workspace assessment finalization now falls back to the candidate-entered verification command when no packet command is configured, while the room pre-fills the finalizer command from the assigned challenge packet.
 - Open-source assessment challenge packets now carry an optional verification command from recruiter creation into candidate task briefs, packet panels, and recruiter cards, making expected test proof visible before commit evaluation.

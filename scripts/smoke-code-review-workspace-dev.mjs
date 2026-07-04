@@ -642,6 +642,10 @@ async function assertRecruiterReviewerReceiptBrowser(
       await expect(decision).toContainText('Matched task');
       await expect(decision).toContainText('source-backed candidate evidence');
       await expect(decision).toContainText('match-fit evidence');
+      await expect(decision).toContainText('Selection rationale');
+      await expect(decision).toContainText('PIPE-selected repo task');
+      await expect(decision).toContainText('instead of handing the candidate a generic repo');
+      await expect(decision).toContainText('hiring signal still depends on the captured branch commit');
     } else if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
       await expect(decision).toContainText('Challenge fit');
       await expect(decision).not.toContainText('Matched task');

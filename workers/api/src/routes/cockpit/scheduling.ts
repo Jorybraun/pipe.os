@@ -290,6 +290,13 @@ interface ScheduledAssessmentSetupProjection {
   message: string | null;
   nextAction: ScheduledAssessmentSetupNextAction;
   nextActionLabel: string | null;
+  selectionRationale?: {
+    summary: string;
+    whyThisChallenge: string;
+    whyNotAlternatives: string;
+    residualRisk: string;
+    nextAction: string;
+  } | null;
   lastDeliveredUrl?: string | null;
   lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null;
   lastDeliveredUrlMessage?: string | null;
@@ -379,6 +386,13 @@ function buildScheduledAssessmentSetup(input: {
       message: 'A concrete open-source task packet was assigned by the recruiter. PIPE can launch that repo task from the exact base commit without inferring candidate-specific alignment.',
       nextAction: 'OPEN_ROOM_OR_WORKSPACE',
       nextActionLabel: 'Open the assessment room and launch the controlled workspace from the assigned base commit.',
+      selectionRationale: {
+        summary: 'Recruiter-assigned task packet',
+        whyThisChallenge: 'The task is reviewable because the recruiter supplied a concrete repo URL, immutable base commit, task brief, success criteria, and expected evidence.',
+        whyNotAlternatives: 'Automatic candidate-to-repo contrast ranking was not used on this path, so PIPE is not claiming this was the best candidate-specific match.',
+        residualRisk: 'Use the completed commit, diff, tests, transcript, chat, and AI-use trail as assessment evidence; do not treat the manual assignment itself as fit proof.',
+        nextAction: 'Open the controlled workspace and capture the candidate work against the assigned source-backed packet.',
+      },
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -394,6 +408,13 @@ function buildScheduledAssessmentSetup(input: {
       message: MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL,
       nextAction: 'OPEN_ROOM_OR_WORKSPACE',
       nextActionLabel: 'Open the assessment room and capture the candidate work against the matched PR task.',
+      selectionRationale: {
+        summary: 'PIPE-selected repo task',
+        whyThisChallenge: 'PIPE selected this concrete GitHub PR from source-backed candidate evidence, role context, and repository demand instead of handing the candidate a generic repo.',
+        whyNotAlternatives: 'Lower-ranked or withheld challenges did not provide stronger source-backed alignment, reviewability, or contrast for automatic assignment.',
+        residualRisk: 'The assignment proves challenge fit only; the hiring signal still depends on the captured branch commit, diff, tests or verification gap, transcript/chat, AI-use trail, evaluator report, and human review.',
+        nextAction: 'Run the controlled workspace assessment and review the source-backed evidence before making a hiring decision.',
+      },
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -409,6 +430,13 @@ function buildScheduledAssessmentSetup(input: {
       message: 'A concrete GitHub PR was assigned by the recruiter. PIPE can launch that task, but candidate-specific alignment is not inferred from this manual override.',
       nextAction: 'OPEN_ROOM_OR_WORKSPACE',
       nextActionLabel: 'Open the assessment room and capture source-backed review or implementation evidence.',
+      selectionRationale: {
+        summary: 'Recruiter-selected PR',
+        whyThisChallenge: 'The PR gives the candidate a concrete source-backed repo task that PIPE can launch and observe.',
+        whyNotAlternatives: 'Automatic candidate-to-PR ranking was bypassed, so alternative challenge fit was not measured.',
+        residualRisk: 'The PR assignment is not candidate-fit proof; rely on the candidate review or implementation evidence and human calibration.',
+        nextAction: 'Capture the source-backed review or workspace evidence, then evaluate the submitted work.',
+      },
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -424,6 +452,13 @@ function buildScheduledAssessmentSetup(input: {
       message: 'A matched repository exists, but no GitHub PR or task was assigned. Treat this as an assessment setup gap, not candidate evidence.',
       nextAction: 'ATTACH_CHALLENGE_PACKET',
       nextActionLabel: 'Attach a source-backed PR/task packet for the matched repo, or ingest more eligible repo challenges before inviting the candidate to work.',
+      selectionRationale: {
+        summary: 'Matched repo needs a task',
+        whyThisChallenge: 'PIPE found a repository-level match, but there is no concrete PR, issue, base commit, task brief, success criteria, or expected evidence packet yet.',
+        whyNotAlternatives: 'No eligible reviewable task has been approved for automatic delivery from this match.',
+        residualRisk: 'Do not send this as a positive assessment until a concrete source-backed challenge packet exists.',
+        nextAction: 'Attach a task packet for the matched repo or ingest more eligible repo challenges before launching the room.',
+      },
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -439,6 +474,13 @@ function buildScheduledAssessmentSetup(input: {
       message: 'This contact-first assessment invite has no candidate evidence yet. PIPE must ingest source-backed resume, transcript, chat, or interview evidence before selecting a PR task.',
       nextAction: 'COLLECT_CANDIDATE_EVIDENCE',
       nextActionLabel: 'Send the intake link or schedule a context call that captures source-backed examples of the candidate’s real engineering work.',
+      selectionRationale: {
+        summary: 'Needs candidate evidence',
+        whyThisChallenge: 'No repo task should be selected until PIPE has source-backed evidence about the candidate.',
+        whyNotAlternatives: 'Any automatic challenge assignment would be a guess because there is no candidate evidence to compare against repo demands.',
+        residualRisk: 'Launching a coding assessment now would measure task survival, not candidate-role fit.',
+        nextAction: 'Collect resume, profile, transcript, chat, or context-call evidence before matching a repo task.',
+      },
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -473,6 +515,15 @@ function buildScheduledAssessmentSetup(input: {
       ].filter(Boolean).join(' '),
       nextAction: 'RERUN_OR_ENRICH_MATCHING',
       nextActionLabel: 'Review the latest match run, add differentiating role or candidate evidence, or manually assign a source-backed PR once approved.',
+      selectionRationale: {
+        summary: 'Candidate challenge held back',
+        whyThisChallenge: candidate
+          ? `The strongest current candidate challenge is ${candidate}${quality ? ` with ${quality} assessment quality` : ''}.`
+          : `The strongest current candidate challenge has ${quality || 'insufficient'} assessment quality.`,
+        whyNotAlternatives: contrast ?? 'The matcher did not find enough contrast against alternatives for safe automatic assignment.',
+        residualRisk: 'Sending this automatically would overstate match confidence; treat it as a review queue item, not candidate evidence.',
+        nextAction: 'Add differentiating candidate or role evidence, approve the source-backed PR manually, or rerun matching after repo challenge ingestion improves.',
+      },
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -487,6 +538,13 @@ function buildScheduledAssessmentSetup(input: {
     message: 'Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.',
     nextAction: 'RERUN_OR_ENRICH_MATCHING',
     nextActionLabel: 'Rerun repo matching after adding role requirements, candidate work evidence, or more eligible source-backed repo challenges.',
+    selectionRationale: {
+      summary: 'Needs source-backed match',
+      whyThisChallenge: 'No concrete repo challenge is selected yet.',
+      whyNotAlternatives: 'The current evidence did not produce an eligible automatic assignment.',
+      residualRisk: 'Do not launch an assessment until PIPE can point to a source-backed task or a deliberate manual override.',
+      nextAction: 'Ingest candidate evidence or repo challenge packets, then rerun matching.',
+    },
     lastDeliveredUrl,
     lastDeliveredUrlState,
     lastDeliveredUrlMessage,

@@ -1179,6 +1179,13 @@ describe('GET /interviews/:id detail', () => {
           blocksPositiveAssessment: boolean;
           message: string | null;
           nextActionLabel: string | null;
+          selectionRationale: {
+            summary: string;
+            whyThisChallenge: string;
+            whyNotAlternatives: string;
+            residualRisk: string;
+            nextAction: string;
+          } | null;
         };
       };
     };
@@ -1195,6 +1202,13 @@ describe('GET /interviews/:id detail', () => {
     expect(detail.interview.assessmentSetup.message).toContain('Assessment quality: USABLE 9/12.');
     expect(detail.interview.assessmentSetup.message).toContain('leads the next comparable challenge by 2%');
     expect(detail.interview.assessmentSetup.nextActionLabel).toContain('Review the latest match run');
+    expect(detail.interview.assessmentSetup.selectionRationale).toMatchObject({
+      summary: 'Candidate challenge held back',
+      whyThisChallenge: expect.stringContaining('https://github.com/mui/base-ui #973'),
+      whyNotAlternatives: expect.stringContaining('leads the next comparable challenge by 2%'),
+      residualRisk: expect.stringContaining('overstate match confidence'),
+      nextAction: expect.stringContaining('Add differentiating candidate or role evidence'),
+    });
 
     const listResponse = await app.request('/interviews');
     expect(listResponse.status).toBe(200);
@@ -1204,12 +1218,20 @@ describe('GET /interviews/:id detail', () => {
         assessmentSetup: {
           message: string | null;
           nextActionLabel: string | null;
+          selectionRationale: {
+            summary: string;
+            whyNotAlternatives: string;
+          } | null;
         };
       }>;
     };
     const listed = list.interviews.find((item) => item.id === 'interview-1');
     expect(listed?.assessmentSetup.message).toContain('https://github.com/mui/base-ui #973');
     expect(listed?.assessmentSetup.nextActionLabel).toContain('Review the latest match run');
+    expect(listed?.assessmentSetup.selectionRationale).toMatchObject({
+      summary: 'Candidate challenge held back',
+      whyNotAlternatives: expect.stringContaining('leads the next comparable challenge by 2%'),
+    });
   });
 
   it('keeps a delivered assessment link active when a claimed prefix exists before the candidate starts', async () => {
@@ -9196,6 +9218,11 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
           source: string;
           blocksPositiveAssessment: boolean;
           message: string | null;
+          selectionRationale: {
+            summary: string;
+            whyThisChallenge: string;
+            residualRisk: string;
+          } | null;
         };
       }>;
     };
@@ -9211,6 +9238,11 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       blocksPositiveAssessment: false,
     });
     expect(interview?.assessmentSetup.message).toContain('PIPE selected a concrete GitHub PR');
+    expect(interview?.assessmentSetup.selectionRationale).toMatchObject({
+      summary: 'PIPE-selected repo task',
+      whyThisChallenge: expect.stringContaining('source-backed candidate evidence'),
+      residualRisk: expect.stringContaining('captured branch commit'),
+    });
   });
 });
 

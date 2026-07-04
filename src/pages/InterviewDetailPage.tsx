@@ -1046,6 +1046,32 @@ function workspaceAssessmentFitItem(input: {
   };
 }
 
+function workspaceAssessmentSelectionRationaleItem(
+  setup: AssessmentSetupProjection | null | undefined,
+): WorkspaceAssessmentReadoutItem | null {
+  const rationale = setup?.selectionRationale ?? null;
+  if (!rationale) return null;
+
+  const tone: CodeReviewNextStepTone = setup?.blocksPositiveAssessment
+    ? 'blocked'
+    : setup?.source === 'recruiter_manual_override' || setup?.kind === 'manual_open_source_task'
+      ? 'watch'
+      : 'positive';
+  const detail = [
+    rationale.whyThisChallenge,
+    rationale.whyNotAlternatives,
+    rationale.residualRisk,
+    `Next: ${rationale.nextAction}`,
+  ].filter((item) => item.trim().length > 0).join(' ');
+
+  return {
+    label: 'Selection rationale',
+    value: rationale.summary,
+    detail,
+    tone,
+  };
+}
+
 function workspaceAssessmentProofItem(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem {
   const challengeContractComplete = progress?.challengePacketContract
     ? progress.challengePacketContract.isComplete
@@ -1596,10 +1622,11 @@ function workspaceAssessmentHiringReadout(input: {
   return [
     workspaceAssessmentDecisionItem(input.progress),
     workspaceAssessmentFitItem(input),
+    workspaceAssessmentSelectionRationaleItem(input.setup),
     workspaceAssessmentProofItem(input.progress),
     workspaceAssessmentRiskItem(input.progress),
     workspaceAssessmentNextActionItem(input.progress),
-  ];
+  ].filter((item): item is WorkspaceAssessmentReadoutItem => Boolean(item));
 }
 
 function sourceRefText(ref: CodeReviewMatchSourceRef | null | undefined): string | null {
