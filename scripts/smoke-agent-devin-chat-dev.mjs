@@ -215,6 +215,26 @@ async function pollAssessmentProgress(interviewId, predicate, label) {
   throw new Error(`${label} did not appear in recruiter assessment progress: ${JSON.stringify(lastProgress)}`);
 }
 
+async function pollAssessmentListProgress(interviewId, predicate, label) {
+  const deadline = Date.now() + 30_000;
+  let lastProgress = null;
+  let listSeen = false;
+  while (Date.now() < deadline) {
+    const list = await requestJson(APP_BASE, '/api/v1/scheduling/interviews?limit=20&offset=0&sort=created_desc');
+    const interview = Array.isArray(list?.interviews)
+      ? list.interviews.find((candidate) => candidate?.id === interviewId)
+      : null;
+    listSeen = Boolean(interview);
+    lastProgress = interview?.assessmentProgress ?? null;
+    if (predicate(lastProgress)) return lastProgress;
+    await sleep(1_000);
+  }
+  throw new Error(`${label} did not appear in recruiter assessment list progress: ${JSON.stringify({
+    listSeen,
+    lastProgress,
+  })}`);
+}
+
 function connectAgent(wsUrl, headers) {
   return new Promise((resolve, reject) => {
     const messages = [];
@@ -365,6 +385,21 @@ async function main() {
     if (sourceRefCount(sourceRefCounts, 'ai_agent_response') > 0) {
       throw new Error(`Auth-needed bridge state should not count as an agent response: ${JSON.stringify(sourceRefCounts)}`);
     }
+    const listProgress = await pollAssessmentListProgress(
+      interviewId,
+      (candidate) => candidate?.hasAiInteraction === true
+        && bridgeStateSourceRefCount(candidate?.sourceRefCounts) >= 1,
+      'Devin auth-needed recruiter-list bridge state evidence',
+    );
+    assertSameAssessmentSessionId(
+      assessmentSessionId,
+      listProgress,
+      'Devin auth-needed recruiter-list assessment progress',
+    );
+    const listSourceRefCounts = listProgress?.sourceRefCounts ?? [];
+    if (sourceRefCount(listSourceRefCounts, 'ai_agent_response') > 0) {
+      throw new Error(`Recruiter list should not count auth-needed bridge state as an agent response: ${JSON.stringify(listSourceRefCounts)}`);
+    }
     console.log(JSON.stringify({
       ok: true,
       expectedAuthNeeded: true,
@@ -383,6 +418,9 @@ async function main() {
       assessmentAgentStatusCount: sourceRefCount(sourceRefCounts, 'agent_status'),
       assessmentAgentDiagnosticCount: sourceRefCount(sourceRefCounts, 'ai_agent_diagnostic')
         + sourceRefCount(sourceRefCounts, 'agent_diagnostic'),
+      recruiterListAiProofVisible: true,
+      recruiterListAiInteraction: listProgress.hasAiInteraction,
+      recruiterListBridgeStateCount: bridgeStateSourceRefCount(listSourceRefCounts),
       statuses: statusMessages.map((message) => message.status),
       authMessage: authNeeded.message,
       assessmentEvidenceProofCommands: assessmentEvidenceProofCommands(assessmentSessionId),
@@ -420,6 +458,18 @@ async function main() {
     'Devin response assessment progress',
   );
   const sourceRefCounts = progress?.sourceRefCounts ?? [];
+  const listProgress = await pollAssessmentListProgress(
+    interviewId,
+    (candidate) => candidate?.hasAiInteraction === true
+      && sourceRefCount(candidate?.sourceRefCounts, 'ai_agent_response') >= 1,
+    'Devin agent response recruiter-list evidence',
+  );
+  assertSameAssessmentSessionId(
+    assessmentSessionId,
+    listProgress,
+    'Devin response recruiter-list assessment progress',
+  );
+  const listSourceRefCounts = listProgress?.sourceRefCounts ?? [];
 
   console.log(JSON.stringify({
     ok: true,
@@ -436,6 +486,9 @@ async function main() {
     chatPersisted: chatResponse.persisted,
     assessmentAiInteraction: progress.hasAiInteraction,
     assessmentAgentResponseCount: sourceRefCount(sourceRefCounts, 'ai_agent_response'),
+    recruiterListAiProofVisible: true,
+    recruiterListAiInteraction: listProgress.hasAiInteraction,
+    recruiterListAgentResponseCount: sourceRefCount(listSourceRefCounts, 'ai_agent_response'),
     diagnosticPersistedCount: persistedDiagnostics.length,
     responseText: chatResponse.text,
     assessmentEvidenceProofCommands: assessmentEvidenceProofCommands(assessmentSessionId),

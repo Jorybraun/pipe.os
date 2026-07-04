@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Devin bridge smoke now requires recruiter interview lists to expose the same source-backed AI-use proof as the room/detail flow, so auth-needed bridge diagnostics cannot disappear from the buyer-facing queue without failing app-dev verification.
 - Open-source workspace dev smoke now requires the deployed interview list API to expose evaluated assessment evidence coverage, cited claim previews, and diagnostic previews for the fresh workspace run, protecting recruiter scan-level proof from regressing to status-only text.
 - Recruiter interview lists now carry evaluated assessment evidence coverage, cited claim previews, and diagnostic previews in bulk, so assessment cards can show why an open-source commit report is trustworthy or limited without waiting for the detail page.
 - Candidate dev-container commit submission now exposes fork URL, GitHub commit URL, and explicit upstream PR consent fields, so real assessment-branch or fork work can be submitted as reviewable source-backed evidence instead of losing link provenance.
