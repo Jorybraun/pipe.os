@@ -153,6 +153,15 @@ function renderDashboard(
     total?: number;
     hasMore?: boolean;
     isLoadingMore?: boolean;
+    facets?: {
+      interviewTypes: {
+        all: number;
+        standardCalls: number;
+        codeReview: number;
+        devContainerChallenge: number;
+        openSourceBugFix: number;
+      };
+    };
   } = {},
 ): { refetch: () => Promise<void>; loadMore: () => Promise<void> } {
   const refetch = options.refetch ?? vi.fn().mockResolvedValue(undefined);
@@ -164,6 +173,7 @@ function renderDashboard(
     error: null,
     total: options.total ?? interviews.length,
     hasMore: options.hasMore ?? false,
+    facets: options.facets ?? null,
     updateStatus: vi.fn(),
     sendInvite: vi.fn(),
     refetch,
@@ -221,13 +231,19 @@ describe('SchedulingDashboard interview ordering', () => {
   it('defaults to most recently created interviews and can switch back to timeline ordering', () => {
     renderDashboard(interviews);
 
-    expect(mocks.useScheduledInterviews).toHaveBeenLastCalledWith({ sort: 'created_desc' });
+    expect(mocks.useScheduledInterviews).toHaveBeenLastCalledWith({
+      sort: 'created_desc',
+      interviewType: 'ALL',
+    });
     expect(screen.getByText('NEWEST CREATED')).toBeInTheDocument();
     expect(cardNames()).toEqual(['Newest invite', 'Middle invite', 'Oldest invite']);
 
     fireEvent.click(screen.getByRole('button', { name: 'Timeline' }));
 
-    expect(mocks.useScheduledInterviews).toHaveBeenLastCalledWith({ sort: 'scheduled_asc' });
+    expect(mocks.useScheduledInterviews).toHaveBeenLastCalledWith({
+      sort: 'scheduled_asc',
+      interviewType: 'ALL',
+    });
     expect(screen.getByText('TODAY')).toBeInTheDocument();
     expect(screen.getByText('TOMORROW')).toBeInTheDocument();
     expect(screen.getByText('UNSCHEDULED')).toBeInTheDocument();
@@ -239,7 +255,10 @@ describe('SchedulingDashboard interview ordering', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Oldest' }));
 
-    expect(mocks.useScheduledInterviews).toHaveBeenLastCalledWith({ sort: 'created_asc' });
+    expect(mocks.useScheduledInterviews).toHaveBeenLastCalledWith({
+      sort: 'created_asc',
+      interviewType: 'ALL',
+    });
     expect(screen.getByText('OLDEST CREATED')).toBeInTheDocument();
     expect(cardNames()).toEqual(['Oldest invite', 'Middle invite', 'Newest invite']);
   });
@@ -257,6 +276,28 @@ describe('SchedulingDashboard interview ordering', () => {
     const button = screen.getByRole('button', { name: 'LOAD MORE (135 REMAINING)' });
     fireEvent.click(button);
     expect(loadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses server interview-mode facets instead of loaded-page counts', () => {
+    renderDashboard(interviews.slice(0, 2), '/interviews', {
+      total: 137,
+      hasMore: true,
+      facets: {
+        interviewTypes: {
+          all: 137,
+          standardCalls: 112,
+          codeReview: 11,
+          devContainerChallenge: 5,
+          openSourceBugFix: 9,
+        },
+      },
+    });
+
+    expect(screen.getByRole('button', { name: /All modes\s*137/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Standard calls\s*112/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Code review\s*11/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Dev container\s*5/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open source\s*9/i })).toBeInTheDocument();
   });
 
   it('uses the per-interview recipient label before the canonical person name', () => {
@@ -442,13 +483,25 @@ describe('SchedulingDashboard interview ordering', () => {
     expect(screen.getByRole('button', { name: /Standard calls\s*1/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Open source\s*1/i }));
+    expect(mocks.useScheduledInterviews).toHaveBeenLastCalledWith({
+      sort: 'created_desc',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+    });
     expect(cardNames()).toEqual(['Open source assessment']);
     expect(screen.getByText('1 shown · 4 total')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Code review\s*1/i }));
+    expect(mocks.useScheduledInterviews).toHaveBeenLastCalledWith({
+      sort: 'created_desc',
+      interviewType: 'CODE_REVIEW',
+    });
     expect(cardNames()).toEqual(['Code review assessment']);
 
     fireEvent.click(screen.getByRole('button', { name: /Standard calls\s*1/i }));
+    expect(mocks.useScheduledInterviews).toHaveBeenLastCalledWith({
+      sort: 'created_desc',
+      interviewType: 'STANDARD_CALLS',
+    });
     expect(cardNames()).toEqual(['Standard call']);
   });
 

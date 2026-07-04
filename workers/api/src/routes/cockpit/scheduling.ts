@@ -131,6 +131,12 @@ function getProviderConfig(providerId: string, env: Env): ProviderOAuthConfig | 
 const SCHEDULED_INTERVIEWS_DEFAULT_LIMIT = 20;
 const SCHEDULED_INTERVIEWS_MAX_LIMIT = 100;
 type ScheduledInterviewsSort = 'created_desc' | 'created_asc' | 'scheduled_asc';
+type ScheduledInterviewsTypeFilter =
+  | 'ALL'
+  | 'STANDARD_CALLS'
+  | 'CODE_REVIEW'
+  | 'DEV_CONTAINER_CHALLENGE'
+  | 'OPEN_SOURCE_BUG_FIX';
 
 function parsePositiveInt(value: string | undefined, fallback: number, max: number): number {
   if (!value) return fallback;
@@ -151,6 +157,18 @@ function parseScheduledInterviewsSort(value: string | undefined): ScheduledInter
   return 'created_desc';
 }
 
+function parseScheduledInterviewsTypeFilter(value: string | undefined): ScheduledInterviewsTypeFilter {
+  if (
+    value === 'STANDARD_CALLS'
+    || value === 'CODE_REVIEW'
+    || value === 'DEV_CONTAINER_CHALLENGE'
+    || value === 'OPEN_SOURCE_BUG_FIX'
+  ) {
+    return value;
+  }
+  return 'ALL';
+}
+
 function scheduledInterviewsOrderByClause(sort: ScheduledInterviewsSort): string {
   switch (sort) {
     case 'created_asc':
@@ -160,6 +178,32 @@ function scheduledInterviewsOrderByClause(sort: ScheduledInterviewsSort): string
     case 'created_desc':
     default:
       return 'si.created_at DESC, si.id ASC';
+  }
+}
+
+function scheduledInterviewsTypeFilterClause(filter: ScheduledInterviewsTypeFilter): {
+  clause: string;
+  params: string[];
+} {
+  switch (filter) {
+    case 'STANDARD_CALLS':
+      return {
+        clause: `AND (
+          si.interview_type IS NULL
+          OR si.interview_type NOT IN ('CODE_REVIEW', 'DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')
+        )`,
+        params: [],
+      };
+    case 'CODE_REVIEW':
+    case 'DEV_CONTAINER_CHALLENGE':
+    case 'OPEN_SOURCE_BUG_FIX':
+      return {
+        clause: 'AND si.interview_type = ?',
+        params: [filter],
+      };
+    case 'ALL':
+    default:
+      return { clause: '', params: [] };
   }
 }
 
@@ -7665,7 +7709,9 @@ schedulingAuth.get('/interviews', async (c) => {
   );
   const offset = parseNonNegativeInt(c.req.query('offset'), 0);
   const sort = parseScheduledInterviewsSort(c.req.query('sort'));
+  const interviewTypeFilter = parseScheduledInterviewsTypeFilter(c.req.query('interviewType'));
   const orderByClause = scheduledInterviewsOrderByClause(sort);
+  const typeFilter = scheduledInterviewsTypeFilterClause(interviewTypeFilter);
   const hasWorkspaceSessions = await tableExists(db, 'dev_container_sessions');
   const workspaceSessionSelect = hasWorkspaceSessions
     ? `dcs.status AS workspace_status,
@@ -7711,9 +7757,39 @@ schedulingAuth.get('/interviews', async (c) => {
        )`
     : '';
 
-  const countRow = await db
-    .prepare('SELECT COUNT(*) AS total FROM scheduled_interviews WHERE owner_id = ?')
+  const facetRow = await db
+    .prepare(
+      `SELECT COUNT(*) AS all_count,
+              SUM(CASE WHEN interview_type = 'CODE_REVIEW' THEN 1 ELSE 0 END) AS code_review_count,
+              SUM(CASE WHEN interview_type = 'DEV_CONTAINER_CHALLENGE' THEN 1 ELSE 0 END) AS dev_container_challenge_count,
+              SUM(CASE WHEN interview_type = 'OPEN_SOURCE_BUG_FIX' THEN 1 ELSE 0 END) AS open_source_bug_fix_count,
+              SUM(CASE
+                    WHEN interview_type IS NULL
+                      OR interview_type NOT IN ('CODE_REVIEW', 'DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')
+                    THEN 1 ELSE 0
+                  END) AS standard_calls_count
+         FROM scheduled_interviews
+        WHERE owner_id = ?`
+    )
     .bind(userId)
+    .first<{
+      all_count: number | null;
+      code_review_count: number | null;
+      dev_container_challenge_count: number | null;
+      open_source_bug_fix_count: number | null;
+      standard_calls_count: number | null;
+    }>();
+  const interviewTypeFacets = {
+    all: facetRow?.all_count ?? 0,
+    standardCalls: facetRow?.standard_calls_count ?? 0,
+    codeReview: facetRow?.code_review_count ?? 0,
+    devContainerChallenge: facetRow?.dev_container_challenge_count ?? 0,
+    openSourceBugFix: facetRow?.open_source_bug_fix_count ?? 0,
+  };
+
+  const countRow = await db
+    .prepare(`SELECT COUNT(*) AS total FROM scheduled_interviews si WHERE si.owner_id = ? ${typeFilter.clause}`)
+    .bind(userId, ...typeFilter.params)
     .first<{ total: number }>();
   const total = countRow?.total ?? 0;
 
@@ -7763,10 +7839,11 @@ schedulingAuth.get('/interviews', async (c) => {
        LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
        ${workspaceSessionJoin}
        WHERE si.owner_id = ?
+       ${typeFilter.clause}
        ORDER BY ${orderByClause}
        LIMIT ? OFFSET ?`
     )
-    .bind(userId, limit, offset)
+    .bind(userId, ...typeFilter.params, limit, offset)
     .all<{
       id: string;
       candidate_id: string | null;
@@ -7908,8 +7985,12 @@ schedulingAuth.get('/interviews', async (c) => {
       limit,
       offset,
       sort,
+      interviewType: interviewTypeFilter,
       nextOffset,
       hasMore: nextOffset !== null,
+    },
+    facets: {
+      interviewTypes: interviewTypeFacets,
     },
   });
 });

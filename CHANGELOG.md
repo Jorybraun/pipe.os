@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter interview mode filters now query the server with owned-history facets, so open-source, code-review, and dev-container assessments can be found beyond the first loaded page without misleading loaded-page counts.
 - Candidate assessment receipts now show upstream PR URL, explicit candidate consent status, and the no-auto-submit boundary, so fork or assessment-branch work cannot be mistaken for an upstream contribution unless a source-backed approved PR is recorded.
 - Candidate assessment progress and receipt downloads now preserve the assigned challenge title from source-backed challenge metadata or packet text, so live receipts prove the exact repo task title that was assessed.
 - Candidate assessment progress and receipt downloads now carry the assigned challenge summary, including repo, base commit, task, success criteria, expected evidence, verification command, and candidate-safe match proof, so the candidate artifact explains what work was assessed instead of only what commit was submitted.

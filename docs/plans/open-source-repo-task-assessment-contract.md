@@ -97,9 +97,14 @@ The controlling product rule remains:
 ## Recruiter List Projection
 
 - `GET /api/v1/scheduling/interviews` is a paged recruiter projection, not a
-  full-history dump. It accepts `limit`, `offset`, and `sort`
-  (`created_desc`, `created_asc`, or `scheduled_asc`) and returns pagination
-  metadata with `total`, `hasMore`, and `nextOffset`.
+  full-history dump. It accepts `limit`, `offset`, `sort`
+  (`created_desc`, `created_asc`, or `scheduled_asc`), and `interviewType`
+  (`STANDARD_CALLS`, `CODE_REVIEW`, `DEV_CONTAINER_CHALLENGE`, or
+  `OPEN_SOURCE_BUG_FIX`) and returns pagination metadata with `total`,
+  `hasMore`, and `nextOffset`.
+- The list endpoint returns global interview-mode facets so recruiter filters
+  show real owned-history counts even when the current page is filtered or only
+  partially loaded.
 - The list endpoint loads source-backed assessment progress only for the
   returned interview page. Detail views remain the place for full evidence
   audit trails, evaluation claims, and human-decision records.

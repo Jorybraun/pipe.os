@@ -3535,6 +3535,49 @@ describe('GET /interviews/:id detail', () => {
       const oldestIds = oldestBody.interviews.map((item) => item.id);
       expect(oldestIds.indexOf('interview-1')).toBeLessThan(oldestIds.indexOf('interview-list-filler-000'));
       expect(oldestIds).not.toContain('interview-list-corrupt-progress');
+
+      const openSourceResponse = await app.request('/interviews?limit=5&offset=0&sort=created_desc&interviewType=OPEN_SOURCE_BUG_FIX');
+      expect(openSourceResponse.status).toBe(200);
+      const openSourceBody = await openSourceResponse.json() as {
+        interviews: Array<{ id: string; interviewType: string | null }>;
+        pagination: {
+          total: number;
+          limit: number;
+          offset: number;
+          sort?: string;
+          interviewType?: string;
+          nextOffset: number | null;
+          hasMore: boolean;
+        };
+        facets: {
+          interviewTypes: {
+            all: number;
+            standardCalls: number;
+            codeReview: number;
+            devContainerChallenge: number;
+            openSourceBugFix: number;
+          };
+        };
+      };
+      expect(openSourceBody.pagination).toMatchObject({
+        total: 1,
+        limit: 5,
+        offset: 0,
+        sort: 'created_desc',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        nextOffset: null,
+        hasMore: false,
+      });
+      expect(openSourceBody.interviews.map((item) => item.id)).toEqual(['interview-1']);
+      expect(openSourceBody.interviews.every((item) => item.interviewType === 'OPEN_SOURCE_BUG_FIX')).toBe(true);
+      expect(openSourceBody.facets.interviewTypes).toMatchObject({
+        all: expect.any(Number),
+        standardCalls: expect.any(Number),
+        codeReview: 1,
+        openSourceBugFix: 1,
+      });
+      expect(openSourceBody.facets.interviewTypes.all).toBeGreaterThan(100);
+      expect(openSourceBody.facets.interviewTypes.standardCalls).toBeGreaterThan(100);
     } finally {
       errorSpy.mockRestore();
     }

@@ -285,6 +285,8 @@ function statusMessage(notification: BookingNotification): string {
 
 export function SchedulingDashboard(): JSX.Element {
   const [sortMode, setSortMode] = useState<InterviewSortMode>('CREATED_DESC');
+  const [interviewTypeFilter, setInterviewTypeFilter] = useState<InterviewTypeFilterMode>('ALL');
+  const [assessmentFilter, setAssessmentFilter] = useState<AssessmentFilterMode>('ALL');
   const {
     interviews,
     isLoading,
@@ -292,11 +294,15 @@ export function SchedulingDashboard(): JSX.Element {
     error,
     total = interviews.length,
     hasMore = false,
+    facets = null,
     updateStatus,
     sendInvite,
     refetch,
     loadMore = async () => undefined,
-  } = useScheduledInterviews({ sort: interviewSortModeToApiSort(sortMode) });
+  } = useScheduledInterviews({
+    sort: interviewSortModeToApiSort(sortMode),
+    interviewType: interviewTypeFilter,
+  });
   const { notifications, isConnected } = useBookingNotifications();
   const api = useApiClient();
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -306,8 +312,6 @@ export function SchedulingDashboard(): JSX.Element {
     interviewType: 'VIDEO',
     recruiterNotes: '',
   });
-  const [interviewTypeFilter, setInterviewTypeFilter] = useState<InterviewTypeFilterMode>('ALL');
-  const [assessmentFilter, setAssessmentFilter] = useState<AssessmentFilterMode>('ALL');
   const [searchParams, setSearchParams] = useSearchParams();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const seenNotificationIds = useRef<Set<string>>(new Set());
@@ -401,6 +405,15 @@ export function SchedulingDashboard(): JSX.Element {
   }, [interviews]);
 
   const interviewTypeFilterCounts = useMemo(() => {
+    if (facets?.interviewTypes) {
+      return {
+        ALL: facets.interviewTypes.all,
+        STANDARD_CALLS: facets.interviewTypes.standardCalls,
+        CODE_REVIEW: facets.interviewTypes.codeReview,
+        DEV_CONTAINER_CHALLENGE: facets.interviewTypes.devContainerChallenge,
+        OPEN_SOURCE_BUG_FIX: facets.interviewTypes.openSourceBugFix,
+      };
+    }
     const counts: Record<InterviewTypeFilterMode, number> = {
       ALL: interviews.length,
       STANDARD_CALLS: 0,
@@ -412,7 +425,7 @@ export function SchedulingDashboard(): JSX.Element {
       counts[interviewTypeFilterBucket(interview)] += 1;
     }
     return counts;
-  }, [interviews]);
+  }, [facets, interviews]);
 
   const visibleInterviews = useMemo(
     () => interviews.filter((interview) =>
