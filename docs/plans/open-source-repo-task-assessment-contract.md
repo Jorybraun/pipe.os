@@ -198,6 +198,9 @@ The controlling product rule remains:
 - Scheduled recruiter list/detail progress treats `verification_gap` as
   satisfied verification evidence for confidence tracking without claiming a
   `test_run`, matching the durable session progress behavior.
+- Source-backed evaluator prompts expose `verification_gap` separately from
+  `test_run`, allowing reports to cite declared verification limits while
+  preserving the no-positive-verification-without-test-output rule.
 - Live assessment-room progress coverage now labels accepted terminal command,
   terminal output, code-server file/editor observations, and room media/tool
   controls as `tool activity`, matching recruiter summaries and preserving the

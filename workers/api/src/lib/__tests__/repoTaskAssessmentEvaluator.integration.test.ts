@@ -486,6 +486,45 @@ describe('repo task assessment evaluator integration', () => {
     });
 
     expect(result.kind).toBe('evaluated');
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    const aiInput = aiRun.mock.calls[0]?.[1] as {
+      messages?: Array<{ role?: string; content?: string | null }>;
+    } | undefined;
+    const userPrompt = aiInput?.messages?.find((message) => message.role === 'user')?.content ?? null;
+    expect(typeof userPrompt).toBe('string');
+    const userPromptPayload = JSON.parse(userPrompt ?? '{}') as {
+      evidenceCoverage?: {
+        sourceRefTypeCounts?: Record<string, number>;
+        expectedForHighConfidence?: Array<{
+          label?: string;
+          sourceRefTypes?: string[];
+          satisfied?: boolean;
+          sourceRefKeys?: string[];
+          missingImpact?: string;
+        }>;
+      };
+    };
+    expect(userPromptPayload.evidenceCoverage?.sourceRefTypeCounts).toMatchObject({
+      verification_gap: 1,
+    });
+    expect(userPromptPayload.evidenceCoverage?.expectedForHighConfidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        label: 'test_run',
+        sourceRefTypes: ['test_run'],
+        satisfied: false,
+        sourceRefKeys: [],
+        missingImpact: 'Do not make positive test_strategy or verification claims without test_run evidence.',
+      }),
+      expect.objectContaining({
+        label: 'verification_gap',
+        sourceRefTypes: ['verification_gap'],
+        satisfied: true,
+        missingImpact: 'Use declared verification gaps to explain missing or partial verification; never treat them as positive test_run evidence.',
+      }),
+    ]));
+    const verificationGapCoverage = userPromptPayload.evidenceCoverage?.expectedForHighConfidence
+      ?.find((item) => item.label === 'verification_gap');
+    expect(verificationGapCoverage?.sourceRefKeys?.[0]).toContain('verification_gap:');
 
     const report = sqlite.prepare(
       `SELECT id, status, output_json

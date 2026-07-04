@@ -114,6 +114,11 @@ const EXPECTED_HIGH_CONFIDENCE_REF_GROUPS = [
     missingImpact: 'Do not make positive test_strategy or verification claims without test_run evidence.',
   },
   {
+    label: 'verification_gap',
+    sourceRefTypes: ['verification_gap'],
+    missingImpact: 'Use declared verification gaps to explain missing or partial verification; never treat them as positive test_run evidence.',
+  },
+  {
     label: 'terminal_activity',
     sourceRefTypes: ['terminal_command', 'terminal_output', 'session_terminal_command', 'session_terminal_output'],
     missingImpact: 'Treat candidate debugging process and command-line verification as unobserved when terminal evidence is absent.',
@@ -885,6 +890,7 @@ function buildSystemPrompt(): string {
     'Every positive or negative claim must cite one or more exact sourceRefKeys from SOURCE_REFS.',
     'Use EVIDENCE_COVERAGE before scoring. Missing expected evidence must become diagnostics or uncertainty, never positive claims.',
     'Do not make positive test_strategy, verification, AI-usage, or process claims when the matching coverage item is unsatisfied.',
+    'A verification_gap explains why verification is partial or missing; it is not test_run evidence and must not support positive verification claims.',
     'If evidence is missing, uncertain, ungrounded, or insufficient, return diagnostics instead of positive claims.',
     'Keep the response compact: at most 4 claims and 4 diagnostics; summary and narratives must be one short sentence each.',
     'Return only JSON with keys: summary, recommendation, claims, diagnostics.',
@@ -919,7 +925,7 @@ function buildUserPrompt(input: {
         sourceRefKeys: ['one-or-more keys from SOURCE_REFS'],
       }],
       diagnostics: [{
-        code: 'MISSING_TEST_EVIDENCE | PROVENANCE_INCOMPLETE | EVALUATION_NEEDS_HUMAN_REVIEW',
+        code: 'MISSING_TEST_EVIDENCE | VERIFICATION_GAP_DECLARED | PROVENANCE_INCOMPLETE | EVALUATION_NEEDS_HUMAN_REVIEW',
         severity: 'info | warning | blocking',
         message: 'one short sentence explaining what cannot be concluded and why',
         sourceRefKeys: ['optional keys from SOURCE_REFS'],
