@@ -80,12 +80,12 @@ For app-dev, prefix remote proof commands with
 `CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1`; otherwise
 the shell may audit a different configured D1 target.
 
-The open-source workspace smoke prints the exact `assessmentSessionId` it
-created plus scoped replay and audit commands. Treat that final JSON as the
-handoff from live candidate-work proof to living-context ingestion proof. The
-printed commands default to the app-dev D1 above; set
-`WORKSPACE_SMOKE_D1_DATABASE_ID` only when intentionally targeting a different
-remote database.
+The open-source workspace and Devin bridge smokes print the exact
+`assessmentSessionId` they created plus scoped replay and audit commands. Treat
+that final JSON as the handoff from live candidate-work or AI-use proof to
+living-context ingestion proof. The printed commands default to the app-dev D1
+above; set `WORKSPACE_SMOKE_D1_DATABASE_ID` or `AGENT_SMOKE_D1_DATABASE_ID`
+only when intentionally targeting a different remote database.
 
 The goal is not that every environment has every evidence family populated, but
 that a real open-source assessment session shows captured and projected rows for
@@ -297,3 +297,21 @@ Latest open-source workspace smoke proof on 2026-07-04:
 - scoped audit `failures: []`
 - scoped audit reports the expected gap that this smoke did not exercise
   Clippy/Devin interactions.
+
+Latest Devin bridge auth-needed smoke proof on 2026-07-04:
+
+- `interviewId: 11217eff-86e7-4101-9530-c2c137ebc05d`
+- `assessmentSessionId: assessment_session_0a347af964f1b1b9f1624bce813214bd`
+- live bridge statuses ended in `auth_needed`
+- no `CHAT_RESPONSE` or `ai_agent_response` was counted
+- replay `ok: true`
+- replay projected `context_record_count: 5` and `source_ref_count: 12`
+- `answers.missingPersonProjectionCount: 0`
+- scoped audit `status: ready`
+- scoped audit projected the `clippy_devin_interactions` family
+- scoped audit `sourceLessPositiveClaimCount: 0`
+- scoped audit `duplicateProjectedEdgeCount: 0`
+- scoped audit `failures: []`
+- scoped audit reports expected coverage gaps for commit, diff, tests,
+  evaluator report, and human decision because this smoke only exercises the
+  real agent bridge auth/status path.

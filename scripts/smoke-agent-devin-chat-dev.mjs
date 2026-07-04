@@ -39,6 +39,8 @@ const PROMPT_TEXT =
   process.env.AGENT_SMOKE_PROMPT
   || `Say exactly ${EXPECTED_RESPONSE} and no other words.`;
 const REMOTE = !ROOM_BASE.includes('localhost') && !ROOM_BASE.includes('127.0.0.1');
+const DEV_D1_DATABASE_ID = process.env.AGENT_SMOKE_D1_DATABASE_ID
+  || '0abe92df-9296-46f5-9f9d-a1fb1bcd3be1';
 
 function assertEnv() {
   if (INTERVIEW_TYPE !== 'OPEN_SOURCE_BUG_FIX' && INTERVIEW_TYPE !== 'DEV_CONTAINER_CHALLENGE') {
@@ -162,6 +164,39 @@ function sourceRefCount(rows, kind) {
     : 0;
 }
 
+function assessmentSessionIdFromProgress(progress, label) {
+  const id = progress?.session?.id;
+  if (typeof id !== 'string' || id.trim().length === 0) {
+    throw new Error(`${label} did not expose recruiter-only assessment session id: ${JSON.stringify(progress)}`);
+  }
+  return id;
+}
+
+function assertSameAssessmentSessionId(expected, progress, label) {
+  const actual = assessmentSessionIdFromProgress(progress, label);
+  if (actual !== expected) {
+    throw new Error(`${label} used assessment session ${actual}, expected ${expected}`);
+  }
+  return actual;
+}
+
+function assessmentEvidenceProofCommands(assessmentSessionId) {
+  if (!REMOTE) {
+    return {
+      target: 'local-app',
+      replay: null,
+      audit: null,
+      note: 'Local agent smokes use the local dev database; run the assessment evidence replay/audit scripts against that database manually.',
+    };
+  }
+  const envPrefix = `CLOUDFLARE_D1_DATABASE_ID=${DEV_D1_DATABASE_ID}`;
+  return {
+    target: 'app-dev remote D1',
+    replay: `cd workers/api && ${envPrefix} npm run assessment-evidence:replay -- --remote --session-id ${assessmentSessionId}`,
+    audit: `cd workers/api && ${envPrefix} npm run assessment-evidence:audit -- --remote --session-id ${assessmentSessionId}`,
+  };
+}
+
 function bridgeStateSourceRefCount(rows) {
   return sourceRefCount(rows, 'agent_status')
     + sourceRefCount(rows, 'ai_agent_diagnostic')
@@ -265,6 +300,10 @@ async function main() {
   });
   const interviewId = created?.interview?.id;
   if (!interviewId) throw new Error(`Create response missing interview id: ${JSON.stringify(created)}`);
+  const assessmentSessionId = assessmentSessionIdFromProgress(
+    created?.interview?.assessmentProgress,
+    'create interview assessment progress',
+  );
   if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' && !created?.interview?.assessmentProgress?.challenge) {
     throw new Error(`Open-source Devin smoke did not create an assessment challenge: ${JSON.stringify(created?.interview)}`);
   }
@@ -317,6 +356,11 @@ async function main() {
         && bridgeStateSourceRefCount(candidate?.sourceRefCounts) >= 1,
       'Devin auth-needed bridge state evidence',
     );
+    assertSameAssessmentSessionId(
+      assessmentSessionId,
+      progress,
+      'Devin auth-needed assessment progress',
+    );
     const sourceRefCounts = progress?.sourceRefCounts ?? [];
     if (sourceRefCount(sourceRefCounts, 'ai_agent_response') > 0) {
       throw new Error(`Auth-needed bridge state should not count as an agent response: ${JSON.stringify(sourceRefCounts)}`);
@@ -325,6 +369,7 @@ async function main() {
       ok: true,
       expectedAuthNeeded: true,
       interviewId,
+      assessmentSessionId,
       hostUrl: cleanRoomUrl(invited.room.hostUrl),
       guestUrl: cleanRoomUrl(invited.room.guestUrl),
       repoUrl: REPO_URL,
@@ -340,6 +385,7 @@ async function main() {
         + sourceRefCount(sourceRefCounts, 'agent_diagnostic'),
       statuses: statusMessages.map((message) => message.status),
       authMessage: authNeeded.message,
+      assessmentEvidenceProofCommands: assessmentEvidenceProofCommands(assessmentSessionId),
     }, null, 2));
     return;
   }
@@ -368,11 +414,17 @@ async function main() {
       && sourceRefCount(candidate?.sourceRefCounts, 'ai_agent_response') >= 1,
     'Devin agent response evidence',
   );
+  assertSameAssessmentSessionId(
+    assessmentSessionId,
+    progress,
+    'Devin response assessment progress',
+  );
   const sourceRefCounts = progress?.sourceRefCounts ?? [];
 
   console.log(JSON.stringify({
     ok: true,
     interviewId,
+    assessmentSessionId,
     hostUrl: cleanRoomUrl(invited.room.hostUrl),
     guestUrl: cleanRoomUrl(invited.room.guestUrl),
     repoUrl: REPO_URL,
@@ -386,6 +438,7 @@ async function main() {
     assessmentAgentResponseCount: sourceRefCount(sourceRefCounts, 'ai_agent_response'),
     diagnosticPersistedCount: persistedDiagnostics.length,
     responseText: chatResponse.text,
+    assessmentEvidenceProofCommands: assessmentEvidenceProofCommands(assessmentSessionId),
   }, null, 2));
 }
 

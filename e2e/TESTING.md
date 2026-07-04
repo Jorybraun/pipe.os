@@ -359,11 +359,15 @@ prove the deployed room launches the real Devin bridge without fabricating a
 reply when credentials are missing. The smoke creates a dev-container interview,
 launches the workspace with explicit `agentType: "devin"`, connects to the
 room agent WebSocket, and passes only when the bridge reports `auth_needed` with
-no `CHAT_RESPONSE`. Latest deployed proof on 2026-07-02 passed for interview
-`245e2258-5f99-424d-85e3-812a161eb63d`, workspace status `READY`, statuses
-`disconnected -> starting -> starting -> disconnected -> auth_needed`, and the
-real Devin CLI auth message. The default smoke mode still requires a real Devin
-API/CLI response and should fail if the bridge cannot answer.
+no `CHAT_RESPONSE`. The smoke prints the `assessmentSessionId` plus replay and
+audit commands so the same auth-needed event can be projected into living
+context. Latest deployed proof on 2026-07-04 passed for interview
+`11217eff-86e7-4101-9530-c2c137ebc05d`, assessment session
+`assessment_session_0a347af964f1b1b9f1624bce813214bd`, workspace status
+`READY`, statuses `disconnected -> starting -> starting -> disconnected ->
+auth_needed`, and the real Devin CLI auth message. The default smoke mode still
+requires a real Devin API/CLI response and should fail if the bridge cannot
+answer.
 
 Latest standalone `/assess` blocked-boundary proof: after deploying app-dev
 version `3413dea3-2899-40ac-afc0-8163e3a899ff`, the CODE_REVIEW matrix passed
