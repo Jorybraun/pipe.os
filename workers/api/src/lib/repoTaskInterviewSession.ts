@@ -1727,12 +1727,24 @@ function buildAssessmentReadiness(input: {
     },
     {
       id: 'test_run',
-      label: 'Test or verification evidence',
+      label: 'Test output',
       required: false,
-      satisfied: input.hasTestEvidence || input.hasVerificationGap,
-      sourceRefTypes: ['test_run', 'verification_gap'],
-      missingImpact: 'Missing test evidence lowers confidence; an explicit verification gap is better than silence.',
+      satisfied: input.hasTestEvidence,
+      sourceRefTypes: ['test_run'],
+      missingImpact: input.hasVerificationGap
+        ? 'A verification gap was declared, but no test output was captured; keep correctness lower-confidence.'
+        : 'Missing test output lowers confidence; require tests or a reviewed verification explanation before trusting correctness.',
     },
+    ...input.hasVerificationGap
+      ? [{
+          id: 'verification_gap_declared',
+          label: 'Verification gap declared',
+          required: false,
+          satisfied: true,
+          sourceRefTypes: ['verification_gap'],
+          missingImpact: 'A source-backed verification gap explains missing or partial test output; it does not prove correctness.',
+        } satisfies AssessmentProgressReadinessItem]
+      : [],
     {
       id: 'ai_usage_transparency',
       label: 'AI-use transparency',

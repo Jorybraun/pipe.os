@@ -195,9 +195,10 @@ The controlling product rule remains:
   `verification_gap` notes as explicit warnings instead of collapsing declared
   blockers into generic missing-test diagnostics, while still refusing positive
   verification claims without successful `test_run` evidence.
-- Scheduled recruiter list/detail progress treats `verification_gap` as
-  satisfied verification evidence for confidence tracking without claiming a
-  `test_run`, matching the durable session progress behavior.
+- Scheduled recruiter list/detail progress surfaces `verification_gap` as its
+  own declared limitation and keeps `test_run` confidence unsatisfied until
+  actual test output is captured, matching the durable session progress
+  behavior.
 - Source-backed evaluator prompts expose `verification_gap` separately from
   `test_run`, allowing reports to cite declared verification limits while
   preserving the no-positive-verification-without-test-output rule.

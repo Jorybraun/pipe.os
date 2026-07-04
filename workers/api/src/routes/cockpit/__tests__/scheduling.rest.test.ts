@@ -2419,7 +2419,7 @@ describe('GET /interviews/:id detail', () => {
     expect(testRunCoverage).toMatchObject({
       satisfied: false,
       sourceRefKeys: [],
-      missingImpact: 'Do not make positive test_strategy or verification claims without test_run evidence.',
+      missingImpact: 'Do not make positive test_strategy, verification, or correctness claims without test_run evidence bound to the submitted commit.',
     });
     const editorCoverage = userPromptPayload.evidenceCoverage?.expectedForHighConfidence
       ?.find((item) => item.label === 'code_editor_activity');
@@ -2472,7 +2472,6 @@ describe('GET /interviews/:id detail', () => {
       hasAiInteraction: true,
       evaluation: {
         status: 'EVALUATED',
-        summary: 'Fix the start-evaluation regression with a real patch: Candidate made a focused source-backed change and cited the submitted diff evidence.',
         recommendation: 'mixed_evidence_human_review',
         evidenceCoverage: {
           schemaVersion: 'assessment-evidence-coverage-v1',
@@ -2481,24 +2480,38 @@ describe('GET /interviews/:id detail', () => {
             expect.objectContaining({ label: 'code_editor_activity', satisfied: true }),
           ]),
         },
-        diagnostics: [
-          expect.objectContaining({
-            code: 'MISSING_TEST_EVIDENCE',
-            severity: 'warning',
-            message: 'No test_run source ref was attached to the session.',
-            sourceRefCount: 1,
-            sourceRefTypes: ['code_diff'],
-          }),
-          expect.objectContaining({
-            code: 'MODEL_RECOMMENDATION_UNSUPPORTED',
-            severity: 'warning',
-            message: 'AI evaluator returned unsupported recommendation "hire_now"; PIPE defaulted to human review.',
-            sourceRefCount: 0,
-            sourceRefTypes: [],
-          }),
-        ],
       },
     });
+    expect(finalProgress?.evaluation?.summary).toContain('test evidence missing');
+    expect(finalProgress?.evaluation?.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE',
+        severity: 'warning',
+        message: 'Dropped unsupported positive implementation_correctness claim from the AI evaluator: Positive implementation correctness, quality, security, reliability, or performance claims require a successful test_run source ref bound to the submitted commit; use implementation_evidence for diff-only claims.',
+        sourceRefCount: 1,
+        sourceRefTypes: ['code_diff'],
+      }),
+      expect.objectContaining({
+        code: 'MODEL_CLAIMS_UNUSABLE',
+        severity: 'warning',
+        sourceRefCount: 1,
+        sourceRefTypes: ['assessment_evaluation_request'],
+      }),
+      expect.objectContaining({
+        code: 'MISSING_TEST_EVIDENCE',
+        severity: 'warning',
+        message: 'No test_run source ref was attached to the session.',
+        sourceRefCount: 1,
+        sourceRefTypes: ['code_diff'],
+      }),
+      expect.objectContaining({
+        code: 'MODEL_RECOMMENDATION_UNSUPPORTED',
+        severity: 'warning',
+        message: 'AI evaluator returned unsupported recommendation "hire_now"; PIPE defaulted to human review.',
+        sourceRefCount: 0,
+        sourceRefTypes: [],
+      }),
+    ]));
     expect(finalProgress?.evidenceCounts).toEqual(expect.arrayContaining([
       { kind: 'ai_interaction', count: 1 },
       { kind: 'commit_submission', count: 1 },
@@ -2552,9 +2565,8 @@ describe('GET /interviews/:id detail', () => {
          FROM assessment_evaluation_reports
         WHERE session_id = ?`,
     ).get('assessment-session-ai-evaluation') as { summary: string; output_json: string } | undefined;
-    expect(evaluationReport?.summary).toBe(
-      'Fix the start-evaluation regression with a real patch: Candidate made a focused source-backed change and cited the submitted diff evidence.',
-    );
+    expect(evaluationReport?.summary).toContain('Fix the start-evaluation regression with a real patch');
+    expect(evaluationReport?.summary).toContain('test evidence missing');
     const reportOutput = JSON.parse(evaluationReport?.output_json ?? '{}') as {
       challengeFocus?: string | null;
       evidenceCoverage?: {
@@ -2572,22 +2584,30 @@ describe('GET /interviews/:id detail', () => {
       expect.objectContaining({ label: 'test_run', satisfied: false }),
       expect.objectContaining({ label: 'code_editor_activity', satisfied: true }),
     ]));
-    const citedClaim = sqlite!.prepare(
-      `SELECT c.dimension, c.polarity, csr.source_ref_type, csr.source_ref_id, csr.exact_text
-         FROM assessment_evaluation_claims c
-         JOIN assessment_claim_source_refs csr ON csr.claim_id = c.id
-        WHERE c.dimension = 'implementation_correctness'
+    const unsupportedCorrectnessClaim = sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evaluation_claims
+        WHERE dimension = 'implementation_correctness'
+          AND polarity = 'positive'`,
+    ).get() as { count: number };
+    expect(unsupportedCorrectnessClaim).toEqual({ count: 0 });
+    const unsupportedCorrectnessDiagnostic = sqlite!.prepare(
+      `SELECT d.code, d.severity, csr.source_ref_type, csr.source_ref_id, csr.exact_text
+         FROM assessment_diagnostics d
+         JOIN assessment_diagnostic_source_refs csr ON csr.diagnostic_id = d.id
+        WHERE d.code = 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE'
+          AND d.message LIKE '%implementation_correctness%'
         LIMIT 1`,
     ).get() as {
-      dimension: string;
-      polarity: string;
+      code: string;
+      severity: string;
       source_ref_type: string;
       source_ref_id: string;
       exact_text: string;
     } | undefined;
-    expect(citedClaim).toMatchObject({
-      dimension: 'implementation_correctness',
-      polarity: 'positive',
+    expect(unsupportedCorrectnessDiagnostic).toMatchObject({
+      code: 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE',
+      severity: 'warning',
       source_ref_type: 'code_diff',
       source_ref_id: diffSourceRefId,
       exact_text: diffText,
@@ -3112,10 +3132,17 @@ describe('GET /interviews/:id detail', () => {
       expect(interview?.assessmentProgress?.readiness.confidence).toEqual(expect.arrayContaining([
         expect.objectContaining({
           id: 'test_run',
-          label: 'Test or verification evidence',
+          label: 'Test output',
+          satisfied: false,
+          sourceRefTypes: ['test_run'],
+          missingImpact: 'A verification gap was declared, but no test output was captured; keep correctness lower-confidence.',
+        }),
+        expect.objectContaining({
+          id: 'verification_gap_declared',
+          label: 'Verification gap declared',
           satisfied: true,
-          sourceRefTypes: ['test_run', 'verification_gap'],
-          missingImpact: 'Test output improves confidence that the commit was exercised; an explicit verification gap is better than silence.',
+          sourceRefTypes: ['verification_gap'],
+          missingImpact: 'A source-backed verification gap explains missing or partial test output; it does not prove correctness.',
         }),
       ]));
       expect(interview?.assessmentProgress?.sourceRefCounts).toEqual(expect.arrayContaining([

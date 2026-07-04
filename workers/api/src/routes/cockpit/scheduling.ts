@@ -4230,12 +4230,24 @@ function scheduledAssessmentReadiness(input: {
   const confidence: NonNullable<AssessmentProgressSnapshot['readiness']>['confidence'] = [
     {
       id: 'test_run',
-      label: 'Test or verification evidence',
+      label: 'Test output',
       required: false,
-      satisfied: input.hasTestEvidence || input.hasVerificationGap,
-      sourceRefTypes: ['test_run', 'verification_gap'],
-      missingImpact: 'Test output improves confidence that the commit was exercised; an explicit verification gap is better than silence.',
+      satisfied: input.hasTestEvidence,
+      sourceRefTypes: ['test_run'],
+      missingImpact: input.hasVerificationGap
+        ? 'A verification gap was declared, but no test output was captured; keep correctness lower-confidence.'
+        : 'Test output improves confidence that the commit was exercised; require tests or a reviewed verification explanation before trusting correctness.',
     },
+    ...input.hasVerificationGap
+      ? [{
+          id: 'verification_gap_declared',
+          label: 'Verification gap declared',
+          required: false,
+          satisfied: true,
+          sourceRefTypes: ['verification_gap'],
+          missingImpact: 'A source-backed verification gap explains missing or partial test output; it does not prove correctness.',
+        } satisfies NonNullable<AssessmentProgressSnapshot['readiness']>['confidence'][number]]
+      : [],
     {
       id: 'workspace_captured_commit',
       label: 'Workspace-captured commit',

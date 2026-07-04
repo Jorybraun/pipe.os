@@ -2775,6 +2775,14 @@ Fix retry cleanup without captured tests.`;
         hasTestEvidence: boolean;
         hasVerificationGap: boolean;
         sourceRefCounts: Array<{ kind: string; count: number }>;
+        readiness: {
+          confidence: Array<{
+            id: string;
+            label: string;
+            satisfied: boolean;
+            sourceRefTypes: string[];
+          }>;
+        };
       };
     };
     expect(progressBody.progress).toMatchObject({
@@ -2787,6 +2795,20 @@ Fix retry cleanup without captured tests.`;
       { kind: 'code_diff', count: 1 },
       { kind: 'git_commit', count: 1 },
       { kind: 'verification_gap', count: 1 },
+    ]));
+    expect(progressBody.progress.readiness.confidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'test_run',
+        label: 'Test output',
+        satisfied: false,
+        sourceRefTypes: ['test_run'],
+      }),
+      expect.objectContaining({
+        id: 'verification_gap_declared',
+        label: 'Verification gap declared',
+        satisfied: true,
+        sourceRefTypes: ['verification_gap'],
+      }),
     ]));
   });
 

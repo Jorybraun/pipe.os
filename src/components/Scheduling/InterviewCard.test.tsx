@@ -979,11 +979,19 @@ describe('InterviewCard assessment progress', () => {
           confidence: [
             {
               id: 'test_run',
-              label: 'Test or verification evidence',
+              label: 'Test output',
+              required: false,
+              satisfied: false,
+              sourceRefTypes: ['test_run'],
+              missingImpact: 'A verification gap was declared, but no test output was captured; keep correctness lower-confidence.',
+            },
+            {
+              id: 'verification_gap_declared',
+              label: 'Verification gap declared',
               required: false,
               satisfied: true,
-              sourceRefTypes: ['test_run', 'verification_gap'],
-              missingImpact: 'Missing test evidence lowers confidence; an explicit verification gap is better than silence.',
+              sourceRefTypes: ['verification_gap'],
+              missingImpact: 'A source-backed verification gap explains missing or partial test output; it does not prove correctness.',
             },
           ],
         },
@@ -1030,6 +1038,7 @@ describe('InterviewCard assessment progress', () => {
 
     const progress = screen.getByTestId('interview-card-assessment-progress');
     expect(progress).toHaveTextContent('workspace telemetry, tool activity, commit, verification gap');
+    expect(progress).toHaveTextContent('Confidence: Missing: Test output · Captured: Verification gap declared');
     expect(progress).not.toHaveTextContent('tests');
     expect(progress).not.toHaveTextContent('assessment-session-verification-gap');
     expect(progress).not.toHaveTextContent('assessment-event-verification-gap');
