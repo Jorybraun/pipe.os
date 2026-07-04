@@ -468,6 +468,14 @@ corpus, so local matching proof now has two calibrated real overlay-ready
 beyond one coherent Base UI family and remote/app-dev packet repair or rebuild
 with the same persisted profile contract.
 
+Status 2026-07-04: app-dev packet breadth is now auditable through
+`npm run review-packets:remote-audit`. The live `pipe-db-test` corpus contains
+10 review packets, including 8 production-ready packets with persisted
+`reviewProfile` metadata across three real repositories:
+`cloudflare/workers-sdk`, `mui/base-ui`, and `vercel/swr`. This closes the
+earlier single-family proof gap for dev, while still leaving the broader
+production corpus expansion as a product-readiness requirement.
+
 ## Production Readiness Gate
 
 Do not mark CODE_REVIEW product-complete until all of this is true:

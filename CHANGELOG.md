@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW scoring
 
+- Review-packet context audits are now exposed as npm scripts, including a remote contrast gate, so app-dev can prove source-backed packet breadth and calibration before making automatic matching claims.
 - Source-backed assessment diagnostics now dedupe by code and severity while keeping the strongest source-backed diagnostic, preventing duplicate missing-test warnings in recruiter reports.
 - Challenge-match quality scoring now narrows rounded contrast separation directly, keeping the Worker strict type gate green while preserving the rounded 2% quality boundary.
 - Judge-example verification now audits the real remote dev D1 database (`pipe-db-test`) through Wrangler instead of only local Miniflare SQLite files, so the production CODE_REVIEW scoring loop validates the same labelled examples created by the app-dev smoke.

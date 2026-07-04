@@ -173,6 +173,7 @@ Person profile `64d40e72-1c43-4279-a9d7-92612122c668` renders the decision cockp
 - The indexed repo set is still narrow. A blocked match is honest, but product value improves only if there are enough high-quality PR challenges for common frontend/backend/infra profiles.
 - WebBridge real-browser control was unavailable during this audit because the daemon reported `extension_connected:false`; validation used deployed Playwright/browser smokes instead.
 - The workspace smoke now defaults to a positive task-aligned `mui/base-ui#973` bug-fix path instead of placeholder work, while keeping placeholder mode as an explicit local-only plumbing escape hatch.
+- 2026-07-04 update: app-dev now has a repeatable packet-context audit command and 8 production-ready calibrated review packets across `cloudflare/workers-sdk`, `mui/base-ui`, and `vercel/swr`, so dev matching is no longer a single-repo proof. Production corpus breadth still needs expansion before a broad market claim.
 
 ## Next Build Slice
 

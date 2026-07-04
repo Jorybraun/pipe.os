@@ -266,6 +266,15 @@ npm run review-packets:repair-profiles -- --write
 npx tsx scripts/verifyCodeReviewMatchingLocal.ts --json
 ```
 
+To prove the deployed app-dev packet corpus is contrast-ready before claiming
+automatic CODE_REVIEW matching quality:
+
+```bash
+cd workers/api
+CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
+  npm run review-packets:remote-audit
+```
+
 Set `CODE_REVIEW_SMOKE_ROLE_BACKED=1` with auto-match, or run `npm run smoke:code-review-assess-dev:role-backed`, to create a simple-JD role context, auto-build a role-backed CODE_REVIEW pipeline, add a candidate to that pipeline, and prove the candidate receives a ready source-backed CODE_REVIEW challenge when matchable source-backed resume evidence exists. Role-backed mode intentionally clicks through the candidate Welcome gate before asserting the CODE_REVIEW browser surface and verifying the recruiter projection uses the `candidate_challenge_assignment` repo/PR.
 
 Auto-match smoke runs now require measured positive contrast separation by
