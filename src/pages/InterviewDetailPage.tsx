@@ -934,6 +934,19 @@ function assessmentHasSatisfiedCoverage(
   return coverageItem ? coverageItem.satisfied : fallback;
 }
 
+function assessmentReadinessHasConfidenceLimitations(progress: AssessmentProgressSnapshot | null): boolean {
+  return Boolean(
+    progress?.readiness?.isReadyForEvaluation
+    && progress.readiness.confidence.some((item) => !item.satisfied),
+  );
+}
+
+function assessmentProgressDisplayLabel(progress: AssessmentProgressSnapshot | null): string {
+  if (!progress) return 'Not started';
+  if (assessmentReadinessHasConfidenceLimitations(progress)) return 'Ready with limitations';
+  return progress.readiness?.label ?? assessmentProgressStageLabel(progress.stage);
+}
+
 function workspaceAssessmentNextActionTitle(progress: AssessmentProgressSnapshot | null): string {
   switch (progress?.nextAction) {
     case 'ASSIGN_CHALLENGE':
@@ -1003,11 +1016,13 @@ function workspaceAssessmentDecisionItem(progress: AssessmentProgressSnapshot | 
   }
 
   if (progress.nextAction === 'START_EVALUATION') {
+    const hasConfidenceLimitations = assessmentReadinessHasConfidenceLimitations(progress);
     return {
       label: 'Decision',
-      value: 'Ready for evaluation',
-      detail: 'Challenge and commit evidence are captured; run source-backed AI or human evaluation before making a hiring decision.',
-      tone: 'neutral',
+      value: hasConfidenceLimitations ? 'Ready with limitations' : 'Ready for evaluation',
+      detail: progress.readiness?.detail
+        ?? 'Challenge and commit evidence are captured; run source-backed AI or human evaluation before making a hiring decision.',
+      tone: hasConfidenceLimitations ? 'watch' : 'neutral',
     };
   }
 
@@ -3997,9 +4012,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const showsAssessmentProgress = usesWorkspaceInterview
     || Boolean(assessmentProgress)
     || (Boolean(assessmentAssignment) && !hasStandaloneCodeReviewReadout);
-  const assessmentProgressStage = assessmentProgress
-    ? assessmentProgress.readiness?.label ?? assessmentProgressStageLabel(assessmentProgress.stage)
-    : 'Not started';
+  const assessmentProgressStage = assessmentProgressDisplayLabel(assessmentProgress);
   const assessmentProgressNextAction = assessmentProgress?.readiness?.detail
     ?? assessmentProgress?.nextActionLabel
     ?? interview.assessmentSetup?.nextActionLabel

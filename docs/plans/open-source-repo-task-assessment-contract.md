@@ -203,6 +203,9 @@ The controlling product rule remains:
   may be ready to start evaluation with a declared verification gap or manual
   commit evidence, but the recruiter readout must say that missing test output
   or non-workspace commit provenance is a limitation and not correctness proof.
+- Recruiter list cards and detail badges must use the same limited-readiness
+  language for those sessions, so the most detailed review page cannot collapse
+  lower-confidence evidence back into a generic "ready" state.
 - Source-backed evaluator prompts expose `verification_gap` separately from
   `test_run`, allowing reports to cite declared verification limits while
   preserving the no-positive-verification-without-test-output rule.

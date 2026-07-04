@@ -569,6 +569,99 @@ describe('InterviewDetailPage', () => {
     expect(progress).not.toHaveTextContent('challenge-packet-popover');
   });
 
+  it('labels ready open-source assessments with missing confidence proof as limited on detail', async () => {
+    const baseProgress = makeWorkspaceAssessmentProgress();
+    const lowerConfidenceDetail =
+      'Required evidence is captured, but commit provenance still needs repository or workspace verification and test output is missing and only a declared verification gap is available; start evaluation as lower-confidence and do not treat correctness as proven.';
+    const readyWithLimitations: NonNullable<ScheduledInterviewDetail['assessmentProgress']> = {
+      ...baseProgress,
+      session: {
+        ...baseProgress.session,
+        state: 'FINAL_SUBMITTED',
+        updatedAt: '2026-06-23T00:20:00.000Z',
+      },
+      stage: 'READY_FOR_EVALUATION',
+      nextAction: 'START_EVALUATION',
+      nextActionLabel: 'Start source-backed AI or human evaluation.',
+      hasFinalSubmission: false,
+      hasTestEvidence: false,
+      hasVerificationGap: true,
+      sourceRefCounts: [
+        { kind: 'review_challenge_packet', count: 1 },
+        { kind: 'git_commit', count: 1 },
+        { kind: 'code_diff', count: 1 },
+        { kind: 'verification_gap', count: 1 },
+      ],
+      readiness: {
+        status: 'READY_FOR_EVALUATION',
+        label: 'Ready for evaluation',
+        detail: lowerConfidenceDetail,
+        isReadyForEvaluation: true,
+        isUsableHiringSignal: false,
+        missingRequiredCount: 0,
+        required: [],
+        confidence: [
+          {
+            id: 'workspace_captured_commit',
+            label: 'Workspace-captured commit',
+            required: false,
+            satisfied: false,
+            sourceRefTypes: ['git_commit', 'dev_container_workspace_state'],
+            missingImpact: 'Manual commit evidence can start review, but workspace capture is needed for highest trust.',
+          },
+          {
+            id: 'test_run',
+            label: 'Test output',
+            required: false,
+            satisfied: false,
+            sourceRefTypes: ['test_run'],
+            missingImpact: 'A verification gap was declared, but no test output was captured; keep correctness lower-confidence.',
+          },
+          {
+            id: 'verification_gap_declared',
+            label: 'Verification gap declared',
+            required: false,
+            satisfied: true,
+            sourceRefTypes: ['verification_gap'],
+            missingImpact: 'A source-backed verification gap explains missing or partial test output; it does not prove correctness.',
+          },
+        ],
+      },
+      evaluation: null,
+    };
+
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/open-source/widgets',
+        assessmentSetup: {
+          status: 'reviewable_task_assigned',
+          kind: 'manual_open_source_task',
+          source: 'recruiter_manual_override',
+          blocksPositiveAssessment: false,
+          message: 'A concrete open-source task packet was assigned by the recruiter.',
+        },
+        assessmentProgress: readyWithLimitations,
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    const progress = screen.getByTestId('interview-assessment-progress');
+    expect(progress).toHaveTextContent('Ready with limitations');
+    expect(progress).toHaveTextContent(lowerConfidenceDetail);
+    expect(progress).toHaveTextContent('Confidence signals');
+    expect(progress).toHaveTextContent('Workspace-captured commit');
+    expect(progress).toHaveTextContent('Test output');
+    expect(progress).toHaveTextContent('Verification gap declared');
+    expect(screen.getByRole('button', { name: /start evaluation/i })).toBeTruthy();
+
+    const decision = screen.getByTestId('interview-workspace-assessment-decision-summary');
+    expect(decision).toHaveTextContent('Ready with limitations');
+    expect(decision).toHaveTextContent('start evaluation as lower-confidence');
+  });
+
   it('shows the full captured diff for workspace-only commits without inventing a GitHub compare link', async () => {
     const capturedDiff = [
       'diff --git a/src/popover.ts b/src/popover.ts',
