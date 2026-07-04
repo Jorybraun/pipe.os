@@ -949,6 +949,9 @@ export function InterviewCard({
   const assessmentCriteriaLabel = assessmentChallenge?.successCriteria.length
     ? compactText(assessmentChallenge.successCriteria.join(' · '), 150)
     : null;
+  const assessmentVerificationCommandLabel = assessmentChallenge?.verificationCommand
+    ? compactText(assessmentChallenge.verificationCommand, 150)
+    : null;
   const assessmentExpectedEvidenceLabel = assessmentChallenge?.expectedEvidence.length
     ? compactText(assessmentChallenge.expectedEvidence.join(' · '), 150)
     : null;
@@ -1325,6 +1328,16 @@ export function InterviewCard({
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                     {assessmentCriteriaLabel}
+                  </div>
+                </>
+              )}
+              {assessmentVerificationCommandLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    VERIFY
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentVerificationCommandLabel}
                   </div>
                 </>
               )}

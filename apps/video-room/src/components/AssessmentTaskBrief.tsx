@@ -222,6 +222,7 @@ export function AssessmentTaskBrief({
   const canOpenSubmission = (workspaceReady || submissionActionLabel !== 'Submit work') && !challengeSetupStep;
   const hasContract = Boolean(
     summary.task
+    || summary.verificationCommand
     || summary.matchProof.length > 0
     || summary.assessmentFit.length > 0
     || summary.successCriteria.length > 0
@@ -387,6 +388,12 @@ export function AssessmentTaskBrief({
             <section>
               <strong>Task</strong>
               <p>{summary.task}</p>
+            </section>
+          )}
+          {summary.verificationCommand && (
+            <section>
+              <strong>Verification command</strong>
+              <p><code>{summary.verificationCommand}</code></p>
             </section>
           )}
           {summary.matchProof.length > 0 && (

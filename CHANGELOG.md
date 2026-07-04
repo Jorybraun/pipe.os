@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Open-source assessment challenge packets now carry an optional verification command from recruiter creation into candidate task briefs, packet panels, and recruiter cards, making expected test proof visible before commit evaluation.
 - Recruiter assessment detail now performs a short bounded refresh when an assigned workspace assessment initially renders without progress, preventing false “no assessment session” states during live source-backed evaluation races.
 - Recruiter assessment cards now show the precise AI-use evidence state, distinguishing real agent responses, blocked prompts, bridge diagnostics, bridge traces, and unobserved AI use without implying missing evidence proves no AI collaboration.
 - Recruiter API reads now bypass browser cache, preventing app-dev interview detail pages from rendering stale pre-evaluation assessment state after source-backed review evidence has been recorded.

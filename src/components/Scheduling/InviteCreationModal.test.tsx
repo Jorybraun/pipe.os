@@ -188,6 +188,9 @@ describe('InviteCreationModal open-source challenge packets', () => {
         value: 'Commit SHA on assessment branch\nTest command output\nCandidate explanation',
       },
     });
+    fireEvent.change(screen.getByPlaceholderText('Optional verification command, e.g. npm test -- transcript'), {
+      target: { value: 'npm test -- transcript-ordering' },
+    });
     expect(screen.getByTestId('packet-check-expected-evidence')).toHaveTextContent('Ready');
     expect(screen.getByTestId('open-source-packet-checklist')).toHaveTextContent(
       'Candidate works on an assessment branch or fork. Upstream PRs require later review.',
@@ -217,6 +220,7 @@ describe('InviteCreationModal open-source challenge packets', () => {
         'Test command output',
         'Candidate explanation',
       ],
+      challengeVerificationCommand: 'npm test -- transcript-ordering',
       features: {
         videoEnabled: true,
         workspaceEnabled: true,

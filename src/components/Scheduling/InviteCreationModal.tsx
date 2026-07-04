@@ -28,6 +28,7 @@ interface InviteCreationData {
   challengeInstructions?: string;
   challengeSuccessCriteria?: string[];
   challengeExpectedEvidence?: string[];
+  challengeVerificationCommand?: string;
   recruiterNotes?: string;
   features?: {
     videoEnabled: boolean;
@@ -205,6 +206,7 @@ export function InviteCreationModal({
   const [challengeInstructions, setChallengeInstructions] = useState('');
   const [challengeSuccessCriteria, setChallengeSuccessCriteria] = useState('');
   const [challengeExpectedEvidence, setChallengeExpectedEvidence] = useState('');
+  const [challengeVerificationCommand, setChallengeVerificationCommand] = useState('');
   const [schedulingMode, setSchedulingMode] = useState<'manual' | 'calendly'>('manual');
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [workspaceEnabled, setWorkspaceEnabled] = useState(true);
@@ -230,6 +232,7 @@ export function InviteCreationModal({
       setChallengeInstructions('');
       setChallengeSuccessCriteria('');
       setChallengeExpectedEvidence('');
+      setChallengeVerificationCommand('');
       setCreateError(null);
       setCreatedInvite(null);
       setCopied(false);
@@ -366,6 +369,10 @@ export function InviteCreationModal({
           inviteData.challengeInstructions = challengeInstructions.trim();
           inviteData.challengeSuccessCriteria = challengeSuccessCriteriaItems;
           inviteData.challengeExpectedEvidence = challengeExpectedEvidenceItems;
+          const trimmedVerificationCommand = challengeVerificationCommand.trim();
+          if (trimmedVerificationCommand.length > 0) {
+            inviteData.challengeVerificationCommand = trimmedVerificationCommand;
+          }
         }
       }
 
@@ -423,6 +430,7 @@ export function InviteCreationModal({
     setChallengeInstructions('');
     setChallengeSuccessCriteria('');
     setChallengeExpectedEvidence('');
+    setChallengeVerificationCommand('');
     setSchedulingMode('manual');
     setCreateError(null);
     setCreatedInvite(null);
@@ -834,6 +842,13 @@ export function InviteCreationModal({
                             onChange={(e) => setChallengeExpectedEvidence(e.target.value)}
                             placeholder="One required evidence item per line"
                             style={{ ...inputStyle, minHeight: 76, resize: 'vertical' }}
+                          />
+                          <input
+                            type="text"
+                            value={challengeVerificationCommand}
+                            onChange={(e) => setChallengeVerificationCommand(e.target.value)}
+                            placeholder="Optional verification command, e.g. npm test -- transcript"
+                            style={inputStyle}
                           />
                           <PacketChecklist items={packetChecklistItems} />
                         </div>

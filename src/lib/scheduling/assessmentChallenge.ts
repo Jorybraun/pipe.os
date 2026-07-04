@@ -11,6 +11,7 @@ export interface AssessmentChallengeSummary {
   githubPrNumber: number | null;
   baseCommitSha: string | null;
   task: string | null;
+  verificationCommand: string | null;
   assessmentFit: string[];
   matchProof: string[];
   successCriteria: string[];
@@ -90,6 +91,8 @@ export function summarizeAssessmentChallenge(
     baseCommitSha: summaryInput.baseCommitSha
       ?? locatorString(challenge.locator, ['baseCommitSha', 'baseCommit']),
     task: summaryInput.task ?? null,
+    verificationCommand: summaryInput.verificationCommand
+      ?? locatorString(challenge.locator, ['verificationCommand']),
     assessmentFit: summaryInput.assessmentFit?.length
       ? [...summaryInput.assessmentFit]
       : collectSectionItems(lines, 'assessment fit'),
@@ -123,6 +126,11 @@ export function summarizeAssessmentChallenge(
     const taskMatch = line.match(/^task\s*:\s*(.+)$/i);
     if (taskMatch?.[1] && !summary.task) {
       summary.task = taskMatch[1].trim();
+      continue;
+    }
+    const verificationCommandMatch = line.match(/^verification command\s*:\s*(.+)$/i);
+    if (verificationCommandMatch?.[1] && !summary.verificationCommand) {
+      summary.verificationCommand = verificationCommandMatch[1].trim();
     }
   }
 
@@ -130,6 +138,7 @@ export function summarizeAssessmentChallenge(
     || summary.githubPrNumber
     || summary.baseCommitSha
     || summary.task
+    || summary.verificationCommand
     || summary.assessmentFit.length > 0
     || summary.matchProof.length > 0
     || summary.successCriteria.length > 0

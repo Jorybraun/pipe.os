@@ -116,6 +116,7 @@ describe('summarizeAssessmentChallenge', () => {
         matchProof: ['Review packet quality 92% from source-backed repo analysis.'],
         successCriteria: ['Regression is fixed without weakening normal click behavior.'],
         expectedEvidence: ['Commit diff plus targeted test or explicit verification note.'],
+        verificationCommand: 'npm test -- popover',
       },
     });
 
@@ -124,6 +125,7 @@ describe('summarizeAssessmentChallenge', () => {
       githubPrNumber: 973,
       baseCommitSha: '1111111111111111111111111111111111111111',
       task: 'Fix Base UI popover impatient click handling',
+      verificationCommand: 'npm test -- popover',
       assessmentFit: [
         'focused review calibrated for senior candidates.',
         '45 minute target from deterministic engineering prior.',
@@ -132,5 +134,21 @@ describe('summarizeAssessmentChallenge', () => {
       successCriteria: ['Regression is fixed without weakening normal click behavior.'],
       expectedEvidence: ['Commit diff plus targeted test or explicit verification note.'],
     });
+  });
+
+  it('keeps verification command from exact packet text when summary metadata is absent', () => {
+    const summary = summarizeAssessmentChallenge({
+      exactText: [
+        'Repo: https://github.com/pipe/source-backed-worker',
+        'Base commit: 2222222222222222222222222222222222222222',
+        'Task: Fix deterministic retry handling.',
+        'Verification command: npm test -- retry-order',
+      ].join('\n'),
+      locator: {},
+      summary: null,
+    });
+
+    expect(summary?.verificationCommand).toBe('npm test -- retry-order');
+    expect(summary?.task).toBe('Fix deterministic retry handling.');
   });
 });

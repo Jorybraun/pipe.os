@@ -6,6 +6,7 @@ describe('parseChallengePacketContract', () => {
     const contract = parseChallengePacketContract([
       'Repo: https://github.com/pipe/source-backed-worker',
       'Task: Fix deterministic retry handling.',
+      'Verification command: npm test -- retry-order',
       'Match proof:',
       '- Review packet quality 92% from source-backed repo analysis.',
       '- 2 source-backed repo demands in the selected PR packet.',
@@ -20,6 +21,7 @@ describe('parseChallengePacketContract', () => {
 
     expect(contract).toEqual({
       task: 'Fix deterministic retry handling.',
+      verificationCommand: 'npm test -- retry-order',
       matchProof: [
         'Review packet quality 92% from source-backed repo analysis.',
         '2 source-backed repo demands in the selected PR packet.',

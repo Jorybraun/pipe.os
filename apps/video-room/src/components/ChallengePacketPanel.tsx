@@ -14,6 +14,7 @@ export function ChallengePacketPanel({
   const summary = summarizeChallengePacket(packet);
   const hasContract = Boolean(
     summary.task
+    || summary.verificationCommand
     || summary.matchProof.length > 0
     || summary.assessmentFit.length > 0
     || summary.successCriteria.length > 0
@@ -63,6 +64,12 @@ export function ChallengePacketPanel({
             <div className="challenge-packet-contract-section">
               <strong>Task</strong>
               <p>{summary.task}</p>
+            </div>
+          )}
+          {summary.verificationCommand && (
+            <div className="challenge-packet-contract-section">
+              <strong>Verification command</strong>
+              <p><code>{summary.verificationCommand}</code></p>
             </div>
           )}
           {summary.matchProof.length > 0 && (

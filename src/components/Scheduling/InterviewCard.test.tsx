@@ -215,6 +215,7 @@ describe('InterviewCard assessment progress', () => {
             'Repo: https://github.com/open-source/widgets',
             'Base commit: 1111111111111111111111111111111111111111',
             'Task: Fix the assessment card progress regression.',
+            'Verification command: npm test -- card-progress',
             'Success criteria:',
             '- Card shows stage and next action',
             'Expected evidence:',
@@ -301,6 +302,8 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Fix the assessment card progress regression.');
     expect(progress).toHaveTextContent('CRITERIA');
     expect(progress).toHaveTextContent('Card shows stage and next action');
+    expect(progress).toHaveTextContent('VERIFY');
+    expect(progress).toHaveTextContent('npm test -- card-progress');
     expect(progress).toHaveTextContent('EXPECTED');
     expect(progress).toHaveTextContent('Commit SHA on assessment branch');
     expect(progress).toHaveTextContent('abcdef123456');

@@ -851,6 +851,7 @@ export function SchedulingDashboard(): JSX.Element {
           challengeInstructions?: string;
           challengeSuccessCriteria?: string[];
           challengeExpectedEvidence?: string[];
+          challengeVerificationCommand?: string;
           features?: {
             videoEnabled: boolean;
             workspaceEnabled: boolean;

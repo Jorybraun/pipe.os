@@ -2,6 +2,7 @@ import type { RoomWorkspaceChallengePacket } from '../types';
 
 export interface ChallengePacketContract {
   task: string | null;
+  verificationCommand: string | null;
   matchProof: string[];
   assessmentFit: string[];
   successCriteria: string[];
@@ -50,6 +51,7 @@ export function parseChallengePacketContract(exactText: string): ChallengePacket
   let section: 'matchProof' | 'assessmentFit' | 'successCriteria' | 'expectedEvidence' | null = null;
   const contract: ChallengePacketContract = {
     task: null,
+    verificationCommand: null,
     matchProof: [],
     assessmentFit: [],
     successCriteria: [],
@@ -60,6 +62,12 @@ export function parseChallengePacketContract(exactText: string): ChallengePacket
     const taskMatch = line.match(/^(?:task|title)\s*:\s*(.+)$/i);
     if (taskMatch?.[1]) {
       contract.task = taskMatch[1].trim();
+      section = null;
+      continue;
+    }
+    const verificationCommandMatch = line.match(/^verification command\s*:\s*(.+)$/i);
+    if (verificationCommandMatch?.[1]) {
+      contract.verificationCommand = verificationCommandMatch[1].trim();
       section = null;
       continue;
     }
@@ -102,6 +110,7 @@ export function summarizeChallengePacket(packet: RoomWorkspaceChallengePacket | 
     ? parseChallengePacketContract(packet.exactText)
     : {
         task: null,
+        verificationCommand: null,
         matchProof: [],
         assessmentFit: [],
         successCriteria: [],
