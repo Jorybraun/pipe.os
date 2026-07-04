@@ -939,6 +939,12 @@ function assertCommitSubmissionSourceRefs(input: SubmitCommitAssessmentInput): v
   if (!diffRef) {
     throw new Error('commit submission requires a code_diff source ref for the submitted baseCommitSha..commitSha changes');
   }
+
+  const verificationRef = input.sourceRefs.find((ref) =>
+    verificationSourceRefMatchesSubmittedCommit(ref, input));
+  if (!verificationRef) {
+    throw new Error('commit submission requires a test_run or verification_gap source ref for the submitted commit');
+  }
 }
 
 function diffSourceRefMatchesSubmittedRange(
@@ -955,6 +961,25 @@ function diffSourceRefMatchesSubmittedRange(
   const locatorCommitSha = stringLocatorValue(locator, 'commitSha')?.toLowerCase();
   return locatorBaseCommitSha === input.baseCommitSha.toLowerCase()
     && locatorCommitSha === input.commitSha.toLowerCase();
+}
+
+function verificationSourceRefMatchesSubmittedCommit(
+  ref: AssessmentEvidenceSourceRefInput,
+  input: SubmitCommitAssessmentInput,
+): boolean {
+  if (ref.sourceRefType !== 'test_run' && ref.sourceRefType !== 'verification_gap') return false;
+  if (typeof ref.exactText !== 'string' || ref.exactText.trim().length === 0) return false;
+
+  const commitSha = input.commitSha.toLowerCase();
+  const sourceRefId = ref.sourceRefId.toLowerCase();
+  if (sourceRefId !== commitSha && !sourceRefId.startsWith(`${commitSha}:`)) return false;
+
+  const locator = ref.locator ?? {};
+  const locatorCommitSha = stringLocatorValue(locator, 'commitSha')?.toLowerCase();
+  if (locatorCommitSha && locatorCommitSha !== commitSha) return false;
+
+  const locatorBaseCommitSha = stringLocatorValue(locator, 'baseCommitSha')?.toLowerCase();
+  return !locatorBaseCommitSha || locatorBaseCommitSha === input.baseCommitSha.toLowerCase();
 }
 
 function stringLocatorValue(locator: JsonObject, key: string): string | null {

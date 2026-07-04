@@ -144,11 +144,19 @@ async function createReadyAssessmentFixture(
       ...(includeTestEvidence
         ? [await sourceRef({
             type: 'test_run',
-            id: `verification-${suffix}`,
+            id: `${commitSha}:test-run`,
             evidenceRole: 'verification_test_output',
+            locator: { repositoryUrl, baseCommitSha, commitSha, command: 'git diff --check HEAD~1 HEAD' },
             exactText: '$ git diff --check HEAD~1 HEAD\nexitCode: 0',
           })]
-        : []),
+        : [await sourceRef({
+            type: 'verification_gap',
+            id: `${commitSha}:test-evidence-missing`,
+            evidenceRole: 'missing_test_evidence_note',
+            locator: { repositoryUrl, baseCommitSha, commitSha, expectedSourceRefType: 'test_run' },
+            exactText: 'No test output was captured for this evaluator fixture.',
+            metadata: { missingEvidence: 'test_run' },
+          })]),
     ],
   });
 
@@ -287,8 +295,9 @@ describe('repo task assessment evaluator integration', () => {
         }),
         await sourceRef({
           type: 'test_run',
-          id: 'verification-1',
+          id: `${commitSha}:test-run`,
           evidenceRole: 'verification_test_output',
+          locator: { repositoryUrl, baseCommitSha, commitSha, command: 'git diff --check HEAD~1 HEAD' },
           exactText: '$ git diff --check HEAD~1 HEAD\nexitCode: 0',
         }),
       ],

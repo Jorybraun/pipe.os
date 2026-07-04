@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Commit submissions now require `test_run` evidence or an explicit `verification_gap`, preventing source-backed assessment sessions from reaching final-submitted state with only commit and diff proof.
 - Candidate workspace finalization now rejects dev-container bridge source refs that are not bound to the submitted repo, base commit, and assessment commit, preventing mislabeled process evidence from passing as provenance.
 - Candidate workspace finalization now rejects dev-container bridge payloads that omit `terminal_command` source refs, preventing commit submissions from passing without source-backed process telemetry.
 - Recruiter assessment decision summaries now prefer durable PIPE-matched assignment trust over stale manual setup rationale, keeping evaluated open-source workspace readouts aligned with the matched challenge proof.

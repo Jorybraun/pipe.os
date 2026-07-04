@@ -354,6 +354,7 @@ export async function buildCommitSubmissionPayload(
             evidenceRole: 'verification_test_output',
             locator: {
               repositoryUrl: sourceRepositoryUrl,
+              baseCommitSha,
               commitSha,
               command: testEvidenceCommand,
             },
@@ -369,6 +370,7 @@ export async function buildCommitSubmissionPayload(
             evidenceRole: 'missing_test_evidence_note',
             locator: {
               repositoryUrl: sourceRepositoryUrl,
+              baseCommitSha,
               commitSha,
               expectedSourceRefType: 'test_run',
             },

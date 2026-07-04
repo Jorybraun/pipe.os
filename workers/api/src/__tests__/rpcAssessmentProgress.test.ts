@@ -188,6 +188,7 @@ describe('candidate assessment RPC progress and commit submission', () => {
       '@@ -1,3 +1,4 @@',
       '+export const retryBackoff = "source-backed";',
     ].join('\n');
+    const testRunExactText = 'npm test -- retry\nPASS src/retry.test.ts';
 
     const response = await rpcAuth.request(
       '/assessment/commit-submission',
@@ -231,6 +232,19 @@ describe('candidate assessment RPC progress and commit submission', () => {
                 internalAssessmentSessionId: sessionId,
               },
               exactText: diffExactText,
+            }),
+            await sourceRef({
+              sourceRefType: 'test_run',
+              sourceRefId: `${commitSha}:test-run`,
+              evidenceRole: 'verification_test_output',
+              locator: {
+                repositoryUrl: 'https://github.com/candidate/source-backed-worker',
+                baseCommitSha,
+                commitSha,
+                command: 'npm test -- retry',
+                internalAssessmentSessionId: sessionId,
+              },
+              exactText: testRunExactText,
             }),
           ],
         }),

@@ -46,6 +46,24 @@ async function sourceRef(
   };
 }
 
+async function verificationRef(
+  commitSha: string,
+  baseCommitSha: string,
+  exactText = 'npm test -- popover\nPASS popover cleanup regression',
+  repositoryUrl = 'https://github.com/open-source/widgets',
+): Promise<AssessmentEvidenceSourceRefInput> {
+  return {
+    ...await sourceRef('test_run', `${commitSha}:test-run`, exactText),
+    evidenceRole: 'verification_test_output',
+    locator: {
+      repositoryUrl,
+      baseCommitSha,
+      commitSha,
+      command: exactText.split('\n')[0] ?? 'npm test',
+    },
+  };
+}
+
 function buildEnv(db: D1Database): Env {
   return {
     DB: db,
@@ -338,6 +356,12 @@ describe('repo task assessment session routes', () => {
         sourceRefs: [
           await sourceRef('git_commit', commitSha, commitText),
           await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+          await verificationRef(
+            commitSha,
+            baseCommitSha,
+            'npm test -- stream\nPASS reconnect ordering',
+            'https://github.com/open-source/streaming',
+          ),
         ],
       }),
       env,
@@ -902,6 +926,7 @@ index 5c7b20a..7f9a12e 100644
         sourceRefs: [
           await sourceRef('git_commit', commitSha, commitText),
           await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+          await verificationRef(commitSha, baseCommitSha),
         ],
       }),
       env,
@@ -966,6 +991,11 @@ index 5c7b20a..7f9a12e 100644
         source_ref_id: commitSha,
         exact_text: commitText,
       },
+      {
+        source_ref_type: 'test_run',
+        source_ref_id: `${commitSha}:test-run`,
+        exact_text: 'npm test -- popover\nPASS popover cleanup regression',
+      },
     ]);
   });
 
@@ -1015,6 +1045,7 @@ Fix stale popover listener cleanup.`;
         sourceRefs: [
           await sourceRef('git_commit', commitSha, commitText),
           await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+          await verificationRef(commitSha, baseCommitSha),
           await sourceRef('upstream_pull_request', upstreamPullRequestUrl, upstreamPullRequestUrl),
         ],
       }),
@@ -1096,6 +1127,7 @@ Fix stale popover listener cleanup.`;
       sourceRefs: [
         await sourceRef('git_commit', commitSha, commitText),
         await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+        await verificationRef(commitSha, baseCommitSha),
       ],
     };
 
@@ -1172,6 +1204,7 @@ Fix stale popover listener cleanup.`;
       sourceRefs: [
         await sourceRef('git_commit', commitSha, commitText),
         await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+        await verificationRef(commitSha, baseCommitSha),
       ],
     };
 
@@ -1286,6 +1319,62 @@ Fix stale popover listener cleanup.`;
     ).get(session.id)).toEqual({ count: 0 });
   });
 
+  it('rejects commit submissions that omit test output or an explicit verification gap', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:commit-submission-no-verification',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const baseCommitSha = '2222222222222222222222222222222222222222';
+    const commitSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    await assignOpenSourceChallenge(app, env, {
+      sessionId: session.id,
+      ingestionKey: 'assessment-event:challenge-no-verification',
+      sourceRefId: 'challenge-packet-no-verification',
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      baseCommitSha,
+    });
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -1,2 +1,3 @@
++cleanupStaleHandler();`;
+
+    const response = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:commit-submission-no-verification',
+        actorType: 'candidate',
+        narrative: 'Candidate submitted a commit without verification evidence.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha,
+        commitSha,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('git_commit', commitSha, commitText),
+          await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+        ],
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: { message: string } };
+    expect(body.error.message).toContain(
+      'commit submission requires a test_run or verification_gap source ref',
+    );
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'commit_submission'`,
+    ).get(session.id)).toEqual({ count: 0 });
+  });
+
   it('rejects commit submissions whose diff source ref is not tied to the submitted commit range', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:commit-submission-loose-diff',
@@ -1365,6 +1454,7 @@ Fix stale popover listener cleanup.`;
         sourceRefs: [
           await sourceRef('git_commit', commitSha, commitText),
           await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+          await verificationRef(commitSha, baseCommitSha),
         ],
       }),
       env,
@@ -1465,6 +1555,7 @@ Fix stale popover listener cleanup.`;
             `${repoCase.assignedBaseCommitSha}..${repoCase.commitSha}`,
             repoCase.diffText,
           ),
+          await verificationRef(repoCase.commitSha, repoCase.assignedBaseCommitSha),
         ],
       }),
       env,
@@ -1495,6 +1586,7 @@ Fix stale popover listener cleanup.`;
         sourceRefs: [
           await sourceRef('git_commit', baseCase.commitSha, baseCase.commitText),
           await sourceRef('code_diff', `${wrongBaseCommitSha}..${baseCase.commitSha}`, baseCase.diffText),
+          await verificationRef(baseCase.commitSha, wrongBaseCommitSha),
         ],
       }),
       env,
@@ -1573,6 +1665,7 @@ Fix stale popover listener cleanup.`;
             `${textOnlyWrongBaseCommitSha}..${textOnlyCommitSha}`,
             textOnlyDiffText,
           ),
+          await verificationRef(textOnlyCommitSha, textOnlyWrongBaseCommitSha),
         ],
       }),
       env,
