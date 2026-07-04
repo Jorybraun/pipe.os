@@ -101,6 +101,18 @@ export interface CandidateAssessmentProgress {
     exactText: string;
     contentHash: string;
     locator: JsonObject;
+    summary?: {
+      repositoryUrl: string | null;
+      githubPrNumber: number | null;
+      pullRequestUrl: string | null;
+      baseCommitSha: string | null;
+      task: string | null;
+      assessmentFit: string[];
+      matchProof: string[];
+      successCriteria: string[];
+      expectedEvidence: string[];
+      verificationCommand: string | null;
+    };
   } | null;
   latestEvent?: JsonObject | null;
   commit: {

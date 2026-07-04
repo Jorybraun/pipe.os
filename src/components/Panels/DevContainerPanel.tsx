@@ -135,6 +135,58 @@ function pillStyle(tone: 'good' | 'warn' | 'quiet'): CSSProperties {
   };
 }
 
+function compactList(items: readonly string[], maxItems = 2): string[] {
+  return items
+    .map((item) => item.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function AssessmentWorkspaceTaskBrief({
+  progress,
+}: {
+  progress: CandidateAssessmentProgress | null;
+}): JSX.Element {
+  const summary = progress?.challenge?.summary;
+  const task = summary?.task?.trim()
+    || compactText(progress?.challenge?.exactText, 160);
+  const successCriteria = compactList(summary?.successCriteria ?? []);
+  const expectedEvidence = compactList(summary?.expectedEvidence ?? [], 3);
+  const verificationCommand = summary?.verificationCommand?.trim() ?? null;
+
+  const rows = [
+    { label: 'TASK', values: [task] },
+    { label: 'SUCCESS', values: successCriteria },
+    { label: 'EVIDENCE', values: expectedEvidence },
+    ...(verificationCommand ? [{ label: 'VERIFY', values: [verificationCommand] }] : []),
+  ].filter((row) => row.values.length > 0);
+
+  return (
+    <div
+      data-testid="assessment-workspace-task-brief"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'max-content minmax(0, 1fr)',
+        gap: '4px 8px',
+        minWidth: 0,
+        fontSize: 10,
+        lineHeight: 1.45,
+      }}
+    >
+      {rows.map((row) => (
+        <div key={row.label} style={{ display: 'contents' }}>
+          <span style={{ color: '#93c5fd', letterSpacing: '0.12em', fontWeight: 800 }}>
+            {row.label}
+          </span>
+          <span style={{ minWidth: 0, color: '#e5e7eb', overflowWrap: 'anywhere' }}>
+            {row.values.join(' · ')}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AssessmentWorkspaceStatusStrip({
   progress,
   loading,
@@ -200,17 +252,7 @@ function AssessmentWorkspaceStatusStrip({
             {loading ? 'LOADING' : error ? 'PROGRESS ERROR' : progress?.nextActionLabel ?? 'Assessment state pending'}
           </span>
         </div>
-        <div
-          data-testid="assessment-workspace-task-summary"
-          style={{
-            fontSize: 11,
-            lineHeight: 1.45,
-            color: '#e5e7eb',
-            overflow: 'hidden',
-          }}
-        >
-          {compactText(progress?.challenge?.exactText)}
-        </div>
+        <AssessmentWorkspaceTaskBrief progress={progress} />
       </div>
 
       <div

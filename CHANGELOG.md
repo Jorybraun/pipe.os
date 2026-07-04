@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Candidate dev-container assessment rooms now render a structured source-backed task brief with task, success criteria, expected evidence, and verification command from the assigned challenge packet instead of showing candidates only raw packet text.
 - Recruiter start-evaluation requests now reject open-source assessment sessions that lack exact `code_diff` proof, preventing direct API calls from evaluating source-incomplete commit submissions.
 - Recruiter assessment list/detail progress now requires exact `code_diff` proof and commit-to-challenge binding before marking open-source implementation work ready for evaluation, matching the durable assessment session spine.
 - Recruiter interview lists now skip repo-match diagnostic enrichment for standard video-call rows, avoiding unnecessary match-run D1 reads on the hottest dashboard path while preserving assessment setup diagnostics for coding assessments.

@@ -75,11 +75,36 @@ function progressResponse(
       challenge: {
         sourceRefType: 'open_source_challenge_packet',
         evidenceRole: 'assigned_challenge',
-        exactText: 'Fix retry handling in acme/repo.',
+        exactText: [
+          'Repo: https://github.com/acme/repo',
+          `Base commit: ${baseCommitSha}`,
+          'Task: Fix retry handling in acme/repo.',
+          'Success criteria:',
+          '- Retry behavior is deterministic and covered by a focused test.',
+          'Expected evidence:',
+          '- git commit SHA on a pipe-assessment branch',
+          '- code diff for the retry path',
+          'Verification command: npm test -- retry',
+        ].join('\n'),
         contentHash: 'sha256:challenge',
         locator: {
           repositoryUrl: 'https://github.com/acme/repo',
           baseCommitSha,
+        },
+        summary: {
+          repositoryUrl: 'https://github.com/acme/repo',
+          githubPrNumber: null,
+          pullRequestUrl: null,
+          baseCommitSha,
+          task: 'Fix retry handling in acme/repo.',
+          assessmentFit: [],
+          matchProof: [],
+          successCriteria: ['Retry behavior is deterministic and covered by a focused test.'],
+          expectedEvidence: [
+            'git commit SHA on a pipe-assessment branch',
+            'code diff for the retry path',
+          ],
+          verificationCommand: 'npm test -- retry',
         },
       },
       latestEvent: null,
@@ -117,7 +142,16 @@ describe('DevContainerPanel assessment submission', () => {
 
     const statusStrip = await screen.findByTestId('assessment-workspace-status-strip');
     expect(statusStrip).toHaveTextContent('SOURCE-BACKED TASK');
-    expect(screen.getByTestId('assessment-workspace-task-summary')).toHaveTextContent('Fix retry handling in acme/repo.');
+    const brief = screen.getByTestId('assessment-workspace-task-brief');
+    expect(brief).toHaveTextContent('TASK');
+    expect(brief).toHaveTextContent('Fix retry handling in acme/repo.');
+    expect(brief).toHaveTextContent('SUCCESS');
+    expect(brief).toHaveTextContent('Retry behavior is deterministic and covered by a focused test.');
+    expect(brief).toHaveTextContent('EVIDENCE');
+    expect(brief).toHaveTextContent('git commit SHA on a pipe-assessment branch');
+    expect(brief).toHaveTextContent('code diff for the retry path');
+    expect(brief).toHaveTextContent('VERIFY');
+    expect(brief).toHaveTextContent('npm test -- retry');
 
     const locator = screen.getByTestId('assessment-workspace-assignment-locator');
     expect(locator).toHaveTextContent('https://github.com/acme/repo');

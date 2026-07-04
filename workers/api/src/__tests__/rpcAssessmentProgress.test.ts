@@ -249,7 +249,17 @@ describe('candidate assessment RPC progress and commit submission', () => {
         nextAction: string;
         hasChallengePacket: boolean;
         hasCommitSubmission: boolean;
-        challenge: { locator: Record<string, unknown> } | null;
+        challenge: {
+          locator: Record<string, unknown>;
+          summary: {
+            repositoryUrl: string | null;
+            baseCommitSha: string | null;
+            task: string | null;
+            successCriteria: string[];
+            expectedEvidence: string[];
+            verificationCommand: string | null;
+          };
+        } | null;
         latestEvent: { kind: string; sequence: number };
         commit: { eventId?: string; commitSha: string; branchName: string };
       };
@@ -272,6 +282,18 @@ describe('candidate assessment RPC progress and commit submission', () => {
     expect(body.progress.challenge?.locator).toEqual({
       repositoryUrl: 'https://github.com/pipe/source-backed-worker',
       baseCommitSha,
+    });
+    expect(body.progress.challenge?.summary).toMatchObject({
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      baseCommitSha,
+      task: 'Fix the durable retry path.',
+      successCriteria: ['Retry behavior is deterministic and covered by a focused test.'],
+      expectedEvidence: [
+        'git commit SHA on a pipe-assessment branch',
+        'code diff for the retry path',
+        'test output or verification note',
+      ],
+      verificationCommand: null,
     });
     expect(body.progress.commit).toMatchObject({
       commitSha,

@@ -57,7 +57,9 @@ import {
   maybeQueueRetryableStandaloneIngestion,
 } from '../lib/candidateDiscovery/staleWorkersAiRetry';
 import {
+  assessmentProgressChallengeSummary,
   RepoTaskInterviewSessionStore,
+  type AssessmentProgressChallengeSummary,
   type AssessmentProgressSnapshot,
   type CommitSubmissionChangedFileStatus,
 } from '../lib/repoTaskInterviewSession';
@@ -841,6 +843,7 @@ interface CandidateAssessmentProgressPayload {
     exactText: string;
     contentHash: string;
     locator: JsonObject;
+    summary: AssessmentProgressChallengeSummary;
   } | null;
   latestEvent: Omit<NonNullable<AssessmentProgressSnapshot['latestEvent']>, 'id'> | null;
   commit: Omit<NonNullable<AssessmentProgressSnapshot['commit']>, 'eventId'> | null;
@@ -1945,6 +1948,7 @@ function serializeCandidateAssessmentProgress(
           exactText: progress.challenge.exactText,
           contentHash: progress.challenge.contentHash,
           locator: candidateSafeAssessmentLocator(progress.challenge.locator),
+          summary: assessmentProgressChallengeSummary(progress.challenge),
         }
       : null,
     latestEvent: progress.latestEvent

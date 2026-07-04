@@ -310,6 +310,19 @@ export interface AssessmentProgressChallengePacketContract {
   hasExpectedEvidence: boolean;
 }
 
+export interface AssessmentProgressChallengeSummary {
+  repositoryUrl: string | null;
+  githubPrNumber: number | null;
+  pullRequestUrl: string | null;
+  baseCommitSha: string | null;
+  task: string | null;
+  assessmentFit: string[];
+  matchProof: string[];
+  successCriteria: string[];
+  expectedEvidence: string[];
+  verificationCommand: string | null;
+}
+
 export type AssessmentProgressChallengePacketContractInput = Pick<
   AssessmentProgressSourceRef,
   'exactText' | 'locator'
@@ -949,6 +962,14 @@ function stringLocatorValue(locator: JsonObject, key: string): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
+function numberLocatorValue(locator: JsonObject, key: string): number | null {
+  const value = locator[key];
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
+  if (typeof value !== 'string') return null;
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 function assertCommitSubmissionMatchesChallenge(
   input: SubmitCommitAssessmentInput,
   normalizedRepositoryUrl: string,
@@ -1140,6 +1161,14 @@ function challengePacketLineValue(exactText: string, labels: readonly string[]):
   return match?.[1]?.trim() || null;
 }
 
+function challengePacketLineNumber(exactText: string, labels: readonly string[]): number | null {
+  const value = challengePacketLineValue(exactText, labels);
+  const match = value?.match(/#?(\d+)/);
+  if (!match?.[1]) return null;
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 function normalizeChallengePacketListItem(value: string): string {
   return value
     .trim()
@@ -1242,6 +1271,74 @@ function challengeBaseCommitSha(challenge: AssessmentProgressChallengePacketCont
   return stringLocatorValue(challenge.locator, 'baseCommitSha')
     ?? stringLocatorValue(challenge.locator, 'baseCommit')
     ?? challengePacketLineValue(challenge.exactText, ['Base commit', 'Base commit SHA', 'Base']);
+}
+
+function challengePullRequestNumber(challenge: AssessmentProgressChallengePacketContractInput): number | null {
+  return numberLocatorValue(challenge.locator, 'githubPrNumber')
+    ?? numberLocatorValue(challenge.locator, 'prNumber')
+    ?? numberLocatorValue(challenge.locator, 'pullRequestNumber')
+    ?? challengePacketLineNumber(challenge.exactText, ['Pull request', 'PR']);
+}
+
+function normalizeChallengePullRequestUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com') return null;
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length < 4 || parts[2] !== 'pull') return null;
+    const pullRequestNumber = Number.parseInt(parts[3] ?? '', 10);
+    if (!Number.isInteger(pullRequestNumber) || pullRequestNumber <= 0) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/pull/${pullRequestNumber}`;
+  } catch {
+    return null;
+  }
+}
+
+function challengePullRequestUrl(challenge: AssessmentProgressChallengePacketContractInput): string | null {
+  const explicitUrl = normalizeChallengePullRequestUrl(
+    stringLocatorValue(challenge.locator, 'pullRequestUrl')
+      ?? stringLocatorValue(challenge.locator, 'githubPullRequestUrl')
+      ?? stringLocatorValue(challenge.locator, 'prUrl')
+      ?? challengePacketLineValue(challenge.exactText, ['Pull request URL', 'PR URL']),
+  );
+  if (explicitUrl) return explicitUrl;
+
+  const repositoryUrl = challengeRepositoryUrl(challenge);
+  const pullRequestNumber = challengePullRequestNumber(challenge);
+  if (!repositoryUrl || !pullRequestNumber) return null;
+  try {
+    const url = new URL(repositoryUrl);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com') return null;
+    const parts = url.pathname.replace(/\.git$/i, '').split('/').filter(Boolean);
+    if (parts.length < 2) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/pull/${pullRequestNumber}`;
+  } catch {
+    return null;
+  }
+}
+
+export function assessmentProgressChallengeSummary(
+  challenge: AssessmentProgressChallengePacketContractInput,
+): AssessmentProgressChallengeSummary {
+  return {
+    repositoryUrl: challengeRepositoryUrl(challenge),
+    githubPrNumber: challengePullRequestNumber(challenge),
+    pullRequestUrl: challengePullRequestUrl(challenge),
+    baseCommitSha: challengeBaseCommitSha(challenge),
+    task: challengePacketLineValue(challenge.exactText, ['Task', 'Title']),
+    assessmentFit: challengePacketSectionItems(challenge.exactText, ['Assessment fit']),
+    matchProof: challengePacketSectionItems(challenge.exactText, ['Match proof']),
+    successCriteria: [
+      ...challengePacketSectionItems(challenge.exactText, ['Success criteria']),
+      ...(challengePacketLineValue(challenge.exactText, ['Success'])
+        ? [challengePacketLineValue(challenge.exactText, ['Success']) as string]
+        : []),
+    ],
+    expectedEvidence: challengePacketSectionItems(challenge.exactText, ['Expected evidence']),
+    verificationCommand: challengePacketLineValue(challenge.exactText, ['Verification command']),
+  };
 }
 
 function commitChallengeBinding(input: {
