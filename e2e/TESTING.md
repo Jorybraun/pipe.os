@@ -343,17 +343,20 @@ app-dev recruiter detail page and verifies the reviewer receipt renders the
 final decision, source-report anchor, reviewed commit, repo/branch, and no raw
 reviewer ID, then verifies the deployed interview list card shows the
 assessment mode, task, repo/base, source-backed commit trust, final decision,
-and next action. Latest deployed proof on 2026-07-02 passed for interview
-`8a89e2a2-3803-4652-adc9-c38027d069f6`, repo `mui/base-ui`, candidate task
-brief visible, recruiter list card visible, workspace commit
-`e4a4f2b9d60625470230b6c0e594b90816a764aa`, bridge revision
+and next action. Latest deployed proof on 2026-07-04 passed for interview
+`80f9aac2-541b-410c-8157-110caf3153c2`, assessment session
+`assessment_session_6cea7a23f24ba616780e6990f1d55c37`, repo `mui/base-ui`,
+matched PR `#973`, candidate task brief visible, recruiter detail/list visible,
+workspace commit `98ff4360d1da783b10fe22bb3a6ee57035c0bef3`, bridge revision
 `2026-06-30-assessment-branch-v1`, and evaluation report
-`assessment_evaluation_report_9710c858486da5298ec7950fb7eeca8d` with
-recommendation `strong_evidence_to_advance`. The recruiter projection was
+`assessment_evaluation_report_d00cd26dbf25de9c22174678dcaffb7b` with
+recommendation `mixed_evidence_human_review`. The recruiter projection was
 reviewable from source-backed `git_commit`, `code_diff`, `test_run`,
-`terminal_command`, AI usage, challenge-packet, workspace launch, and
-file-observation refs; `recruiterCompareUrl` was correctly `null` because
-workspace-only finalizer commits are not pushed to GitHub by default.
+`terminal_command`, `room_chat_message`, `meeting_session_event`,
+`review_challenge_packet`, workspace launch, and file-observation refs; the
+smoke also recorded a source-backed human `hold` decision anchored to the
+`assessment_evaluation_report`. `recruiterCompareUrl` was correctly `null`
+because workspace-only finalizer commits are not pushed to GitHub by default.
 
 Latest deployed upstream-PR progress proof on 2026-07-02 passed for assessment
 session `assessment_session_d6172ba3d55b5035f0ecb250985c814a`: the live
