@@ -381,6 +381,7 @@ export async function ensureMatchedOpenSourceChallengeAssessmentSession(
     metadata: {
       schemaVersion: 'matched-open-source-challenge-packet-v1',
       source: 'matched_review_challenge_packet',
+      challengeTitle: packet.title,
       qualityScore: packet.qualityScore,
       demandCount: packet.demandCount,
       demandFamilies: packet.demandFamilies,

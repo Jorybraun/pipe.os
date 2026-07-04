@@ -297,6 +297,7 @@ export interface AssessmentProgressSourceRef {
   exactText: string;
   contentHash: string;
   locator: JsonObject;
+  metadata: JsonObject;
 }
 
 export interface AssessmentProgressChallengePacketContract {
@@ -311,6 +312,7 @@ export interface AssessmentProgressChallengePacketContract {
 }
 
 export interface AssessmentProgressChallengeSummary {
+  title: string | null;
   repositoryUrl: string | null;
   githubPrNumber: number | null;
   pullRequestUrl: string | null;
@@ -325,7 +327,7 @@ export interface AssessmentProgressChallengeSummary {
 
 export type AssessmentProgressChallengePacketContractInput = Pick<
   AssessmentProgressSourceRef,
-  'exactText' | 'locator'
+  'exactText' | 'locator' | 'metadata'
 >;
 
 export interface AssessmentProgressLatestEvent {
@@ -1615,15 +1617,27 @@ function challengePullRequestUrl(challenge: AssessmentProgressChallengePacketCon
   }
 }
 
+function challengeTitle(challenge: AssessmentProgressChallengePacketContractInput): string | null {
+  return jsonStringValue(challenge.locator.challengeTitle)
+    ?? jsonStringValue(challenge.locator.title)
+    ?? jsonStringValue(challenge.locator.taskTitle)
+    ?? jsonStringValue(challenge.metadata.challengeTitle)
+    ?? jsonStringValue(challenge.metadata.title)
+    ?? jsonStringValue(challenge.metadata.taskTitle)
+    ?? challengePacketLineValue(challenge.exactText, ['Title', 'Task']);
+}
+
 export function assessmentProgressChallengeSummary(
   challenge: AssessmentProgressChallengePacketContractInput,
 ): AssessmentProgressChallengeSummary {
+  const title = challengeTitle(challenge);
   return {
+    title,
     repositoryUrl: challengeRepositoryUrl(challenge),
     githubPrNumber: challengePullRequestNumber(challenge),
     pullRequestUrl: challengePullRequestUrl(challenge),
     baseCommitSha: challengeBaseCommitSha(challenge),
-    task: challengePacketLineValue(challenge.exactText, ['Task', 'Title']),
+    task: challengePacketLineValue(challenge.exactText, ['Task', 'Title']) ?? title,
     assessmentFit: challengePacketSectionItems(challenge.exactText, ['Assessment fit']),
     matchProof: challengePacketSectionItems(challenge.exactText, ['Match proof']),
     successCriteria: [
@@ -2729,7 +2743,7 @@ export class RepoTaskInterviewSessionStore {
 
   private async loadChallengeSourceRef(sessionId: string): Promise<AssessmentProgressSourceRef | null> {
     const row = await this.db.prepare(
-      `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role, sr.exact_text, sr.content_hash, sr.locator_json
+      `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role, sr.exact_text, sr.content_hash, sr.locator_json, sr.metadata_json
          FROM assessment_event_source_refs sr
          JOIN assessment_evidence_events e ON e.id = sr.event_id
         WHERE e.session_id = ?1
@@ -2756,6 +2770,7 @@ export class RepoTaskInterviewSessionStore {
       exact_text: string;
       content_hash: string;
       locator_json: string | null;
+      metadata_json: string | null;
     }>();
     if (!row) return null;
     return {
@@ -2765,6 +2780,7 @@ export class RepoTaskInterviewSessionStore {
       exactText: row.exact_text,
       contentHash: row.content_hash,
       locator: parseJsonObject(row.locator_json),
+      metadata: parseJsonObject(row.metadata_json),
     };
   }
 

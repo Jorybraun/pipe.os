@@ -264,6 +264,7 @@ export interface RoomAssessmentProgressSnapshot {
     tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
   };
   challenge?: {
+    title?: string | null;
     repositoryUrl: string | null;
     githubPrNumber: number | null;
     pullRequestUrl: string | null;

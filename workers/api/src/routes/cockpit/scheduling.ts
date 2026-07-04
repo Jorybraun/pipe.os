@@ -6059,6 +6059,7 @@ async function createManualOpenSourceChallengeAssessmentSession(
     metadata: {
       schemaVersion: 'manual-open-source-challenge-packet-v1',
       source: 'recruiter_manual_open_source_task',
+      challengeTitle: input.title,
     },
   };
 
@@ -6143,6 +6144,7 @@ async function createMatchedOpenSourceChallengeAssessmentSession(
     metadata: {
       schemaVersion: 'matched-open-source-challenge-packet-v1',
       source: 'matched_review_challenge_packet',
+      challengeTitle: input.packet.title,
       qualityScore: input.packet.qualityScore,
       demandCount: input.packet.demandCount,
       demandFamilies: input.packet.demandFamilies,

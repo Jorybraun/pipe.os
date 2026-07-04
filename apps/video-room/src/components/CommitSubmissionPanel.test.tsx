@@ -515,6 +515,7 @@ describe('CommitSubmissionPanel', () => {
       hasCommitSubmission: true,
       hasTestEvidence: true,
       challenge: {
+        title: 'Source-backed worker retry challenge',
         repositoryUrl: 'https://github.com/pipe/source-backed-worker',
         githubPrNumber: 973,
         pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/973',
@@ -612,6 +613,7 @@ describe('CommitSubmissionPanel', () => {
       expect(markdown).toContain('# PIPE Candidate Assessment Receipt');
       expect(markdown).toContain('Status: Evaluated');
       expect(markdown).toContain('## Assigned Challenge');
+      expect(markdown).toContain('Title: Source-backed worker retry challenge');
       expect(markdown).toContain('Task: Fix the source-backed worker retry path.');
       expect(markdown).toContain('Verification command: npm test -- retry');
       expect(markdown).toContain('Existing worker tests pass');

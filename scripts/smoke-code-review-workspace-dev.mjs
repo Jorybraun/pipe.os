@@ -97,6 +97,31 @@ const DEV_D1_DATABASE_ID = process.env.WORKSPACE_SMOKE_D1_DATABASE_ID
   || '0abe92df-9296-46f5-9f9d-a1fb1bcd3be1';
 const EVALUATION_WAIT_MS = Number(process.env.WORKSPACE_SMOKE_EVALUATION_WAIT_MS || 600_000);
 
+function challengePacketLineValue(exactText, labels) {
+  const text = typeof exactText === 'string' ? exactText : '';
+  if (!text) return null;
+  const escapedLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const match = text.match(new RegExp(`^\\s*(?:${escapedLabels.join('|')})\\s*:\\s*(.+)$`, 'im'));
+  return match?.[1]?.trim() || null;
+}
+
+function stringObjectValue(object, key) {
+  const value = object && typeof object === 'object' ? object[key] : null;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function assignedChallengeTitleFromProgress(progress) {
+  const challenge = progress?.challenge ?? null;
+  if (!challenge) return null;
+  return stringObjectValue(challenge.locator, 'challengeTitle')
+    ?? stringObjectValue(challenge.locator, 'title')
+    ?? stringObjectValue(challenge.locator, 'taskTitle')
+    ?? stringObjectValue(challenge.metadata, 'challengeTitle')
+    ?? stringObjectValue(challenge.metadata, 'title')
+    ?? stringObjectValue(challenge.metadata, 'taskTitle')
+    ?? challengePacketLineValue(challenge.exactText, ['Title', 'Task']);
+}
+
 function assertEnv() {
   if (MATCHED_REPO_ID !== null && (!Number.isInteger(MATCHED_REPO_ID) || MATCHED_REPO_ID <= 0)) {
     throw new Error('WORKSPACE_SMOKE_MATCHED_REPO_ID must be a positive integer when provided.');
@@ -1219,7 +1244,7 @@ async function assertCandidateTaskBriefBrowser(
   }
 }
 
-async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha) {
+async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha, expectedChallengeTitle) {
   if (SKIP_CANDIDATE_BROWSER) {
     return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_CANDIDATE_BROWSER=1' };
   }
@@ -1326,7 +1351,7 @@ async function assertCandidateTerminalStateBrowser(guestUrl, expectedCommitSha) 
     if (BASE_COMMIT_SHA && !receiptMarkdown.includes(BASE_COMMIT_SHA)) {
       throw new Error('Candidate receipt download did not include the assigned base commit SHA.');
     }
-    if (CHANGE_PROFILE?.challengeTitle && !receiptMarkdown.includes(CHANGE_PROFILE.challengeTitle)) {
+    if (expectedChallengeTitle && !receiptMarkdown.includes(expectedChallengeTitle)) {
       throw new Error('Candidate receipt download did not include the assigned challenge title.');
     }
     if (!receiptMarkdown.includes('Use this as the candidate receipt')) {
@@ -1797,9 +1822,15 @@ async function main() {
     evaluationProgress,
     'evaluation progress',
   );
+  const expectedReceiptChallengeTitle = assignedChallengeTitleFromProgress(evaluationProgress)
+    ?? assignedChallengeTitleFromProgress(created?.interview?.assessmentProgress)
+    ?? workspace.challenge?.packet?.title
+    ?? (useMatchedRepo ? null : CHANGE_PROFILE?.challengeTitle)
+    ?? null;
   const candidateTerminalBrowser = await assertCandidateTerminalStateBrowser(
     invited.room.guestUrl,
     workspaceCommit.commitSha,
+    expectedReceiptChallengeTitle,
   );
   const recommendation = evaluationProgress?.evaluation?.recommendation
     ?? null;
@@ -1873,10 +1904,7 @@ async function main() {
     githubPrNumber: expectedGithubPrNumber,
     matchedRepoId: MATCHED_REPO_ID,
     interviewType: INTERVIEW_TYPE,
-    challengeTitle: CHANGE_PROFILE?.challengeTitle
-      ?? workspace.challenge?.packet?.title
-      ?? created?.interview?.assessmentProgress?.challenge?.locator?.title
-      ?? null,
+    challengeTitle: expectedReceiptChallengeTitle,
     challengeStatus: workspace.challenge?.status ?? null,
     challengeSource: workspace.challenge?.source ?? null,
     candidateTaskBriefVisible: !candidateBrowser.skipped,

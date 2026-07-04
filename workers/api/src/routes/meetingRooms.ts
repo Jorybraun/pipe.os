@@ -2156,6 +2156,7 @@ function assessmentReceiptMarkdown(progress: RoomAssessmentProgressPayload): str
     '',
     '## Assigned Challenge',
     '',
+    `Title: ${challenge?.title ?? 'Not recorded'}`,
     `Repository: ${challenge?.repositoryUrl ?? 'Not recorded'}`,
     `Base commit: ${challenge?.baseCommitSha ?? 'Not recorded'}`,
     `Pull request: ${challenge?.pullRequestUrl ?? (challenge?.githubPrNumber ? `#${challenge.githubPrNumber}` : 'Not recorded')}`,

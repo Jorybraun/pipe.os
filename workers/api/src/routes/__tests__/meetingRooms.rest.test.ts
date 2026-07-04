@@ -4683,6 +4683,7 @@ describe('meeting room recording living-context route', () => {
       hasChallengePacket: true,
       hasCommitSubmission: true,
       challenge: {
+        title: 'Fix the source-backed worker retry path.',
         repositoryUrl: 'https://github.com/pipe/source-backed-worker',
         baseCommitSha,
         task: 'Fix the source-backed worker retry path.',
@@ -4714,6 +4715,7 @@ describe('meeting room recording living-context route', () => {
         hasChallengePacket: boolean;
         hasCommitSubmission: boolean;
         challenge: {
+          title: string | null;
           repositoryUrl: string | null;
           baseCommitSha: string | null;
           task: string | null;
@@ -4731,6 +4733,7 @@ describe('meeting room recording living-context route', () => {
       hasChallengePacket: true,
       hasCommitSubmission: true,
       challenge: {
+        title: 'Fix the source-backed worker retry path.',
         repositoryUrl: 'https://github.com/pipe/source-backed-worker',
         baseCommitSha,
         task: 'Fix the source-backed worker retry path.',
@@ -4760,6 +4763,7 @@ describe('meeting room recording living-context route', () => {
     expect(receiptMarkdown).toContain('# PIPE Candidate Assessment Receipt');
     expect(receiptMarkdown).toContain('Status: Ready For Evaluation');
     expect(receiptMarkdown).toContain('## Assigned Challenge');
+    expect(receiptMarkdown).toContain('Title: Fix the source-backed worker retry path.');
     expect(receiptMarkdown).toContain('Repository: https://github.com/pipe/source-backed-worker');
     expect(receiptMarkdown).toContain('Base commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     expect(receiptMarkdown).toContain('Task: Fix the source-backed worker retry path.');
