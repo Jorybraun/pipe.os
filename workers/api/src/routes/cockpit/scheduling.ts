@@ -342,6 +342,44 @@ function buildWorkspaceSessionProjection(input: {
   };
 }
 
+function scheduledMatchDiagnosticForAssignment(input: {
+  diagnostic: ScheduledPendingMatchDiagnostic | null | undefined;
+  githubRepoUrl: string | null | undefined;
+  githubPrNumber: number | null | undefined;
+}): ScheduledPendingMatchDiagnostic | null {
+  const diagnostic = input.diagnostic ?? null;
+  if (!diagnostic) return null;
+  if (input.githubPrNumber && diagnostic.githubPrNumber && diagnostic.githubPrNumber !== input.githubPrNumber) {
+    return null;
+  }
+  const diagnosticRepoUrl = diagnostic.githubRepoUrl?.trim() || null;
+  const assignmentRepoUrl = input.githubRepoUrl?.trim() || null;
+  if (diagnosticRepoUrl && assignmentRepoUrl && diagnosticRepoUrl !== assignmentRepoUrl) {
+    return null;
+  }
+  return diagnostic;
+}
+
+function scheduledMatchDiagnosticQualityLabel(
+  diagnostic: ScheduledPendingMatchDiagnostic | null,
+): string | null {
+  if (!diagnostic?.assessmentQualityVerdict && !diagnostic?.assessmentQualityScore) return null;
+  return [
+    diagnostic.assessmentQualityVerdict,
+    diagnostic.assessmentQualityScore,
+  ].filter(Boolean).join(' ');
+}
+
+function scheduledMatchDiagnosticContrastLabel(
+  diagnostic: ScheduledPendingMatchDiagnostic | null,
+): string | null {
+  if (!diagnostic) return null;
+  return diagnostic.contrastReason
+    ?? (diagnostic.contrastScore !== null
+      ? `Contrast score ${diagnostic.contrastScore}.`
+      : null);
+}
+
 function buildScheduledAssessmentSetup(input: {
   interviewType: string | null | undefined;
   candidateId: string | null | undefined;
@@ -400,18 +438,32 @@ function buildScheduledAssessmentSetup(input: {
   }
 
   if (input.matchedRepoId && input.githubRepoUrl && input.githubPrNumber) {
+    const diagnostic = scheduledMatchDiagnosticForAssignment({
+      diagnostic: input.pendingMatchDiagnostic,
+      githubRepoUrl: input.githubRepoUrl,
+      githubPrNumber: input.githubPrNumber,
+    });
+    const quality = scheduledMatchDiagnosticQualityLabel(diagnostic);
+    const contrast = scheduledMatchDiagnosticContrastLabel(diagnostic);
     return {
       status: 'reviewable_task_assigned',
       kind: 'auto_match',
       source: input.matchedRepoSource ?? 'matched_repo_id',
       blocksPositiveAssessment: false,
-      message: MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL,
+      message: [
+        MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL,
+        quality ? `Assessment quality: ${quality}.` : null,
+        contrast,
+      ].filter(Boolean).join(' '),
       nextAction: 'OPEN_ROOM_OR_WORKSPACE',
       nextActionLabel: 'Open the assessment room and capture the candidate work against the matched PR task.',
       selectionRationale: {
         summary: 'PIPE-selected repo task',
-        whyThisChallenge: 'PIPE selected this concrete GitHub PR from source-backed candidate evidence, role context, and repository demand instead of handing the candidate a generic repo.',
-        whyNotAlternatives: 'Lower-ranked or withheld challenges did not provide stronger source-backed alignment, reviewability, or contrast for automatic assignment.',
+        whyThisChallenge: quality
+          ? `PIPE selected this concrete GitHub PR from source-backed candidate evidence, role context, and repository demand; latest match proof reported ${quality} assessment quality.`
+          : 'PIPE selected this concrete GitHub PR from source-backed candidate evidence, role context, and repository demand instead of handing the candidate a generic repo.',
+        whyNotAlternatives: contrast
+          ?? 'Lower-ranked or withheld challenges did not provide stronger source-backed alignment, reviewability, or contrast for automatic assignment.',
         residualRisk: 'The assignment proves challenge fit only; the hiring signal still depends on the captured branch commit, diff, tests or verification gap, transcript/chat, AI-use trail, evaluator report, and human review.',
         nextAction: 'Run the controlled workspace assessment and review the source-backed evidence before making a hiring decision.',
       },
@@ -6828,7 +6880,6 @@ schedulingAuth.get('/interviews', async (c) => {
   );
   const candidateIdsNeedingPendingMatchDiagnostics = rows.flatMap((row) => {
     if (!isWorkspaceAssessmentInterviewType(row.interview_type)) return [];
-    if (row.matched_repo_id != null || row.assignment_repo_id != null) return [];
     return row.candidate_id ? [row.candidate_id] : [];
   });
   const pendingMatchDiagnosticsByCandidateId = await loadPendingCodeReviewMatchDiagnosticsByCandidateIds(
@@ -6841,7 +6892,7 @@ schedulingAuth.get('/interviews', async (c) => {
     const matchedRepoId = r.matched_repo_id ?? r.assignment_repo_id;
     const githubRepoUrl = r.github_repo_url ?? r.assignment_github_repo_url;
     const githubPrNumber = r.github_pr_number ?? r.assignment_github_pr_number;
-    const pendingMatchDiagnostic = !matchedRepoId && r.candidate_id
+    const pendingMatchDiagnostic = r.candidate_id
       ? pendingMatchDiagnosticsByCandidateId.get(r.candidate_id) ?? null
       : null;
     const matchedRepoSource = r.matched_repo_id != null
@@ -7179,12 +7230,11 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     assessmentInviteLinkPromise,
     null,
   );
-  const pendingMatchDiagnosticPromise = effectiveMatchedRepoId
-    ? Promise.resolve(null)
-    : interview.candidate_id
-      ? loadPendingCodeReviewMatchDiagnosticsByCandidateIds(db, [interview.candidate_id])
-        .then((diagnostics) => diagnostics.get(interview.candidate_id!) ?? null)
-      : Promise.resolve(null);
+  const pendingMatchDiagnosticPromise = isWorkspaceAssessmentInterviewType(interview.interview_type)
+    && interview.candidate_id
+    ? loadPendingCodeReviewMatchDiagnosticsByCandidateIds(db, [interview.candidate_id])
+      .then((diagnostics) => diagnostics.get(interview.candidate_id!) ?? null)
+    : Promise.resolve(null);
 
   const [
     transcriptArtifact,

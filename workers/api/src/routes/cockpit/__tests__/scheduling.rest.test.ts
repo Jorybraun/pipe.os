@@ -3541,6 +3541,12 @@ describe('GET /interviews/:id detail', () => {
           kind: string;
           source: string;
           blocksPositiveAssessment: boolean;
+          message: string | null;
+          selectionRationale: {
+            whyThisChallenge: string;
+            whyNotAlternatives: string;
+            residualRisk: string;
+          } | null;
         };
         codeReviewMatch: {
           status: string;
@@ -3558,6 +3564,13 @@ describe('GET /interviews/:id detail', () => {
       kind: 'auto_match',
       source: 'candidate_challenge_assignment',
       blocksPositiveAssessment: false,
+    });
+    expect(detail.interview.assessmentSetup.message).toContain('Assessment quality: USABLE 9/12.');
+    expect(detail.interview.assessmentSetup.message).toContain('The selected PR separated from the nearest eligible comparator.');
+    expect(detail.interview.assessmentSetup.selectionRationale).toMatchObject({
+      whyThisChallenge: expect.stringContaining('USABLE 9/12'),
+      whyNotAlternatives: expect.stringContaining('nearest eligible comparator'),
+      residualRisk: expect.stringContaining('captured branch commit'),
     });
     expect(detail.interview.codeReviewMatch).toMatchObject({
       status: 'MATCHED',
@@ -3577,6 +3590,11 @@ describe('GET /interviews/:id detail', () => {
           status: string;
           kind: string;
           source: string;
+          message: string | null;
+          selectionRationale: {
+            whyThisChallenge: string;
+            whyNotAlternatives: string;
+          } | null;
         };
       }>;
     };
@@ -3591,6 +3609,9 @@ describe('GET /interviews/:id detail', () => {
         source: 'candidate_challenge_assignment',
       },
     });
+    expect(listed?.assessmentSetup.message).toContain('Assessment quality: USABLE 9/12.');
+    expect(listed?.assessmentSetup.selectionRationale?.whyThisChallenge).toContain('USABLE 9/12');
+    expect(listed?.assessmentSetup.selectionRationale?.whyNotAlternatives).toContain('nearest eligible comparator');
   });
 
   it('keeps CODE_REVIEW recruiter detail available when optional assessment session tables are absent', async () => {
