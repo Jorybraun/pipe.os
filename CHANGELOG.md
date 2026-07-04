@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Open-source workspace dev smoke now verifies the deployed recruiter detail keeps matched-task provenance in both the hiring readout and score-validity proof after evaluation and human review.
 - Recruiter assessment detail now preserves PIPE-matched challenge provenance in the hiring readout and score-validity proof, so matched tasks no longer collapse into generic challenge-packet wording after evaluation.
 - Source-backed open-source assessment fallback reports now preserve PIPE-matched challenge provenance in the evaluation summary and claims, so recruiter reports distinguish matched assignment proof from generic task evidence without overstating candidate performance.
 - Deterministic open-source assessment fallback reports now summarize captured verification, AI-use, conversation, workspace, upstream-PR, and missing-evidence signals from exact source refs, making model-fallback evaluations recruiter-actionable without inventing candidate performance claims.

@@ -635,6 +635,18 @@ async function assertRecruiterReviewerReceiptBrowser(
       await expect(assignment).toContainText('not as proof that PIPE automatically matched');
     }
 
+    const decision = page.getByTestId('interview-workspace-assessment-decision-summary');
+    await expect(decision).toBeVisible({ timeout: 60_000 });
+    if (MATCHED_REPO_ID !== null) {
+      await expect(decision).toContainText('Challenge fit');
+      await expect(decision).toContainText('Matched task');
+      await expect(decision).toContainText('source-backed candidate evidence');
+      await expect(decision).toContainText('match-fit evidence');
+    } else if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
+      await expect(decision).toContainText('Challenge fit');
+      await expect(decision).not.toContainText('Matched task');
+    }
+
     const validity = page.getByTestId('interview-workspace-assessment-validity-proof');
     await expect(validity).toBeVisible({ timeout: 60_000 });
     await expect(validity).toContainText('Score validity');
@@ -645,6 +657,9 @@ async function assertRecruiterReviewerReceiptBrowser(
     await expect(validity).toContainText('code diff');
     await expect(validity).toContainText('Use as');
     await expect(validity).toContainText('Use with recorded human decision');
+    if (MATCHED_REPO_ID !== null) {
+      await expect(validity).toContainText('PIPE-matched challenge packet');
+    }
 
     const receipt = page.getByTestId('interview-assessment-reviewer-receipt');
     await expect(receipt).toBeVisible({ timeout: 60_000 });
@@ -688,7 +703,11 @@ async function assertRecruiterReviewerReceiptBrowser(
       await expect(page.getByRole('link', { name: 'Compare base to submitted commit' })).toHaveCount(0);
     }
 
-    return { skipped: false };
+    return {
+      skipped: false,
+      matchedDecisionVisible: MATCHED_REPO_ID !== null,
+      matchedValidityVisible: MATCHED_REPO_ID !== null,
+    };
   } finally {
     await context.close();
     await browser.close();
@@ -1509,6 +1528,8 @@ async function main() {
     recruiterDetailReviewable: true,
     recruiterReviewerReceiptVisible: !recruiterBrowser.skipped,
     recruiterReviewerReceiptSkippedReason: recruiterBrowser.skipped ? recruiterBrowser.reason : null,
+    recruiterMatchedDecisionVisible: recruiterBrowser.matchedDecisionVisible === true,
+    recruiterMatchedValidityVisible: recruiterBrowser.matchedValidityVisible === true,
     recruiterListCardVisible: !recruiterListBrowser.skipped,
     recruiterListCardSkippedReason: recruiterListBrowser.skipped ? recruiterListBrowser.reason : null,
     recruiterCompareUrl: recruiterProjection.compareUrl,
