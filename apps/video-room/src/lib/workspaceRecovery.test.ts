@@ -25,6 +25,7 @@ describe('isRecoverableWorkspaceStartFailure', () => {
     expect(isRecoverableWorkspaceStartFailure('The container is not running, consider calling start()')).toBe(true);
     expect(isRecoverableWorkspaceStartFailure('CONTAINER_START_FAILED: port 8080 never opened')).toBe(true);
     expect(isRecoverableWorkspaceStartFailure('Workspace startup did not complete.')).toBe(true);
+    expect(isRecoverableWorkspaceStartFailure('Container stopped unexpectedly (exit code 0, reason exit).')).toBe(true);
   });
 
   it('does not classify arbitrary workspace failures as recoverable', () => {

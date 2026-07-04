@@ -949,14 +949,32 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const RECOVERABLE_WORKSPACE_START_FAILURE_PATTERNS = [
+  /container is not running/i,
+  /consider calling start\(\)/i,
+  /startup did not complete/i,
+  /CONTAINER_START_FAILED/i,
+  /container stopped unexpectedly\s*\(exit code 0,\s*reason exit\)/i,
+];
+
+function isRecoverableWorkspaceStartFailure(message) {
+  const value = typeof message === 'string' ? message.trim() : '';
+  if (!value) return false;
+  return RECOVERABLE_WORKSPACE_START_FAILURE_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+async function fetchWorkspaceSession(token, headers = {}) {
+  const body = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/workspace`, {
+    headers,
+  });
+  return body.workspace?.session ?? null;
+}
+
 async function pollWorkspaceReady(token, headers = {}) {
   const deadline = Date.now() + 240_000;
   let last = null;
   while (Date.now() < deadline) {
-    const body = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/workspace`, {
-      headers,
-    });
-    last = body.workspace?.session ?? null;
+    last = await fetchWorkspaceSession(token, headers);
     if (last?.status === 'READY' || last?.status === 'SLEEPING') return last;
     if (last?.status === 'ERROR') break;
     await sleep(5_000);
@@ -984,13 +1002,97 @@ async function launchWorkspaceUntilReady(token, headers = {}) {
     } catch (error) {
       lastError = error;
       const message = error instanceof Error ? error.message : String(error);
-      if (attempt >= 2 || !message.includes('container is not running')) {
+      if (attempt >= 2 || !isRecoverableWorkspaceStartFailure(message)) {
         throw error;
       }
       await sleep(5_000);
     }
   }
   throw lastError ?? new Error('Workspace did not become ready.');
+}
+
+async function readResponseBody(response) {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+async function postWorkspaceFinalize(proxyBasePath, headers, body) {
+  const response = await fetch(`${ROOM_BASE}${proxyBasePath}/assessment/finalize`, {
+    method: 'POST',
+    headers: {
+      ...mergedRoomAuthHeaders(headers),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  return {
+    response,
+    body: await readResponseBody(response),
+  };
+}
+
+async function expectUnchangedWorkspaceFinalizeBlocked({
+  token,
+  headers,
+  proxyBasePath,
+  workspaceSession,
+}) {
+  let activeProxyBasePath = proxyBasePath;
+  let activeWorkspaceSession = workspaceSession;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const finalizeResult = await postWorkspaceFinalize(activeProxyBasePath, headers, {});
+    if (
+      finalizeResult.response.status === 409
+      && finalizeResult.body?.error?.code === 'ASSESSMENT_FINALIZE_BLOCKED'
+    ) {
+      return {
+        proxyBasePath: activeProxyBasePath,
+        workspaceSession: activeWorkspaceSession,
+      };
+    }
+
+    const code = finalizeResult.body?.error?.code ?? '';
+    if (attempt < 2 && code === 'CONTAINER_ERROR') {
+      const latestSession = await fetchWorkspaceSession(token, headers);
+      const latestMessage = latestSession?.errorMessage ?? '';
+      if (
+        latestSession?.status === 'ERROR'
+        && isRecoverableWorkspaceStartFailure(latestMessage)
+      ) {
+        await sleep(5_000);
+        const relaunchedSession = await launchWorkspaceUntilReady(token, headers);
+        if (!relaunchedSession.proxyPath) {
+          throw new Error(`Relaunched workspace did not expose a proxy path: ${JSON.stringify(relaunchedSession)}`);
+        }
+        activeWorkspaceSession = relaunchedSession;
+        activeProxyBasePath = relaunchedSession.proxyPath.replace(/\/$/, '');
+        continue;
+      }
+    }
+
+    throw new Error(`Workspace finalizer did not honestly block unchanged work: ${JSON.stringify(finalizeResult.body)}`);
+  }
+  throw new Error('Workspace finalizer did not honestly block unchanged work after retry.');
+}
+
+async function assertWorkspaceBridgeHealthy(proxyBasePath, headers) {
+  const bridgeHealth = await requestJson(ROOM_BASE, `${proxyBasePath}/health`, {
+    headers,
+  });
+  if (bridgeHealth?.ok !== true) {
+    throw new Error(`Workspace bridge health check failed: ${JSON.stringify(bridgeHealth)}`);
+  }
+  if (REMOTE && bridgeHealth.bridgeRevision !== EXPECTED_BRIDGE_REVISION) {
+    throw new Error(
+      `Workspace bridge image revision mismatch: expected ${EXPECTED_BRIDGE_REVISION}, got ${JSON.stringify(bridgeHealth)}`,
+    );
+  }
+  return bridgeHealth;
 }
 
 async function recordSourceBackedRoomChatEvidence(token, headers, unique) {
@@ -1215,22 +1317,12 @@ async function main() {
       throw new Error(`Workspace packet base commit mismatch: ${JSON.stringify(challenge?.packet)}`);
     }
   }
-  const readySession = await launchWorkspaceUntilReady(hostToken, roomAuthHeaders);
+  let readySession = await launchWorkspaceUntilReady(hostToken, roomAuthHeaders);
   if (!readySession.proxyPath) {
     throw new Error(`Ready workspace did not expose a proxy path: ${JSON.stringify(readySession)}`);
   }
-  const proxyBasePath = readySession.proxyPath.replace(/\/$/, '');
-  const bridgeHealth = await requestJson(ROOM_BASE, `${proxyBasePath}/health`, {
-    headers: roomAuthHeaders,
-  });
-  if (bridgeHealth?.ok !== true) {
-    throw new Error(`Workspace bridge health check failed: ${JSON.stringify(bridgeHealth)}`);
-  }
-  if (REMOTE && bridgeHealth.bridgeRevision !== EXPECTED_BRIDGE_REVISION) {
-    throw new Error(
-      `Workspace bridge image revision mismatch: expected ${EXPECTED_BRIDGE_REVISION}, got ${JSON.stringify(bridgeHealth)}`,
-    );
-  }
+  let proxyBasePath = readySession.proxyPath.replace(/\/$/, '');
+  await assertWorkspaceBridgeHealthy(proxyBasePath, roomAuthHeaders);
   const candidateBrowser = await assertCandidateTaskBriefBrowser(
     invited.room.guestUrl,
     expectedRepoUrl,
@@ -1244,51 +1336,23 @@ async function main() {
     guestRoomAuthHeaders,
     unique,
   );
-  const finalizeResponse = await fetch(`${ROOM_BASE}${proxyBasePath}/assessment/finalize`, {
-    method: 'POST',
-    headers: {
-      ...mergedRoomAuthHeaders(roomAuthHeaders),
-      'Content-Type': 'application/json',
-    },
-    body: '{}',
+  const unchangedFinalize = await expectUnchangedWorkspaceFinalizeBlocked({
+    token: hostToken,
+    headers: roomAuthHeaders,
+    proxyBasePath,
+    workspaceSession: readySession,
   });
-  const finalizeText = await finalizeResponse.text();
-  let finalizeBody = null;
-  if (finalizeText) {
-    try {
-      finalizeBody = JSON.parse(finalizeText);
-    } catch {
-      finalizeBody = finalizeText;
-    }
-  }
-  if (
-    finalizeResponse.status !== 409
-    || finalizeBody?.error?.code !== 'ASSESSMENT_FINALIZE_BLOCKED'
-  ) {
-    throw new Error(`Workspace finalizer did not honestly block unchanged work: ${JSON.stringify(finalizeBody)}`);
-  }
+  readySession = unchangedFinalize.workspaceSession;
+  proxyBasePath = unchangedFinalize.proxyBasePath;
+  await assertWorkspaceBridgeHealthy(proxyBasePath, roomAuthHeaders);
 
   const workspaceCommit = await commitWorkspaceSmokeChange(proxyBasePath, roomAuthHeaders, unique);
-  const submittedResponse = await fetch(`${ROOM_BASE}${proxyBasePath}/assessment/finalize`, {
-    method: 'POST',
-    headers: {
-      ...mergedRoomAuthHeaders(roomAuthHeaders),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      narrative: workspaceCommit.narrative,
-      testCommand: workspaceCommit.testCommand,
-    }),
+  const submittedResult = await postWorkspaceFinalize(proxyBasePath, roomAuthHeaders, {
+    narrative: workspaceCommit.narrative,
+    testCommand: workspaceCommit.testCommand,
   });
-  const submittedText = await submittedResponse.text();
-  let submittedBody = null;
-  if (submittedText) {
-    try {
-      submittedBody = JSON.parse(submittedText);
-    } catch {
-      submittedBody = submittedText;
-    }
-  }
+  const submittedResponse = submittedResult.response;
+  const submittedBody = submittedResult.body;
   if (!submittedResponse.ok || submittedBody?.submitted !== true) {
     throw new Error(`Workspace finalizer did not accept committed work: ${JSON.stringify(submittedBody)}`);
   }

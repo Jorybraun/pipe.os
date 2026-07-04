@@ -5,6 +5,7 @@ const RECOVERABLE_START_FAILURE_PATTERNS = [
   /consider calling start\(\)/i,
   /startup did not complete/i,
   /CONTAINER_START_FAILED/i,
+  /container stopped unexpectedly\s*\(exit code 0,\s*reason exit\)/i,
 ];
 
 export function isRecoverableWorkspaceStartFailure(message: string | null | undefined): boolean {
