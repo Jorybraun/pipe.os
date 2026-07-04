@@ -1326,7 +1326,7 @@ async function main() {
     throw new Error(`Ready workspace did not expose a proxy path: ${JSON.stringify(readySession)}`);
   }
   let proxyBasePath = readySession.proxyPath.replace(/\/$/, '');
-  await assertWorkspaceBridgeHealthy(proxyBasePath, roomAuthHeaders);
+  let bridgeHealth = await assertWorkspaceBridgeHealthy(proxyBasePath, roomAuthHeaders);
   const candidateBrowser = await assertCandidateTaskBriefBrowser(
     invited.room.guestUrl,
     expectedRepoUrl,
@@ -1348,7 +1348,7 @@ async function main() {
   });
   readySession = unchangedFinalize.workspaceSession;
   proxyBasePath = unchangedFinalize.proxyBasePath;
-  await assertWorkspaceBridgeHealthy(proxyBasePath, roomAuthHeaders);
+  bridgeHealth = await assertWorkspaceBridgeHealthy(proxyBasePath, roomAuthHeaders);
 
   const workspaceCommit = await commitWorkspaceSmokeChange(proxyBasePath, roomAuthHeaders, unique);
   const submittedResult = await postWorkspaceFinalize(proxyBasePath, roomAuthHeaders, {
