@@ -373,6 +373,13 @@ function bridgePayloadHasVerificationEvidence(
     || sourceRef.sourceRefType === 'verification_gap');
 }
 
+function bridgePayloadHasProcessTelemetry(
+  payload: z.infer<typeof bridgeSubmissionPayloadSchema>,
+): boolean {
+  return payload.sourceRefs.some((sourceRef) =>
+    sourceRef.sourceRefType === 'terminal_command');
+}
+
 // ─── Router ──────────────────────────────────────────────────────────────────
 
 export const devContainer = new Hono<{
@@ -770,6 +777,12 @@ devContainer.post('/:sessionId/assessment/finalize', async (c) => {
   if (!bridgePayloadHasVerificationEvidence(payload)) {
     return devContainerErrorResponse(
       'Workspace finalizer returned commit evidence without a test_run or verification_gap source ref.',
+      502,
+    );
+  }
+  if (!bridgePayloadHasProcessTelemetry(payload)) {
+    return devContainerErrorResponse(
+      'Workspace finalizer returned commit evidence without a terminal_command source ref.',
       502,
     );
   }

@@ -173,6 +173,7 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
 
   async function seedFinalizeScenario(options: {
     includeVerificationEvidence?: boolean;
+    includeTerminalEvidence?: boolean;
   } = {}): Promise<{
     candidateId: string;
     devContainerSessionId: string;
@@ -214,6 +215,12 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
       '+export const verification = "source-backed";',
     ].join('\n');
     const testRunExactText = 'npm test -- finalize\nPASS src/finalize.test.ts';
+    const terminalExactText = [
+      '$ git status --short',
+      ' M src/finalize.ts',
+      '$ npm test -- finalize',
+      'PASS src/finalize.test.ts',
+    ].join('\n');
 
     sqlite.prepare(
       `INSERT INTO scheduled_interviews (id, candidate_id, created_at, updated_at)
@@ -310,6 +317,17 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
         }),
       );
     }
+    if (options.includeTerminalEvidence !== false) {
+      sourceRefs.push(
+        await sourceRef({
+          sourceRefType: 'terminal_command',
+          sourceRefId: `${commitSha}:terminal-finalize`,
+          evidenceRole: 'workspace_terminal_command',
+          locator: { repositoryUrl, baseCommitSha, commitSha, command: 'npm test -- finalize' },
+          exactText: terminalExactText,
+        }),
+      );
+    }
 
     const bridgeBody = {
       ok: true,
@@ -382,6 +400,40 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
     expect(commitRows.count).toBe(0);
   });
 
+  it('rejects bridge-captured commits that omit terminal process telemetry', async () => {
+    const scenario = await seedFinalizeScenario({ includeTerminalEvidence: false });
+
+    const response = await rpcAuth.request(
+      `/dev-container/${scenario.devContainerSessionId}/assessment/finalize`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: await authHeader(scenario.candidateId),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          narrative: 'Finish my workspace assessment.',
+          testCommand: 'npm test -- finalize',
+          verificationNotes: 'Focused finalizer test passed in the workspace.',
+        }),
+      },
+      scenario.env,
+      buildCtx(),
+    );
+
+    expect(response.status).toBe(502);
+    const body = await response.json() as { error?: { message?: string } };
+    expect(body.error?.message).toContain('terminal_command');
+
+    const commitRows = sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'commit_submission'`,
+    ).get(scenario.assessmentSessionId) as { count: number };
+    expect(commitRows.count).toBe(0);
+  });
+
   it('persists bridge-captured commit evidence without leaking internal assessment ids', async () => {
     const candidateId = 'cand_finalize_workspace';
     const devContainerSessionId = 'dev-session-finalize';
@@ -426,6 +478,14 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
       observedAt: now,
     }, null, 2);
     const testRunExactText = 'npm test -- finalize\nPASS src/finalize.test.ts';
+    const terminalExactText = [
+      '$ git status --short',
+      ' M src/finalize.ts',
+      '$ npm test -- finalize',
+      'PASS src/finalize.test.ts',
+      '$ git commit -am "Fix workspace finalizer"',
+      `[pipe-assessment/finalizer ${commitSha.slice(0, 7)}] Fix workspace finalizer`,
+    ].join('\n');
 
     sqlite.prepare(
       `INSERT INTO scheduled_interviews (id, candidate_id, created_at, updated_at)
@@ -552,6 +612,19 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
               internalAssessmentSessionId: assessmentSessionId,
             },
             exactText: testRunExactText,
+          }),
+          await sourceRef({
+            sourceRefType: 'terminal_command',
+            sourceRefId: `${commitSha}:terminal-finalize`,
+            evidenceRole: 'workspace_terminal_command',
+            locator: {
+              repositoryUrl,
+              baseCommitSha,
+              commitSha,
+              command: 'npm test -- finalize && git commit -am "Fix workspace finalizer"',
+              internalAssessmentSessionId: assessmentSessionId,
+            },
+            exactText: terminalExactText,
           }),
           await sourceRef({
             sourceRefType: 'code_server_file_observation',
