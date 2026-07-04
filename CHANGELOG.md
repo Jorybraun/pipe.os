@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Source-backed evaluator recommendations now downgrade `strong_evidence_to_advance` to human review when surviving claims or diagnostics do not prove verified implementation quality, preventing weak evidence from producing an advance recommendation.
 - Source-backed evaluator normalization now treats `test_run` evidence as successful verification only when it is bound to a captured submitted `git_commit`, preventing unrelated passing output from supporting correctness or verification claims.
 - Source-backed evaluator normalization now drops positive implementation correctness, quality, security, reliability, or performance claims unless the claim cites a successful `test_run`, keeping diff-only submissions as implementation evidence rather than proven correctness.
 - Source-backed evaluator normalization now drops positive communication, reasoning, collaboration, explanation, or tradeoff claims unless they cite transcript, chat, candidate plan, or candidate-authored AI-prompt evidence, preventing final diffs from being misread as explanation proof.

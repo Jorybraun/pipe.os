@@ -206,6 +206,10 @@ The controlling product rule remains:
   claim cites a successful `test_run` bound to the submitted `git_commit`. A
   final diff alone can support `implementation_evidence`, not proven
   correctness.
+- Source-backed evaluator recommendation normalization downgrades
+  `strong_evidence_to_advance` to human review unless verified
+  implementation-quality claims survive normalization and no warning or
+  blocking diagnostics remain.
 - Source-backed evaluator normalization drops positive debugging/process claims
   unless the claim cites terminal, code-editor, workspace, transcript, chat, or
   candidate AI-prompt evidence. A final diff alone proves implementation

@@ -570,17 +570,17 @@ function firstSourceRefOfType(
   return sourceRefs.find((ref) => ref.sourceRefType === sourceRefType) ?? null;
 }
 
-function sourceRefsOfTypes(
-  sourceRefs: readonly SessionSourceRef[],
+function sourceRefsOfTypes<T extends AssessmentEvidenceSourceRefInput>(
+  sourceRefs: readonly T[],
   sourceRefTypes: readonly string[],
-): SessionSourceRef[] {
+): T[] {
   const allowedTypes = new Set(sourceRefTypes);
   return sourceRefs.filter((ref) => allowedTypes.has(ref.sourceRefType));
 }
 
 function hasSuccessfulVerification(
-  sourceRefs: readonly SessionSourceRef[],
-  sessionSourceRefs: readonly SessionSourceRef[] = sourceRefs,
+  sourceRefs: readonly AssessmentEvidenceSourceRefInput[],
+  sessionSourceRefs: readonly AssessmentEvidenceSourceRefInput[] = sourceRefs,
 ): boolean {
   return sourceRefsOfTypes(sourceRefs, ['test_run']).some((ref) => {
     if (!testRunMatchesCapturedCommit(ref, sessionSourceRefs)) return false;
@@ -592,8 +592,8 @@ function hasSuccessfulVerification(
 }
 
 function testRunMatchesCapturedCommit(
-  ref: SessionSourceRef,
-  sessionSourceRefs: readonly SessionSourceRef[],
+  ref: AssessmentEvidenceSourceRefInput,
+  sessionSourceRefs: readonly AssessmentEvidenceSourceRefInput[],
 ): boolean {
   if (ref.sourceRefType !== 'test_run') return false;
   const commitShas = sourceRefsOfTypes(sessionSourceRefs, ['git_commit'])
@@ -941,6 +941,7 @@ function buildSystemPrompt(): string {
     'Do not make positive test_strategy, verification, implementation correctness, quality, security, reliability, AI-usage, process, communication, reasoning, or tradeoff claims when the matching coverage item is unsatisfied.',
     'A code_diff proves what changed, not that the implementation is correct. Use implementation_evidence for diff-only claims.',
     'A test_run must be bound to the submitted git_commit before it can support positive verification or correctness claims.',
+    'Use strong_evidence_to_advance only when verified implementation-quality claims survive and no warning or blocking diagnostics remain.',
     'A verification_gap explains why verification is partial or missing; it is not test_run evidence and must not support positive verification claims.',
     'If evidence is missing, uncertain, ungrounded, or insufficient, return diagnostics instead of positive claims.',
     'Keep the response compact: at most 4 claims and 4 diagnostics; summary and narratives must be one short sentence each.',
@@ -1574,6 +1575,74 @@ function normalizeAiRecommendation(rawRecommendation: unknown): {
   };
 }
 
+function evidenceCappedRecommendation(input: {
+  recommendation: string;
+  claims: readonly AssessmentEvaluationClaimInputCompat[];
+  diagnostics: readonly AssessmentDiagnosticInput[];
+  sessionSourceRefs: readonly AssessmentEvidenceSourceRefInput[];
+}): {
+  recommendation: string;
+  diagnostics: AssessmentDiagnosticInput[];
+} {
+  if (input.recommendation !== 'strong_evidence_to_advance') {
+    return { recommendation: input.recommendation, diagnostics: [] };
+  }
+
+  const hasBlockingOrWarningDiagnostic = input.diagnostics.some((diagnostic) =>
+    diagnostic.severity === 'blocking' || diagnostic.severity === 'warning');
+  const allSourceRefs = allClaimSourceRefs(input.claims);
+  const hasVerifiedImplementationClaim = input.claims.some((claim) => {
+    if (claim.polarity !== 'positive') return false;
+    const dimension = claim.dimension.toLowerCase();
+    if (
+      !dimension.includes('verification')
+      && !positiveCorrectnessDimensionRequiresVerification(dimension)
+    ) {
+      return false;
+    }
+    return hasSuccessfulVerification(claim.sourceRefs ?? [], input.sessionSourceRefs);
+  });
+
+  if (hasVerifiedImplementationClaim && !hasBlockingOrWarningDiagnostic) {
+    return { recommendation: input.recommendation, diagnostics: [] };
+  }
+
+  return {
+    recommendation: DEFAULT_RECOMMENDATION,
+    diagnostics: [
+      diagnosticInput({
+        code: 'MODEL_RECOMMENDATION_DOWNGRADED_BY_EVIDENCE',
+        severity: 'warning',
+        message: 'AI evaluator recommendation "strong_evidence_to_advance" was downgraded because surviving claims or diagnostics do not prove verified implementation quality.',
+        retryable: false,
+        sourceRefs: allSourceRefs.slice(0, 4),
+        details: {
+          returnedRecommendation: input.recommendation,
+          defaultRecommendation: DEFAULT_RECOMMENDATION,
+          hasVerifiedImplementationClaim,
+          hasBlockingOrWarningDiagnostic,
+        },
+      }),
+    ],
+  };
+}
+
+function allClaimSourceRefs(
+  claims: readonly AssessmentEvaluationClaimInputCompat[],
+): AssessmentEvidenceSourceRefInput[] {
+  const refs: AssessmentEvidenceSourceRefInput[] = [];
+  const seen = new Set<string>();
+  for (const claim of claims) {
+    for (const ref of claim.sourceRefs ?? []) {
+      const key = `${ref.sourceRefType}:${ref.sourceRefId}:${ref.evidenceRole ?? ''}:${ref.sourceSpanId ?? ''}`;
+      if (seen.has(key)) continue;
+      refs.push(ref);
+      seen.add(key);
+    }
+  }
+  return refs;
+}
+
 async function recordAiInteraction(input: {
   store: RepoTaskInterviewSessionStore;
   sessionId: string;
@@ -1895,6 +1964,16 @@ export async function evaluateRepoTaskAssessmentSession(
     ...[missingVerificationDiagnostic(sourceRefs)].filter((diagnostic): diagnostic is AssessmentDiagnosticInput => Boolean(diagnostic)),
   ]);
   const normalizedRecommendation = normalizeAiRecommendation(aiOutput.recommendation);
+  const recommendationDiagnosticsSeed = dedupeDiagnostics([
+    ...diagnostics,
+    ...normalizedRecommendation.diagnostics,
+  ]);
+  const cappedRecommendation = evidenceCappedRecommendation({
+    recommendation: normalizedRecommendation.recommendation,
+    claims,
+    diagnostics: recommendationDiagnosticsSeed,
+    sessionSourceRefs: sourceRefs,
+  });
   const groundedClaims = claims.filter((claim) => claim.polarity !== 'diagnostic');
   if (groundedClaims.length === 0) {
     const fallback = await createDeterministicFallbackReport({
@@ -1911,8 +1990,8 @@ export async function evaluateRepoTaskAssessmentSession(
       fallbackReason: 'The AI evaluator returned no usable non-diagnostic claims backed by exact source evidence.',
       fallbackReasonCode: 'MODEL_CLAIMS_UNUSABLE',
       diagnostics: [
-        ...diagnostics,
-        ...normalizedRecommendation.diagnostics,
+        ...recommendationDiagnosticsSeed,
+        ...cappedRecommendation.diagnostics,
       ],
     });
     if (fallback) return fallback;
@@ -1935,7 +2014,11 @@ export async function evaluateRepoTaskAssessmentSession(
 
   const summary = sourceBackedEvaluationSummary(aiOutput.summary, sourceRefs);
   const challengeFocus = challengeFocusSummary(sourceRefs);
-  const recommendation = normalizedRecommendation.recommendation;
+  const recommendation = cappedRecommendation.recommendation;
+  const reportDiagnostics = dedupeDiagnostics([
+    ...recommendationDiagnosticsSeed,
+    ...cappedRecommendation.diagnostics,
+  ]);
   const status: EvaluationReportStatus = 'EVALUATED';
   const report = await input.store.createEvaluationReport({
     sessionId: input.sessionId,
@@ -1954,13 +2037,10 @@ export async function evaluateRepoTaskAssessmentSession(
       challengeFocus,
       evidenceCoverage,
       claimIds: claims.map((claim) => claim.id),
-      diagnosticCodes: diagnostics.map((diagnostic) => diagnostic.code),
+      diagnosticCodes: reportDiagnostics.map((diagnostic) => diagnostic.code),
     },
     claims,
-    diagnostics: dedupeDiagnostics([
-      ...diagnostics,
-      ...normalizedRecommendation.diagnostics,
-    ]),
+    diagnostics: reportDiagnostics,
   });
 
   await input.store.transitionState({

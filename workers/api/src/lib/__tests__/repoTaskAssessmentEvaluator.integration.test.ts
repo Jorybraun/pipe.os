@@ -832,6 +832,127 @@ describe('repo task assessment evaluator integration', () => {
     ]));
   });
 
+  it('downgrades strong recommendations when surviving evidence does not prove verified implementation quality', async () => {
+    const fixture = await createReadyAssessmentFixture(store, 'downgraded-strong-recommendation', {
+      includeTestEvidence: false,
+    });
+    const aiRun = vi.fn(async () => ({
+      response: JSON.stringify({
+        summary: 'The candidate submitted an inspectable diff, but verified quality is not proven.',
+        recommendation: 'strong_evidence_to_advance',
+        claims: [
+          {
+            id: 'implementation-evidence-backed-by-diff',
+            polarity: 'positive',
+            dimension: 'implementation_evidence',
+            narrative: 'The submitted diff changes the popover root hook.',
+            confidence: 0.72,
+            sourceRefKeys: ['code_diff'],
+          },
+        ],
+        diagnostics: [],
+      }),
+    }));
+
+    const result = await evaluateRepoTaskAssessmentSession({
+      db,
+      store,
+      env: {
+        AI: { run: aiRun } as unknown as Ai,
+        CLOUDFLARE_AI_MODEL: '@cf/meta/llama-3.2-3b-instruct',
+      },
+      sessionId: fixture.sessionId,
+      scheduledInterviewId: fixture.scheduledInterviewId,
+      requestedBy: 'recruiter-1',
+      requestedAt: '2026-07-03T00:04:05.000Z',
+      requestEventId: fixture.requestEventId,
+      requestSourceRef: fixture.requestSourceRef,
+    });
+
+    expect(result.kind).toBe('evaluated');
+    const report = sqlite.prepare(
+      `SELECT id, status, output_json
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1`,
+    ).get(fixture.sessionId) as { id: string; status: string; output_json: string };
+    expect(report.status).toBe('EVALUATED');
+    expect(JSON.parse(report.output_json)).toMatchObject({
+      recommendation: 'mixed_evidence_human_review',
+    });
+
+    const diagnostics = sqlite.prepare(
+      `SELECT code, severity, message
+         FROM assessment_diagnostics
+        WHERE report_id = ?
+        ORDER BY code`,
+    ).all(report.id) as Array<{ code: string; severity: string; message: string }>;
+    expect(diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'MODEL_RECOMMENDATION_DOWNGRADED_BY_EVIDENCE', severity: 'warning' }),
+      expect.objectContaining({ code: 'VERIFICATION_GAP_DECLARED', severity: 'warning' }),
+    ]));
+  });
+
+  it('keeps strong recommendations when verified implementation quality survives normalization', async () => {
+    const fixture = await createReadyAssessmentFixture(store, 'strong-recommendation-with-bound-test');
+    const aiRun = vi.fn(async () => ({
+      response: JSON.stringify({
+        summary: 'The candidate submitted a verified implementation change.',
+        recommendation: 'strong_evidence_to_advance',
+        claims: [
+          {
+            id: 'correctness-backed-by-bound-test',
+            polarity: 'positive',
+            dimension: 'implementation_correctness',
+            narrative: 'The submitted implementation has successful verification evidence tied to the submitted commit.',
+            confidence: 0.82,
+            sourceRefKeys: ['test_run'],
+          },
+        ],
+        diagnostics: [],
+      }),
+    }));
+
+    const result = await evaluateRepoTaskAssessmentSession({
+      db,
+      store,
+      env: {
+        AI: { run: aiRun } as unknown as Ai,
+        CLOUDFLARE_AI_MODEL: '@cf/meta/llama-3.2-3b-instruct',
+      },
+      sessionId: fixture.sessionId,
+      scheduledInterviewId: fixture.scheduledInterviewId,
+      requestedBy: 'recruiter-1',
+      requestedAt: '2026-07-03T00:04:10.000Z',
+      requestEventId: fixture.requestEventId,
+      requestSourceRef: fixture.requestSourceRef,
+    });
+
+    expect(result.kind).toBe('evaluated');
+    const report = sqlite.prepare(
+      `SELECT id, status, output_json
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1`,
+    ).get(fixture.sessionId) as { id: string; status: string; output_json: string };
+    expect(report.status).toBe('EVALUATED');
+    expect(JSON.parse(report.output_json)).toMatchObject({
+      recommendation: 'strong_evidence_to_advance',
+    });
+
+    const diagnostics = sqlite.prepare(
+      `SELECT code, severity
+         FROM assessment_diagnostics
+        WHERE report_id = ?
+        ORDER BY code`,
+    ).all(report.id) as Array<{ code: string; severity: string }>;
+    expect(diagnostics).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ code: 'MODEL_RECOMMENDATION_DOWNGRADED_BY_EVIDENCE' }),
+    ]));
+  });
+
   it('drops unsupported positive process claims when only final diff evidence is cited', async () => {
     const fixture = await createReadyAssessmentFixture(store, 'unsupported-process-claim');
     const aiRun = vi.fn(async () => ({
