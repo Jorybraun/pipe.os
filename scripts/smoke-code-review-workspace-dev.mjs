@@ -500,7 +500,74 @@ function sourceRefCount(rows, kind) {
   return rows.find((row) => row.kind === kind)?.count ?? 0;
 }
 
-async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit, expectedBaseCommitSha) {
+function normalizeRuntimeRepoUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return value.trim().replace(/\/+$/g, '').replace(/\.git$/i, '').toLowerCase();
+}
+
+function assertRecruiterRuntimeProjection(interview, label, expected) {
+  if (!interview || typeof interview !== 'object') {
+    throw new Error(`${label} did not expose an interview projection.`);
+  }
+  if (!Object.prototype.hasOwnProperty.call(interview, 'roomStatus')) {
+    throw new Error(`${label} did not expose roomStatus: ${JSON.stringify(interview)}`);
+  }
+  if (!Object.prototype.hasOwnProperty.call(interview, 'guestWaiting')) {
+    throw new Error(`${label} did not expose guestWaiting: ${JSON.stringify(interview)}`);
+  }
+  if (typeof interview.guestWaiting !== 'boolean') {
+    throw new Error(`${label} guestWaiting is not boolean: ${JSON.stringify(interview.guestWaiting)}`);
+  }
+  if (typeof interview.roomStatus !== 'string' || interview.roomStatus.trim().length === 0) {
+    throw new Error(`${label} did not expose an active room state for the room-backed assessment: ${JSON.stringify({
+      roomStatus: interview.roomStatus,
+      guestWaiting: interview.guestWaiting,
+    })}`);
+  }
+  if (interview.roomStatus === 'ENDED') {
+    throw new Error(`${label} showed an ended room while the assessment smoke was still reviewing: ${JSON.stringify({
+      roomStatus: interview.roomStatus,
+      guestWaiting: interview.guestWaiting,
+    })}`);
+  }
+
+  const workspace = interview.workspaceSession;
+  if (!workspace || typeof workspace !== 'object') {
+    throw new Error(`${label} did not expose workspaceSession for the room-backed assessment: ${JSON.stringify(interview)}`);
+  }
+  if (typeof workspace.status !== 'string' || workspace.status.trim().length === 0) {
+    throw new Error(`${label} workspaceSession did not expose a status: ${JSON.stringify(workspace)}`);
+  }
+  if (workspace.status === 'ERROR') {
+    throw new Error(`${label} workspaceSession is in ERROR state: ${JSON.stringify(workspace)}`);
+  }
+
+  const actualRepo = normalizeRuntimeRepoUrl(workspace.repoGitUrl);
+  const expectedRepo = normalizeRuntimeRepoUrl(expected.expectedRepoUrl);
+  if (expectedRepo && actualRepo !== expectedRepo) {
+    throw new Error(`${label} workspaceSession repo mismatch: ${JSON.stringify({
+      actual: workspace.repoGitUrl,
+      expected: expected.expectedRepoUrl,
+    })}`);
+  }
+
+  if (
+    expected.expectedBaseCommitSha
+    && String(workspace.baseCommitSha ?? '').toLowerCase() !== expected.expectedBaseCommitSha.toLowerCase()
+  ) {
+    throw new Error(`${label} workspaceSession base commit mismatch: ${JSON.stringify({
+      actual: workspace.baseCommitSha,
+      expected: expected.expectedBaseCommitSha,
+    })}`);
+  }
+}
+
+async function assertRecruiterAssessmentProjection(
+  interviewId,
+  workspaceCommit,
+  expectedBaseCommitSha,
+  expectedRepoUrl,
+) {
   const deadline = Date.now() + 60_000;
   let lastInterview = null;
   let progress = null;
@@ -516,6 +583,10 @@ async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit,
   if (!progress || !commit) {
     throw new Error(`Recruiter detail did not expose assessment commit progress after polling: ${JSON.stringify(lastInterview)}`);
   }
+  assertRecruiterRuntimeProjection(lastInterview, 'Recruiter detail', {
+    expectedRepoUrl,
+    expectedBaseCommitSha,
+  });
   if (commit.commitSha !== workspaceCommit.commitSha) {
     throw new Error(`Recruiter detail exposed the wrong submitted commit: ${JSON.stringify(commit)}`);
   }
@@ -584,7 +655,7 @@ async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit,
   };
 }
 
-async function assertRecruiterListApiEvaluationProof(interviewId) {
+async function assertRecruiterListApiEvaluationProof(interviewId, expectedRepoUrl, expectedBaseCommitSha) {
   const body = await requestJson(
     APP_BASE,
     `/api/v1/scheduling/interviews?limit=20&offset=0&sort=created_desc&workspaceSmoke=${Date.now()}`,
@@ -594,6 +665,10 @@ async function assertRecruiterListApiEvaluationProof(interviewId) {
   if (!interview) {
     throw new Error(`Recruiter list API did not include the fresh workspace smoke interview ${interviewId}: ${JSON.stringify(body?.pagination ?? body)}`);
   }
+  assertRecruiterRuntimeProjection(interview, 'Recruiter list API', {
+    expectedRepoUrl,
+    expectedBaseCommitSha,
+  });
   const progress = interview.assessmentProgress;
   const evaluation = progress?.evaluation;
   if (progress?.stage !== 'EVALUATED' || progress?.nextAction !== 'NONE') {
@@ -1565,6 +1640,7 @@ async function main() {
     interviewId,
     workspaceCommit,
     expectedBaseCommitSha,
+    expectedRepoUrl,
   );
   if (recruiterProjection.assessmentSessionId !== assessmentSessionId) {
     throw new Error(`Recruiter detail returned assessment session ${recruiterProjection.assessmentSessionId}, expected ${assessmentSessionId}`);
@@ -1572,7 +1648,11 @@ async function main() {
   if (recruiterProjection.humanDecision?.decision !== humanDecision.decision) {
     throw new Error(`Recruiter detail did not expose the recorded human decision: ${JSON.stringify(recruiterProjection.humanDecision)}`);
   }
-  const recruiterListApiProof = await assertRecruiterListApiEvaluationProof(interviewId);
+  const recruiterListApiProof = await assertRecruiterListApiEvaluationProof(
+    interviewId,
+    expectedRepoUrl,
+    expectedBaseCommitSha,
+  );
   const recruiterBrowser = await assertRecruiterReviewerReceiptBrowser(
     interviewId,
     workspaceCommit,

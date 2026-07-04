@@ -143,6 +143,10 @@ The controlling product rule remains:
   tell whether the candidate is in the controlled room, the dev container is
   ready or failed, and the next action is to launch, observe, recover, or
   evaluate.
+- The deployed open-source workspace smoke now enforces that same recruiter
+  projection contract for room-backed assessments: detail and list responses
+  must expose room status, boolean guest-waiting state, workspace session
+  status, repository URL, and base commit for the assigned challenge.
 - The invite modal renders a live packet-contract checklist for those required
   fields and tells recruiters the candidate should work on an assessment branch
   or fork, with any upstream PR gated behind later review.
