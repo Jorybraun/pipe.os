@@ -563,7 +563,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
                   <div data-testid="review-session-loader" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
                     <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
                     <span style={{ fontSize: 10, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
-                      INITIALISING_REVIEW_SESSION...
+                      Initializing review session...
                     </span>
                   </div>
                 ) : isReviewSessionV2 ? (

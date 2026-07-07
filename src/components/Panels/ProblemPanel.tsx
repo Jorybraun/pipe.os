@@ -77,6 +77,32 @@ function humanizeMatchToken(value: string | null | undefined): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+interface MatchQualityGateEntryObject {
+  id?: string;
+  code?: string;
+  label?: string;
+  message?: string;
+  passed?: boolean;
+  reason?: string;
+}
+
+type MatchQualityGateEntry = string | MatchQualityGateEntryObject;
+
+function isMatchQualityGateEntryObject(value: MatchQualityGateEntry): value is MatchQualityGateEntryObject {
+  return typeof value === 'object' && value !== null;
+}
+
+function matchQualityGateEntryLabel(entry: MatchQualityGateEntry): string {
+  if (typeof entry === 'string') return formatMatchCheckLabel(entry);
+  return entry.label
+    ?? formatMatchCheckLabel(entry.id ?? entry.code ?? entry.message ?? entry.reason);
+}
+
+function matchQualityGateEntryKey(entry: MatchQualityGateEntry, index: number, prefix: string): string {
+  if (typeof entry === 'string') return `${prefix}:${entry}:${index}`;
+  return `${prefix}:${entry.id ?? entry.code ?? entry.label ?? entry.message ?? entry.reason ?? 'entry'}:${index}`;
+}
+
 function humanizeVerdict(value: string | null | undefined): string | null {
   if (!value) return null;
   return humanizeMatchToken(value);
@@ -126,8 +152,8 @@ export interface CodeReviewMatchExplanation {
   assessmentQuality?: MatchAssessmentQuality;
   qualityGate?: {
     verdict?: string;
-    checks?: string[];
-    diagnostics?: string[];
+    checks?: MatchQualityGateEntry[];
+    diagnostics?: MatchQualityGateEntry[];
   };
   candidateSourceCount?: number;
   repoSourceCount?: number;
@@ -883,7 +909,7 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: validatorAgent.rationale ? 8 : 0 }}>
             <div style={{ fontSize: 9, letterSpacing: '0.12em', color: '#6cc3ff', fontFamily: 'Space Mono', fontWeight: 700 }}>
-              VALIDATOR_AGENT
+              Validation
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 }}>
               {validatorAgent.mode && (
@@ -950,20 +976,23 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
 
       {checks.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: diagnostics.length > 0 || hasSourceBridge ? 10 : 0 }}>
-          {checks.map((check) => (
+          {checks.map((check, index) => (
             <span
-              key={check}
+              key={matchQualityGateEntryKey(check, index, 'check')}
+              title={isMatchQualityGateEntryObject(check) ? check.reason : undefined}
               style={{
                 fontSize: 8,
                 fontFamily: 'Space Mono',
-                color: 'rgba(255,255,255,0.62)',
-                border: '1px solid rgba(255,255,255,0.08)',
+                color: isMatchQualityGateEntryObject(check) && check.passed === false ? '#fca5a5' : 'rgba(255,255,255,0.62)',
+                border: isMatchQualityGateEntryObject(check) && check.passed === false
+                  ? '1px solid rgba(248,113,113,0.28)'
+                  : '1px solid rgba(255,255,255,0.08)',
                 borderRadius: 4,
                 padding: '3px 6px',
                 wordBreak: 'break-word',
               }}
             >
-              {formatMatchCheckLabel(check)}
+              {matchQualityGateEntryLabel(check)}
             </span>
           ))}
         </div>
@@ -978,9 +1007,10 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
             marginBottom: hasSourceBridge ? 10 : 0,
           }}
         >
-          {diagnostics.map((diagnostic) => (
+          {diagnostics.map((diagnostic, index) => (
             <span
-              key={diagnostic}
+              key={matchQualityGateEntryKey(diagnostic, index, 'diagnostic')}
+              title={isMatchQualityGateEntryObject(diagnostic) ? diagnostic.reason : undefined}
               style={{
                 fontSize: 8,
                 fontFamily: 'Space Mono',
@@ -992,7 +1022,7 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
                 wordBreak: 'break-word',
               }}
             >
-              {formatMatchCheckLabel(diagnostic)}
+              {matchQualityGateEntryLabel(diagnostic)}
             </span>
           ))}
         </div>

@@ -541,7 +541,7 @@ describe('GET /:id/living-context', () => {
       workspacePersonId: firstContactGraph.person?.workspacePersonId,
       totalInteractions: 1,
       totalSourceSpans: 1,
-      totalContextRecords: 1,
+      totalContextRecords: 0,
     });
 
     const personSearch = await app.request(
@@ -562,11 +562,16 @@ describe('GET /:id/living-context', () => {
     const personTimelineBody = await personTimeline.json() as {
       workspacePersonId: string;
       totalEntries: number;
-      entries: Array<{ kind: string; sourceType?: string; description?: string }>;
+      entries: Array<{ entryType?: string; interactionType?: string; narrative?: string }>;
     };
     expect(personTimelineBody.workspacePersonId).toBe(firstContactGraph.person?.workspacePersonId);
     expect(personTimelineBody.totalEntries).toBeGreaterThanOrEqual(1);
-    expect(JSON.stringify(personTimelineBody.entries)).toContain('Candidate submitted Talent Pool profile evidence.');
+    expect(personTimelineBody.entries.some((entry) => (
+      entry.entryType === 'interaction'
+      && entry.interactionType === 'message'
+      && entry.narrative === 'message interaction'
+    ))).toBe(true);
+    expect(JSON.stringify(personTimelineBody.entries)).not.toContain('Candidate submitted Talent Pool profile evidence.');
 
     const personEvidenceDepth = await app.request(
       `/${firstContactGraph.person?.personId}/living-context/evidence-depth`,
@@ -582,7 +587,7 @@ describe('GET /:id/living-context', () => {
       workspacePersonId: firstContactGraph.person?.workspacePersonId,
       totalInteractions: 1,
       totalSourceSpans: 1,
-      totalContextRecords: 1,
+      totalContextRecords: 0,
     });
 
     const secondContactRead = await app.request('/contact-1/living-context');

@@ -813,7 +813,7 @@ export function CodeReviewChallenge({
             }}
           >
             <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
-            <div style={{ fontSize: 10, letterSpacing: '0.15em' }}>FETCHING_DIFF...</div>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em' }}>Loading diff...</div>
           </div>
         )}
 

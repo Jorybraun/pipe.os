@@ -15,7 +15,7 @@ const EXPECT_AUTOMATCH = process.env.CODE_REVIEW_EXPECT_AUTOMATCH === '1';
 const EXPECT_MANUAL_OVERRIDE = process.env.CODE_REVIEW_EXPECT_MANUAL_OVERRIDE === '1';
 const EXPECT_PROFILE_RECEIVED = process.env.CODE_REVIEW_EXPECT_PROFILE_RECEIVED === '1';
 const EXPECT_MATCH_PROOF_VERDICT = (
-  process.env.CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT || 'PASSED'
+  process.env.CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT || 'Passed'
 ).trim();
 const REQUIRE_HYPEREDGES = process.env.CODE_REVIEW_REQUIRE_HYPEREDGES !== '0';
 const SESSION_TOKEN = (process.env.CODE_REVIEW_SESSION_TOKEN ?? '').trim();
@@ -185,17 +185,17 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     expect(prNumber).not.toBeNull();
 
     const matchProof = page.getByTestId('code-review-match-proof');
-    await expect(matchProof).toContainText('MATCH_PROOF');
+    await expect(matchProof).toContainText('Source-backed match');
     if (EXPECT_MATCH_PROOF_VERDICT) {
       await expect(matchProof).toContainText(EXPECT_MATCH_PROOF_VERDICT);
     }
     await expect(matchProof).toContainText(`#${prNumber}`);
     const whyThisPr = page.getByTestId('code-review-match-why');
     await expect(whyThisPr).toBeVisible();
-    await expect(whyThisPr).toContainText('WHY_THIS_PR');
+    await expect(whyThisPr).toContainText('Why this pull request');
     const readableMatchReason = page.getByTestId('code-review-match-readable-reason');
     await expect(readableMatchReason).toBeVisible();
-    await expect(readableMatchReason).toContainText('MATCH_REASON');
+    await expect(readableMatchReason).toContainText('Selection reason');
     if (EXPECT_MANUAL_OVERRIDE) {
       await expect(whyThisPr).toContainText(/recruiter selected/i);
       await expect(whyThisPr).toContainText('source-backed');
@@ -209,17 +209,17 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     }
     const assessmentFocus = page.getByTestId('code-review-assessment-focus');
     await expect(assessmentFocus).toBeVisible();
-    await expect(assessmentFocus).toContainText('ASSESSMENT_FOCUS');
+    await expect(assessmentFocus).toContainText('Assessment focus');
     const reviewProfile = page.getByTestId('code-review-review-profile');
     await expect(reviewProfile).toBeVisible();
-    await expect(reviewProfile).toContainText('ASSESSMENT_FIT');
-    await expect(reviewProfile).toContainText('TARGET_TIME');
-    await expect(reviewProfile).toContainText('LEVEL');
+    await expect(reviewProfile).toContainText('Assessment fit');
+    await expect(reviewProfile).toContainText('Target time');
+    await expect(reviewProfile).toContainText('Level');
     if (EXPECT_AUTOMATCH) {
       await expect(matchProof).not.toContainText('Manual override');
     }
     await expect(page.getByTestId('code-review-assessment-quality')).toBeVisible();
-    await expect(page.getByTestId('code-review-match-validator')).toContainText('VALIDATOR_AGENT');
+    await expect(page.getByTestId('code-review-match-validator')).toContainText('Validation');
     if (REQUIRE_HYPEREDGES) {
       await expect(page.getByTestId('code-review-match-hyperedges')).toBeVisible();
     }

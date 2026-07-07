@@ -3152,17 +3152,20 @@ meetingRooms.post('/:token/recording', async (c) => {
   const token = c.req.param('token');
   const room = await resolveRoom(c.env.DB, token);
   if (!room) {
-    console.warn('[meetingRooms] Recording upload: room not found', { token });
+    console.warn('[meetingRooms] Recording upload: room not found');
     return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
   }
   if (room.role !== 'HOST') {
-    console.warn('[meetingRooms] Recording upload: non-host role', { token, role: room.role });
+    console.warn('[meetingRooms] Recording upload: non-host role', {
+      meetingId: room.meeting_id,
+      roomId: room.room_id,
+      role: room.role,
+    });
     return apiError(c, 'FORBIDDEN', 'Only the host can upload a room recording.');
   }
 
   const contentLength = Number(c.req.header('Content-Length') ?? '0');
   console.log('[meetingRooms] Recording upload started', {
-    token,
     meetingId: room.meeting_id,
     roomId: room.room_id,
     contentLength,

@@ -13,7 +13,11 @@ describe('MatchProofPanel', () => {
       roleSourceCount: 1,
       qualityGate: {
         verdict: 'PASSED',
-        checks: ['candidate_source_evidence', 'repo_source_spans', 'role_context_alignment'],
+        checks: [
+          { id: 'candidate_source_evidence', passed: true, reason: 'Candidate source evidence is present.' },
+          { id: 'repo_source_spans', passed: true, reason: 'Repo source spans are present.' },
+          'role_context_alignment',
+        ],
       },
       assessmentQuality: {
         verdict: 'STRONG',
@@ -95,6 +99,9 @@ describe('MatchProofPanel', () => {
     expect(assessmentFocus).toHaveTextContent('TypeScript review evidence matches the PR stack');
     expect(assessmentFocus).toHaveTextContent('concrete behavioral decision');
     expect(assessmentFocus).toHaveTextContent('typescript');
+    expect(screen.getAllByText('Candidate evidence').length).toBeGreaterThan(0);
+    expect(screen.getByText('Repo source spans')).toBeTruthy();
+    expect(screen.getByText('Role alignment')).toBeTruthy();
 
     const hyperedges = screen.getByTestId('code-review-match-hyperedges');
     expect(hyperedges).toHaveTextContent('Evidence bridges');

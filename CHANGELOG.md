@@ -9,8 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment UX
 
+- Code-review match proof now accepts structured quality-gate checks and diagnostics without crashing the candidate assessment page, and renders them with candidate-safe labels.
+- Candidate code-review loading and match-validation copy now avoids protocol-style labels such as `VALIDATOR_AGENT`, `FETCHING_DIFF`, and `INITIALISING_REVIEW_SESSION`.
+- CODE_REVIEW assess-link smoke specs now assert the human-facing match proof, selection reason, assessment fit, and validation labels instead of the old internal protocol tokens.
 - Candidate code-review surfaces now use human-readable task, verdict, summary, submission, and match-proof labels instead of internal protocol tokens, and tests lock the source-backed packet and match-proof copy against leaking internal ids or source refs.
 - Talent Pool ready-assignment and standalone open-source route coverage now seed complete source-backed packet proof, keeping challenge readiness aligned with the production packet materializer.
+
+### Fixed — Candidate graph evidence
+
+- Roleless contact/candidate evidence-depth reads now aggregate same-person workspace evidence without fabricating candidate-submitted profile context from recruiter-authored invite messages.
+- Candidate living-context readiness now handles lean schemas without the legacy candidate owner column, returning an empty readiness report instead of a 500.
+
+### Fixed — Video meeting privacy
+
+- Meeting recording upload logs no longer include bearer room tokens when uploads start, fail room lookup, or are rejected for a non-host role.
 
 ### Fixed — Open-source assessment evaluator
 
