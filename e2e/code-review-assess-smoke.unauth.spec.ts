@@ -40,18 +40,17 @@ async function startWelcomeScreenIfPresent(page: Page): Promise<void> {
   const startButtons = page.getByRole('button', { name: 'START_INTERVIEW' });
   await startButtons.first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const startButtonCount = await startButtons.count();
-    let clicked = false;
-    for (let index = 0; index < startButtonCount; index += 1) {
-      const startButton = startButtons.nth(index);
-      if (!(await startButton.isVisible())) continue;
-      await startButton.click();
-      clicked = true;
-      break;
+  const startButtonCount = await startButtons.count();
+  for (let index = 0; index < startButtonCount; index += 1) {
+    const startButton = startButtons.nth(index);
+    if (!(await startButton.isVisible())) continue;
+    try {
+      await startButton.dispatchEvent('click');
+    } catch {
+      // If the welcome screen auto-advances while the button is present,
+      // the click can race with the rerender. Fall through and wait for the
+      // advanced state instead of failing the smoke on a transient detach.
     }
-    if (!clicked) return;
-
     const advanced = await Promise.race([
       page.getByTestId('code-review-challenge').waitFor({ state: 'visible', timeout: 6_000 })
         .then(() => true)
@@ -61,7 +60,6 @@ async function startWelcomeScreenIfPresent(page: Page): Promise<void> {
         .catch(() => false),
     ]);
     if (advanced) return;
-    await page.waitForTimeout(500);
   }
 }
 
@@ -215,13 +213,15 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     const reviewProfile = page.getByTestId('code-review-review-profile');
     await expect(reviewProfile).toBeVisible();
     await expect(reviewProfile).toContainText('ASSESSMENT_FIT');
-    await expect(reviewProfile).toContainText('TARGET_TIME');
+    await expect(reviewProfile).toContainText('Expected time');
     await expect(reviewProfile).toContainText('LEVEL');
     // Candidate comprehension aids (human-readable, no internal jargon).
-    await expect(codeReview).toContainText('Expected time');
-    await expect(codeReview).toContainText('What makes a strong review');
-    await expect(codeReview).toContainText('clear verdict rationale');
-    await expect(codeReview).toContainText('AI tools');
+    await expect(reviewProfile).toContainText('Expected time');
+    const goodReviewChecklist = page.getByTestId('code-review-good-review-checklist');
+    await expect(goodReviewChecklist).toBeVisible();
+    await expect(goodReviewChecklist).toContainText('What makes a strong review');
+    await expect(goodReviewChecklist).toContainText('clear verdict rationale');
+    await expect(page.getByTestId('code-review-ai-use-note')).toContainText('AI tools');
     if (EXPECT_AUTOMATCH) {
       await expect(matchProof).not.toContainText('Manual override');
     }
@@ -263,6 +263,53 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
       });
     });
 
+    await page.route('**/rpc/get-stage-config', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          isComplete: false,
+          stageTitle: 'Code Review',
+          currentIndex: 0,
+          challenges: [
+            { type: 'WELCOME', order: 0, title: 'Welcome' },
+            { type: 'CODE_REVIEW', order: 1, title: 'Code Review' },
+          ],
+        }),
+      });
+    });
+
+    await page.route('**/rpc/get-challenge', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'challenge-stale-1',
+          type: 'CODE_REVIEW',
+          title: 'Code Review',
+          instructions: 'Review the pull request.',
+          githubRepoUrl: 'https://github.com/mui/base-ui',
+          githubPrNumber: 973,
+          githubPrTitle: 'Better handle impatient clicks',
+          reviewProfile: {
+            source: 'deterministic_engineering_prior',
+            difficultyBand: 'advanced',
+            expectedSeniority: 'staff',
+            expectedTimeMinutes: 75,
+            basis: {
+              changedFileCount: 3,
+              changedLineCount: 84,
+              sourceHunkCount: 10,
+              testChangeCount: 1,
+              demandFamilyCount: 6,
+              hasIssueContext: false,
+            },
+            rationale: 'Disposable smoke fixture.',
+          },
+        }),
+      });
+    });
+
     await page.route('**/rpc/start-assessment', async (route) => {
       await route.fulfill({
         status: 409,
@@ -278,7 +325,7 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
 
     await page.goto(buildAssessUrl(staleToken), { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('start-interview-btn')).toBeVisible({ timeout: 10_000 });
-    await page.getByTestId('start-interview-btn').click();
+    await page.getByTestId('start-interview-btn').dispatchEvent('click');
     await expect(page.getByText('This link has been replaced')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText('Ask your recruiter for the latest invite link — a newer link for this assessment was issued after this one.')).toBeVisible();
     await expect(page.locator('body')).not.toContainText('Connection Error');

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - De-jargonized the candidate CODE_REVIEW challenge surface by replacing seven internal packet and empty-state tokens with human copy, adding an expected-time hint, a strong-review checklist, and an AI-use transparency note on the challenge screen.
 - Updated the CODE_REVIEW smoke coverage in `e2e/code-review-assess-smoke.unauth.spec.ts` and the co-located `src/components/Assessment/__tests__/CodeReviewChallenge.test.tsx` assertions in lockstep with the surface copy changes.
+- Replaced the candidate review-profile `TARGET_TIME` label with `Expected time` so the smoke and visible challenge copy stay human-readable.
+- Moved the strong-review checklist onto the active review-session right panel so the ready render smoke can verify the comprehension aid on the candidate-visible review screen.
 
 ### Added — CODE_REVIEW experience repair handoff
 

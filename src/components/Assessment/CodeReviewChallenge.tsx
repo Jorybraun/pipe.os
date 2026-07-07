@@ -273,7 +273,7 @@ export function ReviewProfileCard({ profile }: { profile: CodeReviewReviewProfil
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
         <div>
           <div style={{ fontSize: 8, color: BRAND_DIM, fontFamily: LABEL_FONT, marginBottom: 3 }}>
-            TARGET_TIME
+            Expected time
           </div>
           <div style={{ fontSize: 13, color: '#f4f8ff', fontWeight: 800 }}>
             {profile.expectedTimeMinutes} min
@@ -312,6 +312,48 @@ export function ReviewProfileCard({ profile }: { profile: CodeReviewReviewProfil
       <p style={{ margin: 0, color: BRAND_DIM, fontSize: 10, lineHeight: 1.55 }}>
         {profile.rationale}
       </p>
+    </div>
+  );
+}
+
+export function GoodReviewChecklist(): JSX.Element {
+  return (
+    <div
+      data-testid="code-review-good-review-checklist"
+      style={{
+        padding: 12,
+        borderRadius: 4,
+        background: BRAND_SURFACE_SOFT,
+        border: `1px solid ${BRAND_BORDER}`,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9,
+          letterSpacing: '0.2em',
+          color: BRAND_DIM,
+          marginBottom: 10,
+          fontFamily: LABEL_FONT,
+        }}
+      >
+        What makes a strong review
+      </div>
+      <ul
+        style={{
+          margin: 0,
+          paddingLeft: 16,
+          color: BRAND_MUTED,
+          fontSize: 10,
+          lineHeight: 1.6,
+          display: 'grid',
+          gap: 6,
+        }}
+      >
+        <li>Check correctness against the actual code paths and expected behavior.</li>
+        <li>Weight severity by risk, not just by style preferences or volume.</li>
+        <li>Leave actionable comments that point to specific changes or follow-up steps.</li>
+        <li>State a clear verdict rationale so the final decision is easy to understand.</li>
+      </ul>
     </div>
   );
 }
@@ -889,43 +931,7 @@ export function CodeReviewChallenge({
       >
         <div style={{ flex: 1, overflowY: 'auto' }}>
           <div style={{ padding: 24, borderBottom: `1px solid ${BRAND_BORDER}` }}>
-            <div
-              data-testid="code-review-good-review-checklist"
-              style={{
-                padding: 12,
-                borderRadius: 4,
-                background: BRAND_SURFACE_SOFT,
-                border: `1px solid ${BRAND_BORDER}`,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 9,
-                  letterSpacing: '0.2em',
-                  color: BRAND_DIM,
-                  marginBottom: 10,
-                  fontFamily: LABEL_FONT,
-                }}
-              >
-                What makes a strong review
-              </div>
-              <ul
-                style={{
-                  margin: 0,
-                  paddingLeft: 16,
-                  color: BRAND_MUTED,
-                  fontSize: 10,
-                  lineHeight: 1.6,
-                  display: 'grid',
-                  gap: 6,
-                }}
-              >
-                <li>Check correctness against the actual code paths and expected behavior.</li>
-                <li>Weight severity by risk, not just by style preferences or volume.</li>
-                <li>Leave actionable comments that point to specific changes or follow-up steps.</li>
-                <li>State a clear verdict rationale so the final decision is easy to understand.</li>
-              </ul>
-            </div>
+            <GoodReviewChecklist />
           </div>
 
           {/* Verdict */}
