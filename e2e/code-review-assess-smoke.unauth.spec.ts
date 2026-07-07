@@ -237,4 +237,44 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     await expect(page.locator('body')).not.toContainText(VIDEO_ROOM_PATTERN);
     expect(diffRenderErrors).toEqual([]);
   });
+
+  test('shows the replaced-link terminal card when a fresh start claim is stale', async ({ page }) => {
+    const staleToken = 'stale-invite-token';
+    const sessionToken = 'stale-session-jwt';
+
+    await page.route('**/rpc/resolve-token', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'candidate-stale-1',
+          pipelineId: 'pipeline-stale-1',
+          status: 'INVITED',
+          name: 'Stale Candidate',
+          sessionToken,
+        }),
+      });
+    });
+
+    await page.route('**/rpc/start-assessment', async (route) => {
+      await route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: {
+            code: 'STALE_INVITE_TOKEN',
+            message: 'This invite link is no longer current.',
+          },
+        }),
+      });
+    });
+
+    await page.goto(buildAssessUrl(staleToken), { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('start-interview-btn')).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId('start-interview-btn').click();
+    await expect(page.getByText('This link has been replaced')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Ask your recruiter for the latest invite link — a newer link for this assessment was issued after this one.')).toBeVisible();
+    await expect(page.locator('body')).not.toContainText('Connection Error');
+    await expect(page.locator('body')).not.toContainText('This one-use assessment link has already started');
+  });
 });

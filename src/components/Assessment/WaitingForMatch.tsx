@@ -55,107 +55,85 @@ async function fetchProfile(sessionToken: string): Promise<CandidateProfile | nu
   }
 }
 
-function formatDiagnosticLabel(value: string): string {
-  return value.replace(/_/g, ' ').toUpperCase();
+function progressLabelForStepId(stepId: WaitingPipelineStep['id']): string {
+  if (stepId === 'intake' || stepId === 'decomposition') return 'Analyzing your background';
+  if (stepId === 'repo_matching') return 'Finding a real project that fits';
+  return 'Preparing your review';
 }
 
-function formatStatusLabel(value: WaitingPipelineStepStatus): string {
-  if (value === 'blocked') return 'NEEDS ATTENTION';
-  return value.toUpperCase();
+function progressBlockStatus(
+  diagnostics: WaitingForMatchDiagnostics | undefined,
+  stepIds: WaitingPipelineStep['id'][],
+): WaitingPipelineStepStatus {
+  const pipeline = diagnostics?.pipeline ?? [];
+  const matching = pipeline.filter((step) => stepIds.includes(step.id));
+  if (matching.some((step) => step.status === 'blocked')) return 'blocked';
+  if (matching.some((step) => step.status === 'active')) return 'active';
+  if (matching.some((step) => step.status === 'complete')) return 'complete';
+  return 'pending';
 }
 
-function statusColor(value: WaitingPipelineStepStatus): string {
+function currentProgressBlock(
+  diagnostics: WaitingForMatchDiagnostics | undefined,
+  isBlocked: boolean,
+): { label: string; status: WaitingPipelineStepStatus } {
+  const pipeline = diagnostics?.pipeline ?? [];
+  if (pipeline.length === 0) {
+    return {
+      label: isBlocked ? 'Finding a real project that fits' : 'Analyzing your background',
+      status: isBlocked ? 'blocked' : 'active',
+    };
+  }
+
+  const blocks: Array<{ label: string; stepIds: WaitingPipelineStep['id'][] }> = [
+    { label: 'Analyzing your background', stepIds: ['intake', 'decomposition'] },
+    { label: 'Finding a real project that fits', stepIds: ['repo_matching'] },
+    { label: 'Preparing your review', stepIds: ['challenge', 'review', 'scoring'] },
+  ];
+
+  const activeBlock = blocks.find((block) => progressBlockStatus(diagnostics, block.stepIds) === 'active');
+  if (activeBlock) {
+    return { label: activeBlock.label, status: 'active' };
+  }
+
+  if (isBlocked) {
+    const blockedBlock = blocks.find((block) => progressBlockStatus(diagnostics, block.stepIds) === 'blocked');
+    if (blockedBlock) return { label: blockedBlock.label, status: 'blocked' };
+  }
+  const pendingBlock = blocks.find((block) => progressBlockStatus(diagnostics, block.stepIds) === 'pending');
+  return pendingBlock
+    ? { label: pendingBlock.label, status: 'pending' }
+    : { label: 'Preparing your review', status: isBlocked ? 'blocked' : 'complete' };
+}
+
+function statusLabel(value: WaitingPipelineStepStatus): string {
+  if (value === 'complete') return 'Done';
+  if (value === 'active') return 'Working';
+  if (value === 'blocked') return 'Needs attention';
+  return 'Queued';
+}
+
+function statusColorForBlock(value: WaitingPipelineStepStatus): string {
   if (value === 'complete') return '#4ade80';
   if (value === 'active') return '#60a5fa';
   if (value === 'blocked') return '#fbbf24';
   return 'var(--pipe-text-dim)';
 }
 
-function formatUpdatedAt(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function diagnosticRows(diagnostics: WaitingForMatchDiagnostics | undefined): Array<{ label: string; value: string }> {
-  if (!diagnostics) return [];
-  const rows: Array<{ label: string; value: string }> = [];
-  if (diagnostics.phase) {
-    rows.push({ label: 'PHASE', value: formatDiagnosticLabel(diagnostics.phase) });
-  }
-  if (diagnostics.ingestionStatus) {
-    rows.push({ label: 'STATUS', value: formatDiagnosticLabel(diagnostics.ingestionStatus) });
-  }
-  if (diagnostics.currentStep) {
-    rows.push({ label: 'STEP', value: formatDiagnosticLabel(diagnostics.currentStep) });
-  }
-  if (typeof diagnostics.matchableNodeCount === 'number' || typeof diagnostics.rawNodeCount === 'number') {
-    const matchable = diagnostics.matchableNodeCount ?? 0;
-    const raw = diagnostics.rawNodeCount ?? matchable;
-    rows.push({ label: 'EVIDENCE', value: `${matchable} MATCHABLE / ${raw} RAW` });
-  }
-  const updatedAt = formatUpdatedAt(diagnostics.updatedAt);
-  if (updatedAt) {
-    rows.push({ label: 'UPDATED', value: updatedAt.toUpperCase() });
-  }
-  return rows;
-}
-
-function currentPipelineStep(
-  diagnostics: WaitingForMatchDiagnostics | undefined,
-  isBlocked: boolean,
-): WaitingPipelineStep | null {
-  const pipeline = diagnostics?.pipeline ?? [];
-  if (pipeline.length === 0) return null;
-  if (isBlocked) {
-    return pipeline.find((step) => step.status === 'blocked') ?? pipeline.find((step) => step.status === 'active') ?? null;
-  }
-  return pipeline.find((step) => step.status === 'active') ?? pipeline.find((step) => step.status === 'blocked') ?? null;
-}
-
-function fallbackPipelineStatus(
-  diagnostics: WaitingForMatchDiagnostics | undefined,
-  isBlocked: boolean,
-  dots: string,
-): string {
-  if (diagnostics?.phase === 'candidate_evidence') {
-    return isBlocked ? 'CANDIDATE EVIDENCE NEEDS ATTENTION' : `CANDIDATE EVIDENCE IN PROGRESS${dots}`;
-  }
-  if (diagnostics?.phase === 'repo_matching') {
-    return isBlocked ? 'REPO MATCHING NEEDS ATTENTION' : `REPO MATCHING IN PROGRESS${dots}`;
-  }
-  return isBlocked ? 'MATCHING NEEDS ATTENTION' : `MATCHING IN PROGRESS${dots}`;
-}
-
-function pipelineStatusText(
-  step: WaitingPipelineStep | null,
-  diagnostics: WaitingForMatchDiagnostics | undefined,
-  isBlocked: boolean,
-  dots: string,
-): string {
-  if (!step) return fallbackPipelineStatus(diagnostics, isBlocked, dots);
-  if (step.status === 'blocked') return `${step.label} needs attention`.toUpperCase();
-  if (step.status === 'active') return `${step.label} active`.toUpperCase();
-  return fallbackPipelineStatus(diagnostics, isBlocked, dots);
+function blockTone(value: WaitingPipelineStepStatus): string {
+  if (value === 'complete') return 'rgba(74,222,128,0.08)';
+  if (value === 'active') return 'rgba(96,165,250,0.08)';
+  if (value === 'blocked') return 'rgba(251,191,36,0.08)';
+  return 'rgba(12,12,14,0.24)';
 }
 
 export function WaitingForMatch({
-  title,
-  instructions,
   config,
   onRefresh,
   sessionToken,
 }: WaitingForMatchProps): JSX.Element {
   const intervalSeconds = config.refreshIntervalSeconds ?? 30;
   const isBlocked = config.state === 'blocked';
-  const rows = diagnosticRows(config.diagnostics);
-  const pipeline = config.diagnostics?.pipeline ?? [];
   const profileReadyStatuses = new Set(['profile_generated', 'embedded', 'matched', 'enriched']);
   const canViewProfile = Boolean(
     sessionToken
@@ -165,22 +143,13 @@ export function WaitingForMatch({
   );
   const profileUnavailableMessage = isBlocked
     ? 'Profile is unavailable while matching needs recruiter attention.'
-    : 'Profile appears after evidence decomposition.';
+    : 'Profile appears after PIPE finishes reviewing your background.';
 
-  const [dots, setDots] = useState('');
   const [showProfile, setShowProfile] = useState(false);
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [refreshState, setRefreshState] = useState<'idle' | 'checking' | 'checked' | 'failed'>('idle');
-
-  // Animated ellipsis
-  useEffect(() => {
-    const t = setInterval(() => {
-      setDots((d) => (d.length >= 3 ? '' : d + '.'));
-    }, 600);
-    return () => clearInterval(t);
-  }, []);
 
   // Auto-refresh
   useEffect(() => {
@@ -212,13 +181,33 @@ export function WaitingForMatch({
     setProfile(p);
     setProfileLoading(false);
     if (!p) {
-      setProfileError('Profile is not ready yet. Evidence decomposition has not produced a candidate profile.');
+      setProfileError('Profile is not ready yet. PIPE is still reviewing your background.');
       return;
     }
     setShowProfile(true);
   };
-  const activePipelineStep = currentPipelineStep(config.diagnostics, isBlocked);
-  const statusText = pipelineStatusText(activePipelineStep, config.diagnostics, isBlocked, dots);
+  const progressBlocks: Array<{ label: string; status: WaitingPipelineStepStatus }> = [
+    {
+      label: progressLabelForStepId('decomposition'),
+      status: progressBlockStatus(config.diagnostics, ['intake', 'decomposition']),
+    },
+    {
+      label: progressLabelForStepId('repo_matching'),
+      status: progressBlockStatus(config.diagnostics, ['repo_matching']),
+    },
+    {
+      label: progressLabelForStepId('challenge'),
+      status: progressBlockStatus(config.diagnostics, ['challenge', 'review', 'scoring']),
+    },
+  ];
+  const activeBlock = currentProgressBlock(config.diagnostics, isBlocked);
+  const statusText = activeBlock.status === 'blocked'
+    ? `${activeBlock.label} needs attention`
+    : activeBlock.label;
+  const safeInstructions = isBlocked
+    ? 'Your recruiter needs to review this match before your review continues.'
+    : 'PIPE is analyzing your background, finding a real project that fits, and preparing your review.';
+  const displayTitle = activeBlock.label;
 
   if (showProfile && profile) {
     return (
@@ -289,7 +278,7 @@ export function WaitingForMatch({
             letterSpacing: '-0.02em',
           }}
         >
-          {title}
+          {displayTitle}
         </h2>
 
         <p
@@ -301,7 +290,7 @@ export function WaitingForMatch({
             fontFamily: '"Space Mono", monospace',
           }}
         >
-          {instructions}
+          {safeInstructions}
         </p>
 
         {config.reason && (
@@ -318,8 +307,9 @@ export function WaitingForMatch({
           </p>
         )}
 
-        {rows.length > 0 && (
+        {progressBlocks.length > 0 && (
           <div
+            data-testid="code-review-pipeline"
             style={{
               margin: '0 0 24px',
               border: '1px solid rgba(255,255,255,0.12)',
@@ -327,107 +317,38 @@ export function WaitingForMatch({
               textAlign: 'left',
             }}
           >
-            {rows.map((row) => (
+            {progressBlocks.map((row) => (
               <div
                 key={row.label}
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: '112px minmax(0, 1fr)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
                   gap: 12,
                   padding: '10px 12px',
-                  borderBottom: row.label === rows[rows.length - 1]?.label ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                  borderBottom: row.label === progressBlocks[progressBlocks.length - 1]?.label
+                    ? 'none'
+                    : '1px solid rgba(255,255,255,0.08)',
                   fontFamily: '"Space Mono", monospace',
+                  background: blockTone(row.status),
                 }}
               >
-                <span
-                  style={{
-                    fontSize: 9,
-                    color: 'var(--pipe-text-dim)',
-                    lineHeight: 1.4,
-                  }}
-                >
-                  {row.label}
-                </span>
-                <span
-                  style={{
-                    fontSize: 10,
-                    color: 'var(--pipe-text, #fff)',
-                    lineHeight: 1.4,
-                    overflowWrap: 'anywhere',
-                  }}
-                >
-                  {row.value}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {pipeline.length > 0 && (
-          <div
-            data-testid="code-review-pipeline"
-            style={{
-              display: 'grid',
-              gap: 6,
-              margin: '0 0 24px',
-              textAlign: 'left',
-            }}
-          >
-            {pipeline.map((step) => (
-              <div
-                key={step.id}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '12px minmax(0, 1fr) auto',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '9px 10px',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  background: step.status === 'active'
-                    ? 'rgba(96,165,250,0.08)'
-                    : step.status === 'blocked'
-                      ? 'rgba(251,191,36,0.08)'
-                      : 'rgba(12,12,14,0.24)',
-                }}
-              >
-                <span
-                  aria-hidden="true"
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    background: statusColor(step.status),
-                  }}
-                />
-                <span
-                  style={{
-                    display: 'grid',
-                    gap: 3,
-                    minWidth: 0,
-                    fontFamily: '"Space Mono", monospace',
-                  }}
-                >
-                  <span style={{ color: 'var(--pipe-text, #fff)', fontSize: 10, lineHeight: 1.3 }}>
-                    {step.label}
+                <span style={{ display: 'grid', gap: 3, minWidth: 0 }}>
+                  <span style={{ fontSize: 11, color: 'var(--pipe-text, #fff)', lineHeight: 1.4 }}>
+                    {row.label}
                   </span>
-                  {step.detail && (
-                    <span style={{ color: 'var(--pipe-text-dim)', fontSize: 9, lineHeight: 1.35, overflowWrap: 'anywhere' }}>
-                      {step.detail}
-                    </span>
-                  )}
+                  <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', lineHeight: 1.4, overflowWrap: 'anywhere' }}>
+                    {row.status === 'complete'
+                      ? 'This step is done.'
+                      : row.status === 'active'
+                        ? 'This step is in progress.'
+                        : row.status === 'blocked'
+                          ? 'This step needs recruiter attention.'
+                          : 'This step is queued.'}
+                  </span>
                 </span>
-                <span
-                  style={{
-                    color: statusColor(step.status),
-                    fontFamily: '"Space Mono", monospace',
-                    fontSize: 8,
-                    fontWeight: 800,
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {formatStatusLabel(step.status)}
+                <span style={{ fontSize: 8, color: statusColorForBlock(row.status), fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                  {statusLabel(row.status)}
                 </span>
               </div>
             ))}

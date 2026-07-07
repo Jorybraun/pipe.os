@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added a drafted, unwired `CodeReviewAssessmentReport` recruiter component (recommendation-first readout with evidence summary, risks, AI-use framing, next action, and collapsed audit trail) plus a self-contained cloud handoff brief (`docs/plans/handoff-code-review-experience-repair.md`) covering the Pass 1/Pass 2 execution plan, verified data map, and local environment runbook for the CODE_REVIEW assessment experience work.
 - Wired the recruiter `CodeReviewAssessmentReport` into `src/pages/InterviewDetailPage.tsx` and added smoke coverage in `e2e/code-review-recruiter-detail-smoke.spec.ts` to prove the report appears in both the matched and blocked-with-decision recruiter paths.
+- Candidate CODE_REVIEW handoff now preserves `STALE_INVITE_TOKEN` as its own terminal invite state and replaces the waiting-screen diagnostics grid with plain-language progress, with Playwright and component coverage proving the stale-link and waiting-copy flows.
 
 ### Fixed — CODE_REVIEW scoring
 
