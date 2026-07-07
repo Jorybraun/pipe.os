@@ -44,6 +44,7 @@ interface InviteCreationModalProps {
   onCreateInvite: (data: InviteCreationData) => Promise<{
     id: string;
     meetingUrl?: string | null;
+    deliveredUrl?: string | null;
     emailSent?: boolean;
     emailQueued?: boolean;
     provider?: string | undefined;
@@ -393,7 +394,7 @@ export function InviteCreationModal({
       const result = await onCreateInvite(inviteData);
       setCreatedInvite({
         id: result.id,
-        meetingUrl: result.meetingUrl ?? null,
+        meetingUrl: result.meetingUrl ?? result.deliveredUrl ?? null,
         emailSent: typeof result.emailSent === 'boolean' ? result.emailSent : null,
         emailQueued: Boolean(result.emailQueued),
         provider: result.provider,

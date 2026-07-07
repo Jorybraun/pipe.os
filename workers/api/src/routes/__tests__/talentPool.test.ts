@@ -426,6 +426,21 @@ function challengePacketJson(): string {
       narrative: 'Repair retry scheduling so terminal events are emitted exactly once.',
     }],
     demandFamilies: ['runtime_reliability'],
+    reviewProfile: {
+      source: 'deterministic_engineering_prior',
+      difficultyBand: 'focused',
+      expectedSeniority: 'senior',
+      expectedTimeMinutes: 45,
+      rationale: 'focused review calibrated for senior candidates; 45 minute target from deterministic engineering prior.',
+      basis: {
+        changedFileCount: 2,
+        changedLineCount: 84,
+        sourceHunkCount: 4,
+        testChangeCount: 1,
+        demandFamilyCount: 1,
+        hasIssueContext: true,
+      },
+    },
     contentHash: 'sha256:challenge-packet-973',
   });
 }

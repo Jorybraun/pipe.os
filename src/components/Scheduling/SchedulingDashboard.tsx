@@ -35,7 +35,7 @@ interface InviteResponse {
   success: boolean;
   emailSent: boolean;
   emailQueued?: boolean;
-  meetingUrl: string;
+  meetingUrl: string | null;
   schedulingUrl?: string | null;
   deliveredUrl?: string | null;
   provider?: string;
@@ -64,9 +64,9 @@ interface StartAssessmentEvaluationResponse {
 export function resolveInviteCreationGuestLink(
   inviteResult: Pick<InviteResponse, 'meetingUrl' | 'schedulingUrl' | 'deliveredUrl'> | null,
 ): string | null {
-  // `deliveredUrl` can be a provider scheduling page. The modal should show
-  // the Pipe room link that host/recruiter can open immediately.
-  return inviteResult?.meetingUrl ?? null;
+  // Prefer the Pipe room link when one exists. CODE_REVIEW invites do not have
+  // a room URL, so their delivered /assess link must remain copyable here.
+  return inviteResult?.meetingUrl ?? inviteResult?.deliveredUrl ?? null;
 }
 
 function isInterviewType(value: string | null): value is InterviewType {
