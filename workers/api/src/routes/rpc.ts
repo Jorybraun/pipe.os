@@ -65,6 +65,13 @@ import {
   type CommitSubmissionChangedFileStatus,
 } from '../lib/repoTaskInterviewSession';
 import {
+  candidateSafeChallengeExactText,
+  candidateSafeChallengeLocator,
+  candidateSafeChallengeSummary,
+  candidateSafeEvaluation,
+} from '../lib/assessmentCandidateSafety';
+import type { CandidateSafeAssessmentProgressEvaluation } from '../lib/assessmentCandidateSafety';
+import {
   ensureMatchedOpenSourceChallengeAssessmentSession,
 } from '../lib/openSourceChallengeSessions';
 import type { JsonObject, JsonValue } from '../lib/livingContext';
@@ -848,7 +855,7 @@ interface CandidateAssessmentProgressPayload {
   } | null;
   latestEvent: Omit<NonNullable<AssessmentProgressSnapshot['latestEvent']>, 'id'> | null;
   commit: Omit<NonNullable<AssessmentProgressSnapshot['commit']>, 'eventId'> | null;
-  evaluation: Omit<NonNullable<AssessmentProgressSnapshot['evaluation']>, 'id'> | null;
+  evaluation: CandidateSafeAssessmentProgressEvaluation | null;
 }
 
 const candidateAssessmentJsonValueSchema: z.ZodType<JsonValue> = z.lazy(() => z.union([
@@ -1903,31 +1910,23 @@ async function loadLatestAssessmentSessionForCandidate(
   ).bind(candidateId).first<CandidateAssessmentSessionRow>();
 }
 
-function candidateSafeAssessmentLocator(locator: JsonObject): JsonObject {
-  const safe: JsonObject = {};
-  for (const key of [
-    'repositoryUrl',
-    'githubPrNumber',
-    'pullRequestUrl',
-    'baseCommitSha',
-    'headCommitSha',
-  ]) {
-    const value = locator[key];
-    if (
-      typeof value === 'string'
-      || typeof value === 'number'
-      || typeof value === 'boolean'
-      || value === null
-    ) {
-      safe[key] = value;
-    }
-  }
-  return safe;
+function candidateSafeAssessmentEvidenceSnippets(
+  snippets: AssessmentProgressSnapshot['evidenceSnippets'],
+): AssessmentProgressSnapshot['evidenceSnippets'] {
+  return snippets.flatMap((snippet) => {
+    const exactText = candidateSafeChallengeExactText({
+      sourceRefType: snippet.sourceRefType,
+      exactText: snippet.exactText,
+    }).trim();
+    if (!exactText) return [];
+    return [{ ...snippet, exactText }];
+  });
 }
 
 function serializeCandidateAssessmentProgress(
   progress: AssessmentProgressSnapshot,
 ): CandidateAssessmentProgressPayload {
+  const challengeSourceRefType = progress.challenge?.sourceRefType ?? null;
   return {
     mode: progress.session.mode,
     state: progress.session.state,
@@ -1950,15 +1949,24 @@ function serializeCandidateAssessmentProgress(
     hasVerificationGap: progress.hasVerificationGap,
     evidenceCounts: progress.evidenceCounts,
     sourceRefCounts: progress.sourceRefCounts,
-    evidenceSnippets: progress.evidenceSnippets,
+    evidenceSnippets: candidateSafeAssessmentEvidenceSnippets(progress.evidenceSnippets),
     challenge: progress.challenge
       ? {
           sourceRefType: progress.challenge.sourceRefType,
           evidenceRole: progress.challenge.evidenceRole,
-          exactText: progress.challenge.exactText,
+          exactText: candidateSafeChallengeExactText({
+            sourceRefType: progress.challenge.sourceRefType,
+            exactText: progress.challenge.exactText,
+          }),
           contentHash: progress.challenge.contentHash,
-          locator: candidateSafeAssessmentLocator(progress.challenge.locator),
-          summary: assessmentProgressChallengeSummary(progress.challenge),
+          locator: candidateSafeChallengeLocator({
+            sourceRefType: progress.challenge.sourceRefType,
+            locator: progress.challenge.locator,
+          }),
+          summary: candidateSafeChallengeSummary({
+            sourceRefType: progress.challenge.sourceRefType,
+            summary: assessmentProgressChallengeSummary(progress.challenge),
+          }),
         }
       : null,
     latestEvent: progress.latestEvent
@@ -1987,16 +1995,10 @@ function serializeCandidateAssessmentProgress(
         }
       : null,
     evaluation: progress.evaluation
-      ? {
-          status: progress.evaluation.status,
-          summary: progress.evaluation.summary,
-          recommendation: progress.evaluation.recommendation,
-          createdAt: progress.evaluation.createdAt,
-          evidenceCoverage: progress.evaluation.evidenceCoverage,
-          claims: progress.evaluation.claims,
-          diagnostics: progress.evaluation.diagnostics,
-          reviewPacket: progress.evaluation.reviewPacket,
-        }
+      ? candidateSafeEvaluation({
+          challengeSourceRefType,
+          evaluation: progress.evaluation,
+        })
       : null,
   };
 }

@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Candidate assessment progress now redacts hidden review-packet PR/head provenance, source ref IDs, report/session IDs, and solution snippets from candidate RPC responses while preserving safe task/readiness details.
 - Recruiter interview detail assessment progress now uses a faster parallelized assessment progress loader with a longer bounded projection timeout, preventing evaluated open-source workspace assessments from showing a blank/null progress card while the durable session has already reached evaluation.
 - Open-source workspace dev smoke now has bounded HTTP request timeouts, machine-readable progress steps, and a fast `smoke:open-source-candidate-safety-dev` gate that proves deployed candidate workspace/progress/receipt surfaces hide source-backed solution refs before running the full container/evaluation smoke.
 - Candidate-facing source-backed replay challenge packets now hide historical solution PR numbers, PR URLs, head commits, and internal locator ids across room workspace payloads, dev-container assessment progress, task panels, and candidate receipts while keeping repo, base commit, task, criteria, and verification evidence visible.

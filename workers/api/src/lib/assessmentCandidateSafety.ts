@@ -4,6 +4,14 @@ import type {
 } from './repoTaskInterviewSession';
 import type { JsonObject, JsonValue } from './livingContext/types';
 
+export type CandidateSafeAssessmentProgressEvaluation = Omit<
+  AssessmentProgressEvaluation,
+  'id' | 'claims' | 'diagnostics'
+> & {
+  claims: Array<Omit<AssessmentProgressEvaluation['claims'][number], 'id'>>;
+  diagnostics: Array<Omit<AssessmentProgressEvaluation['diagnostics'][number], 'id'>>;
+};
+
 const CANDIDATE_HIDDEN_CHALLENGE_SOURCE_REF_TYPES = new Set([
   'review_challenge_packet',
 ]);
@@ -186,7 +194,7 @@ function sanitizeHiddenChallengeLine(value: string): string {
 export function candidateSafeEvaluation(input: {
   challengeSourceRefType?: string | null;
   evaluation: AssessmentProgressEvaluation;
-}): Omit<AssessmentProgressEvaluation, 'id'> {
+}): CandidateSafeAssessmentProgressEvaluation {
   const shouldHide = shouldHideCandidateChallengeSolution({
     sourceRefType: input.challengeSourceRefType,
   });
@@ -206,8 +214,21 @@ export function candidateSafeEvaluation(input: {
     recommendation: input.evaluation.recommendation,
     createdAt: input.evaluation.createdAt,
     evidenceCoverage: input.evaluation.evidenceCoverage as JsonValue,
-    claims: input.evaluation.claims,
-    diagnostics: input.evaluation.diagnostics,
+    claims: input.evaluation.claims.map((claim) => ({
+      polarity: claim.polarity,
+      dimension: claim.dimension,
+      narrative: claim.narrative,
+      confidence: claim.confidence,
+      sourceRefCount: claim.sourceRefCount,
+      sourceRefTypes: claim.sourceRefTypes,
+    })),
+    diagnostics: input.evaluation.diagnostics.map((diagnostic) => ({
+      code: diagnostic.code,
+      severity: diagnostic.severity,
+      message: diagnostic.message,
+      sourceRefCount: diagnostic.sourceRefCount,
+      sourceRefTypes: diagnostic.sourceRefTypes,
+    })),
     reviewPacket,
   };
 }
