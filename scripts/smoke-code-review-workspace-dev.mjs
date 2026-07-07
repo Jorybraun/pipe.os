@@ -744,6 +744,20 @@ function sourceRefCount(rows, kind) {
   return rows.find((row) => row.kind === kind)?.count ?? 0;
 }
 
+const AI_INTERACTION_SOURCE_REF_TYPES = new Set([
+  'ai_user_prompt',
+  'ai_user_prompt_blocked',
+  'ai_agent_response',
+  'ai_agent_diagnostic',
+  'agent_status',
+  'agent_response',
+  'agent_diagnostic',
+]);
+
+function hasAiInteractionSourceRef(rows) {
+  return rows.some((row) => AI_INTERACTION_SOURCE_REF_TYPES.has(row.kind) && row.count > 0);
+}
+
 function normalizeRuntimeRepoUrl(value) {
   if (typeof value !== 'string' || !value.trim()) return null;
   return value.trim().replace(/\/+$/g, '').replace(/\.git$/i, '').toLowerCase();
@@ -900,6 +914,7 @@ async function assertRecruiterAssessmentProjection(
     assessmentSessionId: assessmentSessionIdFromProgress(progress, 'recruiter detail assessment progress'),
     compareUrl,
     capturedDiffSnippet,
+    hasAiInteraction: progress.hasAiInteraction === true,
     sourceRefCounts: progress.sourceRefCounts ?? [],
     humanDecision: progress.humanDecision ?? null,
   };
@@ -1284,9 +1299,13 @@ async function assertRecruiterListCardBrowser(
       /AI response captured|AI prompt captured|AI prompt blocked|AI bridge diagnostic|AI bridge status|AI bridge trace captured|No AI use captured/,
     );
     await expect(card).toContainText('LIMITATIONS');
-    await expect(card).toContainText('AI-use trail missing');
+    if (recruiterProjection.hasAiInteraction || hasAiInteractionSourceRef(recruiterProjection.sourceRefCounts)) {
+      await expect(card).not.toContainText('AI-use trail missing');
+    } else {
+      await expect(card).toContainText('AI-use trail missing');
+      await expect(card).toContainText('Do not judge AI collaboration from this session.');
+    }
     await expect(card).toContainText('Transcript missing');
-    await expect(card).toContainText('Do not judge AI collaboration from this session.');
     await expect(card).toContainText('COMMIT');
     await expect(card).toContainText(workspaceCommit.commitSha.slice(0, 12));
     await expect(card).toContainText('COMMIT TRUST');
