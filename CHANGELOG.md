@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Devin auth-needed smoke coverage now fails unless recruiter detail and list progress expose persisted `agent_status` evidence, protecting AI-use transparency from silently falling back to diagnostic-only proof.
 - Devin bridge `AGENT_STATUS` messages are now persisted from the real container bridge as source-backed `agent_status` evidence, so auth-needed or unavailable AI states appear in recruiter assessment progress without counting as fake agent assistance.
 - Candidate assessment progress now redacts hidden review-packet PR/head provenance, source ref IDs, report/session IDs, and solution snippets from candidate RPC responses while preserving safe task/readiness details.
 - Recruiter interview detail assessment progress now uses a faster parallelized assessment progress loader with a longer bounded projection timeout, preventing evaluated open-source workspace assessments from showing a blank/null progress card while the durable session has already reached evaluation.

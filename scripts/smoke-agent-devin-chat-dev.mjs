@@ -367,9 +367,6 @@ async function main() {
     if (chatResponse) {
       throw new Error(`Expected no Devin chat response while auth is needed, got: ${JSON.stringify(boundedMessage(chatResponse))}`);
     }
-    if (!statusMessages.some((message) => message.status === 'auth_needed')) {
-      throw new Error(`Expected auth_needed status, got: ${JSON.stringify(messages.map(boundedMessage))}`);
-    }
     const progress = await pollAssessmentProgress(
       interviewId,
       (candidate) => candidate?.hasAiInteraction === true
@@ -382,8 +379,12 @@ async function main() {
       'Devin auth-needed assessment progress',
     );
     const sourceRefCounts = progress?.sourceRefCounts ?? [];
+    const agentStatusCount = sourceRefCount(sourceRefCounts, 'agent_status');
     if (sourceRefCount(sourceRefCounts, 'ai_agent_response') > 0) {
       throw new Error(`Auth-needed bridge state should not count as an agent response: ${JSON.stringify(sourceRefCounts)}`);
+    }
+    if (agentStatusCount < 1) {
+      throw new Error(`Auth-needed bridge state did not expose persisted agent_status evidence: ${JSON.stringify(sourceRefCounts)}`);
     }
     const listProgress = await pollAssessmentListProgress(
       interviewId,
@@ -397,8 +398,12 @@ async function main() {
       'Devin auth-needed recruiter-list assessment progress',
     );
     const listSourceRefCounts = listProgress?.sourceRefCounts ?? [];
+    const listAgentStatusCount = sourceRefCount(listSourceRefCounts, 'agent_status');
     if (sourceRefCount(listSourceRefCounts, 'ai_agent_response') > 0) {
       throw new Error(`Recruiter list should not count auth-needed bridge state as an agent response: ${JSON.stringify(listSourceRefCounts)}`);
+    }
+    if (listAgentStatusCount < 1) {
+      throw new Error(`Recruiter list auth-needed bridge state did not expose persisted agent_status evidence: ${JSON.stringify(listSourceRefCounts)}`);
     }
     console.log(JSON.stringify({
       ok: true,
@@ -415,12 +420,13 @@ async function main() {
       authNeeded: true,
       assessmentAiInteraction: progress.hasAiInteraction,
       assessmentBridgeStateCount: bridgeStateSourceRefCount(sourceRefCounts),
-      assessmentAgentStatusCount: sourceRefCount(sourceRefCounts, 'agent_status'),
+      assessmentAgentStatusCount: agentStatusCount,
       assessmentAgentDiagnosticCount: sourceRefCount(sourceRefCounts, 'ai_agent_diagnostic')
         + sourceRefCount(sourceRefCounts, 'agent_diagnostic'),
       recruiterListAiProofVisible: true,
       recruiterListAiInteraction: listProgress.hasAiInteraction,
       recruiterListBridgeStateCount: bridgeStateSourceRefCount(listSourceRefCounts),
+      recruiterListAgentStatusCount: listAgentStatusCount,
       statuses: statusMessages.map((message) => message.status),
       authMessage: authNeeded.message,
       assessmentEvidenceProofCommands: assessmentEvidenceProofCommands(assessmentSessionId),

@@ -1618,6 +1618,29 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(browserAgentStatusRes.status).toBe(200);
 
+    const containerAgentStatusRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_agent_status',
+        text: 'devin bridge status: auth_needed.',
+        actor: 'agent',
+        properties: {
+          source: 'agent_bridge',
+          agentStatusEventSource: 'container_agent_bridge',
+          agent: 'devin',
+          status: 'auth_needed',
+          diagnosticSource: null,
+          bridgeMessageSource: 'agent_status',
+          observedAt: '2026-06-27T21:12:30.000Z',
+          capturedAtMs: 1782594750000,
+          agentStatusEventId: 'agent-status:devin:1782594750000:agent_status:auth_needed:none',
+          bridgePersisted: true,
+        },
+      }),
+    }, env, ctx);
+    expect(containerAgentStatusRes.status).toBe(200);
+
     const bridgeDiagnosticStatusRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1655,7 +1678,7 @@ describe('meeting room recording living-context route', () => {
       source_type: string;
       extracted_properties_json: string;
     }>;
-    expect(agentStatusNodes).toHaveLength(2);
+    expect(agentStatusNodes).toHaveLength(3);
     expect(agentStatusNodes.map((entry) => JSON.parse(entry.extracted_properties_json))).toEqual(expect.arrayContaining([
       expect.objectContaining({
         actor: 'agent',
@@ -1666,6 +1689,16 @@ describe('meeting room recording living-context route', () => {
         capturedAtMs: 1782594720000,
         agentStatusEventId: 'agent-status:devin:1782594720000:agent_status:starting:none',
         agentResponseClaimed: false,
+      }),
+      expect.objectContaining({
+        actor: 'agent',
+        source: 'agent_bridge',
+        agentStatusEventSource: 'container_agent_bridge',
+        bridgeMessageSource: 'agent_status',
+        observedAt: '2026-06-27T21:12:30.000Z',
+        capturedAtMs: 1782594750000,
+        agentStatusEventId: 'agent-status:devin:1782594750000:agent_status:auth_needed:none',
+        bridgePersisted: true,
       }),
       expect.objectContaining({
         actor: 'agent',

@@ -1096,17 +1096,19 @@ function agentStatusMessage() {
 
 function broadcastAgentStatus() {
   const message = agentStatusMessage();
+  broadcast({ ...message, persisted: false });
   void captureAgentStatusEvidence(message)
     .then((persisted) => {
-      broadcast({ ...message, persisted });
+      if (persisted) broadcast({ ...message, persisted });
     });
 }
 
 function sendAgentStatus(ws) {
   const message = agentStatusMessage();
+  send(ws, { ...message, persisted: false });
   void captureAgentStatusEvidence(message)
     .then((persisted) => {
-      send(ws, { ...message, persisted });
+      if (persisted) send(ws, { ...message, persisted });
     });
 }
 
