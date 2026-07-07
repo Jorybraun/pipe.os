@@ -97,6 +97,7 @@ export interface ChallengeContentDTO {
   devContainerRepoUrl?: string;
   matchExplanation?: unknown;
   reviewProfile?: unknown;
+  challengePacket?: unknown;
   issueBody?: { title?: string | null; body?: string | null; labels?: string[] } | null;
   codeArtifact?: unknown;
   reviewSession?: {

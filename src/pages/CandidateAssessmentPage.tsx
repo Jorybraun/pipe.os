@@ -71,6 +71,7 @@ function CodeReviewAssessmentView(): JSX.Element {
         cachedMetadata: currentChallenge.data.cachedMetadata,
         matchExplanation: asCodeReviewMatchExplanation(currentChallenge.data.matchExplanation),
         reviewProfile: currentChallenge.data.reviewProfile,
+        challengePacket: currentChallenge.data.challengePacket,
       }}
       diff={diff.files.length > 0 ? diff : null}
       isFetchingDiff={false}
@@ -126,6 +127,7 @@ function buildRawStage(
         devContainerRepoUrl: (content.devContainerRepoUrl as string) ?? null,
         matchExplanation: content.matchExplanation ?? null,
         reviewProfile: content.reviewProfile ?? null,
+        challengePacket: content.challengePacket ?? null,
         issueBody: content.issueBody ?? null,
       };
     }
@@ -522,7 +524,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
         >
           <AlertCircle size={18} color="#f87171" />
           <span style={{ fontSize: 12, color: '#f87171', fontFamily: '"Space Mono", monospace', fontWeight: 700, letterSpacing: '0.05em' }}>
-            SUBMISSION_FAILED — {error.message}. Please try again.
+            Submission failed: {error.message}. Please try again.
           </span>
         </div>
       )}

@@ -69,13 +69,15 @@ describe('CodeReviewChallenge challenge packet', () => {
     });
 
     const packet = screen.getByTestId('code-review-challenge-packet');
-    expect(packet).toHaveTextContent('TASK_PACKET');
+    expect(packet).toHaveTextContent('Task brief');
     expect(packet).toHaveTextContent('acme/widgets');
     expect(packet).toHaveTextContent('111111111111');
     expect(packet).toHaveTextContent('Review pull request #42: Fix retry cleanup');
     expect(packet).toHaveTextContent('Leave line-level annotations tied to concrete code risks.');
     expect(packet).toHaveTextContent('Inline annotations with file and line references.');
     expect(packet).toHaveTextContent('Review only the assigned source-backed diff.');
+    expect(packet).not.toHaveTextContent('TASK_PACKET');
+    expect(packet).not.toHaveTextContent('MATCH_REASON');
     expect(packet).not.toHaveTextContent('internal-packet-id');
     expect(packet).not.toHaveTextContent('repo-source-span-secret');
   });
@@ -93,10 +95,11 @@ describe('CodeReviewChallenge challenge packet', () => {
     });
 
     const packet = screen.getByTestId('code-review-challenge-packet');
-    expect(packet).toHaveTextContent('PACKET_INCOMPLETE');
+    expect(packet).toHaveTextContent('Task brief needs source proof');
     expect(packet).toHaveTextContent('base commit SHA');
     expect(packet).toHaveTextContent('success criteria');
     expect(packet).toHaveTextContent('expected evidence');
+    expect(packet).not.toHaveTextContent('PACKET_INCOMPLETE');
     expect(packet).not.toHaveTextContent('Line-level annotations tied to concrete code risks.');
   });
 });

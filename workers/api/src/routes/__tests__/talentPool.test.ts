@@ -426,6 +426,21 @@ function challengePacketJson(): string {
       narrative: 'Repair retry scheduling so terminal events are emitted exactly once.',
     }],
     demandFamilies: ['runtime_reliability'],
+    reviewProfile: {
+      source: 'deterministic_engineering_prior',
+      difficultyBand: 'focused',
+      expectedSeniority: 'senior',
+      expectedTimeMinutes: 90,
+      basis: {
+        changedFileCount: 1,
+        changedLineCount: 12,
+        sourceHunkCount: 1,
+        testChangeCount: 0,
+        demandFamilyCount: 1,
+        hasIssueContext: true,
+      },
+      rationale: 'Focused runtime reliability patch.',
+    },
     contentHash: 'sha256:challenge-packet-973',
   });
 }

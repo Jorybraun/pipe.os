@@ -87,7 +87,7 @@ const MOVE_CONFIG: Record<ImplementerMove, { label: string; color: string; bg: s
 const VERDICT_OPTIONS: Array<{ key: ReviewVerdict; label: string; description: string; color: string; bg: string; border: string; icon: typeof CheckCircle2 }> = [
   {
     key: 'approve',
-    label: 'APPROVE',
+    label: 'Approve',
     description: 'Code is ready to merge',
     icon: CheckCircle2,
     color: '#34d399',
@@ -96,7 +96,7 @@ const VERDICT_OPTIONS: Array<{ key: ReviewVerdict; label: string; description: s
   },
   {
     key: 'request_changes',
-    label: 'REQUEST_CHANGES',
+    label: 'Request changes',
     description: 'Changes needed before merge',
     icon: XCircle,
     color: '#f87171',
@@ -105,7 +105,7 @@ const VERDICT_OPTIONS: Array<{ key: ReviewVerdict; label: string; description: s
   },
   {
     key: 'comment_only',
-    label: 'COMMENT',
+    label: 'Comment only',
     description: 'Informational review only',
     icon: MessageSquare,
     color: '#fbbf24',
@@ -622,16 +622,20 @@ export function ConversationPanel({
   const isFinalRound = currentRound >= maxRounds;
 
   let submitLabel: string;
+  let submitKind: 'verdict' | 'review' | 'response';
   let submitAction: (() => void) | null = null;
 
   if (verdict && isVerdictReady) {
-    submitLabel = 'SUBMIT_VERDICT';
+    submitLabel = 'Submit verdict';
+    submitKind = 'verdict';
     submitAction = onSubmitVerdict;
   } else if (currentRound === 1) {
-    submitLabel = 'SUBMIT_REVIEW';
+    submitLabel = 'Submit review';
+    submitKind = 'review';
     submitAction = (hasThreads || annotationCount > 0) ? onSubmitRound : null;
   } else {
-    submitLabel = 'SUBMIT_RESPONSE';
+    submitLabel = 'Submit response';
+    submitKind = 'response';
     submitAction = onSubmitRound;
   }
 
@@ -679,7 +683,7 @@ export function ConversationPanel({
               color: 'var(--pipe-text-muted)',
             }}
           >
-            AUTHOR IS REVIEWING...
+            Author is reviewing...
           </span>
         </div>
       )}
@@ -696,7 +700,7 @@ export function ConversationPanel({
         }}
       >
         <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontWeight: 700 }}>
-          REVIEW_CONVERSATION
+          Review conversation
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {hasUnread && (
@@ -712,7 +716,7 @@ export function ConversationPanel({
                 color: 'var(--pipe-accent)',
               }}
             >
-              UNREAD
+              New reply
             </span>
           )}
           <span
@@ -728,7 +732,7 @@ export function ConversationPanel({
               color: isFinalRound ? '#fbbf24' : '#60a5fa',
             }}
           >
-            ROUND {currentRound} OF {maxRounds}
+            Round {currentRound} of {maxRounds}
           </span>
         </div>
       </div>
@@ -764,7 +768,7 @@ export function ConversationPanel({
               }}
             >
               <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12, fontWeight: 700 }}>
-                REVIEW_VERDICT
+                Your verdict
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {VERDICT_OPTIONS.map((opt) => {
@@ -813,7 +817,7 @@ export function ConversationPanel({
               }}
             >
               <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 10, fontWeight: 700 }}>
-                REVIEW_SUMMARY
+                Review summary
               </div>
               <textarea
                 data-testid="verdict-summary"
@@ -870,22 +874,22 @@ export function ConversationPanel({
         {/* Submit button */}
         {submitAction ? (
           <button
-            data-testid={submitLabel === 'SUBMIT_VERDICT' ? 'submit-verdict' : 'submit-round'}
+            data-testid={submitKind === 'verdict' ? 'submit-verdict' : 'submit-round'}
             onClick={submitAction}
-            disabled={submitLabel === 'SUBMIT_VERDICT' && !isVerdictReady}
+            disabled={submitKind === 'verdict' && !isVerdictReady}
             style={{
               width: '100%',
               padding: '12px 16px',
               background:
-                submitLabel === 'SUBMIT_VERDICT' && isVerdictReady
+                submitKind === 'verdict' && isVerdictReady
                   ? 'rgba(52,211,153,0.12)'
-                  : submitLabel === 'SUBMIT_VERDICT'
+                  : submitKind === 'verdict'
                     ? 'rgba(255,255,255,0.02)'
                     : 'rgba(96,165,250,0.08)',
               border: `1px solid ${
-                submitLabel === 'SUBMIT_VERDICT' && isVerdictReady
+                submitKind === 'verdict' && isVerdictReady
                   ? 'rgba(52,211,153,0.3)'
-                  : submitLabel === 'SUBMIT_VERDICT'
+                  : submitKind === 'verdict'
                     ? 'rgba(255,255,255,0.06)'
                     : 'rgba(96,165,250,0.25)'
               }`,
@@ -894,13 +898,13 @@ export function ConversationPanel({
               fontWeight: 700,
               letterSpacing: '0.12em',
               color:
-                submitLabel === 'SUBMIT_VERDICT' && isVerdictReady
+                submitKind === 'verdict' && isVerdictReady
                   ? '#34d399'
-                  : submitLabel === 'SUBMIT_VERDICT'
+                  : submitKind === 'verdict'
                     ? 'rgba(255,255,255,0.2)'
                     : '#60a5fa',
               cursor:
-                submitLabel === 'SUBMIT_VERDICT' && !isVerdictReady ? 'not-allowed' : 'pointer',
+                submitKind === 'verdict' && !isVerdictReady ? 'not-allowed' : 'pointer',
               fontFamily: '"Space Mono", monospace',
               transition: 'all 0.15s',
               display: 'flex',
@@ -909,9 +913,9 @@ export function ConversationPanel({
               gap: 8,
             }}
           >
-            {submitLabel === 'SUBMIT_VERDICT' && isVerdictReady && <CheckCircle2 size={12} />}
-            {submitLabel === 'SUBMIT_REVIEW' && <ChevronRight size={12} />}
-            {submitLabel === 'SUBMIT_RESPONSE' && <ChevronRight size={12} />}
+            {submitKind === 'verdict' && isVerdictReady && <CheckCircle2 size={12} />}
+            {submitKind === 'review' && <ChevronRight size={12} />}
+            {submitKind === 'response' && <ChevronRight size={12} />}
             {submitLabel}
           </button>
         ) : (
@@ -926,7 +930,7 @@ export function ConversationPanel({
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
               <Clock size={10} color="var(--pipe-text-dim)" />
-              ADD INLINE COMMENTS ON THE DIFF TO ENABLE SUBMIT
+              Add inline comments on the diff to enable submit
             </div>
           </div>
         )}

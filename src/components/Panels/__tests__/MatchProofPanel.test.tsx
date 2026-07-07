@@ -76,10 +76,10 @@ describe('MatchProofPanel', () => {
     render(<MatchProofPanel matchExplanation={matchExplanation} />);
 
     const why = screen.getByTestId('code-review-match-why');
-    expect(why).toHaveTextContent('WHY_THIS_PR');
-    expect(why).toHaveTextContent('PERSON_ROLE_REPO');
+    expect(why).toHaveTextContent('Why this pull request');
+    expect(why).toHaveTextContent('Candidate, role, and repo evidence');
     const readableReason = screen.getByTestId('code-review-match-readable-reason');
-    expect(readableReason).toHaveTextContent('MATCH_REASON');
+    expect(readableReason).toHaveTextContent('Selection reason');
     expect(readableReason).toHaveTextContent('We selected this PR because the source evidence points at typescript');
     expect(why).toHaveTextContent('Candidate evidence');
     expect(why).toHaveTextContent('Role requirement');
@@ -89,7 +89,7 @@ describe('MatchProofPanel', () => {
     expect(why).toHaveTextContent('Workflow names must be unique per account.');
 
     const assessmentFocus = screen.getByTestId('code-review-assessment-focus');
-    expect(assessmentFocus).toHaveTextContent('ASSESSMENT_FOCUS');
+    expect(assessmentFocus).toHaveTextContent('Assessment focus');
     expect(assessmentFocus).toHaveTextContent('Skill/stack overlap');
     expect(assessmentFocus).toHaveTextContent('PR reviewability');
     expect(assessmentFocus).toHaveTextContent('TypeScript review evidence matches the PR stack');
@@ -97,13 +97,16 @@ describe('MatchProofPanel', () => {
     expect(assessmentFocus).toHaveTextContent('typescript');
 
     const hyperedges = screen.getByTestId('code-review-match-hyperedges');
-    expect(hyperedges).toHaveTextContent('EVIDENCE_HYPEREDGES');
-    expect(within(hyperedges).getByText('PERSON EVIDENCE')).toBeTruthy();
-    expect(within(hyperedges).getByText('ROLE SOURCE')).toBeTruthy();
-    expect(within(hyperedges).getByText('REPO CHALLENGE')).toBeTruthy();
+    expect(hyperedges).toHaveTextContent('Evidence bridges');
+    expect(within(hyperedges).getByText('Person Evidence')).toBeTruthy();
+    expect(within(hyperedges).getByText('Role Source')).toBeTruthy();
+    expect(within(hyperedges).getByText('Repo Challenge')).toBeTruthy();
     expect(hyperedges).toHaveTextContent('Implemented workflow conflict warning copy');
     expect(hyperedges).toHaveTextContent('Review TypeScript PRs that improve Wrangler deploy warnings');
     expect(hyperedges).toHaveTextContent('Workflow names must be unique per account.');
+    expect(why).not.toHaveTextContent(/WHY_THIS_PR|PERSON_ROLE_REPO|MATCH_REASON/);
+    expect(assessmentFocus).not.toHaveTextContent('ASSESSMENT_FOCUS');
+    expect(hyperedges).not.toHaveTextContent('EVIDENCE_HYPEREDGES');
   });
 
   it('labels roleless evidence hyperedges as candidate-to-repo matches', () => {
@@ -151,8 +154,8 @@ describe('MatchProofPanel', () => {
     render(<MatchProofPanel matchExplanation={matchExplanation} />);
 
     const why = screen.getByTestId('code-review-match-why');
-    expect(why).toHaveTextContent('WHY_THIS_PR');
-    expect(why).toHaveTextContent('CANDIDATE_REPO');
+    expect(why).toHaveTextContent('Why this pull request');
+    expect(why).toHaveTextContent('Candidate and repo evidence');
     expect(screen.getByTestId('code-review-match-readable-reason')).toHaveTextContent(
       'this PR asks you to review those decisions in real code',
     );
@@ -161,7 +164,8 @@ describe('MatchProofPanel', () => {
     expect(why).toHaveTextContent('Ignore impatient trigger clicks');
 
     const hyperedges = screen.getByTestId('code-review-match-hyperedges');
-    expect(hyperedges).toHaveTextContent('CANDIDATE_REPO');
+    expect(hyperedges).toHaveTextContent('Candidate and repo evidence');
+    expect(hyperedges).not.toHaveTextContent('Candidate, role, and repo evidence');
     expect(hyperedges).not.toHaveTextContent('PERSON_ROLE_REPO');
     expect(hyperedges).toHaveTextContent('Implemented popover trigger click handling');
     expect(hyperedges).toHaveTextContent('Ignore impatient trigger clicks');
@@ -221,11 +225,12 @@ describe('MatchProofPanel', () => {
 
     render(<MatchProofPanel matchExplanation={matchExplanation} />);
 
-    expect(screen.getByText('ASSESSMENT QUALITY')).toBeTruthy();
+    expect(screen.getByText('Assessment quality')).toBeTruthy();
 
     const diagnostics = screen.getByTestId('code-review-match-diagnostics');
-    expect(diagnostics).toHaveTextContent('MISSING CANDIDATE SOURCE EVIDENCE');
-    expect(diagnostics).toHaveTextContent('MISSING REPO SOURCE EVIDENCE');
-    expect(diagnostics).toHaveTextContent('EMBEDDING ONLY MATCH REJECTED');
+    expect(diagnostics).toHaveTextContent('Missing Candidate Source Evidence');
+    expect(diagnostics).toHaveTextContent('Missing Repo Source Evidence');
+    expect(diagnostics).toHaveTextContent('Embedding Only Match Rejected');
+    expect(diagnostics).not.toHaveTextContent(/MISSING_CANDIDATE_SOURCE_EVIDENCE|MISSING_REPO_SOURCE_EVIDENCE|EMBEDDING_ONLY_MATCH_REJECTED/);
   });
 });

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — CODE_REVIEW assessment UX
+
+- Candidate code-review surfaces now use human-readable task, verdict, summary, submission, and match-proof labels instead of internal protocol tokens, and tests lock the source-backed packet and match-proof copy against leaking internal ids or source refs.
+- Talent Pool ready-assignment and standalone open-source route coverage now seed complete source-backed packet proof, keeping challenge readiness aligned with the production packet materializer.
+
 ### Fixed — CODE_REVIEW scoring
 
 - Role-backed CODE_REVIEW smoke proof now records the current app-dev auto-match result against the broadened review-packet corpus, including matched `mui/base-ui#973`, strong assessment quality, and measured contrast separation.

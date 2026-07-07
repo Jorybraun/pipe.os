@@ -241,7 +241,7 @@ export function DiffPanel({
         data-testid="view-mode-tabbed"
       >
         <Rows3 size={11} />
-        TABBED
+        File tabs
       </button>
       <button
         onClick={() => setViewMode('LONG_FORM')}
@@ -264,7 +264,7 @@ export function DiffPanel({
         data-testid="view-mode-longform"
       >
         <AlignJustify size={11} />
-        LONG_FORM
+        Full diff
       </button>
     </div>
   );
@@ -327,7 +327,7 @@ export function DiffPanel({
                 fontWeight: 700,
                 letterSpacing: '0.1em',
               }}>
-                {f.status === 'added' ? 'NEW' : f.status === 'deleted' ? 'DEL' : 'MOD'}
+                {f.status === 'added' ? 'New' : f.status === 'deleted' ? 'Deleted' : 'Modified'}
               </span>
             </button>
           ))}

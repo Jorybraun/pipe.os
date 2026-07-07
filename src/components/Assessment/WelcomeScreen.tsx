@@ -500,7 +500,7 @@ export function WelcomeScreen({
             (e.currentTarget as HTMLButtonElement).style.opacity = isStarting ? '0.72' : '1';
           }}
         >
-          {isStarting ? 'STARTING...' : 'START_INTERVIEW'}
+          {isStarting ? 'Starting...' : 'Start assessment'}
           <ArrowRight size={16} />
         </button>
       </LiquidMetalCard>
