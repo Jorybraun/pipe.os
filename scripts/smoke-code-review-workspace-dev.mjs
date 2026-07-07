@@ -92,10 +92,12 @@ const EXPECTED_BRIDGE_REVISION = process.env.WORKSPACE_SMOKE_EXPECTED_BRIDGE_REV
 const REQUIRE_ROOM = process.env.WORKSPACE_SMOKE_REQUIRE_ROOM === '1';
 const SKIP_RECRUITER_BROWSER = process.env.WORKSPACE_SMOKE_SKIP_RECRUITER_BROWSER === '1';
 const SKIP_CANDIDATE_BROWSER = process.env.WORKSPACE_SMOKE_SKIP_CANDIDATE_BROWSER === '1';
+const STOP_AFTER_CANDIDATE_SAFETY = process.env.WORKSPACE_SMOKE_STOP_AFTER_CANDIDATE_SAFETY === '1';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
 const DEV_D1_DATABASE_ID = process.env.WORKSPACE_SMOKE_D1_DATABASE_ID
   || '0abe92df-9296-46f5-9f9d-a1fb1bcd3be1';
 const EVALUATION_WAIT_MS = Number(process.env.WORKSPACE_SMOKE_EVALUATION_WAIT_MS || 600_000);
+const REQUEST_TIMEOUT_MS = Number(process.env.WORKSPACE_SMOKE_REQUEST_TIMEOUT_MS || 60_000);
 
 function challengePacketLineValue(exactText, labels) {
   const text = typeof exactText === 'string' ? exactText : '';
@@ -123,6 +125,9 @@ function assignedChallengeTitleFromProgress(progress) {
 }
 
 function assertEnv() {
+  if (!Number.isFinite(REQUEST_TIMEOUT_MS) || REQUEST_TIMEOUT_MS < 5_000) {
+    throw new Error('WORKSPACE_SMOKE_REQUEST_TIMEOUT_MS must be a number >= 5000.');
+  }
   if (MATCHED_REPO_ID !== null && (!Number.isInteger(MATCHED_REPO_ID) || MATCHED_REPO_ID <= 0)) {
     throw new Error('WORKSPACE_SMOKE_MATCHED_REPO_ID must be a positive integer when provided.');
   }
@@ -164,6 +169,14 @@ function assertEnv() {
       'Set WORKSPACE_SMOKE_BASE_COMMIT_SHA to the real 40-character base commit SHA, or set WORKSPACE_SMOKE_MATCHED_REPO_ID for matched OPEN_SOURCE_BUG_FIX smoke runs.',
     );
   }
+}
+
+function logStep(step, fields = {}) {
+  console.log(JSON.stringify({
+    step,
+    at: new Date().toISOString(),
+    ...fields,
+  }));
 }
 
 async function git(args, cwd) {
@@ -335,27 +348,42 @@ async function commitWorkspaceSmokeChange(proxyBasePath, headers, unique) {
 }
 
 async function requestJson(base, path, init = {}) {
-  const response = await fetch(`${base}${path}`, {
-    ...init,
-    headers: {
-      ...authHeadersFor(base),
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init.headers ?? {}),
-    },
-  });
-  const text = await response.text();
-  let body = null;
-  if (text) {
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = text;
+  const method = init.method ?? 'GET';
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${base}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        ...authHeadersFor(base),
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(init.headers ?? {}),
+      },
+    });
+    const text = await response.text();
+    let body = null;
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = text;
+      }
     }
+    if (!response.ok) {
+      throw new Error(`${method} ${base}${path} failed (${response.status}): ${text}`);
+    }
+    return body;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`${method} ${base}${path} timed out after ${REQUEST_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  if (!response.ok) {
-    throw new Error(`${init.method ?? 'GET'} ${base}${path} failed (${response.status}): ${text}`);
-  }
-  return body;
 }
 
 function isTransientFetchError(error) {
@@ -1788,6 +1816,15 @@ async function main() {
         githubRepoUrl: REPO_URL,
         ...(PR_NUMBER ? { githubPrNumber: PR_NUMBER } : {}),
       };
+  logStep('create-interview:start', {
+    appBase: APP_BASE,
+    roomBase: ROOM_BASE,
+    interviewType: INTERVIEW_TYPE,
+    changeMode: CHANGE_MODE,
+    useMatchedRepo,
+    matchedRepoId: MATCHED_REPO_ID,
+    stopAfterCandidateSafety: STOP_AFTER_CANDIDATE_SAFETY,
+  });
   const created = await requestJson(APP_BASE, '/api/v1/scheduling/interviews', {
     method: 'POST',
     body: JSON.stringify({
@@ -1801,6 +1838,7 @@ async function main() {
   });
   const interviewId = created?.interview?.id;
   if (!interviewId) throw new Error(`Create response missing interview id: ${JSON.stringify(created)}`);
+  logStep('create-interview:ok', { interviewId });
   const assessmentSessionId = assessmentSessionIdFromProgress(
     created?.interview?.assessmentProgress,
     'create interview assessment progress',
@@ -1881,6 +1919,7 @@ async function main() {
     await assertReachableBaseCommit(expectedRepoUrl, expectedBaseCommitSha);
   }
 
+  logStep('invite:start', { interviewId });
   const invited = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}/invite`, {
     method: 'POST',
     body: JSON.stringify({
@@ -1911,11 +1950,18 @@ async function main() {
     console.log(JSON.stringify(proof, null, 2));
     return;
   }
+  logStep('invite:ok', {
+    interviewId,
+    hasHostUrl: Boolean(invited?.room?.hostUrl),
+    hasGuestUrl: Boolean(invited?.room?.guestUrl),
+  });
   const hostToken = tokenFromRoomUrl(invited?.room?.hostUrl ?? '');
   const roomAuthHeaders = authHeadersFromUrl(invited?.room?.hostUrl ?? '');
+  logStep('room-load:start', { interviewId });
   const room = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${hostToken}`, {
     headers: roomAuthHeaders,
   });
+  logStep('room-load:ok', { interviewId });
   const workspace = room?.room?.workspace;
   if (!workspace?.enabled) throw new Error(`Workspace was not enabled: ${JSON.stringify(workspace)}`);
   if (workspace.repoUrl !== expectedRepoUrl) {
@@ -1936,12 +1982,47 @@ async function main() {
     roomAuthHeaders,
     candidateSolutionSafety,
   );
+  logStep('candidate-solution-safety:ok', {
+    interviewId,
+    ...candidateRoomSolutionSafety,
+  });
+  if (STOP_AFTER_CANDIDATE_SAFETY) {
+    console.log(JSON.stringify({
+      ok: true,
+      stoppedAfterCandidateSafety: true,
+      interviewId,
+      assessmentSessionId,
+      hostUrl: cleanRoomUrl(invited.room.hostUrl),
+      guestUrl: cleanRoomUrl(invited.room.guestUrl),
+      repoUrl: workspace.repoUrl,
+      githubPrNumber: expectedGithubPrNumber,
+      matchedRepoId: MATCHED_REPO_ID,
+      interviewType: INTERVIEW_TYPE,
+      challengeStatus: workspace.challenge?.status ?? null,
+      challengeSource: workspace.challenge?.source ?? null,
+      candidateWorkspaceSolutionRefsHidden: candidateRoomSolutionSafety.workspaceSolutionRefsHidden === true,
+      candidateProgressSolutionRefsHidden: candidateRoomSolutionSafety.progressSolutionRefsHidden === true,
+      candidateReceiptSolutionRefsHidden: candidateRoomSolutionSafety.receiptSolutionRefsHidden === true,
+    }, null, 2));
+    return;
+  }
+  logStep('workspace-launch:start', { interviewId });
   let readySession = await launchWorkspaceUntilReady(hostToken, roomAuthHeaders);
   if (!readySession.proxyPath) {
     throw new Error(`Ready workspace did not expose a proxy path: ${JSON.stringify(readySession)}`);
   }
+  logStep('workspace-launch:ok', {
+    interviewId,
+    status: readySession.status,
+    hasProxyPath: Boolean(readySession.proxyPath),
+  });
   let proxyBasePath = readySession.proxyPath.replace(/\/$/, '');
   let bridgeHealth = await assertWorkspaceBridgeHealthy(proxyBasePath, roomAuthHeaders);
+  logStep('bridge-health:ok', {
+    interviewId,
+    bridgeRevision: bridgeHealth.bridgeRevision ?? null,
+    agent: bridgeHealth.agent ?? null,
+  });
   const candidateBrowser = await assertCandidateTaskBriefBrowser(
     invited.room.guestUrl,
     expectedRepoUrl,
@@ -1954,11 +2035,14 @@ async function main() {
   );
   const guestToken = tokenFromRoomUrl(invited?.room?.guestUrl ?? '');
   const guestRoomAuthHeaders = authHeadersFromUrl(invited?.room?.guestUrl ?? '');
+  logStep('room-chat-evidence:start', { interviewId });
   const roomChatEvidence = await recordSourceBackedRoomChatEvidence(
     guestToken,
     guestRoomAuthHeaders,
     unique,
   );
+  logStep('room-chat-evidence:ok', { interviewId, nodeId: roomChatEvidence.nodeId });
+  logStep('unchanged-finalize:start', { interviewId });
   const unchangedFinalize = await expectUnchangedWorkspaceFinalizeBlocked({
     token: hostToken,
     headers: roomAuthHeaders,
@@ -1968,8 +2052,16 @@ async function main() {
   readySession = unchangedFinalize.workspaceSession;
   proxyBasePath = unchangedFinalize.proxyBasePath;
   bridgeHealth = await assertWorkspaceBridgeHealthy(proxyBasePath, roomAuthHeaders);
+  logStep('unchanged-finalize:ok', { interviewId });
 
+  logStep('workspace-commit:start', { interviewId });
   const workspaceCommit = await commitWorkspaceSmokeChange(proxyBasePath, roomAuthHeaders, unique);
+  logStep('workspace-commit:ok', {
+    interviewId,
+    commitSha: workspaceCommit.commitSha,
+    mode: workspaceCommit.mode,
+  });
+  logStep('workspace-finalize:start', { interviewId, commitSha: workspaceCommit.commitSha });
   const submittedResult = await postWorkspaceFinalize(proxyBasePath, roomAuthHeaders, {
     narrative: workspaceCommit.narrative,
     testCommand: workspaceCommit.testCommand,
@@ -1998,6 +2090,12 @@ async function main() {
   if (submittedBody?.progress?.hasCommitSubmission !== true) {
     throw new Error(`Workspace progress did not reflect the committed submission: ${JSON.stringify(submittedBody?.progress)}`);
   }
+  logStep('workspace-finalize:ok', {
+    interviewId,
+    commitSha: workspaceCommit.commitSha,
+    sourceRefTypes,
+  });
+  logStep('evaluation:start', { interviewId });
   const evaluationStartBody = await startAssessmentEvaluationWithRetry(interviewId);
   const evaluationStartProgress = evaluationStartBody?.progress ?? null;
   let evaluationProgress = evaluationStartProgress;
@@ -2013,6 +2111,11 @@ async function main() {
   if (evaluationProgress?.evaluation?.status !== 'EVALUATED') {
     throw new Error(`Workspace assessment progress did not expose evaluated status: ${JSON.stringify(evaluationProgress?.evaluation)}`);
   }
+  logStep('evaluation:ok', {
+    interviewId,
+    stage: evaluationProgress.stage,
+    recommendation: evaluationProgress.evaluation?.recommendation ?? null,
+  });
   assertSameAssessmentSessionId(
     assessmentSessionId,
     evaluationProgress,

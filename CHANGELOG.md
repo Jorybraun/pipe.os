@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Open-source workspace dev smoke now has bounded HTTP request timeouts, machine-readable progress steps, and a fast `smoke:open-source-candidate-safety-dev` gate that proves deployed candidate workspace/progress/receipt surfaces hide source-backed solution refs before running the full container/evaluation smoke.
 - Candidate-facing source-backed replay challenge packets now hide historical solution PR numbers, PR URLs, head commits, and internal locator ids across room workspace payloads, dev-container assessment progress, task panels, and candidate receipts while keeping repo, base commit, task, criteria, and verification evidence visible.
 - Open-source workspace dev smoke now fails if candidate room payloads, assessment progress, task panels, final-review panels, or downloaded receipts leak the hidden source-backed solution PR/head commit for matched replay challenges.
 - Recruiter assessment list/detail projections now count real AI bridge statuses and diagnostics as AI-use transparency evidence without counting them as agent assistance, and cards label the compact evidence line with the exact AI state instead of generic "AI use".
