@@ -69,7 +69,7 @@ describe('CodeReviewChallenge challenge packet', () => {
     });
 
     const packet = screen.getByTestId('code-review-challenge-packet');
-    expect(packet).toHaveTextContent('TASK_PACKET');
+    expect(packet).toHaveTextContent('Your task');
     expect(packet).toHaveTextContent('acme/widgets');
     expect(packet).toHaveTextContent('111111111111');
     expect(packet).toHaveTextContent('Review pull request #42: Fix retry cleanup');
@@ -93,7 +93,7 @@ describe('CodeReviewChallenge challenge packet', () => {
     });
 
     const packet = screen.getByTestId('code-review-challenge-packet');
-    expect(packet).toHaveTextContent('PACKET_INCOMPLETE');
+    expect(packet).toHaveTextContent('Your task — being finalized');
     expect(packet).toHaveTextContent('base commit SHA');
     expect(packet).toHaveTextContent('success criteria');
     expect(packet).toHaveTextContent('expected evidence');

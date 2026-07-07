@@ -215,6 +215,11 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     await expect(reviewProfile).toContainText('ASSESSMENT_FIT');
     await expect(reviewProfile).toContainText('TARGET_TIME');
     await expect(reviewProfile).toContainText('LEVEL');
+    // Candidate comprehension aids (human-readable, no internal jargon).
+    await expect(codeReview).toContainText('Expected time');
+    await expect(codeReview).toContainText('What makes a strong review');
+    await expect(codeReview).toContainText('clear verdict rationale');
+    await expect(codeReview).toContainText('AI tools');
     if (EXPECT_AUTOMATCH) {
       await expect(matchProof).not.toContainText('Manual override');
     }
