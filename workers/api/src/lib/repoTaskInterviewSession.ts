@@ -2520,15 +2520,25 @@ export class RepoTaskInterviewSessionStore {
 
   async loadProgress(sessionId: string): Promise<AssessmentProgressSnapshot> {
     const session = await this.loadSession(sessionId);
-    const evidenceCounts = await this.loadEvidenceCounts(session.id);
-    const sourceRefCounts = await this.loadSourceRefCounts(session.id);
-    const evidenceSnippets = await this.loadEvidenceSnippets(session.id);
-    const challenge = await this.loadChallengeSourceRef(session.id);
+    const [
+      evidenceCounts,
+      sourceRefCounts,
+      evidenceSnippets,
+      challenge,
+      latestEvent,
+      evaluation,
+      humanDecision,
+    ] = await Promise.all([
+      this.loadEvidenceCounts(session.id),
+      this.loadSourceRefCounts(session.id),
+      this.loadEvidenceSnippets(session.id),
+      this.loadChallengeSourceRef(session.id),
+      this.loadLatestEvent(session.id),
+      this.loadLatestEvaluation(session.id),
+      this.loadLatestHumanDecision(session.id),
+    ]);
     const contract = challengePacketContract(challenge);
-    const latestEvent = await this.loadLatestEvent(session.id);
     const commit = await this.loadLatestCommitSubmission(session.id, challenge);
-    const evaluation = await this.loadLatestEvaluation(session.id);
-    const humanDecision = await this.loadLatestHumanDecision(session.id);
 
     const hasWorkEvidence = hasEventKind(evidenceCounts, [
       'terminal_output',

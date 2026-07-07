@@ -429,10 +429,30 @@ async function startAssessmentEvaluationWithRetry(interviewId) {
 async function pollAssessmentEvaluationComplete(interviewId) {
   const deadline = Date.now() + EVALUATION_WAIT_MS;
   let lastProgress = null;
+  let missingProgressCount = 0;
   while (Date.now() < deadline) {
     const detail = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}`);
     const progress = detail?.interview?.assessmentProgress ?? null;
     lastProgress = progress;
+    if (!progress) {
+      missingProgressCount += 1;
+      logStep('evaluation:progress-missing', {
+        interviewId,
+        missingProgressCount,
+      });
+      if (missingProgressCount >= 3) {
+        throw new Error(`Recruiter detail lost assessmentProgress while evaluation was pending for ${interviewId}.`);
+      }
+      await sleep(5_000);
+      continue;
+    }
+    missingProgressCount = 0;
+    logStep('evaluation:progress', {
+      interviewId,
+      stage: progress.stage ?? null,
+      nextAction: progress.nextAction ?? null,
+      evaluationStatus: progress.evaluation?.status ?? null,
+    });
     if (
       progress?.stage === 'EVALUATED'
       && progress?.nextAction === 'REVIEW_EVALUATION'

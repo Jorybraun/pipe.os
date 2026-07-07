@@ -8260,6 +8260,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     'assessmentProgress',
     loadScheduledAssessmentProgress(db, interview.id),
     null,
+    10_000,
   );
   const assessmentInviteLinkPromise = (async () =>
     await loadLatestDeliveredAssessmentUrl(db, interview.id, interview.candidate_id)
