@@ -902,4 +902,62 @@ describe('LivingContextStore', () => {
       count: 0,
     });
   });
+
+  it('chunks large context record relationship rewrites through D1 batch', async () => {
+    const concepts = [];
+    for (let index = 0; index < 55; index++) {
+      concepts.push(await store.upsertConcept({
+        ingestionKey: `concept:batch:${index}`,
+        canonicalKey: `term:batch-${index}`,
+        namespace: 'term',
+        label: `Batch ${index}`,
+      }));
+    }
+
+    const db = createMockD1(sqlite);
+    const originalBatch = db.batch.bind(db);
+    const observedBatchSizes: number[] = [];
+    db.batch = (async (statements) => {
+      observedBatchSizes.push(statements.length);
+      return originalBatch(statements);
+    }) as typeof db.batch;
+    const batchedStore = new LivingContextStore(db, () => NOW);
+
+    await batchedStore.upsertContextRecord({
+      ingestionKey: 'context-record:large-batch',
+      scopeType: 'repo_snapshot',
+      scopeId: 'snapshot-large-batch',
+      recordType: 'repo_challenge_packet_context',
+      narrative: 'Large source-backed packet context for batch reliability.',
+      sources: Array.from({ length: 55 }, (_, index) => ({
+        sourceRefType: 'unit_source',
+        sourceRefId: `unit-source-${index}`,
+        evidenceRole: 'support',
+        locator: { index },
+        exactText: `source text ${index}`,
+        contentHash: `sha256:unit-source-${index}`,
+      })),
+      entities: Array.from({ length: 55 }, (_, index) => ({
+        entityType: 'repo_demand',
+        relationship: 'describes',
+        value: { index },
+      })),
+      concepts: concepts.map((concept, index) => ({
+        conceptId: concept.id,
+        relationship: 'requires',
+        weight: index % 2 === 0 ? 1 : 0.9,
+      })),
+    });
+
+    expect(observedBatchSizes).toEqual([4, 50, 5, 50, 5, 50, 5]);
+    expect(sqlite.prepare('SELECT count(*) AS count FROM context_record_source_refs').get()).toEqual({
+      count: 55,
+    });
+    expect(sqlite.prepare('SELECT count(*) AS count FROM context_record_entities').get()).toEqual({
+      count: 55,
+    });
+    expect(sqlite.prepare('SELECT count(*) AS count FROM context_record_concepts').get()).toEqual({
+      count: 55,
+    });
+  });
 });

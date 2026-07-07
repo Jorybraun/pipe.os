@@ -70,6 +70,15 @@ export interface ExpertLabel {
   forbiddenRoles?: string[];
   guardrailViolations?: GuardrailViolation[];
   permittedStretchPaths?: StretchPath[];
+  /**
+   * Candidate expected to score meaningfully lower for this challenge.
+   *
+   * Used by the CODE_REVIEW match-quality gate to prove a label is not just a
+   * happy-path match: the selected candidate must separate from this contrast
+   * candidate by at least minimumScoreSeparation.
+   */
+  negativeCandidateId?: string;
+  minimumScoreSeparation?: number;
   explanation?: string;
   labelVersion: string;
   labeledAt: string;
@@ -104,7 +113,11 @@ export interface ExpectedDemandReference {
 export interface ExpectedChallengePacket {
   challengeId: string;
   repoId: string;
+  repoFullName?: string;
+  repoUrl?: string;
   prNumber: number;
+  prUrl?: string;
+  prTitle?: string;
   sourceVersion: string;
   packetContentHash?: string;
   demands?: ExpectedDemandReference[];
@@ -158,6 +171,7 @@ export interface PersistedRankedChallenge {
   repoId: string;
   prNumber: number;
   sourceVersion: string;
+  packetContentHash?: string;
   score: number;
   candidateEvidenceAlignment: number;
   roleRelevance: number;
@@ -182,6 +196,7 @@ export interface PersistedMatchRun {
   policyVersion: string;
   modelVersion: string | null;
   status: string;
+  createdAt?: number;
   rankedChallenges: PersistedRankedChallenge[];
 }
 
@@ -197,6 +212,10 @@ export interface LabelEvaluationResult {
   guardrailViolations: GuardrailViolation[];
   stretchPathsUsed: StretchPath[];
   provenanceComplete: boolean;
+  contrastCandidateId?: string;
+  contrastScore?: number | null;
+  scoreSeparation?: number | null;
+  minimumScoreSeparation?: number;
   passed: boolean;
   failureReason?: string;
 }
@@ -209,6 +228,38 @@ export interface DeterminismComparison {
   identical: boolean;
   fingerprint: string;
   comparisonFingerprint: string | null;
+  drift?: DeterminismDriftSummary;
+}
+
+export interface DeterminismChallengeSnapshot {
+  challengeId: string;
+  repoId: string;
+  prNumber: number;
+  rank: number | null;
+  recallRank: number;
+  score: number;
+  candidateEvidenceAlignment: number;
+  roleRelevance: number;
+  contextualSpecificity: number;
+  challengeQuality: number;
+  validationDeepeningValue: number;
+  alignedDemandCount: number;
+  stretchCount: number;
+  stretchDemandWeightRatio: number;
+  provenanceComplete: boolean;
+  eligible: boolean;
+  sharedConcepts: string[];
+}
+
+export interface DeterminismDriftSummary {
+  reason:
+    | 'missing_comparison'
+    | 'top_challenge_changed'
+    | 'ranked_result_changed'
+    | 'source_payload_changed';
+  primaryTopChallenge: DeterminismChallengeSnapshot | null;
+  comparisonTopChallenge: DeterminismChallengeSnapshot | null;
+  firstDifference: string;
 }
 
 export interface PacketIdentityMismatch {

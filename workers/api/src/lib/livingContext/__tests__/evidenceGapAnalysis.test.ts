@@ -205,4 +205,51 @@ describe('analyzeEvidenceGaps', () => {
     expect(result.demands[0].evidenceCount).toBe(1);
     expect(result.demands[0].coverageLevel).toBe('strong');
   });
+
+  it('counts semantic adjacency for source-backed code-review concepts', () => {
+    const evidence = [
+      {
+        ...makeEvidence({
+          assertion_id: 'workers-1',
+          concept_key: 'term:array-buffer-typed',
+          strength: 0.9,
+          effective_strength: 0.9,
+        }),
+        narrative: 'Debugged Uint8Array and ArrayBuffer typed-array serialization bugs in workflow persistence.',
+        exact_text: 'Sliced Uint8Array outputs no longer drag oversized backing ArrayBuffers into storage.',
+      },
+      {
+        ...makeEvidence({
+          assertion_id: 'workers-2',
+          concept_key: 'term:cloudflare-workers-sdk',
+          strength: 0.85,
+          effective_strength: 0.85,
+        }),
+        narrative: 'Added regression tests for Cloudflare Workers SDK workflows and wrangler local runtime parity.',
+        exact_text: 'normalizeForStorage covers workflow step outputs and wrangler-local execution.',
+      },
+    ];
+    const demands = [
+      makeDemand('workers-runtime', [
+        'term:uint8array',
+        'term:array-buffer-view',
+        'term:normalize-for-storage',
+        'term:workflows',
+        'term:wrangler',
+      ], 1),
+    ];
+
+    const result = analyzeEvidenceGaps(evidence, demands);
+
+    expect(result.demands[0].coverageLevel).toBe('strong');
+    expect(result.demands[0].matchedConcepts).toEqual([
+      'term:uint8array',
+      'term:array-buffer-view',
+      'term:normalize-for-storage',
+      'term:workflows',
+      'term:wrangler',
+    ]);
+    expect(result.demands[0].missingConcepts).toEqual([]);
+    expect(result.demands[0].evidenceCount).toBeGreaterThanOrEqual(5);
+  });
 });

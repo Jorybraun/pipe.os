@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { D1Database } from '@cloudflare/workers-types';
 import type { CandidateReviewChallengeMatch } from '../../lib/challengeMatching';
 import {
+  demoteUnsafeAutomaticMatchRun,
   matchStandaloneDevContainerAssessment,
   qualityGateFor,
   repairStandaloneReviewAssignmentFromMatchRun,
   selectPreferredMatchExplanation,
-  waitingStageConfigForGate,
 } from '../rpc';
 
 const passedValidator = {
@@ -99,6 +99,37 @@ describe('qualityGateFor', () => {
   });
 });
 
+describe('demoteUnsafeAutomaticMatchRun', () => {
+  it('marks an unsafe automatic match run non-ready and clears the selected packet', async () => {
+    const calls = { updates: [] as unknown[][] };
+    const db = {
+      prepare(sql: string) {
+        let bindings: unknown[] = [];
+        const statement = {
+          bind(...values: unknown[]) {
+            bindings = values;
+            return statement;
+          },
+          async run() {
+            if (sql.includes('UPDATE match_runs')) {
+              calls.updates.push([sql, ...bindings]);
+            }
+            return { success: true, results: [], meta: {} };
+          },
+        };
+        return statement;
+      },
+    } as unknown as D1Database;
+
+    await demoteUnsafeAutomaticMatchRun(db, 'match-run-needs-review');
+
+    expect(calls.updates).toHaveLength(1);
+    expect(calls.updates[0]?.[0]).toContain("status = 'NEEDS_MORE_EVIDENCE'");
+    expect(calls.updates[0]?.[0]).toContain('selected_packet_id = NULL');
+    expect(calls.updates[0]?.[1]).toBe('match-run-needs-review');
+  });
+});
+
 describe('selectPreferredMatchExplanation', () => {
   const needsReviewExplanation = {
     status: 'MATCHED' as const,
@@ -129,42 +160,6 @@ describe('selectPreferredMatchExplanation', () => {
 
   it('still prefers a PASSED proof when one is available', () => {
     expect(selectPreferredMatchExplanation([needsReviewExplanation, passedExplanation])).toEqual(passedExplanation);
-  });
-});
-
-describe('waitingStageConfigForGate', () => {
-  it('keeps blocked CODE_REVIEW matching inside an incomplete assessment stage', () => {
-    expect(waitingStageConfigForGate({
-      candidateId: 'candidate-1',
-      stageId: 'stage-code-review',
-      stageTitle: 'Code Review',
-      stageMode: 'ASYNC',
-      timeLimit: null,
-      waitingChallenge: {
-        id: 'waiting-for-match',
-        type: 'WAITING_FOR_MATCH',
-        title: 'Challenge needs attention',
-        instructions: 'Deterministic challenge matcher returned NO_ROLE_SAFE_CHALLENGE',
-        config: {
-          autoRefresh: false,
-          refreshIntervalSeconds: 30,
-          state: 'blocked',
-          reason: 'Deterministic challenge matcher returned NO_ROLE_SAFE_CHALLENGE',
-        },
-      },
-    })).toEqual({
-      isComplete: false,
-      stageId: 'stage-code-review',
-      candidateId: 'candidate-1',
-      stageTitle: 'Code Review',
-      mode: 'ASYNC',
-      timeLimit: null,
-      challenges: [
-        { type: 'WELCOME', order: 0, title: 'Welcome' },
-        { type: 'WAITING_FOR_MATCH', order: 1, title: 'Challenge needs attention' },
-      ],
-      currentIndex: 0,
-    });
   });
 });
 

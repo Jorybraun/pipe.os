@@ -872,11 +872,26 @@ export function rankReviewChallenges(
   alignments: ChallengeAlignment[],
 ): RankReviewChallengesResult {
   if (allQueryAtoms(query).length === 0) return { status: 'NEEDS_MORE_EVIDENCE', matches: [] };
+  const selectionFitScore = (alignment: ChallengeAlignment): number => {
+    const hasRoleRequirements = alignment.challenge.demands.some((demand) => demand.roleRequirement);
+    return hasRoleRequirements
+      ? clamp01(
+          alignment.candidateEvidenceAlignment * 0.45
+          + alignment.roleRelevance * 0.40
+          + alignment.validationDeepeningValue * 0.15,
+        )
+      : clamp01(
+          alignment.candidateEvidenceAlignment * 0.80
+          + alignment.validationDeepeningValue * 0.20,
+        );
+  };
   const eligible = alignments
     .filter((alignment) => alignment.eligible)
     .sort((a, b) =>
-      b.finalScore - a.finalScore
+      selectionFitScore(b) - selectionFitScore(a)
       || b.candidateEvidenceAlignment - a.candidateEvidenceAlignment
+      || b.roleRelevance - a.roleRelevance
+      || b.finalScore - a.finalScore
       || b.challengeQuality - a.challengeQuality
       || a.challenge.repoId.localeCompare(b.challenge.repoId)
       || a.challenge.prNumber - b.challenge.prNumber

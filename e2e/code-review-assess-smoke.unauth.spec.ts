@@ -163,7 +163,7 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
       await expect(submitted).toBeVisible({ timeout: 45_000 });
       await expect(submitted).toContainText('Profile received.');
       await expect(submitted).toContainText('email you when a source-backed code review is ready');
-      await expect(page.locator('body')).not.toContainText(/WAITING_FOR_MATCH|MATCHING IN PROGRESS|Building your personalized challenge|Repo matching|Challenge needs attention/i);
+      await expect(page.locator('body')).not.toContainText(/WAITING_FOR_MATCH|MATCHING IN PROGRESS|Building your personalized challenge|Repo matching|Challenge needs attention|Upload Your CV|Profile & Resume/i);
       await expect(page.getByTestId('code-review-challenge')).toHaveCount(0);
       await expect(page.locator('body')).not.toContainText(VIDEO_ROOM_PATTERN);
       expect(diffRenderErrors).toEqual([]);
@@ -172,7 +172,7 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
 
     const codeReview = page.getByTestId('code-review-challenge');
     await expect(codeReview).toBeVisible({ timeout: 45_000 });
-    await expect(page.locator('body')).not.toContainText(/WAITING_FOR_MATCH|MATCHING IN PROGRESS|Building your personalized challenge/i);
+    await expect(page.locator('body')).not.toContainText(/WAITING_FOR_MATCH|MATCHING IN PROGRESS|Building your personalized challenge|Repo matching|Challenge needs attention/i);
 
     const repoLink = page.getByTestId('code-review-repo-link');
     const prLink = page.getByTestId('code-review-pr-link');

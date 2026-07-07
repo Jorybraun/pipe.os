@@ -181,6 +181,15 @@ interface ProfileReceivedHandoffBody {
   message?: string;
 }
 
+interface ProfileReceivedChallengeBody {
+  id?: string;
+  type?: string;
+  instructions?: string;
+  error?: unknown;
+  stageId?: string;
+  waitingChallenge?: unknown;
+}
+
 function expectProfileReceivedHandoff(body: ProfileReceivedHandoffBody): void {
   expect(body.error?.code).toBe('PROFILE_RECEIVED');
   expect(body.error?.message).toContain('email you when your code review is ready');
@@ -198,6 +207,22 @@ function expectProfileReceivedHandoff(body: ProfileReceivedHandoffBody): void {
   expect(body.currentIndex).toBe(0);
   expect(body.message).toContain('email you when your code review is ready');
   expect(JSON.stringify(body)).not.toContain('WAITING_FOR_MATCH');
+}
+
+function expectBareProfileReceivedChallenge(body: ProfileReceivedChallengeBody): void {
+  expect(body).toMatchObject({
+    id: 'profile-received',
+    type: 'PROFILE_RECEIVED',
+  });
+  expect(body.instructions).toContain('email you when your code review is ready');
+  expect(body.error).toBeUndefined();
+  expect(body.stageId).toBeUndefined();
+  expect(body.waitingChallenge).toBeUndefined();
+  const serialized = JSON.stringify(body);
+  expect(serialized).not.toContain('WAITING_FOR_MATCH');
+  expect(serialized).not.toContain('Building your personalized challenge');
+  expect(serialized).not.toContain('MATCHING IN PROGRESS');
+  expect(serialized).not.toContain('Repo matching');
 }
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -400,6 +425,30 @@ function persistedRankedResult(prNumber: number, contrastScore: number): Record<
   };
 }
 
+function roleBackedPersistedRankedResult(prNumber: number, contrastScore: number): Record<string, unknown> {
+  const roleSourceRef = {
+    sourceRefType: 'role_context',
+    locator: 'role_context:job_description',
+    exactText: 'The role requires React, TypeScript, accessibility, and regression-test review.',
+    conceptKeys: ['react', 'typescript', 'accessibility', 'regression-testing'],
+  };
+  const validator = matchValidator(prNumber);
+  return {
+    ...persistedRankedResult(prNumber, contrastScore),
+    alignments: [{
+      ...evidenceAlignment(),
+      roleSourceRefs: [roleSourceRef],
+    }],
+    validatorAgent: {
+      ...validator,
+      sourceBridge: {
+        ...(validator.sourceBridge as Record<string, unknown>),
+        roleSourceCount: 1,
+      },
+    },
+  };
+}
+
 function automaticMatchExplanation(prNumber: number, contrastScore: number): Record<string, unknown> {
   return {
     status: 'MATCHED',
@@ -484,7 +533,7 @@ beforeEach(() => {
 // ─── POST /rpc/get-stage-config ──────────────────────────────────────────────
 
 describe('POST /rpc/get-stage-config', () => {
-  it('routes telemetry-only standalone CODE_REVIEW candidates to CV intake instead of matching', async () => {
+  it('routes telemetry-only standalone CODE_REVIEW candidates to profile received instead of CV intake or matching', async () => {
     const db = fakeD1({
       firstResponders: [
         {
@@ -538,21 +587,24 @@ describe('POST /rpc/get-stage-config', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as {
+      isComplete?: boolean;
       stageId?: string;
+      stageTitle?: string;
       mode?: string;
+      message?: string;
       challenges?: Array<{ type: string; title: string }>;
-      upcoming?: Array<{ type: string; title?: string }>;
     };
-    expect(body.stageId).toBe('talent-pool-intake');
+    expect(body.stageId).toBe('candidate-intake-queued');
+    expect(body.stageTitle).toBe('Profile received');
+    expect(body.isComplete).toBe(true);
     expect(body.mode).toBe('INTAKE');
-    expect(body.challenges?.[0]).toMatchObject({
-      type: 'INTAKE',
-      title: 'Profile & Resume',
-    });
-    expect(body.upcoming?.[0]).toMatchObject({ type: 'CODE_REVIEW' });
+    expect(body.message).toContain('email you when your code review is ready');
+    expect(body.challenges).toEqual([]);
+    expect(JSON.stringify(body)).not.toContain('Profile & Resume');
+    expect(JSON.stringify(body)).not.toContain('WAITING_FOR_MATCH');
   });
 
-  it('uses the newest standalone interview type while waiting for CV intake', async () => {
+  it('keeps newest standalone CODE_REVIEW candidates out of CV intake while waiting for upstream profile evidence', async () => {
     const db = fakeD1({
       firstResponders: [
         {
@@ -613,16 +665,22 @@ describe('POST /rpc/get-stage-config', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as {
+      isComplete?: boolean;
+      stageId?: string;
       stageTitle?: string;
+      mode?: string;
+      message?: string;
       challenges?: Array<{ type: string; title: string }>;
-      upcoming?: Array<{ type: string; title?: string }>;
     };
-    expect(body.stageTitle).toBe('Upload Your CV');
-    expect(body.challenges?.[0]).toMatchObject({ type: 'INTAKE' });
-    expect(body.upcoming?.[0]).toMatchObject({
-      type: 'CODE_REVIEW',
-      title: 'Code Review',
-    });
+    expect(body.stageId).toBe('candidate-intake-queued');
+    expect(body.stageTitle).toBe('Profile received');
+    expect(body.isComplete).toBe(true);
+    expect(body.mode).toBe('INTAKE');
+    expect(body.message).toContain('email you when your code review is ready');
+    expect(body.challenges).toEqual([]);
+    expect(JSON.stringify(body)).not.toContain('Upload Your CV');
+    expect(JSON.stringify(body)).not.toContain('Profile & Resume');
+    expect(JSON.stringify(body)).not.toContain('WAITING_FOR_MATCH');
   });
 
   it('ends standalone CODE_REVIEW candidate intake while source-backed evidence builds in the background', async () => {
@@ -920,6 +978,89 @@ describe('POST /rpc/get-stage-config', () => {
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
   });
 
+  it('keeps pipeline CODE_REVIEW queued when role context is missing instead of exposing matcher waits', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: 'pipe_1',
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/role-backed',
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/role-backed',
+            raw_node_count: 18,
+            node_count: 18,
+          },
+        },
+        {
+          match: 'SELECT match_philosophy FROM pipeline_match_config',
+          value: { match_philosophy: 'tailored' },
+        },
+        {
+          match: 'FROM role_contexts',
+          value: null,
+        },
+      ],
+      allResponders: [
+        {
+          match: 'FROM stages s',
+          value: [{
+            stage_id: 'stage_code_review',
+            stage_title: 'Code Review',
+            stage_order: 0,
+            stage_mode: 'ASYNC',
+            time_limit: null,
+            screening_input_mode: null,
+            video_config: null,
+            challenge_id: 'challenge_code_review',
+            challenge_type: 'CODE_REVIEW',
+            challenge_title: 'Code Review',
+            challenge_order: 0,
+            challenge_config: '{}',
+            challenge_instructions: 'Review the matched PR.',
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db, PRIMARY_MATCH_STORE: 'neo4j' } as Partial<Env & { DB: FakeD1 }>);
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeader('cand_1', 'pipe_1') },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      isComplete?: boolean;
+      stageId?: string;
+      message?: string;
+      challenges?: Array<{ type: string; title?: string }>;
+      waitingChallenge?: unknown;
+    };
+    expect(body).toMatchObject({
+      isComplete: true,
+      stageId: 'candidate-intake-queued',
+      message: expect.stringContaining('email you when your code review is ready'),
+      challenges: [],
+    });
+    expect(JSON.stringify(body)).not.toContain('WAITING_FOR_MATCH');
+    expect(body.waitingChallenge).toBeUndefined();
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
+    expect(matchReposByGroundedEdges).not.toHaveBeenCalled();
+    expect(matchReposForCandidateNeo4j).not.toHaveBeenCalled();
+  });
+
   it('runs role-backed CODE_REVIEW matching when active resume decomposition already produced matchable evidence', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
@@ -1139,6 +1280,213 @@ describe('POST /rpc/get-stage-config', () => {
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes('INSERT INTO candidate_challenge_assignment')
+    )).toBe(true);
+  });
+
+  it('hydrates role-backed CODE_REVIEW assignment from a passed persisted match before stale ingestion blocks it', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: 'pipe_1',
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/stale-but-matched',
+          },
+        },
+        {
+          match: 'SELECT match_philosophy FROM pipeline_match_config',
+          value: { match_philosophy: 'tailored' },
+        },
+        { match: 'FROM candidate_challenge_assignment', value: null },
+        {
+          match: 'FROM role_contexts',
+          value: {
+            id: 'role_ctx_1',
+            persona_json: null,
+            rcd_json: JSON.stringify({ rcd_version: 'simple-jd-v1' }),
+            job_description_md: 'React TypeScript usePopoverRoot rendered trigger id ownership.',
+            non_negotiable_skills_json: JSON.stringify(['React', 'TypeScript', 'usePopoverRoot']),
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/stale-but-matched',
+            status: 'pending',
+            current_step: 'discover_profile',
+            error_text: null,
+            estimated_completion_at: null,
+            updated_at: '2026-07-02T18:25:46.411Z',
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+        { match: 'FROM review_challenge_packets', value: { packet_json: JSON.stringify(sourceBackedPacket('repo-span-stage-repair')) } },
+      ],
+      allResponders: [
+        {
+          match: 'FROM stages s',
+          value: [{
+            stage_id: 'stage_code_review',
+            stage_title: 'Code Review',
+            stage_order: 0,
+            stage_mode: 'ASYNC',
+            time_limit: null,
+            screening_input_mode: null,
+            video_config: null,
+            challenge_id: 'challenge_code_review',
+            challenge_type: 'CODE_REVIEW',
+            challenge_title: 'Code Review',
+            challenge_order: 0,
+            challenge_config: '{}',
+            challenge_instructions: 'Review the matched PR.',
+          }],
+        },
+        {
+          match: 'FROM match_runs mr',
+          value: [{
+            status: 'MATCHED',
+            ranked_results_json: JSON.stringify([roleBackedPersistedRankedResult(973, 1)]),
+            repo_id: 973,
+            pr_number: 973,
+            github_url: 'https://github.com/mui/base-ui',
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeader('cand_1', 'pipe_1') },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      isComplete?: boolean;
+      stageId?: string;
+      challenges?: Array<{ type: string; title: string }>;
+    };
+    expect(body).toMatchObject({
+      isComplete: false,
+      stageId: 'stage_code_review',
+      challenges: expect.arrayContaining([{ type: 'CODE_REVIEW', title: 'Code Review', order: 1 }]),
+    });
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes('INSERT INTO candidate_challenge_assignment')
+    )).toBe(true);
+  });
+
+  it('demotes persisted role-backed CODE_REVIEW near-ties before stale ingestion blocks them', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: 'pipe_1',
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/stale-near-tie',
+          },
+        },
+        {
+          match: 'SELECT match_philosophy FROM pipeline_match_config',
+          value: { match_philosophy: 'tailored' },
+        },
+        { match: 'FROM candidate_challenge_assignment', value: null },
+        {
+          match: 'FROM role_contexts',
+          value: {
+            id: 'role_ctx_1',
+            persona_json: null,
+            rcd_json: JSON.stringify({ rcd_version: 'simple-jd-v1' }),
+            job_description_md: 'React TypeScript usePopoverRoot rendered trigger id ownership.',
+            non_negotiable_skills_json: JSON.stringify(['React', 'TypeScript', 'usePopoverRoot']),
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/stale-near-tie',
+            status: 'pending',
+            current_step: 'discover_profile',
+            error_text: null,
+            estimated_completion_at: null,
+            updated_at: '2026-07-02T18:25:46.411Z',
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+      ],
+      allResponders: [
+        {
+          match: 'FROM stages s',
+          value: [{
+            stage_id: 'stage_code_review',
+            stage_title: 'Code Review',
+            stage_order: 0,
+            stage_mode: 'ASYNC',
+            time_limit: null,
+            screening_input_mode: null,
+            video_config: null,
+            challenge_id: 'challenge_code_review',
+            challenge_type: 'CODE_REVIEW',
+            challenge_title: 'Code Review',
+            challenge_order: 0,
+            challenge_config: '{}',
+            challenge_instructions: 'Review the matched PR.',
+          }],
+        },
+        {
+          match: 'FROM match_runs mr',
+          value: [{
+            match_run_id: 'match_run_near_tie',
+            status: 'MATCHED',
+            ranked_results_json: JSON.stringify([roleBackedPersistedRankedResult(973, 0)]),
+            repo_id: 973,
+            pr_number: 973,
+            github_url: 'https://github.com/mui/base-ui',
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeader('cand_1', 'pipe_1') },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { isComplete?: boolean; stageId?: string };
+    expect(body).toMatchObject({
+      isComplete: true,
+      stageId: 'candidate-intake-queued',
+    });
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes('INSERT INTO candidate_challenge_assignment')
+    )).toBe(false);
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes("status = 'NEEDS_MORE_EVIDENCE'")
+      && call.sql.includes('selected_packet_id = NULL')
+      && call.params.includes('match_run_near_tie')
     )).toBe(true);
   });
 
@@ -1428,7 +1776,7 @@ describe('POST /rpc/get-stage-config', () => {
     }));
   });
 
-  it('queues standalone CODE_REVIEW assignment from stage-config once source-backed evidence is already ready', async () => {
+  it('keeps standalone CODE_REVIEW queued from stage-config even when source-backed evidence is already ready', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
       repoId: 973,
@@ -1510,13 +1858,13 @@ describe('POST /rpc/get-stage-config', () => {
     });
 
     await waitUntilAll();
-    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes('UPDATE scheduled_interviews')
       && call.params.includes(973)
       && call.params.includes('https://github.com/mui/base-ui')
-    )).toBe(true);
+    )).toBe(false);
   });
 });
 
@@ -1663,7 +2011,7 @@ describe('POST /rpc/submit-challenge-response', () => {
     await waitUntilAll();
   });
 
-  it('queues after intake when standalone CODE_REVIEW has no precomputed PR assignment', async () => {
+  it('queues after intake without matching when standalone CODE_REVIEW has no precomputed PR assignment', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
       repoId: 973,
@@ -1752,16 +2100,16 @@ describe('POST /rpc/submit-challenge-response', () => {
     }));
     resolveIngestion?.();
     await waitUntilAll();
-    expect(matchCandidateToReviewChallenge).toHaveBeenCalled();
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes('UPDATE scheduled_interviews')
       && call.params.includes(973)
       && call.params.includes('https://github.com/mui/base-ui')
-    )).toBe(true);
+    )).toBe(false);
   });
 
-  it('matches standalone CODE_REVIEW after decomposition before full text ingestion completes', async () => {
+  it('keeps standalone CODE_REVIEW queued after decomposition before full text ingestion completes', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
       repoId: 973,
@@ -1844,13 +2192,13 @@ describe('POST /rpc/submit-challenge-response', () => {
       queued: true,
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes('UPDATE scheduled_interviews')
       && call.params.includes(973)
       && call.params.includes('https://github.com/mui/base-ui')
-    )).toBe(true);
+    )).toBe(false);
 
     resolveIngestion?.();
     await waitUntilAll();
@@ -2048,11 +2396,7 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body).toMatchObject({
-      id: 'profile-received',
-      type: 'PROFILE_RECEIVED',
-    });
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(matchReposByGroundedEdges).not.toHaveBeenCalled();
     expect(matchReposForCandidateNeo4j).not.toHaveBeenCalled();
   });
@@ -2118,11 +2462,7 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body).toMatchObject({
-      id: 'profile-received',
-      type: 'PROFILE_RECEIVED',
-    });
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(matchReposByGroundedEdges).not.toHaveBeenCalled();
     expect(matchReposForCandidateNeo4j).not.toHaveBeenCalled();
   });
@@ -2208,11 +2548,7 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body).toMatchObject({
-      id: 'profile-received',
-      type: 'PROFILE_RECEIVED',
-    });
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
     expect(db.__calls.some((call) =>
       call.ran && call.sql.includes('INSERT INTO candidate_challenge_assignment')
@@ -2403,9 +2739,7 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body.type).toBe('PROFILE_RECEIVED');
-    expect(body.id).toBe('profile-received');
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
@@ -2458,11 +2792,58 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body).toMatchObject({
-      id: 'profile-received',
-      type: 'PROFILE_RECEIVED',
+    expectBareProfileReceivedChallenge(body);
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
+  });
+
+  it('keeps no-CV standalone CODE_REVIEW candidates out of candidate-facing intake upload', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_no_cv',
+            status: 'INVITED',
+            created_at: '2026-06-27T22:00:00.000Z',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: null,
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: null,
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+      ],
     });
-    expect(body.instructions).toContain('email you when your code review is ready');
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({ order: 0 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { type: string; id: string; instructions?: string };
+    expectBareProfileReceivedChallenge(body);
+    expect(JSON.stringify(body)).not.toContain('Upload Your CV');
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
   });
 
@@ -2515,11 +2896,7 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body).toMatchObject({
-      id: 'profile-received',
-      type: 'PROFILE_RECEIVED',
-    });
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
   });
 
@@ -2606,11 +2983,7 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body).toMatchObject({
-      id: 'profile-received',
-      type: 'PROFILE_RECEIVED',
-    });
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran && call.sql.includes('SET matched_repo_id = NULL')
@@ -2693,11 +3066,7 @@ describe('POST /rpc/get-challenge', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { type: string; id: string; instructions?: string };
-    expect(body).toMatchObject({
-      id: 'profile-received',
-      type: 'PROFILE_RECEIVED',
-    });
-    expect(body.instructions).toContain('email you when your code review is ready');
+    expectBareProfileReceivedChallenge(body);
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran && call.sql.includes('SET matched_repo_id = ?1')

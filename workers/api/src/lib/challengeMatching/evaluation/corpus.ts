@@ -66,6 +66,14 @@ function roleSourceComplete(reference: RoleRequirements['sourceReferences'][numb
     && nonEmptyString(reference.contentHash);
 }
 
+function positiveLabel(label: ExpertLabel): boolean {
+  return label.relevanceGrade === 'highly_relevant' || label.relevanceGrade === 'relevant';
+}
+
+function insufficientEvidenceLabel(label: ExpertLabel): boolean {
+  return label.relevanceGrade === 'irrelevant' || label.relevanceGrade === 'forbidden';
+}
+
 export function validateCorpus(corpus: EvaluationCorpus): void {
   const failures: string[] = [];
   if (!corpus || typeof corpus !== 'object') {
@@ -156,6 +164,21 @@ export function validateCorpus(corpus: EvaluationCorpus): void {
     if (!validGrades.has(label.relevanceGrade)) {
       failures.push(`label has invalid relevanceGrade: ${String(label.relevanceGrade)}`);
     }
+    if (label.negativeCandidateId !== undefined && !candidateIds.has(label.negativeCandidateId)) {
+      failures.push(`label references unknown negative candidate: ${label.labelId}`);
+    }
+    if (
+      label.minimumScoreSeparation !== undefined
+      && (!Number.isFinite(label.minimumScoreSeparation) || label.minimumScoreSeparation < 0)
+    ) {
+      failures.push(`label minimumScoreSeparation must be a non-negative finite number: ${label.labelId}`);
+    }
+    if (label.negativeCandidateId !== undefined && label.minimumScoreSeparation === undefined) {
+      failures.push(`label with negativeCandidateId requires minimumScoreSeparation: ${label.labelId}`);
+    }
+    if (label.minimumScoreSeparation !== undefined && label.negativeCandidateId === undefined) {
+      failures.push(`label with minimumScoreSeparation requires negativeCandidateId: ${label.labelId}`);
+    }
     if (!label.labeledBy || !label.labelVersion || !label.labeledAt) {
       failures.push(`label is missing labeling provenance: ${label.labelId}`);
     }
@@ -200,8 +223,20 @@ export function validateCorpus(corpus: EvaluationCorpus): void {
     if (!nonEmptyString(packet.repoId)) {
       failures.push(`expected packet is missing repoId: ${packet.challengeId}`);
     }
+    if (packet.repoFullName !== undefined && !nonEmptyString(packet.repoFullName)) {
+      failures.push(`expected packet repoFullName must be non-empty: ${packet.challengeId}`);
+    }
+    if (packet.repoUrl !== undefined && !nonEmptyString(packet.repoUrl)) {
+      failures.push(`expected packet repoUrl must be non-empty: ${packet.challengeId}`);
+    }
     if (!Number.isInteger(packet.prNumber) || packet.prNumber <= 0) {
       failures.push(`expected packet prNumber must be a positive integer: ${packet.challengeId}`);
+    }
+    if (packet.prUrl !== undefined && !nonEmptyString(packet.prUrl)) {
+      failures.push(`expected packet prUrl must be non-empty: ${packet.challengeId}`);
+    }
+    if (packet.prTitle !== undefined && !nonEmptyString(packet.prTitle)) {
+      failures.push(`expected packet prTitle must be non-empty: ${packet.challengeId}`);
     }
     if (!nonEmptyString(packet.sourceVersion)) {
       failures.push(`expected packet is missing sourceVersion: ${packet.challengeId}`);
@@ -271,17 +306,68 @@ export function productionCorpusFailures(corpus: EvaluationCorpus): string[] {
   if (corpus.expertLabels.length === 0) {
     failures.push('production corpus requires at least one expert label');
   }
+  const draftLabels = corpus.expertLabels.filter((label) => label.labeledBy === 'corpus-seeder');
+  const expertBackedLabels = corpus.expertLabels.filter(hasExpertLabelProvenance);
+  if (draftLabels.length > 0) {
+    failures.push(
+      `production corpus contains ${draftLabels.length} draft corpus-seeder label(s); complete expert review before production evaluation`,
+    );
+  }
+  if (corpus.expertLabels.length > 0 && expertBackedLabels.length === 0) {
+    failures.push('production corpus requires at least one expert-reviewed label with reviewer/source provenance');
+  }
+  const positiveLabels = expertBackedLabels.filter(positiveLabel);
+  const insufficientEvidenceLabels = expertBackedLabels.filter(insufficientEvidenceLabel);
+  const contrastLabels = expertBackedLabels.filter((label) =>
+    nonEmptyString(label.negativeCandidateId)
+      && label.minimumScoreSeparation !== undefined
+  );
+  if (positiveLabels.length === 0) {
+    failures.push('production corpus requires at least one highly_relevant or relevant positive expert label');
+  }
+  if (insufficientEvidenceLabels.length === 0) {
+    failures.push('production corpus requires at least one irrelevant or forbidden insufficient-evidence expert label');
+  }
+  if (contrastLabels.length === 0) {
+    failures.push('production corpus requires at least one explicit negativeCandidateId contrast label');
+  }
   const syntheticLabels = corpus.expertLabels.filter(
     (label) => label.labeledBy === 'synthetic-fixture',
   );
   if (syntheticLabels.length > 0 || corpus.metadata.syntheticFixtureCount > 0) {
     failures.push('production corpus cannot contain synthetic fixture labels');
   }
+  const sourceBackedExpectedPacketCount = new Set(
+    (corpus.expectedPackets ?? [])
+      .filter((packet) =>
+        Number.isInteger(packet.prNumber)
+        && packet.prNumber > 0
+        && Array.isArray(packet.demands)
+        && packet.demands.some((demand) =>
+          Array.isArray(demand.sourceRefs)
+          && demand.sourceRefs.some(sourceRefComplete)
+        )
+      )
+      .map((packet) => packet.challengeId),
+  ).size;
+  if (sourceBackedExpectedPacketCount < 2) {
+    failures.push('production corpus requires at least two source-backed expected PR challenge packets');
+  }
 
   for (const label of corpus.expertLabels) {
+    if (label.labeledBy === 'corpus-seeder') continue;
     const provenance = label.labelProvenance;
     if (!label.explanation || label.explanation.trim().length === 0) {
       failures.push(`expert label requires a human rationale: ${label.labelId}`);
+    }
+    if (
+      positiveLabel(label)
+      && (
+        !nonEmptyString(label.negativeCandidateId)
+        || label.minimumScoreSeparation === undefined
+      )
+    ) {
+      failures.push(`positive expert label requires contrast candidate and minimum score separation: ${label.labelId}`);
     }
     if (!provenance) {
       failures.push(`expert label is missing reviewer/source provenance: ${label.labelId}`);

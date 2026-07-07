@@ -1,4 +1,6 @@
 import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import dotenv from 'dotenv';
 
 dotenv.config({ path: '.env.local' });
@@ -9,8 +11,21 @@ const API_BASE = (process.env.API_BASE || 'https://api-dev.hire-pipe.com').repla
 const RECRUITER_API_BASE = (process.env.RECRUITER_API_BASE || APP_BASE).replace(/\/$/, '');
 const RPC_BASE = (process.env.RPC_BASE || API_BASE).replace(/\/$/, '');
 const VIDEO_ROOM_BASE = (process.env.VIDEO_ROOM_BASE || process.env.ROOM_BASE || 'https://room-dev.hire-pipe.com').replace(/\/$/, '');
-const BASIC_USER = process.env.PIPE_DEV_BASIC_AUTH_USER || process.env.DEV_BASIC_AUTH_USER || '';
-const BASIC_PASSWORD = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD || process.env.DEV_BASIC_AUTH_PASSWORD || '';
+export function resolveAppDevBasicAuth(env = process.env) {
+  return {
+    user: env.PIPE_APP_DEV_BASIC_AUTH_USER
+      || env.APP_DEV_BASIC_AUTH_USER
+      || env.PIPE_DEV_BASIC_AUTH_USER
+      || env.DEV_BASIC_AUTH_USER
+      || '',
+    password: env.PIPE_APP_DEV_BASIC_AUTH_PASSWORD
+      || env.APP_DEV_BASIC_AUTH_PASSWORD
+      || env.PIPE_DEV_BASIC_AUTH_PASSWORD
+      || env.DEV_BASIC_AUTH_PASSWORD
+      || '',
+  };
+}
+const { user: BASIC_USER, password: BASIC_PASSWORD } = resolveAppDevBasicAuth();
 const REQUEST_TIMEOUT_MS = Math.max(
   1,
   Number.parseInt(process.env.CODE_REVIEW_SMOKE_REQUEST_TIMEOUT_MS || '60000', 10) || 60_000,
@@ -18,7 +33,9 @@ const REQUEST_TIMEOUT_MS = Math.max(
 const SEND_EMAIL = process.env.CODE_REVIEW_SMOKE_SEND_EMAIL === '1';
 const SKIP_BROWSER = process.env.CODE_REVIEW_SMOKE_SKIP_BROWSER === '1';
 const SKIP_RECRUITER_BROWSER = process.env.CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER === '1';
+const VERIFY_RECRUITER_CANDIDATE_LINK = process.env.CODE_REVIEW_SMOKE_RECRUITER_CANDIDATE_LINK === '1';
 const AUTO_MATCH = process.env.CODE_REVIEW_SMOKE_AUTO_MATCH === '1';
+const NO_CV_BOUNDARY = process.env.CODE_REVIEW_SMOKE_NO_CV_BOUNDARY === '1';
 const ROLE_BACKED_EXPLICIT = process.env.CODE_REVIEW_SMOKE_ROLE_BACKED === '1';
 const SUBMIT_REVIEW = process.env.CODE_REVIEW_SMOKE_SUBMIT === '1'
   || process.env.CODE_REVIEW_SMOKE_FULL_SUBMIT === '1';
@@ -95,7 +112,7 @@ function assertEnv() {
   const remote = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
   if (remote && (!BASIC_USER || !BASIC_PASSWORD)) {
     throw new Error(
-      'Set PIPE_DEV_BASIC_AUTH_USER and PIPE_DEV_BASIC_AUTH_PASSWORD to smoke deployed app-dev.',
+      'Set PIPE_APP_DEV_BASIC_AUTH_USER/PASSWORD, APP_DEV_BASIC_AUTH_USER/PASSWORD, or PIPE_DEV_BASIC_AUTH_USER/PASSWORD to smoke deployed app-dev.',
     );
   }
   if (Boolean(REPO_URL) !== Boolean(PR_NUMBER)) {
@@ -116,6 +133,9 @@ function assertEnv() {
     if (!RELATED_BOUNDARY_REPO_URL || !Number.isInteger(RELATED_BOUNDARY_PR_NUMBER) || RELATED_BOUNDARY_PR_NUMBER <= 0) {
       throw new Error('Set CODE_REVIEW_SMOKE_RELATED_BOUNDARY_REPO_URL and CODE_REVIEW_SMOKE_RELATED_BOUNDARY_PR_NUMBER to valid values.');
     }
+  }
+  if (NO_CV_BOUNDARY && (!AUTO_MATCH || REPO_URL || PR_NUMBER)) {
+    throw new Error('CODE_REVIEW_SMOKE_NO_CV_BOUNDARY=1 requires CODE_REVIEW_SMOKE_AUTO_MATCH=1 with no manual repo/PR override.');
   }
 }
 
@@ -588,11 +608,145 @@ async function createRelatedPersonBoundaryInterview(invite) {
   };
 }
 
+export function assertPersonRelatedBoundaryProfile({
+  profile,
+  selectedInterviewId,
+  selectedInterviewDetail = null,
+  selectedRepoUrl,
+  selectedPrNumber,
+  relatedBoundaryInterview,
+}) {
+  if (!relatedBoundaryInterview) return {
+    verified: false,
+    reason: 'no related boundary interview requested',
+  };
+
+  const scheduledInterviews = Array.isArray(profile?.scheduledInterviews)
+    ? profile.scheduledInterviews
+    : [];
+  const selected = scheduledInterviews.find((candidateInterview) =>
+    candidateInterview?.id === selectedInterviewId
+  ) ?? selectedInterviewDetail;
+  const relatedFromCandidateProfile = scheduledInterviews.find((candidateInterview) =>
+    candidateInterview?.id === relatedBoundaryInterview.interviewId
+  );
+  const relatedFromInterviewDetail = Array.isArray(selectedInterviewDetail?.relatedEvidenceInterviews)
+    ? selectedInterviewDetail.relatedEvidenceInterviews.find((candidateInterview) =>
+        candidateInterview?.id === relatedBoundaryInterview.interviewId
+      )
+    : null;
+  const related = relatedFromCandidateProfile ?? relatedFromInterviewDetail;
+  assert(
+    selected?.status === 'COMPLETED',
+    `Person profile boundary missing completed selected interview ${selectedInterviewId}: ${JSON.stringify(scheduledInterviews)}`,
+  );
+  assert(
+    related?.id === relatedBoundaryInterview.interviewId,
+    `Person profile boundary missing related same-person interview ${relatedBoundaryInterview.interviewId}: ${JSON.stringify(scheduledInterviews)}`,
+  );
+
+  const match = profile?.standaloneReviewMatch ?? null;
+  assert(
+    match?.submitted === true
+      && match?.matchStatus === 'MATCHED'
+      && match?.repoUrl === selectedRepoUrl
+      && String(match?.prNumber ?? '') === String(selectedPrNumber),
+    `Person profile selected code-review recommendation does not point at submitted interview ${selectedInterviewId}: ${JSON.stringify(match)}`,
+  );
+  assert(
+    match?.interviewId === undefined
+      || match.interviewId === selectedInterviewId,
+    `Person profile selected code-review recommendation points at related interview ${relatedBoundaryInterview.interviewId}: ${JSON.stringify(match)}`,
+  );
+  assert(
+    match.repoUrl !== relatedBoundaryInterview.repoUrl
+      || String(match.prNumber ?? '') !== String(relatedBoundaryInterview.prNumber ?? ''),
+    `Person profile selected code-review recommendation promoted related repo/PR ${relatedBoundaryInterview.repoUrl}#${relatedBoundaryInterview.prNumber}: ${JSON.stringify(match)}`,
+  );
+
+  return {
+    verified: true,
+    selectedInterviewId,
+    relatedInterviewId: relatedBoundaryInterview.interviewId,
+    relatedSource: relatedFromCandidateProfile ? 'candidate_profile' : 'interview_detail',
+    selectedRepoUrl,
+    selectedPrNumber,
+    relatedRepoUrl: relatedBoundaryInterview.repoUrl,
+    relatedPrNumber: relatedBoundaryInterview.prNumber,
+    scheduledCodeReviewCount: scheduledInterviews.filter((candidateInterview) =>
+      candidateInterview?.interviewType === 'CODE_REVIEW'
+    ).length,
+  };
+}
+
+async function verifyPersonRelatedBoundaryProfile({
+  candidateId,
+  selectedInterviewId,
+  selectedRepoUrl,
+  selectedPrNumber,
+  relatedBoundaryInterview,
+}) {
+  if (!relatedBoundaryInterview) return null;
+  const profile = await requestJson(`/api/v1/candidates/${candidateId}`);
+  const detail = await requestJson(`/api/v1/scheduling/interviews/${selectedInterviewId}`);
+  return assertPersonRelatedBoundaryProfile({
+    profile,
+    selectedInterviewId,
+    selectedInterviewDetail: detail?.interview ?? null,
+    selectedRepoUrl,
+    selectedPrNumber,
+    relatedBoundaryInterview,
+  });
+}
+
 async function resolveInvite(inviteToken) {
   return requestJson('/rpc/resolve-token', {
     method: 'POST',
     body: JSON.stringify({ inviteToken }),
   });
+}
+
+async function verifyFreshRecruiterCandidateAssessmentLink({
+  interviewId,
+  deliveredUrl,
+  session,
+}) {
+  const detail = await requestJsonWithTimeout(
+    `/api/v1/scheduling/interviews/${interviewId}`,
+    {},
+    { timeoutMs: 12_000 },
+  );
+  const setup = detail?.interview?.assessmentSetup ?? null;
+  assert(setup, `Recruiter detail missing assessment setup for candidate link proof: ${JSON.stringify(detail).slice(0, 1200)}`);
+  assert(
+    typeof setup.lastDeliveredUrl === 'string' && setup.lastDeliveredUrl.length > 0,
+    `Recruiter detail missing delivered candidate assessment URL: ${JSON.stringify(setup)}`,
+  );
+  assert(
+    canonicalUrl(setup.lastDeliveredUrl) === canonicalUrl(deliveredUrl),
+    `Recruiter candidate assessment URL does not match delivered invite URL: ${JSON.stringify({
+      recruiterUrl: cleanUrl(setup.lastDeliveredUrl),
+      deliveredUrl: cleanUrl(deliveredUrl),
+    })}`,
+  );
+  assert(
+    setup.lastDeliveredUrlState === 'active',
+    `Expected fresh recruiter candidate assessment URL to be active before intake, got ${setup.lastDeliveredUrlState}: ${JSON.stringify(setup)}`,
+  );
+  assertAssessUrl(setup.lastDeliveredUrl);
+  assert(
+    typeof session?.sessionToken === 'string' && session.sessionToken.length > 0,
+    `Resolved invite did not return a candidate session token before intake: ${JSON.stringify(session)}`,
+  );
+
+  return {
+    verified: true,
+    state: setup.lastDeliveredUrlState,
+    recruiterUrl: cleanUrl(setup.lastDeliveredUrl),
+    sessionStatus: session.status ?? null,
+    setupStatus: setup.status ?? null,
+    setupKind: setup.kind ?? null,
+  };
 }
 
 async function submitIntake(sessionToken) {
@@ -625,6 +779,48 @@ async function getStageConfig(sessionToken) {
     headers: candidateHeaders(sessionToken),
     body: JSON.stringify({}),
   }, { basicAuth: false });
+}
+
+function assertProfileReceivedHandoff({ stageConfig, challenge }) {
+  assert(
+    stageConfig?.isComplete === true
+      && stageConfig?.stageId === 'candidate-intake-queued',
+    `Expected candidate-intake-queued complete stage config, got: ${JSON.stringify(stageConfig)}`,
+  );
+  assert(
+    stageConfig?.stageTitle === 'Profile received',
+    `Expected Profile received stage title, got: ${JSON.stringify(stageConfig)}`,
+  );
+  assert(
+    Array.isArray(stageConfig?.challenges)
+      && stageConfig.challenges.length === 0,
+    `Expected no candidate-facing intake or matching challenges, got: ${JSON.stringify(stageConfig)}`,
+  );
+  assert(
+    challenge?.type === 'PROFILE_RECEIVED',
+    `Expected PROFILE_RECEIVED handoff, got: ${JSON.stringify(challenge)}`,
+  );
+  assert(
+    challenge?.id === 'profile-received',
+    `Expected profile-received challenge id, got: ${JSON.stringify(challenge)}`,
+  );
+  assert(
+    typeof challenge?.instructions === 'string'
+      && challenge.instructions.includes('email you when your code review is ready'),
+    `Expected candidate-safe email handoff instructions, got: ${JSON.stringify(challenge)}`,
+  );
+
+  const serialized = JSON.stringify({ stageConfig, challenge });
+  assert(
+    !serialized.includes('WAITING_FOR_MATCH')
+      && !serialized.includes('Upload Your CV')
+      && !serialized.includes('Profile & Resume')
+      && !serialized.includes('Building your personalized challenge')
+      && !serialized.includes('MATCHING IN PROGRESS')
+      && !serialized.includes('Repo matching')
+      && !serialized.includes('Challenge needs attention'),
+    `Candidate handoff leaked intake or matching UI state: ${serialized.slice(0, 1200)}`,
+  );
 }
 
 async function bootstrapStageConfig(sessionToken) {
@@ -692,7 +888,15 @@ async function pollCodeReviewChallenge(sessionToken, order = 0, options = {}) {
     if (last?.type === 'WAITING_FOR_MATCH') {
       throw new Error(`CODE_REVIEW /assess must not expose candidate-visible WAITING_FOR_MATCH; expected ready CODE_REVIEW or PROFILE_RECEIVED handoff: ${JSON.stringify(last).slice(0, 800)}`);
     }
-    throw new Error(`Expected CODE_REVIEW or PROFILE_RECEIVED handoff, got: ${JSON.stringify(last).slice(0, 800)}`);
+    const serialized = JSON.stringify(last);
+    assert(
+      !serialized.includes('Building your personalized challenge')
+        && !serialized.includes('MATCHING IN PROGRESS')
+        && !serialized.includes('Repo matching')
+        && !serialized.includes('Challenge needs attention'),
+      `CODE_REVIEW /assess leaked candidate-visible matching diagnostics: ${serialized.slice(0, 800)}`,
+    );
+    throw new Error(`Expected CODE_REVIEW or PROFILE_RECEIVED handoff, got: ${serialized.slice(0, 800)}`);
   }
   throw new Error(`CODE_REVIEW challenge did not become ready. Last response: ${JSON.stringify(last).slice(0, 1200)}`);
 }
@@ -706,12 +910,6 @@ function runBrowserSmoke({
 }) {
   if (SKIP_BROWSER) return { skipped: true };
 
-  const candidate = JSON.stringify({
-    id: session.id,
-    pipelineId: session.pipelineId ?? null,
-    status: session.status ?? 'IN_PROGRESS',
-    name: session.name ?? 'CODE_REVIEW Smoke Candidate',
-  });
   const result = spawnSync(
     'npx',
     [
@@ -724,37 +922,90 @@ function runBrowserSmoke({
     {
       cwd: process.cwd(),
       stdio: 'inherit',
-      env: {
-        ...process.env,
-        APP_BASE,
-        API_BASE,
-        VIDEO_ROOM_BASE,
-        CODE_REVIEW_ASSESS_TOKEN: deliveredUrl,
-        CODE_REVIEW_SESSION_TOKEN: session.sessionToken,
-        CODE_REVIEW_SESSION_INVITE_TOKEN: inviteToken,
-        CODE_REVIEW_SESSION_CANDIDATE_JSON: candidate,
-        CODE_REVIEW_EXPECT_AUTOMATCH: EXPECT_AUTOMATCH,
-        CODE_REVIEW_EXPECT_MANUAL_OVERRIDE: REPO_URL && PR_NUMBER ? '1' : '0',
-        CODE_REVIEW_EXPECT_PROFILE_RECEIVED: expectProfileReceived ? '1' : '0',
-        CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT: expectedMatchProofVerdict,
-        CODE_REVIEW_REQUIRE_HYPEREDGES: REPO_URL && PR_NUMBER ? '0' : '1',
-        CODE_REVIEW_BROWSER_SUBMIT_ROUND: SUBMIT_REVIEW ? '1' : '0',
-      },
+      env: buildCodeReviewAssessBrowserSmokeEnv({
+        baseEnv: process.env,
+        appBase: APP_BASE,
+        apiBase: API_BASE,
+        videoRoomBase: VIDEO_ROOM_BASE,
+        deliveredUrl,
+        inviteToken,
+        session,
+        expectedMatchProofVerdict,
+        expectProfileReceived,
+        expectAutomatch: EXPECT_AUTOMATCH,
+        expectManualOverride: REPO_URL && PR_NUMBER ? '1' : '0',
+        requireHyperedges: REPO_URL && PR_NUMBER ? '0' : '1',
+        submitReview: SUBMIT_REVIEW,
+      }),
     },
   );
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`Playwright assess smoke failed with exit code ${result.status}`);
   }
-  return { skipped: false };
+  const surfaceContract = expectProfileReceived
+    ? 'profile-received-candidate-handoff'
+    : SUBMIT_REVIEW
+      ? 'source-backed-code-review-with-review-round'
+      : 'source-backed-code-review-challenge';
+  return { skipped: false, surfaceContract };
 }
 
-function recruiterDetailReady(interview, {
+export function buildCodeReviewAssessBrowserSmokeEnv({
+  baseEnv,
+  appBase,
+  apiBase,
+  videoRoomBase,
+  deliveredUrl,
+  inviteToken,
+  session,
+  expectedMatchProofVerdict,
+  expectProfileReceived = false,
+  expectAutomatch,
+  expectManualOverride,
+  requireHyperedges,
+  submitReview,
+}) {
+  const candidate = JSON.stringify({
+    id: session.id,
+    pipelineId: session.pipelineId ?? null,
+    status: session.status ?? 'IN_PROGRESS',
+    name: session.name ?? 'CODE_REVIEW Smoke Candidate',
+  });
+  const { user: browserBasicAuthUser, password: browserBasicAuthPassword } = resolveAppDevBasicAuth(baseEnv);
+
+  return {
+    ...baseEnv,
+    ...(browserBasicAuthUser && browserBasicAuthPassword
+      ? {
+          PIPE_DEV_BASIC_AUTH_USER: browserBasicAuthUser,
+          PIPE_DEV_BASIC_AUTH_PASSWORD: browserBasicAuthPassword,
+        }
+      : {}),
+    APP_BASE: appBase,
+    API_BASE: apiBase,
+    VIDEO_ROOM_BASE: videoRoomBase,
+    PIPE_SKIP_CLERK_GLOBAL_SETUP: '1',
+    CODE_REVIEW_ASSESS_TOKEN: deliveredUrl,
+    CODE_REVIEW_SESSION_TOKEN: session.sessionToken,
+    CODE_REVIEW_SESSION_INVITE_TOKEN: inviteToken,
+    CODE_REVIEW_SESSION_CANDIDATE_JSON: candidate,
+    CODE_REVIEW_EXPECT_AUTOMATCH: expectAutomatch,
+    CODE_REVIEW_EXPECT_MANUAL_OVERRIDE: expectManualOverride,
+    CODE_REVIEW_EXPECT_PROFILE_RECEIVED: expectProfileReceived ? '1' : '0',
+    CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT: expectedMatchProofVerdict,
+    CODE_REVIEW_REQUIRE_HYPEREDGES: requireHyperedges,
+    CODE_REVIEW_BROWSER_SUBMIT_ROUND: submitReview ? '1' : '0',
+  };
+}
+
+export function recruiterDetailReady(interview, {
   expectedOutcome,
   expectedRepoUrl = '',
   expectedPrNumber = '',
   expectSubmission = false,
   expectScore = false,
+  allowInvitedForCandidateLink = false,
 }) {
   if (!interview || typeof interview !== 'object') {
     return { ready: false, reason: 'detail missing interview object' };
@@ -779,7 +1030,9 @@ function recruiterDetailReady(interview, {
 
   const acceptableStatuses = expectSubmission || expectScore
     ? ['COMPLETED']
-    : ['ACTIVE', 'COMPLETED'];
+    : allowInvitedForCandidateLink
+      ? ['INVITED', 'ACTIVE', 'COMPLETED']
+      : ['ACTIVE', 'COMPLETED'];
   if (!acceptableStatuses.includes(interview.status)) {
     return {
       ready: false,
@@ -854,6 +1107,8 @@ function runRecruiterDetailPlaywright({
   expectPersonProfileDecision = false,
   expectPersonProfilePending = false,
   expectPersonProfileRelatedBoundary = false,
+  expectCandidateLink = false,
+  expectedCandidateLinkKind = '',
 }) {
   if (SKIP_BROWSER || SKIP_RECRUITER_BROWSER) {
     return {
@@ -866,55 +1121,128 @@ function runRecruiterDetailPlaywright({
 
   const result = spawnSync(
     'npx',
-    [
-      'playwright',
-      'test',
-      'e2e/code-review-recruiter-detail-smoke.spec.ts',
-      '--project=authenticated',
-      '--reporter=line',
-    ],
+    buildRecruiterDetailPlaywrightArgs(process.env),
     {
       cwd: process.cwd(),
       stdio: 'inherit',
-      env: {
-        ...process.env,
-        APP_BASE,
-        API_BASE,
-        VIDEO_ROOM_BASE,
-        CODE_REVIEW_RECRUITER_INTERVIEW_ID: interviewId,
-        CODE_REVIEW_RECRUITER_EXPECT_OUTCOME: expectedOutcome,
-        CODE_REVIEW_RECRUITER_EXPECT_MATCH_MODE: currentMatchMode(),
-        CODE_REVIEW_RECRUITER_EXPECT_REPO_URL: expectedRepoUrl,
-        CODE_REVIEW_RECRUITER_EXPECT_PR_NUMBER: String(expectedPrNumber ?? ''),
-        CODE_REVIEW_RECRUITER_EXPECT_SUBMISSION: expectSubmission ? '1' : '0',
-        CODE_REVIEW_RECRUITER_EXPECT_SCORE: expectScore ? '1' : '0',
-        CODE_REVIEW_RECRUITER_REQUIRE_HYPEREDGES: requireHyperedges ? '1' : '0',
-        CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_DECISION: expectPersonProfileDecision ? '1' : '0',
-        CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_PENDING: expectPersonProfilePending ? '1' : '0',
-        CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_RELATED_BOUNDARY: expectPersonProfileRelatedBoundary ? '1' : '0',
-        CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_REPO_URL: RELATED_BOUNDARY_REPO_URL,
-        CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_PR_NUMBER: String(RELATED_BOUNDARY_PR_NUMBER),
-      },
+      env: buildRecruiterDetailPlaywrightEnv({
+        baseEnv: process.env,
+        appBase: APP_BASE,
+        apiBase: API_BASE,
+        videoRoomBase: VIDEO_ROOM_BASE,
+        interviewId,
+        expectedOutcome,
+        expectedRepoUrl,
+        expectedPrNumber,
+        expectSubmission,
+        expectScore,
+        requireHyperedges,
+        expectPersonProfileDecision,
+        expectPersonProfilePending,
+        expectPersonProfileRelatedBoundary,
+        expectCandidateLink,
+        expectedCandidateLinkKind,
+      }),
     },
   );
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`Playwright recruiter detail smoke failed with exit code ${result.status}`);
   }
-  return { skipped: false };
+  const readoutContract = expectedOutcome === 'blocked'
+    ? 'blocked-code-review-action-readout'
+    : expectSubmission || expectScore
+      ? 'scored-code-review-hiring-manager-readout'
+      : 'matched-code-review-hiring-manager-readout';
+  return { skipped: false, readoutContract };
+}
+
+export function buildRecruiterDetailPlaywrightEnv({
+  baseEnv = process.env,
+  appBase = APP_BASE,
+  apiBase = API_BASE,
+  videoRoomBase = VIDEO_ROOM_BASE,
+  interviewId,
+  expectedOutcome,
+  expectedRepoUrl = '',
+  expectedPrNumber = '',
+  expectSubmission = false,
+  expectScore = false,
+  requireHyperedges = false,
+  expectPersonProfileDecision = false,
+  expectPersonProfilePending = false,
+  expectPersonProfileRelatedBoundary = false,
+  expectCandidateLink = false,
+  expectedCandidateLinkKind = '',
+} = {}) {
+  const { user: browserBasicAuthUser, password: browserBasicAuthPassword } = resolveAppDevBasicAuth(baseEnv);
+  return {
+    ...baseEnv,
+    ...(browserBasicAuthUser && browserBasicAuthPassword
+      ? {
+          PIPE_APP_DEV_BASIC_AUTH_USER: browserBasicAuthUser,
+          PIPE_APP_DEV_BASIC_AUTH_PASSWORD: browserBasicAuthPassword,
+          PIPE_DEV_BASIC_AUTH_USER: browserBasicAuthUser,
+          PIPE_DEV_BASIC_AUTH_PASSWORD: browserBasicAuthPassword,
+        }
+      : {}),
+    APP_BASE: appBase,
+    API_BASE: apiBase,
+    VIDEO_ROOM_BASE: videoRoomBase,
+    CODE_REVIEW_RECRUITER_INTERVIEW_ID: interviewId,
+    CODE_REVIEW_RECRUITER_EXPECT_OUTCOME: expectedOutcome,
+    CODE_REVIEW_RECRUITER_EXPECT_MATCH_MODE: currentMatchMode(),
+    CODE_REVIEW_RECRUITER_EXPECT_REPO_URL: expectedRepoUrl,
+    CODE_REVIEW_RECRUITER_EXPECT_PR_NUMBER: String(expectedPrNumber ?? ''),
+    CODE_REVIEW_RECRUITER_EXPECT_SUBMISSION: expectSubmission ? '1' : '0',
+    CODE_REVIEW_RECRUITER_EXPECT_SCORE: expectScore ? '1' : '0',
+    CODE_REVIEW_RECRUITER_REQUIRE_HYPEREDGES: requireHyperedges ? '1' : '0',
+    CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_DECISION: expectPersonProfileDecision ? '1' : '0',
+    CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_PENDING: expectPersonProfilePending ? '1' : '0',
+    CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_RELATED_BOUNDARY: expectPersonProfileRelatedBoundary ? '1' : '0',
+    CODE_REVIEW_RECRUITER_EXPECT_CANDIDATE_LINK: expectCandidateLink ? '1' : '0',
+    CODE_REVIEW_RECRUITER_EXPECT_CANDIDATE_LINK_KIND: expectedCandidateLinkKind,
+    CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_REPO_URL: RELATED_BOUNDARY_REPO_URL,
+    CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_PR_NUMBER: String(RELATED_BOUNDARY_PR_NUMBER),
+  };
+}
+
+export function buildRecruiterDetailPlaywrightArgs(env = process.env) {
+  return [
+    'playwright',
+    'test',
+    'e2e/code-review-recruiter-detail-smoke.spec.ts',
+    '--project=authenticated',
+    '--reporter=line',
+    ...(shouldSkipPlaywrightProjectDependencies(env) ? ['--no-deps'] : []),
+  ];
+}
+
+export function shouldSkipPlaywrightProjectDependencies(env = process.env) {
+  return env.PIPE_SKIP_CLERK_GLOBAL_SETUP === '1'
+    || env.PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP === '1';
 }
 
 async function runRecruiterDetailBrowserSmoke(input) {
-  if (SKIP_BROWSER || SKIP_RECRUITER_BROWSER) {
+  const mode = recruiterProjectionVerificationMode({
+    skipBrowser: SKIP_BROWSER,
+    skipRecruiterBrowser: SKIP_RECRUITER_BROWSER,
+  });
+  if (mode === 'skip_all') {
     return {
       skipped: true,
-      reason: SKIP_BROWSER
-        ? 'CODE_REVIEW_SMOKE_SKIP_BROWSER=1'
-        : 'CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER=1',
+      reason: 'CODE_REVIEW_SMOKE_SKIP_BROWSER=1',
     };
   }
 
   const readiness = await waitForRecruiterDetailProjection(input);
+  if (mode === 'api_only') {
+    return {
+      skipped: true,
+      reason: 'CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER=1',
+      readiness,
+    };
+  }
   try {
     return {
       ...runRecruiterDetailPlaywright(input),
@@ -939,6 +1267,15 @@ async function runRecruiterDetailBrowserSmoke(input) {
       throw new Error(`${message}; first recruiter smoke failure: ${firstError}`);
     }
   }
+}
+
+export function recruiterProjectionVerificationMode({
+  skipBrowser,
+  skipRecruiterBrowser,
+}) {
+  if (skipBrowser) return 'skip_all';
+  if (skipRecruiterBrowser) return 'api_only';
+  return 'browser';
 }
 
 async function initReviewSession(sessionToken, challenge) {
@@ -1202,12 +1539,21 @@ function isLocalBase(url) {
   return url.includes('localhost') || url.includes('127.0.0.1') || url.includes('[::1]');
 }
 
-function sqlString(value) {
-  return `'${String(value).replaceAll("'", "''")}'`;
+export function resolveCodeReviewSmokeD1Target({
+  apiBase = API_BASE,
+  rpcBase = RPC_BASE,
+  env = process.env,
+} = {}) {
+  const remote = !isLocalBase(apiBase) && !isLocalBase(rpcBase);
+  return {
+    remote,
+    databaseName: env.CODE_REVIEW_SMOKE_D1_DATABASE || (remote ? 'pipe-db-test' : 'pipe-db'),
+    label: remote ? 'remote' : 'local',
+  };
 }
 
-function localD1Query(command) {
-  return d1Query(command, { remote: false });
+function sqlString(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
 }
 
 function smokeD1DatabaseName(remote) {
@@ -1244,15 +1590,12 @@ function d1Query(command, { remote }) {
 }
 
 function scoreD1Query(command) {
-  const remote = !isLocalBase(API_BASE) && !isLocalBase(RPC_BASE);
-  return d1Query(command, { remote });
+  const target = resolveCodeReviewSmokeD1Target();
+  return d1Query(command, { remote: target.remote });
 }
 
-async function verifyLocalAssessmentEvidence(reviewSessionId) {
-  if (!isLocalBase(API_BASE) && !isLocalBase(RPC_BASE)) {
-    return { skipped: true, reason: 'local D1 verification only runs against localhost smoke targets' };
-  }
-
+async function verifyAssessmentEvidence(reviewSessionId) {
+  const target = resolveCodeReviewSmokeD1Target();
   const sessionKey = `assessment-session:code-review:${reviewSessionId}`;
   const command = `
     WITH target_session AS (
@@ -1292,7 +1635,7 @@ async function verifyLocalAssessmentEvidence(reviewSessionId) {
   const deadline = Date.now() + 60_000;
   let latest = null;
   while (Date.now() < deadline) {
-    latest = localD1Query(command)[0] ?? null;
+    latest = d1Query(command, { remote: target.remote })[0] ?? null;
     if (
       latest?.state === 'EVALUATED'
       && Number(latest.event_count) >= 2
@@ -1311,12 +1654,15 @@ async function verifyLocalAssessmentEvidence(reviewSessionId) {
         claimCount: Number(latest.claim_count),
         claimSourceRefCount: Number(latest.claim_source_ref_count),
         eventKinds: typeof latest.event_kinds === 'string' ? latest.event_kinds.split(',') : [],
+        d1Target: target.label,
       };
     }
     await sleep(2_000);
   }
 
-  throw new Error(`Assessment evidence did not become durable for review session ${reviewSessionId}: ${JSON.stringify(latest)}`);
+  throw new Error(
+    `Assessment evidence did not become durable in ${target.label} D1 for review session ${reviewSessionId}: ${JSON.stringify(latest)}`,
+  );
 }
 
 async function verifyScorePersistence(reviewSessionId) {
@@ -1437,7 +1783,7 @@ async function runFullSubmissionSmoke({ session, challenge, interviewId }) {
     annotation: firstRound.annotation,
   });
   const judgeExample = await verifyJudgeExample(init.sessionId);
-  const assessmentEvidence = await verifyLocalAssessmentEvidence(init.sessionId);
+  const assessmentEvidence = await verifyAssessmentEvidence(init.sessionId);
   const scorePersistence = await verifyScorePersistence(init.sessionId);
   const reviewStatusPipeline = await verifyReviewStatusPipeline(session.sessionToken, init.sessionId);
 
@@ -1464,6 +1810,65 @@ async function main() {
   try {
     const session = await resolveInvite(invite.inviteToken);
     assert(session?.sessionToken, `resolve-token response missing session token: ${JSON.stringify(session)}`);
+    const preIntakeCandidateLink = VERIFY_RECRUITER_CANDIDATE_LINK
+      ? await verifyFreshRecruiterCandidateAssessmentLink({
+          interviewId: invite.interviewId,
+          deliveredUrl: invite.deliveredUrl,
+          session,
+        })
+      : null;
+
+    if (NO_CV_BOUNDARY) {
+      const initialStageConfig = await getStageConfig(session.sessionToken);
+      const challenge = await getChallenge(session.sessionToken, 0);
+      assertProfileReceivedHandoff({ stageConfig: initialStageConfig, challenge });
+
+      const browserSmoke = runBrowserSmoke({
+        deliveredUrl: invite.deliveredUrl,
+        inviteToken: invite.inviteToken,
+        session,
+        expectedMatchProofVerdict: '',
+        expectProfileReceived: true,
+      });
+      const recruiterBrowserSmoke = await runRecruiterDetailBrowserSmoke({
+        interviewId: invite.interviewId,
+        expectedOutcome: 'blocked',
+      });
+
+      console.log(JSON.stringify({
+        ok: true,
+        interviewId: invite.interviewId,
+        roleContextId: invite.roleContextId ?? null,
+        pipelineId: invite.pipelineId ?? session.pipelineId ?? null,
+        stageId: invite.stageId ?? null,
+        emailSent: SEND_EMAIL,
+        matchMode: currentMatchMode(),
+        expectedOutcome: 'no_cv_profile_received',
+        deliveredUrl: cleanUrl(invite.deliveredUrl),
+        roomGuestUrl: cleanUrl(invite.invited?.room?.guestUrl),
+        candidateHandoff: {
+          type: challenge.type,
+          id: challenge.id,
+          title: challenge.title ?? null,
+          instructions: challenge.instructions ?? null,
+          stageId: initialStageConfig.stageId,
+          stageTitle: initialStageConfig.stageTitle ?? null,
+          isComplete: initialStageConfig.isComplete,
+          challengeCount: initialStageConfig.challenges.length,
+        },
+        browserSmoke,
+        recruiterBrowserSmoke,
+        candidateLinkProof: preIntakeCandidateLink,
+        stageConfig: {
+          initialStageId: initialStageConfig.stageId,
+          initialStageTitle: initialStageConfig.stageTitle ?? null,
+          initialIsComplete: initialStageConfig.isComplete ?? null,
+          initialCurrentIndex: initialStageConfig.currentIndex ?? null,
+          initialChallengeTypes: [],
+        },
+      }, null, 2));
+      return;
+    }
 
     await submitIntake(session.sessionToken);
     const initialStageConfig = EXPECT_BLOCKED_MATCH
@@ -1474,18 +1879,7 @@ async function main() {
       expectBlocked: EXPECT_BLOCKED_MATCH,
     });
     if (EXPECT_BLOCKED_MATCH) {
-      assert(challenge?.type === 'PROFILE_RECEIVED', `Expected PROFILE_RECEIVED handoff, got: ${JSON.stringify(challenge)}`);
-      assert(challenge?.id === 'profile-received', `Expected profile-received challenge id, got: ${JSON.stringify(challenge)}`);
-      assert(
-        typeof challenge?.instructions === 'string'
-          && challenge.instructions.includes('email you when your code review is ready'),
-        `Expected candidate-safe email handoff instructions, got: ${JSON.stringify(challenge)}`,
-      );
-      assert(
-        initialStageConfig?.isComplete === true
-          && initialStageConfig?.stageId === 'candidate-intake-queued',
-        `Expected candidate-intake-queued complete stage config, got: ${JSON.stringify(initialStageConfig)}`,
-      );
+      assertProfileReceivedHandoff({ stageConfig: initialStageConfig, challenge });
 
       const browserSmoke = runBrowserSmoke({
         deliveredUrl: invite.deliveredUrl,
@@ -1520,6 +1914,7 @@ async function main() {
         },
         browserSmoke,
         recruiterBrowserSmoke,
+        candidateLinkProof: preIntakeCandidateLink,
         stageConfig: {
           initialStageId: initialStageConfig.stageId,
           initialIsComplete: initialStageConfig.isComplete ?? null,
@@ -1589,6 +1984,13 @@ async function main() {
       interviewId: invite.interviewId,
     });
     const relatedBoundaryInterview = await createRelatedPersonBoundaryInterview(invite);
+    const relatedBoundaryProfile = await verifyPersonRelatedBoundaryProfile({
+      candidateId: session.id,
+      selectedInterviewId: invite.interviewId,
+      selectedRepoUrl: challenge.githubRepoUrl,
+      selectedPrNumber: challenge.githubPrNumber,
+      relatedBoundaryInterview,
+    });
     const recruiterBrowserSmoke = await runRecruiterDetailBrowserSmoke({
       interviewId: invite.interviewId,
       expectedOutcome: 'matched',
@@ -1612,6 +2014,7 @@ async function main() {
       matchMode: currentMatchMode(),
       deliveredUrl: cleanUrl(invite.deliveredUrl),
       roomGuestUrl: cleanUrl(invite.invited?.room?.guestUrl),
+      candidateLinkProof: preIntakeCandidateLink,
       repoUrl: challenge.githubRepoUrl,
       prNumber: challenge.githubPrNumber,
       matchSummary: challenge.matchExplanation?.summary ?? null,
@@ -1635,6 +2038,7 @@ async function main() {
       recruiterBrowserSmoke,
       submissionSmoke,
       relatedBoundaryInterview,
+      relatedBoundaryProfile,
     }, null, 2));
   } catch (error) {
     const context = {
@@ -1657,7 +2061,10 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : '';
+if (import.meta.url === invokedPath) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

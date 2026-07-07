@@ -243,6 +243,15 @@ function isAssessmentOnlyInviteInterviewType(value: string | null | undefined): 
   return value === 'CODE_REVIEW';
 }
 
+function shouldInlineLivingContextForInterview(
+  interviewType: string | null | undefined,
+  includePersonContext: string | undefined,
+): boolean {
+  if (includePersonContext === '1' || includePersonContext === 'true') return true;
+  if (includePersonContext === '0' || includePersonContext === 'false') return false;
+  return !isAssessmentOnlyInviteInterviewType(interviewType);
+}
+
 function isRoomBackedWorkspaceAssessmentInterviewType(
   value: string | null | undefined,
 ): value is Extract<InterviewTypeValue, 'DEV_CONTAINER_CHALLENGE' | 'OPEN_SOURCE_BUG_FIX'> {
@@ -4066,6 +4075,7 @@ async function loadScheduledAssessmentChallengeRefs(
       exactText: row.exact_text ?? '',
       contentHash: row.content_hash ?? '',
       locator: parsedLocator.value as JsonObject,
+      metadata: {},
       hasInvalidLocatorJson: parsedLocator.invalid,
     });
   }
@@ -4563,6 +4573,7 @@ function stripScheduledAssessmentChallengeMeta(
     exactText: challenge.exactText,
     contentHash: challenge.contentHash,
     locator: challenge.locator,
+    metadata: challenge.metadata,
   };
 }
 
@@ -8115,6 +8126,10 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     github_repo_url: effectiveGithubRepoUrl,
     github_pr_number: effectiveGithubPrNumber,
   };
+  const includePersonContext = shouldInlineLivingContextForInterview(
+    interview.interview_type,
+    c.req.query('includePersonContext'),
+  );
 
   const transcriptArtifactPromise = optionalScheduledDetailProjection(
     'transcriptArtifact',
@@ -8227,22 +8242,26 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       }>();
   })(), null);
 
-  const livingContextPromise = optionalScheduledDetailProjection(
-    'livingContext',
-    loadScheduledInterviewLivingContext(db, userId, interview),
-    null,
-  );
-  const relatedEvidenceInterviewsPromise = livingContextPromise.then((livingContext) =>
-    optionalScheduledDetailProjection(
-      'relatedEvidenceInterviews',
-      loadRelatedEvidenceInterviews(
-        db,
-        userId,
-        interview.id,
-        livingContext,
-      ),
-      [],
+  const livingContextPromise = includePersonContext
+    ? optionalScheduledDetailProjection(
+      'livingContext',
+      loadScheduledInterviewLivingContext(db, userId, interview),
+      null,
     )
+    : Promise.resolve<InterviewLivingContext>(null);
+  const relatedEvidenceInterviewsPromise = livingContextPromise.then((livingContext) =>
+    includePersonContext
+      ? optionalScheduledDetailProjection(
+        'relatedEvidenceInterviews',
+        loadRelatedEvidenceInterviews(
+          db,
+          userId,
+          interview.id,
+          livingContext,
+        ),
+        [],
+      )
+      : Promise.resolve<ScheduledRelatedEvidenceInterview[]>([])
   );
   const codeReviewMatchPromise = optionalScheduledDetailProjection(
     'codeReviewMatch',

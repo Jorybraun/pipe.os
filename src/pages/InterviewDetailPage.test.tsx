@@ -2569,6 +2569,10 @@ describe('InterviewDetailPage', () => {
     expect(hiringReadout).toHaveTextContent('Score validity');
     expect(hiringReadout).toHaveTextContent('Risk');
     expect(hiringReadout).toHaveTextContent('Next action');
+    const hiringReadoutCards = Array.from(hiringReadout.children[1]?.children ?? []);
+    expect(hiringReadoutCards).toHaveLength(5);
+    expect(hiringReadout).not.toHaveTextContent(/match-run|packet-1|review-session|candidate-atom|repo-demand|source-span|sourceRefId|sourceSpanId|source_ref|source-ref/i);
+    expect(hiringReadout).not.toHaveTextContent(/Evidence trace|Source proof|MATCH_PROOF|WHY_THIS_PR/i);
     expect(hiringReadout).toHaveTextContent('Candidate requested changes');
     expect(hiringReadout).toHaveTextContent('Usable with calibration');
     expect(hiringReadout).toHaveTextContent('Advance with focused probe');
@@ -3148,6 +3152,47 @@ describe('InterviewDetailPage', () => {
     expect(evidencePlan).toHaveTextContent('What good evidence looks like');
     expect(evidencePlan).toHaveTextContent('A short recorded or written answer with a concrete project, personal actions, technical constraints, and verification details.');
     expect(evidencePlan).toHaveTextContent('CREATE FOLLOW-UP ASSESSMENT');
+  });
+
+  it('does not treat matched code-review packets without assessment quality as safe assignments', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'match-run-missing-quality',
+          packetId: 'packet-missing-quality',
+          summary: 'Matcher returned a PR, but the labelled assessment-quality gate was not produced.',
+          score: 0.83,
+          assessmentQuality: null,
+          reviewProfile: null,
+          validatorAgent: null,
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: ['Assessment quality gate missing.'],
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const decision = screen.getByTestId('interview-code-review-decision-summary');
+    const hiringReadout = screen.getByTestId('interview-code-review-hiring-readout');
+    expect(hiringReadout).toHaveTextContent('Hiring manager readout');
+    expect(hiringReadout).toHaveTextContent('No safe challenge');
+    expect(hiringReadout).toHaveTextContent('Do not rely on score yet');
+    expect(decision).toHaveTextContent('No confident repo match yet');
+    expect(decision).toHaveTextContent('No safe challenge');
+    expect(decision).toHaveTextContent('Resolve the source-backed match quality gate before sending or trusting this code-review assignment.');
+    expect(decision).toHaveTextContent('Assessment quality gate missing.');
+    expect(decision).toHaveTextContent('Repo fit is not source-backed');
+    expect(decision).not.toHaveTextContent('Matched assignment');
+    expect(decision).not.toHaveTextContent('Waiting for candidate review');
   });
 
   it('treats matched code-review PRs with needs-review quality as unsafe assignments', async () => {

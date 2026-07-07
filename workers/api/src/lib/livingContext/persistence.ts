@@ -21,6 +21,8 @@ import type {
 
 type Clock = () => string;
 
+const CONTEXT_RECORD_RELATIONSHIP_BATCH_SIZE = 50;
+
 interface ImmutableArtifactVersionRow {
   id: string;
   artifact_id: string;
@@ -170,6 +172,28 @@ async function tableExists(db: D1Database, tableName: string): Promise<boolean> 
         AND name = ?1`,
   ).bind(tableName).first<{ name: string }>();
   return row !== null && row !== undefined;
+}
+
+async function runStatementBatches(
+  db: D1Database,
+  statements: D1PreparedStatement[],
+): Promise<void> {
+  const batchRunner = typeof db.batch === 'function'
+    ? db.batch.bind(db)
+    : null;
+
+  for (let index = 0; index < statements.length; index += CONTEXT_RECORD_RELATIONSHIP_BATCH_SIZE) {
+    const batch = statements.slice(index, index + CONTEXT_RECORD_RELATIONSHIP_BATCH_SIZE);
+    if (batch.length > 0) {
+      if (batchRunner) {
+        await batchRunner(batch);
+      } else {
+        for (const statement of batch) {
+          await statement.run();
+        }
+      }
+    }
+  }
 }
 
 async function requireSourceSpanForWorkspacePerson(
@@ -913,21 +937,25 @@ export class LivingContextStore {
       now,
     ).run();
 
-    await this.db.prepare(
-      'DELETE FROM context_record_source_refs WHERE context_record_id = ?1',
-    ).bind(id).run();
-    await this.db.prepare(
-      'DELETE FROM context_record_source_spans WHERE context_record_id = ?1',
-    ).bind(id).run();
-    await this.db.prepare(
-      'DELETE FROM context_record_entities WHERE context_record_id = ?1',
-    ).bind(id).run();
-    await this.db.prepare(
-      'DELETE FROM context_record_concepts WHERE context_record_id = ?1',
-    ).bind(id).run();
+    await runStatementBatches(this.db, [
+      this.db.prepare(
+        'DELETE FROM context_record_source_refs WHERE context_record_id = ?1',
+      ).bind(id),
+      this.db.prepare(
+        'DELETE FROM context_record_source_spans WHERE context_record_id = ?1',
+      ).bind(id),
+      this.db.prepare(
+        'DELETE FROM context_record_entities WHERE context_record_id = ?1',
+      ).bind(id),
+      this.db.prepare(
+        'DELETE FROM context_record_concepts WHERE context_record_id = ?1',
+      ).bind(id),
+    ]);
 
+    const sourceRefStatements: D1PreparedStatement[] = [];
+    const sourceSpanStatements: D1PreparedStatement[] = [];
     for (const source of sources) {
-      await this.db.prepare(
+      sourceRefStatements.push(this.db.prepare(
         `INSERT INTO context_record_source_refs (
            context_record_id, source_ref_type, source_ref_id, source_span_id,
            evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at
@@ -950,20 +978,23 @@ export class LivingContextStore {
         source.contentHash,
         source.metadataJson,
         now,
-      ).run();
+      ));
       if (source.sourceSpanId) {
-        await this.db.prepare(
+        sourceSpanStatements.push(this.db.prepare(
           `INSERT INTO context_record_source_spans (
              context_record_id, source_span_id, evidence_role, created_at
            ) VALUES (?1, ?2, ?3, ?4)
            ON CONFLICT(context_record_id, source_span_id, evidence_role)
            DO UPDATE SET created_at = excluded.created_at`,
-        ).bind(id, source.sourceSpanId, source.evidenceRole, now).run();
+        ).bind(id, source.sourceSpanId, source.evidenceRole, now));
       }
     }
+    await runStatementBatches(this.db, sourceRefStatements);
+    await runStatementBatches(this.db, sourceSpanStatements);
 
+    const entityStatements: D1PreparedStatement[] = [];
     for (const entity of entities) {
-      await this.db.prepare(
+      entityStatements.push(this.db.prepare(
         `INSERT INTO context_record_entities (
            context_record_id, entity_key, entity_type, entity_id, relationship,
            value_json, confidence, metadata_json, created_at
@@ -985,18 +1016,21 @@ export class LivingContextStore {
         entity.confidence,
         entity.metadataJson,
         now,
-      ).run();
+      ));
     }
+    await runStatementBatches(this.db, entityStatements);
 
+    const conceptStatements: D1PreparedStatement[] = [];
     for (const concept of concepts) {
-      await this.db.prepare(
+      conceptStatements.push(this.db.prepare(
         `INSERT INTO context_record_concepts (
            context_record_id, concept_id, relationship, weight, created_at
          ) VALUES (?1, ?2, ?3, ?4, ?5)
          ON CONFLICT(context_record_id, concept_id, relationship)
          DO UPDATE SET weight = excluded.weight`,
-      ).bind(id, concept.conceptId, concept.relationship, concept.weight, now).run();
+      ).bind(id, concept.conceptId, concept.relationship, concept.weight, now));
     }
+    await runStatementBatches(this.db, conceptStatements);
 
     return { id, ingestionKey: input.ingestionKey };
   }

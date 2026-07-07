@@ -18,9 +18,15 @@ import { runScheduledBackfill, BACKFILL_TASKS } from '../../lib/livingContext/ba
 import { BackfillOrchestrator } from '../../lib/livingContext/backfillOrchestrator';
 import { checkGate } from '../../lib/livingContext/rolloutEnforcement';
 import { seedCorpusFromMatchRuns, persistSeededCorpus } from '../../lib/challengeMatching/evaluation/corpusSeeder';
-import { evaluationCorpusLabelCounts, productionCorpusFailures } from '../../lib/challengeMatching/evaluation/corpus';
+import { evaluationCorpusLabelCounts, loadCorpus, productionCorpusFailures } from '../../lib/challengeMatching/evaluation/corpus';
+import {
+  applyExpertCorpusReview,
+  buildCorpusReviewPacket,
+  type ApplyExpertCorpusReviewInput,
+} from '../../lib/challengeMatching/evaluation/corpusReview';
 import { runEvaluation, generateHumanReadableReport } from '../../lib/challengeMatching/evaluation/cli';
 import type { AcceptanceThresholds } from '../../lib/challengeMatching/evaluation/types';
+import { sha256 } from '../../lib/repoSemanticGraph/hash';
 import {
   ensureCandidateLivingContext,
   ensureContactLivingContext,
@@ -39,6 +45,12 @@ interface SubsystemHealth {
   name: string;
   healthy: boolean;
   detail: Record<string, unknown>;
+}
+
+interface EvaluationCorpusRow {
+  corpus_id: string;
+  corpus_hash: string;
+  corpus_json: string;
 }
 
 const REQUIRED_TABLES = [
@@ -62,6 +74,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function readOptionalJsonBody(req: { json<T = unknown>(): Promise<T> }): Promise<Record<string, unknown>> {
   const body = await req.json<unknown>().catch(() => null);
   return isRecord(body) ? body : {};
+}
+
+async function loadStoredEvaluationCorpus(db: D1Database, corpusId: string): Promise<EvaluationCorpusRow> {
+  const row = await db.prepare(
+    `SELECT corpus_id, corpus_hash, corpus_json
+       FROM evaluation_corpora
+      WHERE corpus_id = ?1`,
+  ).bind(corpusId).first<EvaluationCorpusRow>();
+  if (!row) {
+    throw new Error(`evaluation corpus not found: ${corpusId}`);
+  }
+  return row;
 }
 
 function queueBackgroundTask(
@@ -713,11 +737,12 @@ app.post('/living-context-backfill-trigger', async (c) => {
  * evidence, role requirements, and challenge packets from persisted match_runs,
  * generates draft labels for expert review, and persists the corpus.
  *
- * Body: { limit?: number, statusFilter?: string, roleContextId?: string, description?: string, persist?: boolean }
+ * Body: { limit?: number, selectionPoolLimit?: number, statusFilter?: string, roleContextId?: string, description?: string, persist?: boolean }
  */
 app.post('/evaluation-corpus-seed', async (c) => {
   interface SeedRequestBody {
     limit?: number;
+    selectionPoolLimit?: number;
     statusFilter?: string;
     roleContextId?: string;
     description?: string;
@@ -727,6 +752,7 @@ app.post('/evaluation-corpus-seed', async (c) => {
 
   const result = await seedCorpusFromMatchRuns(c.env.DB, {
     limit: body.limit,
+    selectionPoolLimit: body.selectionPoolLimit,
     statusFilter: body.statusFilter,
     roleContextId: body.roleContextId,
     description: body.description,
@@ -744,6 +770,7 @@ app.post('/evaluation-corpus-seed', async (c) => {
   const draftLabelCount = labelCount - expertLabelCount - syntheticFixtureCount;
   const productionReadinessFailures = productionCorpusFailures(result.corpus);
   const productionReady = productionReadinessFailures.length === 0;
+  const reviewPacket = buildCorpusReviewPacket(result.corpus);
 
   return c.json({
     corpusId: result.corpus.corpusId,
@@ -760,9 +787,91 @@ app.post('/evaluation-corpus-seed', async (c) => {
     expectedPacketCount: result.corpus.expectedPackets?.length ?? 0,
     productionReady,
     productionReadinessFailures,
-    nextAction: productionReady ? 'run_evaluation' : 'attach_expert_label_provenance',
+    nextAction: productionReady ? 'run_evaluation' : reviewPacket.readinessSummary.nextAction,
+    readinessSummary: reviewPacket.readinessSummary,
     warnings: result.warnings,
   });
+});
+
+/**
+ * GET /api/v1/internal/evaluation-corpus-review-packet?corpusId=...
+ *
+ * Returns the compact source-backed packet that a human expert should review
+ * before a seeded corpus can become a production CODE_REVIEW matching gate.
+ */
+app.get('/evaluation-corpus-review-packet', async (c) => {
+  const corpusId = c.req.query('corpusId');
+  if (!corpusId) {
+    return c.json({ ok: false, reason: 'corpusId is required' }, 400);
+  }
+
+  try {
+    const row = await loadStoredEvaluationCorpus(c.env.DB, corpusId);
+    const corpus = loadCorpus(row.corpus_json);
+    return c.json({
+      ok: true,
+      corpusHash: row.corpus_hash,
+      reviewPacket: buildCorpusReviewPacket(corpus),
+    });
+  } catch (error) {
+    return c.json({
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+    }, 422);
+  }
+});
+
+/**
+ * POST /api/v1/internal/evaluation-corpus-expert-review
+ *
+ * Applies a complete expert review to a frozen draft corpus and persists a new
+ * frozen corpus row with reviewer/source provenance. The source corpus remains
+ * immutable.
+ */
+app.post('/evaluation-corpus-expert-review', async (c) => {
+  interface ExpertReviewBody extends ApplyExpertCorpusReviewInput {
+    sourceCorpusId?: string;
+    dryRun?: boolean;
+  }
+  const body = await c.req.json<ExpertReviewBody>().catch(() => ({} as ExpertReviewBody));
+  if (!body.sourceCorpusId) {
+    return c.json({ ok: false, reason: 'sourceCorpusId is required' }, 400);
+  }
+
+  try {
+    const row = await loadStoredEvaluationCorpus(c.env.DB, body.sourceCorpusId);
+    const sourceCorpus = loadCorpus(row.corpus_json);
+    const result = await applyExpertCorpusReview(sourceCorpus, body);
+    const reviewPacket = buildCorpusReviewPacket(result.corpus);
+    const dryRun = body.dryRun === true;
+    let persisted = false;
+    const corpusHash = dryRun
+      ? (await sha256(JSON.stringify(result.corpus))).slice('sha256:'.length)
+      : await persistSeededCorpus(c.env.DB, result.corpus).then((persistResult) => {
+        persisted = persistResult.persisted;
+        return persistResult.corpusHash;
+      });
+    return c.json({
+      ok: true,
+      sourceCorpusId: sourceCorpus.corpusId,
+      sourceCorpusHash: row.corpus_hash,
+      reviewedCorpusId: result.corpus.corpusId,
+      corpusHash,
+      persisted,
+      dryRun,
+      expertLabelCount: result.expertLabelCount,
+      syntheticFixtureCount: result.syntheticFixtureCount,
+      productionReady: result.productionReady,
+      productionReadinessFailures: result.productionReadinessFailures,
+      nextAction: result.productionReady ? 'run_evaluation' : reviewPacket.readinessSummary.nextAction,
+      readinessSummary: reviewPacket.readinessSummary,
+    });
+  } catch (error) {
+    return c.json({
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+    }, 422);
+  }
 });
 
 /**

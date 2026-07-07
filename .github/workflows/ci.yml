@@ -10,6 +10,7 @@ jobs:
   check:
     name: Typecheck, Lint & Unit Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -47,6 +48,7 @@ jobs:
         run: npm run lint
 
       - name: Unit tests (frontend)
+        timeout-minutes: 10
         run: npm run test
 
       - name: Unit tests (assessment room)
@@ -54,6 +56,7 @@ jobs:
         run: npm run test
 
       - name: Unit tests (worker)
+        timeout-minutes: 15
         working-directory: workers/api
         run: npx vitest run
 
@@ -65,9 +68,11 @@ jobs:
           CLOUDFLARE_D1_DATABASE_ID:  ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
           MATCHING_EVALUATION_D1_DATABASE_ID: ${{ vars.MATCHING_EVALUATION_D1_DATABASE_ID }}
           MATCHING_EVALUATION_CORPUS_ID: ${{ vars.MATCHING_EVALUATION_CORPUS_ID }}
+          MATCHING_EVALUATION_REQUIRED: ${{ vars.MATCHING_EVALUATION_REQUIRED }}
           MATCHING_EVALUATION_STAGE: ${{ vars.MATCHING_EVALUATION_STAGE }}
         run: |
           EVAL_STAGE="${MATCHING_EVALUATION_STAGE:-production}"
+          REQUIRE_MATCHING_EVALUATION="${MATCHING_EVALUATION_REQUIRED:-0}"
           if [ -n "$MATCHING_EVALUATION_D1_DATABASE_ID" ]; then
             export CLOUDFLARE_D1_DATABASE_ID="$MATCHING_EVALUATION_D1_DATABASE_ID"
           fi
@@ -82,6 +87,10 @@ jobs:
           }
           JSON
             cat matching-evaluation-readiness.json
+            if [ "$REQUIRE_MATCHING_EVALUATION" = "1" ] || [ "$REQUIRE_MATCHING_EVALUATION" = "true" ]; then
+              echo "Production matching evaluation readiness is required for pushes to main."
+              exit 1
+            fi
             echo "Production matching evaluation readiness is not configured; uploaded non-blocking readiness report."
             exit 0
           fi
@@ -100,6 +109,70 @@ jobs:
           path: |
             workers/api/matching-evaluation-readiness.json
             workers/api/matching-evaluation-readiness.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Living-context match-quality readiness report
+        working-directory: workers/api
+        env:
+          CLOUDFLARE_ACCOUNT_ID:      ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN:       ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_D1_DATABASE_ID:  ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+          MATCH_QUALITY_D1_DATABASE_ID: ${{ vars.MATCH_QUALITY_D1_DATABASE_ID }}
+          MATCH_QUALITY_REQUIRED: ${{ vars.MATCH_QUALITY_REQUIRED }}
+        run: |
+          REQUIRE_MATCH_QUALITY="${MATCH_QUALITY_REQUIRED:-0}"
+          if [ -n "$MATCH_QUALITY_D1_DATABASE_ID" ]; then
+            export CLOUDFLARE_D1_DATABASE_ID="$MATCH_QUALITY_D1_DATABASE_ID"
+          fi
+          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_D1_DATABASE_ID" ]; then
+            cat > match-quality-readiness.json <<'JSON'
+          {
+            "passed": false,
+            "status": "not_configured",
+            "gateFailures": [
+              "Set CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, and CLOUDFLARE_D1_DATABASE_ID or MATCH_QUALITY_D1_DATABASE_ID to run the living-context match-quality readiness report."
+            ]
+          }
+          JSON
+            cat > match-quality-readiness.txt <<'TXT'
+          Living-context match-quality readiness is not configured.
+          TXT
+            cat match-quality-readiness.json
+            if [ "$REQUIRE_MATCH_QUALITY" = "1" ] || [ "$REQUIRE_MATCH_QUALITY" = "true" ]; then
+              echo "Living-context match-quality readiness is required."
+              exit 1
+            fi
+            echo "Living-context match-quality readiness is not configured; uploaded non-blocking readiness report."
+            exit 0
+          fi
+          set +e
+          npm --silent run living-context:match-quality:readiness > match-quality-readiness.json 2> match-quality-readiness.txt
+          MATCH_QUALITY_STATUS=$?
+          set -e
+          if [ -s match-quality-readiness.json ]; then
+            cat match-quality-readiness.json
+          fi
+          if [ -s match-quality-readiness.txt ]; then
+            cat match-quality-readiness.txt
+          fi
+          if [ "$MATCH_QUALITY_STATUS" -ne 0 ]; then
+            if [ "$REQUIRE_MATCH_QUALITY" = "1" ] || [ "$REQUIRE_MATCH_QUALITY" = "true" ]; then
+              echo "Living-context match-quality readiness is required."
+              exit "$MATCH_QUALITY_STATUS"
+            fi
+            echo "Living-context match-quality readiness did not pass; uploaded non-blocking readiness report."
+            exit 0
+          fi
+
+      - name: Upload living-context match-quality readiness report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: match-quality-readiness-${{ github.run_id }}
+          path: |
+            workers/api/match-quality-readiness.json
+            workers/api/match-quality-readiness.txt
           if-no-files-found: ignore
           retention-days: 7
 

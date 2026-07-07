@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { D1Client } from './d1Client';
+import { D1Client, WranglerD1Client } from './d1Client';
 
 function okResponse(rows: unknown[] = [{ one: 1 }]): Response {
   return new Response(JSON.stringify({
@@ -48,5 +48,30 @@ describe('D1Client', () => {
 
     await expect(client.query<{ two: number }>('SELECT 2')).resolves.toEqual([{ two: 2 }]);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses Wrangler D1 with escaped bound params when REST token env is unavailable', async () => {
+    const spawnSyncImpl = vi.fn(() => ({
+      status: 0,
+      stdout: JSON.stringify([{ success: true, results: [{ one: 1 }] }]),
+      stderr: '',
+    }));
+    const client = new WranglerD1Client('pipe-db-test', {
+      command: 'wrangler',
+      envName: 'dev',
+      spawnSyncImpl,
+    });
+
+    await expect(client.query<{ one: number }>(
+      'SELECT * FROM evaluation_corpora WHERE corpus_id = ?1 AND reviewer = ?2',
+      ['corpus-1', "O'Reilly"],
+    )).resolves.toEqual([{ one: 1 }]);
+
+    expect(spawnSyncImpl).toHaveBeenCalledTimes(1);
+    const args = spawnSyncImpl.mock.calls[0]?.[1] as string[];
+    expect(args).toContain('--command');
+    expect(args[args.indexOf('--command') + 1]).toContain(
+      "corpus_id = 'corpus-1' AND reviewer = 'O''Reilly'",
+    );
   });
 });

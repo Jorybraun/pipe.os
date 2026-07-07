@@ -3124,7 +3124,7 @@ export class RepoTaskInterviewSessionStore {
           END,
           d.created_at,
           d.id
-        LIMIT 4`,
+        LIMIT 6`,
     ).bind(reportId).all<{
       id: string;
       code: string;

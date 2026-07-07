@@ -40,10 +40,6 @@ vi.mock('../components/Assessment/IntakeChallenge', () => ({
   IntakeChallenge: () => <div data-testid="intake-challenge" />,
 }));
 
-vi.mock('../components/Assessment/WaitingForMatch', () => ({
-  WaitingForMatch: () => <div data-testid="waiting-for-match" />,
-}));
-
 vi.mock('../components/Assessment/WelcomeScreen', () => ({
   WelcomeScreen: ({
     pipelineName,
@@ -425,6 +421,72 @@ describe('CandidateAssessmentPage', () => {
     expect(handoff).toHaveTextContent('Profile received.');
     expect(handoff).toHaveTextContent('PIPE will email you when a source-backed code review is ready.');
     expect(handoff).not.toHaveTextContent('Building your personalized challenge');
+    expect(screen.queryByTestId('waiting-for-match')).not.toBeInTheDocument();
+  });
+
+  it('fails closed when any assess runtime leaks a candidate-visible waiting matcher challenge', () => {
+    useAssessmentMock.mockReturnValue({
+      candidate: {
+        id: 'candidate-1',
+        pipelineId: 'pipeline-1',
+        status: 'IN_PROGRESS',
+        name: 'Ada Candidate',
+        email: 'ada@example.com',
+      },
+      stageConfig: {
+        isComplete: false,
+        stageId: 'technical-assessment',
+        candidateId: 'candidate-1',
+        stageTitle: 'Technical Assessment',
+        mode: 'ASYNC',
+        timeLimit: null,
+        challenges: [{ type: 'WAITING_FOR_MATCH', order: 0, title: 'Building your personalized challenge' }],
+        currentIndex: 0,
+      },
+      challengeContent: {
+        id: 'waiting-for-match',
+        type: 'WAITING_FOR_MATCH',
+        title: 'Building your personalized challenge',
+        instructions: 'We are analyzing your profile to find the best open-source project match.',
+        config: {
+          autoRefresh: true,
+          state: 'pending',
+          diagnostics: {
+            phase: 'repo_matching',
+            step: 'select_repo',
+            message: 'matching is still running',
+          },
+        },
+      },
+      currentOrder: 0,
+      isLoading: false,
+      error: null,
+      isSubmitted: false,
+      hasStarted: true,
+      followUpQuestions: null,
+      followUpLoading: false,
+      lastChallengeSubmissionId: null,
+      submitChallenge: vi.fn(),
+      onStart: vi.fn(),
+      claimAssessmentStart: vi.fn(),
+      reset: vi.fn(),
+      refresh: vi.fn(),
+      sessionToken: 'session-token',
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/assess/pending-technical-token']}>
+        <Routes>
+          <Route path="/assess/:token" element={<CandidateAssessmentPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const handoff = screen.getByTestId('assessment-submitted');
+    expect(handoff).toHaveTextContent('Profile received.');
+    expect(handoff).toHaveTextContent('PIPE will email you when a source-backed code review is ready.');
+    expect(handoff).not.toHaveTextContent('Building your personalized challenge');
+    expect(handoff).not.toHaveTextContent('matching is still running');
     expect(screen.queryByTestId('waiting-for-match')).not.toBeInTheDocument();
   });
 

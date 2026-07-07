@@ -1,7 +1,9 @@
 import { evaluationCorpusLabelCounts, getExpectedPackets } from './corpus';
 import type {
   AcceptanceThresholds,
+  DeterminismChallengeSnapshot,
   DeterminismComparison,
+  DeterminismDriftSummary,
   EvaluationCorpus,
   EvaluationMetrics,
   EvaluationResult,
@@ -88,9 +90,11 @@ function stretchPaths(result: PersistedRankedChallenge | undefined): StretchPath
 function labelEvaluation(
   label: ExpertLabel,
   result: PersistedRankedChallenge | undefined,
+  contrastRun?: PersistedMatchRun,
 ): LabelEvaluationResult {
   const actualRank = result?.eligible ? result.rank : null;
   const actualRecallRank = result?.recallRank ?? null;
+  const actualScore = result?.score ?? null;
   const provenanceComplete = result ? resultProvenanceComplete(result) : true;
   const violations: GuardrailViolation[] = [];
   if (label.relevanceGrade === 'forbidden' && actualRank !== null) {
@@ -122,6 +126,28 @@ function labelEvaluation(
     failureReason = 'eligible challenge is missing exact source provenance';
   }
 
+  let contrastScore: number | null | undefined;
+  let scoreSeparation: number | null | undefined;
+  if (
+    label.negativeCandidateId
+    && label.minimumScoreSeparation !== undefined
+  ) {
+    if (!contrastRun) {
+      contrastScore = null;
+      scoreSeparation = null;
+      failureReason ??= `contrast candidate run missing for ${label.negativeCandidateId}/${label.roleId}`;
+    } else {
+      const contrastResult = contrastRun.rankedChallenges.find(
+        (candidateResult) => candidateResult.challengeId === label.challengeId,
+      );
+      contrastScore = contrastResult?.score ?? 0;
+      scoreSeparation = (actualScore ?? 0) - contrastScore;
+      if (scoreSeparation + 1e-12 < label.minimumScoreSeparation) {
+        failureReason ??= `score separation ${scoreSeparation.toFixed(4)} below required ${label.minimumScoreSeparation.toFixed(4)} against contrast candidate ${label.negativeCandidateId}`;
+      }
+    }
+  }
+
   return {
     labelId: label.labelId,
     candidateId: label.candidateId,
@@ -130,10 +156,18 @@ function labelEvaluation(
     expectedGrade: label.relevanceGrade,
     actualRank,
     actualRecallRank,
-    actualScore: result?.score ?? null,
+    actualScore,
     guardrailViolations: Array.from(new Set(violations)),
     stretchPathsUsed: stretchPaths(result),
     provenanceComplete,
+    ...(label.negativeCandidateId
+      ? { contrastCandidateId: label.negativeCandidateId }
+      : {}),
+    ...(contrastScore !== undefined ? { contrastScore } : {}),
+    ...(scoreSeparation !== undefined ? { scoreSeparation } : {}),
+    ...(label.minimumScoreSeparation !== undefined
+      ? { minimumScoreSeparation: label.minimumScoreSeparation }
+      : {}),
     passed: failureReason === undefined,
     ...(failureReason ? { failureReason } : {}),
   };
@@ -216,6 +250,195 @@ export function verifyByteIdenticalRerun(
   };
 }
 
+function topChallenge(
+  run: PersistedMatchRun,
+): PersistedRankedChallenge | undefined {
+  return [...run.rankedChallenges]
+    .sort((left, right) =>
+      (left.rank ?? Number.POSITIVE_INFINITY)
+      - (right.rank ?? Number.POSITIVE_INFINITY)
+      || left.recallRank - right.recallRank
+      || left.challengeId.localeCompare(right.challengeId)
+    )[0];
+}
+
+function challengeSnapshot(
+  challenge: PersistedRankedChallenge | undefined,
+): DeterminismChallengeSnapshot | null {
+  if (!challenge) return null;
+  const sharedConcepts = Array.from(new Set(
+    challenge.alignments.flatMap((alignment) => alignment.sharedConcepts),
+  )).sort();
+  return {
+    challengeId: challenge.challengeId,
+    repoId: challenge.repoId,
+    prNumber: challenge.prNumber,
+    rank: challenge.rank,
+    recallRank: challenge.recallRank,
+    score: challenge.score,
+    candidateEvidenceAlignment: challenge.candidateEvidenceAlignment,
+    roleRelevance: challenge.roleRelevance,
+    contextualSpecificity: challenge.contextualSpecificity,
+    challengeQuality: challenge.challengeQuality,
+    validationDeepeningValue: challenge.validationDeepeningValue,
+    alignedDemandCount: challenge.alignedDemandCount,
+    stretchCount: challenge.stretchCount,
+    stretchDemandWeightRatio: challenge.stretchDemandWeightRatio,
+    provenanceComplete: challenge.provenanceComplete,
+    eligible: challenge.eligible,
+    sharedConcepts,
+  };
+}
+
+function snapshotLabel(
+  snapshot: DeterminismChallengeSnapshot | null,
+): string {
+  if (!snapshot) return '(none)';
+  return `${snapshot.challengeId} ${snapshot.repoId}#${snapshot.prNumber}`
+    + ` rank=${snapshot.rank ?? 'unranked'}`
+    + ` score=${snapshot.score.toFixed(4)}`;
+}
+
+function formatValue(value: unknown): string {
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? String(value) : value.toFixed(4);
+  }
+  if (typeof value === 'string') return value;
+  if (typeof value === 'boolean') return String(value);
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return value.join(',') || '(empty)';
+  return JSON.stringify(value);
+}
+
+function firstSnapshotDifference(
+  primary: DeterminismChallengeSnapshot,
+  comparison: DeterminismChallengeSnapshot,
+): string | null {
+  const keys: Array<keyof DeterminismChallengeSnapshot> = [
+    'challengeId',
+    'repoId',
+    'prNumber',
+    'rank',
+    'recallRank',
+    'score',
+    'candidateEvidenceAlignment',
+    'roleRelevance',
+    'contextualSpecificity',
+    'challengeQuality',
+    'validationDeepeningValue',
+    'alignedDemandCount',
+    'stretchCount',
+    'stretchDemandWeightRatio',
+    'provenanceComplete',
+    'eligible',
+    'sharedConcepts',
+  ];
+  for (const key of keys) {
+    const primaryValue = primary[key];
+    const comparisonValue = comparison[key];
+    const changed = Array.isArray(primaryValue) || Array.isArray(comparisonValue)
+      ? JSON.stringify(primaryValue) !== JSON.stringify(comparisonValue)
+      : primaryValue !== comparisonValue;
+    if (changed) {
+      return `${primary.challengeId}.${key}: ${formatValue(primaryValue)}`
+        + ` -> ${formatValue(comparisonValue)}`;
+    }
+  }
+  return null;
+}
+
+function determinismDriftSummary(
+  run: PersistedMatchRun,
+  comparison: PersistedMatchRun | undefined,
+): DeterminismDriftSummary {
+  const primaryTopChallenge = challengeSnapshot(topChallenge(run));
+  const comparisonTopChallenge = comparison
+    ? challengeSnapshot(topChallenge(comparison))
+    : null;
+
+  if (!comparison) {
+    return {
+      reason: 'missing_comparison',
+      primaryTopChallenge,
+      comparisonTopChallenge,
+      firstDifference: `missing comparison run for primary top ${snapshotLabel(primaryTopChallenge)}`,
+    };
+  }
+
+  if (
+    primaryTopChallenge?.challengeId !== comparisonTopChallenge?.challengeId
+    || primaryTopChallenge?.repoId !== comparisonTopChallenge?.repoId
+    || primaryTopChallenge?.prNumber !== comparisonTopChallenge?.prNumber
+  ) {
+    return {
+      reason: 'top_challenge_changed',
+      primaryTopChallenge,
+      comparisonTopChallenge,
+      firstDifference: `top challenge changed: ${snapshotLabel(primaryTopChallenge)}`
+        + ` -> ${snapshotLabel(comparisonTopChallenge)}`,
+    };
+  }
+
+  if (primaryTopChallenge && comparisonTopChallenge) {
+    const difference = firstSnapshotDifference(primaryTopChallenge, comparisonTopChallenge);
+    if (difference) {
+      return {
+        reason: 'ranked_result_changed',
+        primaryTopChallenge,
+        comparisonTopChallenge,
+        firstDifference: difference,
+      };
+    }
+  }
+
+  const primaryById = new Map(
+    run.rankedChallenges.map((challenge) => [challenge.challengeId, challengeSnapshot(challenge)]),
+  );
+  const comparisonById = new Map(
+    comparison.rankedChallenges.map((challenge) => [
+      challenge.challengeId,
+      challengeSnapshot(challenge),
+    ]),
+  );
+  for (const [challengeId, primarySnapshot] of primaryById.entries()) {
+    const comparisonSnapshot = comparisonById.get(challengeId);
+    if (!primarySnapshot || !comparisonSnapshot) {
+      return {
+        reason: 'ranked_result_changed',
+        primaryTopChallenge,
+        comparisonTopChallenge,
+        firstDifference: `challenge presence changed: ${challengeId}`,
+      };
+    }
+    const difference = firstSnapshotDifference(primarySnapshot, comparisonSnapshot);
+    if (difference) {
+      return {
+        reason: 'ranked_result_changed',
+        primaryTopChallenge,
+        comparisonTopChallenge,
+        firstDifference: difference,
+      };
+    }
+  }
+  for (const challengeId of comparisonById.keys()) {
+    if (!primaryById.has(challengeId)) {
+      return {
+        reason: 'ranked_result_changed',
+        primaryTopChallenge,
+        comparisonTopChallenge,
+        firstDifference: `comparison added challenge: ${challengeId}`,
+      };
+    }
+  }
+
+  return {
+    reason: 'source_payload_changed',
+    primaryTopChallenge,
+    comparisonTopChallenge,
+    firstDifference: 'source references, provenance payload, or alignment internals changed',
+  };
+}
+
 export function evaluateMatchRuns(
   corpus: EvaluationCorpus,
   matchRuns: PersistedMatchRun[],
@@ -250,7 +473,15 @@ export function evaluateMatchRuns(
     const run = runs.get(key);
     if (!run) {
       missingMatchRunCount++;
-      labelResults.push(...labels.map((label) => labelEvaluation(label, undefined)));
+      labelResults.push(...labels.map((label) =>
+        labelEvaluation(
+          label,
+          undefined,
+          label.negativeCandidateId
+            ? runs.get(pairKey(label.negativeCandidateId, label.roleId))
+            : undefined,
+        )
+      ));
       continue;
     }
     evaluatedPairCount++;
@@ -302,7 +533,13 @@ export function evaluateMatchRuns(
     }
 
     for (const label of labels) {
-      const evaluation = labelEvaluation(label, resultById.get(label.challengeId));
+      const evaluation = labelEvaluation(
+        label,
+        resultById.get(label.challengeId),
+        label.negativeCandidateId
+          ? runs.get(pairKey(label.negativeCandidateId, label.roleId))
+          : undefined,
+      );
       labelResults.push(evaluation);
       guardrailViolationCount += evaluation.guardrailViolations.filter(
         (violation) =>
@@ -336,6 +573,7 @@ export function evaluateMatchRuns(
         identical: false,
         fingerprint,
         comparisonFingerprint: null,
+        drift: determinismDriftSummary(run, undefined),
       });
       continue;
     }
@@ -349,6 +587,9 @@ export function evaluateMatchRuns(
       identical: verification.identical,
       fingerprint: verification.fingerprint,
       comparisonFingerprint: verification.comparisonFingerprint,
+      ...(verification.identical
+        ? {}
+        : { drift: determinismDriftSummary(run, comparison) }),
     });
     if (!verification.identical) byteIdenticalRerun = false;
   }
@@ -406,21 +647,16 @@ export function evaluateMatchRuns(
       }
       if (
         expected.packetContentHash !== undefined
-        && result.alignments.length > 0
+        && result.packetContentHash !== undefined
+        && result.packetContentHash !== expected.packetContentHash
       ) {
-        const actualHash = result.alignments
-          .flatMap((alignment) => alignment.challengeSourceRefs)
-          .map((ref) => ref.contentHash)
-          .find((hash) => hash === expected.packetContentHash);
-        if (actualHash === undefined) {
-          packetIdentityMismatches.push({
-            challengeId: result.challengeId,
-            field: 'packetContentHash',
-            expected: expected.packetContentHash,
-            actual: '(not found in challenge source refs)',
-            matchRunId: run.matchRunId,
-          });
-        }
+        packetIdentityMismatches.push({
+          challengeId: result.challengeId,
+          field: 'packetContentHash',
+          expected: expected.packetContentHash,
+          actual: result.packetContentHash,
+          matchRunId: run.matchRunId,
+        });
       }
     }
   }
@@ -491,6 +727,15 @@ export function checkAcceptanceThresholds(
 ): EvaluationResult {
   const failures: string[] = [];
   const warnings: string[] = [];
+  const failedLabels = metrics.labelResults.filter((result) => !result.passed);
+  if (failedLabels.length > 0) {
+    failures.push(
+      `${failedLabels.length} label evaluation(s) failed: ${failedLabels
+        .slice(0, 5)
+        .map((result) => `${result.labelId}${result.failureReason ? ` (${result.failureReason})` : ''}`)
+        .join('; ')}`,
+    );
+  }
   if (metrics.recallAt50 < thresholds.minRecallAt50) {
     failures.push(`Recall@50 ${metrics.recallAt50} below ${thresholds.minRecallAt50}`);
   }

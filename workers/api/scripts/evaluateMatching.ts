@@ -9,12 +9,13 @@ import Database from 'better-sqlite3';
 import {
   checkLatestProductionEvaluation,
   evaluationCorpusLabelCounts,
+  type EvaluationReadinessReport,
   generateEvaluationReadinessReport,
   generateHumanReadableReport,
   loadCorpus,
   runEvaluation,
 } from '../src/lib/challengeMatching/evaluation';
-import { D1Client, loadD1Config } from './crawl-repos/shared/d1Client.js';
+import { D1Client } from './crawl-repos/shared/d1Client.js';
 
 type SqlValue = string | number | null;
 
@@ -39,10 +40,12 @@ interface D1Like {
 export interface EvaluationCliOptions {
   target: 'local' | 'remote';
   databasePath?: string;
-  corpusId: string;
+  databaseId?: string;
+  corpusId?: string;
   corpusFile?: string;
   matchRunIds: string[];
   comparisonMatchRunIds: string[];
+  autoComparisonRuns: boolean;
   jsonPath?: string;
   reportPath?: string;
   persist: boolean;
@@ -178,6 +181,13 @@ class RemoteD1 implements D1Like {
   }
 }
 
+interface EvaluationCorpusSummaryRow {
+  corpus_id: string;
+  expert_label_count: number;
+  synthetic_fixture_count: number;
+  created_at: number;
+}
+
 function discoverLocalDatabase(explicitPath?: string): string {
   if (explicitPath) return resolve(apiRoot, explicitPath);
   const directory = resolve(apiRoot, '.wrangler/state/v3/d1/miniflare-D1DatabaseObject');
@@ -190,6 +200,34 @@ function discoverLocalDatabase(explicitPath?: string): string {
     );
   }
   return candidates[0]!;
+}
+
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required env var: ${name}`);
+  return value;
+}
+
+function remoteDatabaseId(explicitDatabaseId?: string): string {
+  const databaseId = explicitDatabaseId
+    ?? process.env['MATCHING_EVALUATION_D1_DATABASE_ID']
+    ?? process.env['CLOUDFLARE_D1_DATABASE_ID']
+    ?? '';
+  if (!databaseId) {
+    throw new Error(
+      'Missing required D1 database id; set MATCHING_EVALUATION_D1_DATABASE_ID, '
+      + 'CLOUDFLARE_D1_DATABASE_ID, or pass --database-id.',
+    );
+  }
+  return databaseId;
+}
+
+function remoteD1(explicitDatabaseId?: string): D1Like {
+  return new RemoteD1(new D1Client({
+    accountId: requiredEnv('CLOUDFLARE_ACCOUNT_ID'),
+    apiToken: requiredEnv('CLOUDFLARE_API_TOKEN'),
+    databaseId: remoteDatabaseId(explicitDatabaseId),
+  }));
 }
 
 function valuesFor(argv: string[], flag: string): string[] {
@@ -213,27 +251,40 @@ function parseStage(value: string | undefined): 'shadow' | 'canary' | 'productio
 
 export function parseEvaluationArgs(argv: string[]): EvaluationCliOptions | null {
   if (argv.includes('--help') || argv.includes('-h')) return null;
-  const corpusId = valueFor(argv, '--corpus-id');
-  if (!corpusId) throw new Error('--corpus-id is required');
+  const checkLatestProductionPass = argv.includes('--check-latest-production-pass');
+  const corpusId = valueFor(argv, '--corpus-id')
+    ?? process.env['MATCHING_EVALUATION_CORPUS_ID'];
+  if (!corpusId && !checkLatestProductionPass) throw new Error('--corpus-id is required');
   const target = argv.includes('--remote') ? 'remote' : 'local';
   const databasePath = valueFor(argv, '--database-path');
+  const databaseId = valueFor(argv, '--database-id');
   if (target === 'remote' && databasePath) {
     throw new Error('--database-path can only be used with --local');
+  }
+  if (target === 'local' && databaseId) {
+    throw new Error('--database-id requires --remote');
+  }
+  const comparisonMatchRunIds = valuesFor(argv, '--comparison-run-id');
+  const autoComparisonRuns = argv.includes('--auto-comparison-runs');
+  if (autoComparisonRuns && comparisonMatchRunIds.length > 0) {
+    throw new Error('--auto-comparison-runs cannot be combined with --comparison-run-id');
   }
   return {
     target,
     ...(databasePath ? { databasePath } : {}),
-    corpusId,
+    ...(databaseId ? { databaseId } : {}),
+    ...(corpusId ? { corpusId } : {}),
     ...(valueFor(argv, '--corpus-file')
       ? { corpusFile: valueFor(argv, '--corpus-file')! }
       : {}),
     matchRunIds: valuesFor(argv, '--match-run-id'),
-    comparisonMatchRunIds: valuesFor(argv, '--comparison-run-id'),
+    comparisonMatchRunIds,
+    autoComparisonRuns,
     ...(valueFor(argv, '--json') ? { jsonPath: valueFor(argv, '--json')! } : {}),
     ...(valueFor(argv, '--report') ? { reportPath: valueFor(argv, '--report')! } : {}),
     persist: argv.includes('--persist'),
     allowSynthetic: argv.includes('--allow-synthetic'),
-    checkLatestProductionPass: argv.includes('--check-latest-production-pass'),
+    checkLatestProductionPass,
     stage: parseStage(valueFor(argv, '--stage')),
   };
 }
@@ -245,9 +296,13 @@ export function evaluationHelp(): string {
 Options:
   --local | --remote
   --database-path <path>
+  --database-id <id>           Remote D1 database id; defaults to MATCHING_EVALUATION_D1_DATABASE_ID then CLOUDFLARE_D1_DATABASE_ID
   --corpus-file <path>          Validate and freeze this corpus before evaluation
   --match-run-id <id>           Repeat or pass comma-separated IDs
   --comparison-run-id <id>      Independent reruns for byte-identical comparison
+  --auto-comparison-runs        Select one same-or-earlier candidate/role/status run
+                                for each primary run when explicit comparison
+                                IDs are not supplied
   --json <path>                 Write machine-readable result
   --report <path>               Write human-readable report
   --persist                     Persist the evaluation result in D1
@@ -298,6 +353,71 @@ async function freezeCorpus(
   ).run();
 }
 
+function readinessFailureReport(
+  corpusId: string,
+  stage: 'shadow' | 'canary' | 'production',
+  failures: string[],
+  warnings: string[] = [],
+): EvaluationReadinessReport {
+  return {
+    ready: false,
+    corpusId,
+    evaluationResultId: null,
+    createdAt: null,
+    failures,
+    warnings,
+    metrics: null,
+    stage,
+  };
+}
+
+async function resolveReadinessCorpus(
+  db: D1Like,
+  explicitCorpusId: string | undefined,
+  stage: 'shadow' | 'canary' | 'production',
+): Promise<{ corpusId?: string; failureReport?: EvaluationReadinessReport }> {
+  if (explicitCorpusId) return { corpusId: explicitCorpusId };
+
+  const { results } = await db.prepare(
+    `SELECT corpus_id, expert_label_count, synthetic_fixture_count, created_at
+       FROM evaluation_corpora
+      ORDER BY created_at DESC, corpus_id DESC
+      LIMIT 20`,
+  ).all<EvaluationCorpusSummaryRow>();
+
+  if (results.length === 0) {
+    return {
+      failureReport: readinessFailureReport(
+        '(none)',
+        stage,
+        [
+          'No frozen CODE_REVIEW evaluation corpora found.',
+          'Seed a source-backed draft corpus with matching-eval:review --seed-from-match-runs --persist-draft, complete expert review, persist the reviewed corpus, run evaluation with --persist, then rerun readiness.',
+        ],
+      ),
+    };
+  }
+
+  const expertCorpus = results.find((row) =>
+    row.expert_label_count > 0
+    && row.synthetic_fixture_count === 0
+  );
+  if (expertCorpus) return { corpusId: expertCorpus.corpus_id };
+
+  const latest = results[0]!;
+  return {
+    failureReport: readinessFailureReport(
+      latest.corpus_id,
+      stage,
+      [
+        `No expert-labelled CODE_REVIEW evaluation corpus found; latest frozen corpus ${latest.corpus_id} has ${latest.expert_label_count} expert labels and ${latest.synthetic_fixture_count} synthetic fixture labels.`,
+        'Complete matching-eval:review expert review, persist the reviewed corpus, run evaluation with --persist, then rerun readiness.',
+      ],
+      [`Inspected ${results.length} frozen corpus row(s); none were expert-labelled and synthetic-free.`],
+    ),
+  };
+}
+
 export async function runEvaluationCli(argv: string[]): Promise<number> {
   const options = parseEvaluationArgs(argv);
   if (!options) {
@@ -319,7 +439,7 @@ export async function runEvaluationCli(argv: string[]): Promise<number> {
   let localDatabase: BetterSqliteDb | undefined;
   let db: D1Like;
   if (options.target === 'remote') {
-    db = new RemoteD1(new D1Client(loadD1Config()));
+    db = remoteD1(options.databaseId);
   } else {
     localDatabase = new Database(discoverLocalDatabase(options.databasePath));
     db = new LocalD1(localDatabase);
@@ -327,8 +447,18 @@ export async function runEvaluationCli(argv: string[]): Promise<number> {
 
   try {
     if (options.checkLatestProductionPass) {
+      const resolved = await resolveReadinessCorpus(db, options.corpusId, options.stage);
+      if (resolved.failureReport) {
+        const json = `${JSON.stringify(resolved.failureReport, null, 2)}\n`;
+        const report = `${generateEvaluationReadinessReport(resolved.failureReport)}\n`;
+        if (options.jsonPath) writeFileSync(resolve(options.jsonPath), json);
+        if (options.reportPath) writeFileSync(resolve(options.reportPath), report);
+        if (!options.jsonPath) process.stdout.write(json);
+        if (!options.reportPath) process.stdout.write(report);
+        return 1;
+      }
       const readiness = await checkLatestProductionEvaluation(db as unknown as D1Database, {
-        corpusId: options.corpusId,
+        corpusId: resolved.corpusId!,
         stage: options.stage,
       });
       const json = `${JSON.stringify(readiness, null, 2)}\n`;
@@ -339,6 +469,7 @@ export async function runEvaluationCli(argv: string[]): Promise<number> {
       if (!options.reportPath) process.stdout.write(report);
       return readiness.ready ? 0 : 1;
     }
+    if (!options.corpusId) throw new Error('--corpus-id is required');
     if (options.corpusFile) {
       await freezeCorpus(db, options.corpusId, options.corpusFile);
     }
@@ -346,6 +477,7 @@ export async function runEvaluationCli(argv: string[]): Promise<number> {
       corpusId: options.corpusId,
       matchRunIds: options.matchRunIds,
       comparisonMatchRunIds: options.comparisonMatchRunIds,
+      autoComparisonRuns: options.autoComparisonRuns,
       persistResult: options.persist,
       ...(options.allowSynthetic
         ? { thresholds: { requireExpertLabels: false } }

@@ -214,23 +214,6 @@ async function checkMatchingGate(
   }
 
   if (nextChallengeType === 'CODE_REVIEW') {
-    const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
-    if (activeIngestionBlocksCodeReviewMatching(readiness)) {
-      return waitingForMatch(
-        readiness.terminal
-          ? readiness.reason ?? 'Candidate evidence ingestion needs recruiter attention before matching.'
-          : 'Candidate evidence ingestion is still running.',
-        {
-          terminal: readiness.terminal,
-          diagnostics: diagnosticsForStandaloneReviewReadiness(readiness, {
-            phase: 'candidate_evidence',
-            repoMatchingStatus: 'pending',
-            repoMatchingDetail: 'Matching is deferred until candidate evidence ingestion finishes.',
-          }),
-        },
-      );
-    }
-
     const roleContext = await db.prepare(
       `SELECT id, persona_json, rcd_json, job_description_md, non_negotiable_skills_json
          FROM role_contexts
@@ -246,6 +229,32 @@ async function checkMatchingGate(
     }>();
     if (!roleContext) {
       return waitingForMatch('Role context is not ready for deterministic challenge matching');
+    }
+
+    if (await repairStageCodeReviewAssignmentFromMatchRun(db, {
+      candidateId,
+      roleContextId: roleContext.id,
+      stageId,
+      challengeId,
+    })) {
+      return { blocked: false };
+    }
+
+    const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
+    if (activeIngestionBlocksCodeReviewMatching(readiness)) {
+      return waitingForMatch(
+        readiness.terminal
+          ? readiness.reason ?? 'Candidate evidence ingestion needs recruiter attention before matching.'
+          : 'Candidate evidence ingestion is still running.',
+        {
+          terminal: readiness.terminal,
+          diagnostics: diagnosticsForStandaloneReviewReadiness(readiness, {
+            phase: 'candidate_evidence',
+            repoMatchingStatus: 'pending',
+            repoMatchingDetail: 'Matching is deferred until candidate evidence ingestion finishes.',
+          }),
+        },
+      );
     }
 
     const roleSemantics = await loadRoleChallengeSemantics(db, {
@@ -290,6 +299,7 @@ async function checkMatchingGate(
 
     const matchExplanation = sanitizeMatchExplanation(match.explanation);
     if (!standaloneAutomaticMatchPasses(matchExplanation)) {
+      await demoteUnsafeAutomaticMatchRun(db, match.matchRunId);
       const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
       return waitingForMatch('Deterministic challenge matcher needs recruiter review', {
         terminal: true,
@@ -578,47 +588,6 @@ function candidateSafeCodeReviewNotReadyResponse(): {
     },
     challenge: profileReceivedChallengeContent(),
     ...candidateIntakeQueuedComplete(),
-  };
-}
-
-export function waitingStageConfigForGate(input: {
-  candidateId: string;
-  stageId: string;
-  stageTitle: string;
-  stageMode: string | null;
-  timeLimit: number | null;
-  waitingChallenge: WaitingChallenge;
-}): {
-  isComplete: false;
-  stageId: string;
-  candidateId: string;
-  stageTitle: string;
-  mode: string;
-  timeLimit: number | null;
-  challenges: Array<{ type: string; order: number; title: string }>;
-  currentIndex: 0;
-} {
-  const challenges: Array<{ type: string; order: number; title: string }> = [
-    { type: 'WELCOME', order: 0, title: 'Welcome' },
-  ];
-  if (input.stageMode === 'LIVE_VIDEO') {
-    challenges.push({ type: 'LIVE_VIDEO', order: challenges.length, title: 'Video Interview' });
-  }
-  challenges.push({
-    type: input.waitingChallenge.type,
-    order: challenges.length,
-    title: input.waitingChallenge.title,
-  });
-
-  return {
-    isComplete: false,
-    stageId: input.stageId,
-    candidateId: input.candidateId,
-    stageTitle: input.stageTitle,
-    mode: input.stageMode ?? 'ASYNC',
-    timeLimit: input.timeLimit,
-    challenges,
-    currentIndex: 0,
   };
 }
 
@@ -1044,6 +1013,7 @@ const STANDALONE_RETRY_REASON = STALE_WORKERS_AI_RETRY_REASON;
 const STANDALONE_EVIDENCE_STALE_AFTER_MS = 10 * 60 * 1000;
 
 interface PersistedMatchRunRow {
+  match_run_id?: string | null;
   status: string;
   ranked_results_json: string | null;
 }
@@ -1052,6 +1022,12 @@ interface PersistedStandaloneMatchAssignmentRow extends PersistedMatchRunRow {
   repo_id: number;
   pr_number: number;
   github_url: string;
+}
+
+interface PersistedStageMatchAssignmentRow extends PersistedMatchRunRow {
+  repo_id: number | string | null;
+  pr_number: number | string | null;
+  github_url: string | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1408,6 +1384,20 @@ function qualityGateDiagnosticLabel(
 ): string {
   const diagnostics = explanation?.qualityGate.diagnostics ?? [];
   return diagnostics.length > 0 ? diagnostics.join(',') : 'none';
+}
+
+export async function demoteUnsafeAutomaticMatchRun(
+  db: D1Database,
+  matchRunId: string | null | undefined,
+): Promise<void> {
+  if (!matchRunId) return;
+  await db.prepare(
+    `UPDATE match_runs
+        SET status = 'NEEDS_MORE_EVIDENCE',
+            selected_packet_id = NULL
+      WHERE id = ?1
+        AND status = 'MATCHED'`,
+  ).bind(matchRunId).run();
 }
 
 function sanitizeMatchExplanation(explanation: MatchExplanation | undefined): CandidateSafeMatchExplanation | null {
@@ -1788,7 +1778,8 @@ export async function repairStandaloneReviewAssignmentFromMatchRun(
   interviewId: string,
 ): Promise<StandaloneReviewMatchResult | null> {
   const rows = await db.prepare(
-    `SELECT mr.status,
+    `SELECT mr.id AS match_run_id,
+            mr.status,
             mr.ranked_results_json,
             rcp.repo_id,
             rcp.pr_number,
@@ -1810,6 +1801,7 @@ export async function repairStandaloneReviewAssignmentFromMatchRun(
     }
     const matchExplanation = buildPersistedMatchRunExplanation(row, row.repo_id, row.pr_number);
     if (!standaloneAutomaticMatchPasses(matchExplanation)) {
+      await demoteUnsafeAutomaticMatchRun(db, row.match_run_id);
       continue;
     }
     if (!await hasSourceBackedReviewPacket(db, row.github_url, row.pr_number)) {
@@ -1837,49 +1829,65 @@ export async function repairStandaloneReviewAssignmentFromMatchRun(
   return null;
 }
 
-async function recentlyAttemptedStandaloneReviewMatch(
+async function repairStageCodeReviewAssignmentFromMatchRun(
   db: D1Database,
-  candidateId: string,
-  nowMs = Date.now(),
+  input: {
+    candidateId: string;
+    roleContextId: string;
+    stageId: string;
+    challengeId: string;
+  },
 ): Promise<boolean> {
-  const latest = await db.prepare(
-    `SELECT created_at
-       FROM match_runs
-      WHERE candidate_id = ?1
-      ORDER BY created_at DESC
-      LIMIT 1`,
-  ).bind(candidateId).first<{ created_at: number | null }>().catch(() => null);
-  if (typeof latest?.created_at !== 'number') return false;
-  return nowMs - latest.created_at * 1000 < 5 * 60 * 1000;
-}
+  const rows = await db.prepare(
+    `SELECT mr.id AS match_run_id,
+            mr.status,
+            mr.ranked_results_json,
+            rcp.repo_id,
+            rcp.pr_number,
+            qr.github_url
+       FROM match_runs mr
+       JOIN review_challenge_packets rcp ON rcp.id = mr.selected_packet_id
+       JOIN qualified_repos qr ON qr.id = rcp.repo_id
+      WHERE mr.candidate_id = ?1
+        AND mr.role_context_id = ?2
+        AND mr.status = 'MATCHED'
+        AND mr.selected_packet_id IS NOT NULL
+        AND rcp.production_ready = 1
+      ORDER BY mr.created_at DESC
+      LIMIT 5`,
+  ).bind(input.candidateId, input.roleContextId).all<PersistedStageMatchAssignmentRow>();
 
-async function maybeQueueStandaloneReviewAssignment(
-  env: Env,
-  executionCtx: ExecutionContext | null,
-  candidateId: string,
-): Promise<boolean> {
-  const readiness = await standaloneReviewEvidenceReadiness(env.DB, candidateId);
-  if (!readiness.ready) return false;
-  if (await recentlyAttemptedStandaloneReviewMatch(env.DB, candidateId)) return false;
+  for (const row of rows.results ?? []) {
+    const repoId = optionalPersistedNumber(row.repo_id);
+    const prNumber = optionalPersistedNumber(row.pr_number);
+    const githubRepoUrl = optionalString(row.github_url);
+    if (!repoId || !prNumber || !githubRepoUrl) {
+      continue;
+    }
 
-  const assignPromise = (async () => {
-    const review = await getPendingStandaloneReview(env.DB, candidateId);
-    if (!review) return;
-    if (await hasReadyStandaloneCodeReviewAssignment(env.DB, candidateId, review)) return;
-    await matchStandaloneSourceBackedAssignment(env.DB, candidateId, review, {
-      logLabel: 'standaloneReviewStageConfig',
+    const matchExplanation = buildPersistedMatchRunExplanation(row, repoId, prNumber);
+    if (!standaloneAutomaticMatchPasses(matchExplanation)) {
+      await demoteUnsafeAutomaticMatchRun(db, row.match_run_id);
+      continue;
+    }
+    if (!await hasSourceBackedReviewPacket(db, githubRepoUrl, prNumber)) {
+      continue;
+    }
+
+    await upsertCandidateChallengeAssignment(db, {
+      id: crypto.randomUUID(),
+      candidateId: input.candidateId,
+      stageId: input.stageId,
+      challengeId: input.challengeId,
+      repoId,
+      githubRepoUrl,
+      githubPrNumber: prNumber,
+      issueNumber: null,
     });
-  })().catch((err) => {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[standaloneReviewStageConfig] auto-assignment failed for ${candidateId}:`, msg);
-  });
-
-  if (executionCtx) {
-    executionCtx.waitUntil(assignPromise);
-  } else {
-    await assignPromise;
+    return true;
   }
-  return true;
+
+  return false;
 }
 
 async function assessmentSessionsTableExists(db: D1Database): Promise<boolean> {
@@ -2299,6 +2307,7 @@ async function matchStandaloneSourceBackedAssignment(
   }
   const matchExplanation = sanitizeMatchExplanation(match.explanation);
   if (!standaloneAutomaticMatchPasses(matchExplanation)) {
+    await demoteUnsafeAutomaticMatchRun(db, match.matchRunId);
     console.warn(
       `[${options.logLabel}] deterministic matcher selected ${match.repoId}#${match.prNumber} for ${candidateId}, but standalone quality gate did not pass (gate=${matchExplanation?.qualityGate.verdict ?? 'missing'}, diagnostics=${qualityGateDiagnosticLabel(matchExplanation)}, contrast=${contrastSeparationScore(matchExplanation) ?? 'missing'})`,
     );
@@ -3157,7 +3166,10 @@ rpcAuth.post('/get-stage-config', async (c) => {
 
     // Standalone code-review interview: serve the assessment only after a
     // source-backed repo/PR assignment exists. Intake/matching stays upstream.
-    if (!needsResume && standaloneAssessment && !('interview_type' in standaloneAssessment)) {
+    if (standaloneAssessment && !('interview_type' in standaloneAssessment)) {
+      if (needsResume) {
+        return c.json(candidateIntakeQueuedComplete('Profile received'));
+      }
       const hasReadyAssignment = await hasReadyStandaloneCodeReviewAssignment(
         c.env.DB,
         candidateId,
@@ -3165,7 +3177,6 @@ rpcAuth.post('/get-stage-config', async (c) => {
       );
       if (!hasReadyAssignment) {
         await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
-        await maybeQueueStandaloneReviewAssignment(c.env, optionalExecutionContext(c), candidateId);
         return c.json(candidateIntakeQueuedComplete('Profile received'));
       }
       return c.json({
@@ -3514,11 +3525,22 @@ rpcAuth.post('/get-challenge', async (c) => {
 
   // Pipeline-free candidate: INTAKE first, then standalone code review or dev container if invited
   if (!pipelineId) {
-    if (await candidateNeedsCvIntake(c.env.DB, candidateId)) {
+    const standaloneAssessment = await getPendingStandaloneAssessment(c.env.DB, candidateId);
+    const needsCvIntake = await candidateNeedsCvIntake(c.env.DB, candidateId);
+    if (
+      needsCvIntake
+      && standaloneAssessment
+      && !('interview_type' in standaloneAssessment)
+    ) {
+      return c.json(profileReceivedChallengeContent());
+    }
+    if (
+      needsCvIntake
+      && (!standaloneAssessment || 'interview_type' in standaloneAssessment)
+    ) {
       return c.json(INTAKE_CHALLENGE_CONTENT);
     }
 
-    const standaloneAssessment = await getPendingStandaloneAssessment(c.env.DB, candidateId);
     if (standaloneAssessment && 'interview_type' in standaloneAssessment) {
       let repoUrl = standaloneAssessment.github_repo_url;
       let prNumber = standaloneAssessment.github_pr_number;
@@ -4146,17 +4168,7 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
   // Pipeline-free candidate (talent pool / standalone code review)
   if (!pipelineId) {
     if (parseIntakePayload(submission)) {
-      const matchStandaloneReviewIfReady = async (): Promise<void> => {
-        const review = await getPendingStandaloneReview(c.env.DB, candidateId);
-        if (review && !(await hasReadyStandaloneCodeReviewAssignment(c.env.DB, candidateId, review))) {
-          await matchStandaloneSourceBackedAssignment(c.env.DB, candidateId, review, {
-            logLabel: 'standaloneReview',
-          });
-        }
-      };
       await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString(), {
-        afterSourceBackedEvidence: matchStandaloneReviewIfReady,
-        afterTextIngestion: matchStandaloneReviewIfReady,
         awaitTextIngestionHandoff: true,
       });
       const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);

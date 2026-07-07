@@ -17,6 +17,7 @@ import {
   DEFAULT_DECAY_CONFIG,
   type TemporalDecayConfig,
 } from '../challengeMatching/temporalDecay';
+import { findConceptEvidenceMatches, scoreableDemandConcepts } from './conceptSemanticMatch';
 import type { D1Database } from '@cloudflare/workers-types';
 import { resolveCandidateWorkspacePersonId } from './compatibility';
 
@@ -154,16 +155,7 @@ export function scoreMatchConfidence(
   const consistencyWeight = options.consistencyWeight ?? DEFAULT_CONSISTENCY_WEIGHT;
   const stretchThreshold = options.stretchThreshold ?? DEFAULT_STRETCH_THRESHOLD;
 
-  const evidenceByConceptKey = new Map<string, EvidenceRow[]>();
-  for (const row of evidence) {
-    if (!row.concept_key) continue;
-    const existing = evidenceByConceptKey.get(row.concept_key);
-    if (existing) {
-      existing.push(row);
-    } else {
-      evidenceByConceptKey.set(row.concept_key, [row]);
-    }
-  }
+  const evidenceWithConcepts = evidence.filter((row) => row.concept_key !== null);
 
   const demandConfidences: DemandConfidence[] = demands.map((demand) => {
     const matchedConcepts: string[] = [];
@@ -173,17 +165,19 @@ export function scoreMatchConfidence(
     const sourceTypes = new Set<string>();
     let bestStrength = 0;
     let bestEffective = 0;
+    const scoredConcepts = scoreableDemandConcepts(demand.concepts);
 
-    for (const concept of demand.concepts) {
-      const rows = evidenceByConceptKey.get(concept);
-      if (!rows || rows.length === 0) {
+    for (const concept of scoredConcepts) {
+      const matches = findConceptEvidenceMatches(concept, evidenceWithConcepts);
+      if (matches.length === 0) {
         missingConcepts.push(concept);
         continue;
       }
 
       matchedConcepts.push(concept);
 
-      for (const row of rows) {
+      for (const match of matches) {
+        const row = match.row;
         const rawStrength = row.strength ?? 0;
         const observedMs = parseObservedAtMs(row.observed_at);
         const decay = observedMs !== null
@@ -205,8 +199,8 @@ export function scoreMatchConfidence(
       }
     }
 
-    const coverageRatio = demand.concepts.length > 0
-      ? matchedConcepts.length / demand.concepts.length
+    const coverageRatio = scoredConcepts.length > 0
+      ? matchedConcepts.length / scoredConcepts.length
       : 0;
 
     const averageRecency = allRecencies.length > 0
@@ -227,7 +221,7 @@ export function scoreMatchConfidence(
 
     const isStretch = coverageRatio > 0 && coverageRatio < stretchThreshold;
     const stretchReason = isStretch
-      ? `Only ${matchedConcepts.length}/${demand.concepts.length} concepts matched — candidate has adjacent but incomplete evidence`
+      ? `Only ${matchedConcepts.length}/${scoredConcepts.length} scoreable concepts matched — candidate has adjacent but incomplete evidence`
       : null;
 
     return {

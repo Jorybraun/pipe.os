@@ -36,6 +36,7 @@ import {
   candidateSafeChallengeSummary,
   candidateSafeEvaluation,
   shouldHideCandidateChallengeSolution,
+  type CandidateSafeAssessmentProgressEvaluation,
 } from '../lib/assessmentCandidateSafety';
 import {
   getLatestSessionForRoom,
@@ -767,6 +768,7 @@ interface RoomWorkspaceChallengePacketPayload {
   evidenceRole: string;
   exactText: string;
   locator: JsonObject;
+  metadata: JsonObject;
   contentHash: string;
 }
 
@@ -1381,6 +1383,7 @@ function serializeRoomWorkspaceChallengePacket(
       sourceRefType: progress.challenge.sourceRefType,
       locator: progress.challenge.locator,
     }),
+    metadata: {},
     contentHash: progress.challenge.contentHash,
   };
 }
@@ -1962,7 +1965,7 @@ interface RoomAssessmentProgressPayload {
   evidenceSnippets: AssessmentProgressSnapshot['evidenceSnippets'];
   latestEvent: Omit<NonNullable<AssessmentProgressSnapshot['latestEvent']>, 'id'> | null;
   commit: Omit<NonNullable<AssessmentProgressSnapshot['commit']>, 'eventId'> | null;
-  evaluation: Omit<NonNullable<AssessmentProgressSnapshot['evaluation']>, 'id'> | null;
+  evaluation: CandidateSafeAssessmentProgressEvaluation | null;
 }
 
 interface RoomWorkspaceLaunchEvidenceInput {

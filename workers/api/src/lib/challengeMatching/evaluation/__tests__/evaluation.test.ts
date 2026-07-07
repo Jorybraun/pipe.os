@@ -186,6 +186,395 @@ describe('Corpus Validation', () => {
     );
   });
 
+  it('requires production corpora to include at least one positive expert label', () => {
+    const corpus: EvaluationCorpus = {
+      version: EVALUATION_CORPUS_VERSION,
+      corpusId: 'production-corpus-without-positive-label',
+      createdAt: '2026-06-13T00:00:00Z',
+      description: 'Production corpus with only non-positive expert labels',
+      candidateEvidence: [
+        {
+          candidateId: 'candidate-1',
+          evidenceId: 'evidence-1',
+          episodeId: 'episode-1',
+          narrative: 'Operated analytics notebooks without owning queue systems.',
+          concepts: ['term:analytics-notebooks'],
+          evidenceReferences: [sourceRef('candidate-analytics')],
+        },
+        {
+          candidateId: 'candidate-2',
+          evidenceId: 'evidence-2',
+          episodeId: 'episode-2',
+          narrative: 'Reviewed unrelated content workflows.',
+          concepts: ['term:content-workflows'],
+          evidenceReferences: [sourceRef('candidate-content')],
+        },
+      ],
+      roleRequirements: [
+        {
+          roleId: 'role-1',
+          requiredLanguages: ['typescript'],
+          relevantConcepts: ['term:durable-task-queues'],
+          sourceReferences: [roleSource('queue-role', ['term:durable-task-queues'])],
+        },
+      ],
+      expertLabels: [
+        {
+          labelId: 'expert-label-negative-only',
+          candidateId: 'candidate-1',
+          roleId: 'role-1',
+          challengeId: 'challenge-1',
+          relevanceGrade: 'irrelevant',
+          eligibleChallengeIds: [],
+          negativeCandidateId: 'candidate-2',
+          minimumScoreSeparation: 0.2,
+          explanation:
+            'Expert reviewer confirmed this candidate lacks source-backed queue ownership evidence.',
+          labelVersion: '1.0.0',
+          labeledAt: '2026-06-13T00:00:00Z',
+          labeledBy: 'expert-reviewer-1',
+          labelProvenance: {
+            reviewerId: 'expert-reviewer-1',
+            reviewerRole: 'senior-engineering-reviewer',
+            reviewArtifactId: 'expert-review-artifact-1',
+            reviewArtifactVersion: 'v1',
+            contentHash: 'sha256:expert-review-artifact-1',
+            locator: 'expert-review:artifact-1',
+            rubricVersion: 'candidate-pr-match-rubric-v1',
+          },
+        },
+      ],
+      metadata: {
+        totalLabels: 1,
+        totalCandidates: 2,
+        totalRoles: 1,
+        totalChallenges: 1,
+        syntheticFixtureCount: 0,
+      },
+    };
+
+    expect(productionCorpusFailures(corpus)).toContain(
+      'production corpus requires at least one highly_relevant or relevant positive expert label',
+    );
+  });
+
+  it('requires production corpora to include a true insufficient-evidence expert label', () => {
+    const provenance = (id: string) => ({
+      reviewerId: 'expert-reviewer-1',
+      reviewerRole: 'senior-engineering-reviewer',
+      reviewArtifactId: `expert-review-artifact-${id}`,
+      reviewArtifactVersion: 'v1',
+      contentHash: `sha256:expert-review-artifact-${id}`,
+      locator: `expert-review:artifact-${id}`,
+      rubricVersion: 'candidate-pr-match-rubric-v1',
+    });
+    const corpus: EvaluationCorpus = {
+      version: EVALUATION_CORPUS_VERSION,
+      corpusId: 'production-corpus-without-insufficient-evidence-label',
+      createdAt: '2026-07-03T00:00:00Z',
+      description: 'Production corpus with positive and borderline labels but no true no-evidence proof',
+      candidateEvidence: [
+        {
+          candidateId: 'candidate-fit',
+          evidenceId: 'evidence-fit',
+          episodeId: 'episode-fit',
+          narrative: 'Owned React accessibility regression fixes with source-backed review evidence.',
+          concepts: ['term:react-accessibility'],
+          evidenceReferences: [sourceRef('candidate-fit')],
+        },
+        {
+          candidateId: 'candidate-borderline',
+          evidenceId: 'evidence-borderline',
+          episodeId: 'episode-borderline',
+          narrative: 'Discussed frontend testing but did not show ownership of accessibility regressions.',
+          concepts: ['term:frontend-testing'],
+          evidenceReferences: [sourceRef('candidate-borderline')],
+        },
+      ],
+      roleRequirements: [
+        {
+          roleId: 'role-frontend',
+          requiredLanguages: ['typescript'],
+          relevantConcepts: ['term:react-accessibility'],
+          sourceReferences: [roleSource('role-frontend', ['term:react-accessibility'])],
+        },
+      ],
+      expectedPackets: [
+        {
+          challengeId: 'challenge-react-accessibility',
+          repoId: 'github.com/mui/base-ui',
+          repoFullName: 'mui/base-ui',
+          repoUrl: 'https://github.com/mui/base-ui',
+          prNumber: 973,
+          prUrl: 'https://github.com/mui/base-ui/pull/973',
+          sourceVersion: 'source-react-accessibility',
+          demands: [
+            {
+              demandId: 'demand-react-accessibility',
+              concepts: ['term:react-accessibility'],
+              sourceRefs: [sourceRef('challenge-react-accessibility')],
+            },
+          ],
+        },
+        {
+          challengeId: 'challenge-frontend-testing',
+          repoId: 'github.com/vercel/swr',
+          repoFullName: 'vercel/swr',
+          repoUrl: 'https://github.com/vercel/swr',
+          prNumber: 3200,
+          prUrl: 'https://github.com/vercel/swr/pull/3200',
+          sourceVersion: 'source-frontend-testing',
+          demands: [
+            {
+              demandId: 'demand-frontend-testing',
+              concepts: ['term:frontend-testing'],
+              sourceRefs: [sourceRef('challenge-frontend-testing')],
+            },
+          ],
+        },
+      ],
+      expertLabels: [
+        {
+          labelId: 'label-fit-positive',
+          candidateId: 'candidate-fit',
+          roleId: 'role-frontend',
+          challengeId: 'challenge-react-accessibility',
+          relevanceGrade: 'highly_relevant',
+          eligibleChallengeIds: ['challenge-react-accessibility'],
+          negativeCandidateId: 'candidate-borderline',
+          minimumScoreSeparation: 0.12,
+          explanation: 'Expert reviewer confirmed this is a strong source-backed match.',
+          labelVersion: '1.0.0',
+          labeledAt: '2026-07-03T00:00:00Z',
+          labeledBy: 'expert-reviewer-1',
+          labelProvenance: provenance('positive'),
+        },
+        {
+          labelId: 'label-borderline-review',
+          candidateId: 'candidate-borderline',
+          roleId: 'role-frontend',
+          challengeId: 'challenge-frontend-testing',
+          relevanceGrade: 'borderline',
+          eligibleChallengeIds: ['challenge-frontend-testing'],
+          negativeCandidateId: 'candidate-fit',
+          minimumScoreSeparation: 0.05,
+          explanation: 'Expert reviewer marked this as challenge-design review, not no-evidence proof.',
+          labelVersion: '1.0.0',
+          labeledAt: '2026-07-03T00:00:00Z',
+          labeledBy: 'expert-reviewer-1',
+          labelProvenance: provenance('borderline'),
+        },
+      ],
+      metadata: {
+        totalLabels: 2,
+        totalCandidates: 2,
+        totalRoles: 1,
+        totalChallenges: 2,
+        syntheticFixtureCount: 0,
+        totalExpectedPackets: 2,
+      },
+    };
+
+    const failures = productionCorpusFailures(corpus);
+
+    expect(failures).toContain(
+      'production corpus requires at least one irrelevant or forbidden insufficient-evidence expert label',
+    );
+    expect(failures).not.toContain(
+      'production corpus requires at least one insufficient-evidence or non-positive contrast label',
+    );
+  });
+
+  it('reports draft corpus-seeder labels as drafts, not missing expert provenance', () => {
+    const corpus: EvaluationCorpus = {
+      version: EVALUATION_CORPUS_VERSION,
+      corpusId: 'draft-corpus-needs-review',
+      createdAt: '2026-07-03T00:00:00Z',
+      description: 'Draft corpus seeded from match runs before expert review.',
+      candidateEvidence: [
+        {
+          candidateId: 'candidate-1',
+          evidenceId: 'evidence-1',
+          episodeId: 'episode-1',
+          narrative: 'Reviewed React popover timing and regression coverage.',
+          concepts: ['term:react-popover', 'term:interaction-timing'],
+          evidenceReferences: [sourceRef('candidate-draft')],
+        },
+      ],
+      roleRequirements: [
+        {
+          roleId: 'role-frontend-review',
+          requiredLanguages: ['typescript'],
+          relevantConcepts: ['term:react-popover'],
+          sourceReferences: [roleSource('role-draft', ['term:react-popover'])],
+        },
+      ],
+      expertLabels: [
+        {
+          labelId: 'seeded-draft-label-1',
+          candidateId: 'candidate-1',
+          roleId: 'role-frontend-review',
+          challengeId: 'challenge-popover-pr',
+          relevanceGrade: 'borderline',
+          eligibleChallengeIds: ['challenge-popover-pr'],
+          explanation: 'Draft label created from current match run evidence.',
+          labelVersion: 'candidate-pr-match-rubric-v1',
+          labeledAt: '2026-07-03T00:00:00Z',
+          labeledBy: 'corpus-seeder',
+        },
+      ],
+      expectedPackets: [
+        {
+          challengeId: 'challenge-popover-pr',
+          repoId: 'github.com/mui/base-ui',
+          repoFullName: 'mui/base-ui',
+          repoUrl: 'https://github.com/mui/base-ui',
+          prNumber: 973,
+          prUrl: 'https://github.com/mui/base-ui/pull/973',
+          sourceVersion: 'sha-popover',
+          demands: [
+            {
+              demandId: 'demand-popover-timing',
+              concepts: ['term:react-popover', 'term:interaction-timing'],
+              sourceRefs: [sourceRef('challenge-draft')],
+            },
+          ],
+        },
+      ],
+      metadata: {
+        totalLabels: 1,
+        totalCandidates: 1,
+        totalRoles: 1,
+        totalChallenges: 1,
+        syntheticFixtureCount: 0,
+        totalExpectedPackets: 1,
+      },
+    };
+
+    const failures = productionCorpusFailures(corpus);
+
+    expect(failures).toContain(
+      'production corpus contains 1 draft corpus-seeder label(s); complete expert review before production evaluation',
+    );
+    expect(failures).toContain(
+      'production corpus requires at least one expert-reviewed label with reviewer/source provenance',
+    );
+    expect(failures).not.toContain(
+      'expert label is missing reviewer/source provenance: seeded-draft-label-1',
+    );
+  });
+
+  it('requires production corpora to cover at least two source-backed challenge packets', () => {
+    const expertProvenance = {
+      reviewerId: 'expert-reviewer-1',
+      reviewerRole: 'senior-engineering-reviewer',
+      reviewArtifactId: 'expert-review-artifact-1',
+      reviewArtifactVersion: 'v1',
+      contentHash: 'sha256:expert-review-artifact-1',
+      locator: 'expert-review:artifact-1',
+      rubricVersion: 'candidate-pr-match-rubric-v1',
+    };
+    const corpus: EvaluationCorpus = {
+      version: EVALUATION_CORPUS_VERSION,
+      corpusId: 'production-corpus-one-packet',
+      createdAt: '2026-06-13T00:00:00Z',
+      description: 'Production corpus that proves only one PR packet',
+      candidateEvidence: [
+        {
+          candidateId: 'candidate-positive',
+          evidenceId: 'evidence-positive',
+          episodeId: 'episode-positive',
+          narrative: 'Reviewed React popover timing and regression coverage.',
+          concepts: ['term:react-popover', 'term:interaction-timing'],
+          evidenceReferences: [sourceRef('candidate-positive-packet-breadth')],
+        },
+        {
+          candidateId: 'candidate-negative',
+          evidenceId: 'evidence-negative',
+          episodeId: 'episode-negative',
+          narrative: 'Owned unrelated analytics notebooks.',
+          concepts: ['term:analytics-notebooks'],
+          evidenceReferences: [sourceRef('candidate-negative-packet-breadth')],
+        },
+      ],
+      roleRequirements: [
+        {
+          roleId: 'role-frontend-review',
+          requiredLanguages: ['typescript'],
+          relevantConcepts: ['term:react-popover'],
+          sourceReferences: [roleSource('role-popover-breadth', ['term:react-popover'])],
+        },
+      ],
+      expertLabels: [
+        {
+          labelId: 'expert-label-positive-one-packet',
+          candidateId: 'candidate-positive',
+          roleId: 'role-frontend-review',
+          challengeId: 'challenge-popover-pr',
+          relevanceGrade: 'highly_relevant',
+          eligibleChallengeIds: ['challenge-popover-pr'],
+          negativeCandidateId: 'candidate-negative',
+          minimumScoreSeparation: 0.2,
+          explanation:
+            'Expert reviewer confirmed the candidate evidence maps directly to the popover timing PR.',
+          labelVersion: 'candidate-pr-match-rubric-v1',
+          labeledAt: '2026-06-13T00:00:00Z',
+          labeledBy: 'expert-reviewer-1',
+          labelProvenance: expertProvenance,
+        },
+        {
+          labelId: 'expert-label-negative-one-packet',
+          candidateId: 'candidate-negative',
+          roleId: 'role-frontend-review',
+          challengeId: 'challenge-popover-pr',
+          relevanceGrade: 'irrelevant',
+          eligibleChallengeIds: [],
+          explanation:
+            'Expert reviewer confirmed the contrast candidate lacks source-backed popover review evidence.',
+          labelVersion: 'candidate-pr-match-rubric-v1',
+          labeledAt: '2026-06-13T00:00:00Z',
+          labeledBy: 'expert-reviewer-1',
+          labelProvenance: {
+            ...expertProvenance,
+            reviewArtifactId: 'expert-review-artifact-2',
+            contentHash: 'sha256:expert-review-artifact-2',
+            locator: 'expert-review:artifact-2',
+          },
+        },
+      ],
+      expectedPackets: [
+        {
+          challengeId: 'challenge-popover-pr',
+          repoId: 'github.com/mui/base-ui',
+          repoFullName: 'mui/base-ui',
+          repoUrl: 'https://github.com/mui/base-ui',
+          prNumber: 973,
+          prUrl: 'https://github.com/mui/base-ui/pull/973',
+          sourceVersion: 'sha-popover',
+          demands: [
+            {
+              demandId: 'demand-popover-timing',
+              concepts: ['term:react-popover', 'term:interaction-timing'],
+              sourceRefs: [sourceRef('challenge-popover-breadth')],
+            },
+          ],
+        },
+      ],
+      metadata: {
+        totalLabels: 2,
+        totalCandidates: 2,
+        totalRoles: 1,
+        totalChallenges: 1,
+        syntheticFixtureCount: 0,
+        totalExpectedPackets: 1,
+      },
+    };
+
+    expect(productionCorpusFailures(corpus)).toContain(
+      'production corpus requires at least two source-backed expected PR challenge packets',
+    );
+  });
+
   it('should reject corpus with version mismatch', () => {
     const corpus: EvaluationCorpus = {
       version: '0.0.0' as const,
@@ -629,6 +1018,127 @@ describe('Evaluation Metrics', () => {
     expect(metrics.labelResults[0]?.guardrailViolations).toContain('missing_provenance');
     expect(metrics.labelResults[0]?.passed).toBe(false);
   });
+
+  it('fails a positive label when the contrast candidate scores too close on the same challenge', () => {
+    const corpus: EvaluationCorpus = {
+      version: EVALUATION_CORPUS_VERSION,
+      corpusId: 'test-score-separation',
+      createdAt: '2026-06-13T00:00:00Z',
+      description: 'Positive label with a same-challenge contrast candidate',
+      candidateEvidence: [
+        {
+          candidateId: 'candidate-positive',
+          evidenceId: 'evidence-positive',
+          episodeId: 'episode-positive',
+          narrative: 'Owned React popover interaction timing and regression coverage.',
+          concepts: ['term:react-popover', 'term:interaction-timing'],
+          evidenceReferences: [sourceRef('candidate-positive')],
+        },
+        {
+          candidateId: 'candidate-negative',
+          evidenceId: 'evidence-negative',
+          episodeId: 'episode-negative',
+          narrative: 'Worked on unrelated marketing site copy and static pages.',
+          concepts: ['term:content-pages'],
+          evidenceReferences: [sourceRef('candidate-negative')],
+        },
+      ],
+      roleRequirements: [
+        {
+          roleId: 'role-frontend-review',
+          requiredLanguages: ['typescript'],
+          relevantConcepts: ['term:react-popover', 'term:interaction-timing'],
+          sourceReferences: [roleSource('role-popover', ['term:react-popover'])],
+        },
+      ],
+      expertLabels: [
+        {
+          labelId: 'label-positive-needs-separation',
+          candidateId: 'candidate-positive',
+          roleId: 'role-frontend-review',
+          challengeId: 'challenge-popover-pr',
+          relevanceGrade: 'highly_relevant',
+          eligibleChallengeIds: ['challenge-popover-pr'],
+          negativeCandidateId: 'candidate-negative',
+          minimumScoreSeparation: 0.2,
+          labelVersion: '1.0.0',
+          labeledAt: '2026-06-13T00:00:00Z',
+          labeledBy: 'synthetic-fixture',
+        },
+      ],
+      metadata: {
+        totalLabels: 1,
+        totalCandidates: 2,
+        totalRoles: 1,
+        totalChallenges: 1,
+        syntheticFixtureCount: 1,
+      },
+    };
+
+    function runFor(candidateId: string, score: number): PersistedMatchRun {
+      return {
+        matchRunId: `run-${candidateId}`,
+        candidateId,
+        roleId: 'role-frontend-review',
+        candidateSnapshotId: `snapshot-${candidateId}`,
+        policyVersion: 'candidate-pr-v1',
+        modelVersion: null,
+        status: 'MATCHED',
+        rankedChallenges: [
+          {
+            rank: 1,
+            recallRank: 1,
+            challengeId: 'challenge-popover-pr',
+            repoId: 'repo-popover',
+            prNumber: 973,
+            sourceVersion: 'v1',
+            score,
+            candidateEvidenceAlignment: score,
+            roleRelevance: score,
+            contextualSpecificity: score,
+            challengeQuality: 0.9,
+            validationDeepeningValue: 0.8,
+            alignedDemandCount: 1,
+            stretchCount: 0,
+            stretchDemandWeightRatio: 0,
+            provenanceComplete: true,
+            eligible: true,
+            alignments: [{
+              atomId: `atom-${candidateId}`,
+              demandId: 'demand-popover',
+              pairScore: score,
+              weightedScore: score,
+              stretch: null,
+              sharedConcepts: ['term:react-popover'],
+              roleSourceRefs: [roleSource('role-popover', ['term:react-popover'])],
+              candidateSourceRefs: [sourceRef(`candidate-ref-${candidateId}`)],
+              challengeSourceRefs: [sourceRef('challenge-popover')],
+            }],
+            rejectionReasons: [],
+          },
+        ],
+      };
+    }
+
+    const metrics = evaluateMatchRuns(corpus, [
+      runFor('candidate-positive', 0.7),
+      runFor('candidate-negative', 0.62),
+    ]);
+    const labelResult = metrics.labelResults[0];
+
+    expect(labelResult?.passed).toBe(false);
+    expect(labelResult?.failureReason).toContain('score separation');
+
+    const result = checkAcceptanceThresholds(metrics, {
+      ...DEFAULT_ACCEPTANCE_THRESHOLDS,
+      requireByteIdenticalRerun: false,
+      requireExpertLabels: false,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures.some((failure) =>
+      failure.includes('label-positive-needs-separation')
+    )).toBe(true);
+  });
 });
 
 describe('Determinism Verification', () => {
@@ -851,6 +1361,10 @@ describe('Determinism Verification', () => {
         comparisonMatchRunId: null,
         identical: false,
         comparisonFingerprint: null,
+        drift: expect.objectContaining({
+          reason: 'missing_comparison',
+          firstDifference: expect.stringContaining('missing comparison run'),
+        }),
       }),
     ]);
   });
@@ -867,6 +1381,10 @@ describe('Determinism Verification', () => {
       expect.objectContaining({
         comparisonMatchRunId: 'run-comparison',
         identical: false,
+        drift: expect.objectContaining({
+          reason: 'ranked_result_changed',
+          firstDifference: 'challenge-1.alignedDemandCount: 1 -> 2',
+        }),
       }),
     );
     expect(metrics.determinismComparisons[0]?.fingerprint).not.toBe(
@@ -897,6 +1415,10 @@ describe('Determinism Verification', () => {
       expect.objectContaining({
         comparisonMatchRunId: 'run-comparison',
         identical: false,
+        drift: expect.objectContaining({
+          reason: 'ranked_result_changed',
+          firstDifference: 'challenge-1.sharedConcepts: term:kafka -> term:redis',
+        }),
       }),
     );
     expect(metrics.determinismComparisons[0]?.fingerprint).toContain(
@@ -1720,6 +2242,44 @@ describe('E2E: roleless person + simple JD + real repo packet + explained match'
     expect(metrics.packetCoverage).toBe(1);
     expect(metrics.missingPacketIds).toHaveLength(0);
     expect(metrics.packetIdentityMismatches).toHaveLength(0);
+  });
+
+  it('does not compare expected packet hashes to individual source span hashes', () => {
+    const corpus = e2eCorpus();
+    corpus.expectedPackets![0] = {
+      ...corpus.expectedPackets![0]!,
+      packetContentHash: 'sha256:whole-packet-hash-not-a-source-span-hash',
+    };
+    const metrics = evaluateMatchRuns(corpus, [e2eMatchRun('run-e2e-primary')]);
+
+    expect(metrics.packetCoverage).toBe(1);
+    expect(metrics.missingPacketIds).toHaveLength(0);
+    expect(metrics.packetIdentityMismatches).toHaveLength(0);
+  });
+
+  it('detects packet identity drift when a persisted ranked result carries a different packet hash', () => {
+    const corpus = e2eCorpus();
+    corpus.expectedPackets![0] = {
+      ...corpus.expectedPackets![0]!,
+      packetContentHash: 'sha256:expected-whole-packet-hash',
+    };
+    const driftedRun: PersistedMatchRun = {
+      ...e2eMatchRun('run-e2e-packet-hash-drift'),
+      rankedChallenges: [{
+        ...e2eRankedChallenge(),
+        packetContentHash: 'sha256:actual-other-packet-hash',
+      }],
+    };
+    const metrics = evaluateMatchRuns(corpus, [driftedRun]);
+
+    expect(metrics.packetIdentityMismatches).toHaveLength(1);
+    expect(metrics.packetIdentityMismatches[0]).toMatchObject({
+      field: 'packetContentHash',
+      expected: 'sha256:expected-whole-packet-hash',
+      actual: 'sha256:actual-other-packet-hash',
+    });
+    expect(metrics.packetCoverage).toBe(0);
+    expect(metrics.missingPacketIds).toContain(challengeId);
   });
 
   it('explains the candidate-to-PR match via alignment source references', () => {

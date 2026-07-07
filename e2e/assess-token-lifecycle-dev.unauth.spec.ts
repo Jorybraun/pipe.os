@@ -22,6 +22,25 @@ async function expectNoCandidateBlockingState(page: Page): Promise<void> {
   await expect(page.locator('body')).not.toContainText('WAITING_FOR_MATCH');
 }
 
+async function expectCandidateSafeEntrySurface(page: Page): Promise<'ready' | 'profile-received'> {
+  await expect.poll(
+    async () => {
+      if (await page.getByTestId('start-interview-btn').isVisible().catch(() => false)) {
+        return 'ready';
+      }
+      if (await page.getByRole('heading', { name: 'Profile received.' }).isVisible().catch(() => false)) {
+        return 'profile-received';
+      }
+      return 'pending';
+    },
+    { message: 'candidate link should render either ready CODE_REVIEW or safe profile-received handoff', timeout: 45_000 },
+  ).toMatch(/^(ready|profile-received)$/);
+
+  return (await page.getByTestId('start-interview-btn').isVisible().catch(() => false))
+    ? 'ready'
+    : 'profile-received';
+}
+
 async function expectStoredCandidate(
   page: Page,
   expected: { inviteToken: string; candidateId: string; candidateName: string; status?: string },
@@ -64,7 +83,7 @@ test.describe('deployed /assess token lifecycle isolation', () => {
     });
 
     await page.goto(TOKEN_A_URL);
-    await expect(page.getByTestId('start-interview-btn')).toBeVisible({ timeout: 45_000 });
+    await expectCandidateSafeEntrySurface(page);
     await expectNoCandidateBlockingState(page);
     await expectStoredCandidate(page, {
       inviteToken: tokenA,
@@ -73,7 +92,7 @@ test.describe('deployed /assess token lifecycle isolation', () => {
     });
 
     await page.goto(TOKEN_B_URL);
-    await expect(page.getByTestId('start-interview-btn')).toBeVisible({ timeout: 45_000 });
+    await expectCandidateSafeEntrySurface(page);
     await expectNoCandidateBlockingState(page);
     await expectStoredCandidate(page, {
       inviteToken: tokenB,
@@ -85,7 +104,7 @@ test.describe('deployed /assess token lifecycle isolation', () => {
     expect(resolveCalls).toContain(tokenB);
     expect(resolveCalls.at(-1)).toBe(tokenB);
 
-    await expect(page.getByTestId('start-interview-btn')).toBeVisible();
+    await expectCandidateSafeEntrySurface(page);
     await expectNoCandidateBlockingState(page);
     await expectStoredCandidate(page, {
       inviteToken: tokenB,

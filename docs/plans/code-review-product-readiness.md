@@ -140,6 +140,26 @@ stored row contains the older `evaluation_corpora` schema, the CLI adapts
 candidate-role-challenge relevance labels into candidate-to-packet quality cases
 instead of creating a second unrelated corpus format.
 
+For determinism proof, prefer `--auto-comparison-runs` when evaluating a frozen
+corpus against D1 match history. The evaluator loads the latest primary run for
+each labelled candidate/role pair, then selects one same-or-earlier
+candidate/role/status run as the comparison when available. This keeps app-dev
+operator runs repeatable without manually assembling `--comparison-run-id`
+arguments while still surfacing true gaps: missing comparison history,
+non-identical reranks, missing packet coverage, and unreviewed draft labels.
+When a comparison fails, the human-readable report includes a compact
+`drift:` line that names the first actionable difference, such as a changed top
+challenge, score/alignment drift, changed shared concepts, or a missing
+comparison run.
+
+Corpus review exports also include a `readinessSummary` that separates source
+evidence repair from human labelling work. A packet with missing expected PR
+evidence or repo demand source spans is not ready for expert review as a rollout
+gate; operators should first repair the source-backed challenge packet, then
+complete the review template with reviewer/source provenance.
+The CLI JSON summary mirrors that same next action so automation and reviewers
+do not accidentally promote a source-incomplete corpus.
+
 CI also runs the matching-evaluation readiness report after worker unit tests.
 Missing Cloudflare credentials or `MATCHING_EVALUATION_CORPUS_ID` produce a
 loud `not_configured` artifact and do not block pull-request, local, or `main`
@@ -151,6 +171,23 @@ current app-dev data plane by setting `MATCHING_EVALUATION_D1_DATABASE_ID`
 `MATCHING_EVALUATION_STAGE=shadow|canary|production`. This keeps app-dev
 CODE_REVIEW proof from being confused with the mostly empty production D1 while
 still using the same evaluator and frozen-corpus contract.
+
+CI also emits a living-context match-quality readiness artifact. That gate runs
+`living-context:match-quality:readiness`, which auto-selects the latest
+expert-labelled, synthetic-free corpus and fails with the latest draft corpus
+summary when no reviewed corpus exists. The readiness artifact uses
+`--summary-json` by default: metrics, thresholds, gate failures, and per-case
+verdict/provenance booleans only. The gate distinguishes broad non-positive
+labels from true `insufficient_evidence` labels; at least one explicit
+insufficient-evidence case is required so challenge-design/`needs_review`
+examples cannot stand in for sparse-profile safety proof. Use the lower-level
+`living-context:match-quality -- --json` path when a developer needs full
+confidence reports and source spans for debugging. Missing Cloudflare
+credentials or D1 configuration produce a non-blocking `not_configured`
+artifact by default. Set `MATCH_QUALITY_D1_DATABASE_ID` to point at app-dev/test
+D1 when needed, and set `MATCH_QUALITY_REQUIRED=1` only after an expert-labelled
+corpus is persisted and the team wants CI to block on the living-context quality
+gate.
 
 The manual override full-submit app-dev lane passed after updating the smoke to
 assert the candidate-facing product language ("a recruiter selected this PR")
@@ -481,6 +518,45 @@ separation `1/2`, candidate CODE_REVIEW browser proof, and recruiter readiness
 from `candidate_challenge_assignment`. Broader production corpus expansion
 remains a product-readiness requirement.
 
+Status 2026-07-03: app-dev packet breadth is now measured by
+`npm run smoke:code-review-packet-catalog-dev` and the default
+`smoke:code-review-reliability-dev` suite includes the
+`packet-catalog-readiness` lane. The latest app-dev catalog proof returned 10
+total packets, 8 production-ready packets, 3 production-ready repos
+(`cloudflare/workers-sdk`, `mui/base-ui`, `vercel/swr`), 8 production-ready
+PRs, and 5 persisted `reviewProfile`-ready packets. This closes the prior
+remote packet-breadth ambiguity; the remaining readiness work is to keep this
+gate green while expanding calibrated labels and production/staging smoke
+coverage.
+
+Status 2026-07-03 follow-up: the default app-dev reliability suite also
+promotes `npm run smoke:code-review-assess-dev:person-boundary` into a required
+lane. This proves a completed scored CODE_REVIEW remains the selected
+person-profile recommendation even when a newer same-person CODE_REVIEW invite
+exists with a different repo/PR and no candidate submission.
+
+Status 2026-07-03 follow-up 2: the default app-dev reliability suite now also
+promotes `npm run smoke:assess-token-lifecycle-dev` into a required lane. The
+first 9/9 run proved two real `/assess` links opened in the same browser
+resolve to separate candidates, keep token B active after token A, and avoid
+used-link or matching-progress fallback screens; the lane remains covered by
+the latest 10/10 reliability run.
+
+Status 2026-07-03 follow-up 3: the default app-dev reliability suite now also
+promotes `npm --prefix workers/api run review-judge:verify -- --remote
+--database-id <app-dev-d1> --limit 20 --require-calibration --json` into the
+`judge-example-readiness` lane. The latest 10/10 run proved app-dev has 20
+labelled, replayable, calibration-ready CODE_REVIEW judge examples with zero
+invalid statuses, zero verifier failures, zero next actions, and a sample
+example containing both candidate comments and AI developer pushback. This makes
+judge replay/calibration proof a default CODE_REVIEW runtime gate rather than a
+manual operator check.
+
+Status 2026-07-03 follow-up 4: the `/assess` React runtime no longer has a
+candidate-visible `WAITING_FOR_MATCH` render path. If any backend path leaks a
+waiting matcher challenge, the candidate sees the same `Profile received`
+handoff and email-next copy instead of the old personalized matching dashboard.
+
 ## Production Readiness Gate
 
 Do not mark CODE_REVIEW product-complete until all of this is true:
@@ -489,14 +565,18 @@ Do not mark CODE_REVIEW product-complete until all of this is true:
 - Roleless and role-backed match proofs pass in app-dev.
 - Candidate UI shows readable match reason, real diff, annotations, AI
   pushback, verdict, and completion.
+- Candidate UI never renders the old matching/decomposition dashboard; leaked
+  `WAITING_FOR_MATCH` states fail closed to `Profile received`.
 - Recruiter UI shows source-backed match proof, submission, annotations,
   AI pushback transcript, and score/gap explanation.
 - At least three real source-backed packets exist for contrast.
 - At least two real overlay-ready packets have persisted `reviewProfile`
   assessment-fit metadata; runtime fallback profiles are not enough for a
   product-readiness claim.
-- Judge examples are collected and replayable.
-- Labelled judge examples exist for at least one calibration batch.
+- Judge examples are collected, replayable, and pass the default
+  `judge-example-readiness` lane.
+- Labelled judge examples exist for at least one calibration batch, including
+  candidate comments and AI developer pushback.
 - Full browser E2E covers invite -> assess -> review -> pushback -> submit ->
   recruiter result.
 - The production/staging smoke runs against deployed infrastructure with no

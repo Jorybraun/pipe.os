@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { runEvaluationCli, parseEvaluationArgs } from '../../../../../scripts/evaluateMatching';
 import { createMockD1 } from '../../../../__tests__/helpers/mockD1';
 import { runEvaluation } from '../cli';
+import type { EvaluationCorpus, ExpertLabel } from '../types';
 
 const evaluationMigration = readFileSync(
   new URL('../../../../../migrations/0093_matching_evaluation.sql', import.meta.url),
@@ -19,19 +20,36 @@ const corpusFixture = new URL(
 );
 
 function expertCorpusJson(): string {
-  const corpus = JSON.parse(readFileSync(corpusFixture, 'utf8')) as {
-    corpusId: string;
-    description: string;
-    expertLabels: Array<{ labelId: string; labeledBy: string; challengeId: string }>;
-    metadata: { syntheticFixtureCount: number; totalExpectedPackets?: number };
-    expectedPackets?: unknown[];
-  };
+  const corpus = JSON.parse(readFileSync(corpusFixture, 'utf8')) as EvaluationCorpus;
+  const negativeCandidateId = 'candidate-negative-1';
   corpus.corpusId = 'expert-corpus-v1';
   corpus.description = 'Test-only corpus with non-synthetic labels for persisted evaluation coverage';
+  corpus.candidateEvidence = [
+    ...corpus.candidateEvidence,
+    {
+      candidateId: negativeCandidateId,
+      evidenceId: 'evidence-negative-1',
+      episodeId: 'episode-negative-1',
+      narrative: 'Operated analytics notebooks without cryptography design or source-backed PR review work.',
+      concepts: ['term:analytics-notebooks'],
+      mechanisms: ['term:notebook-automation'],
+      domains: ['term:analytics'],
+      businessObjects: ['term:reports'],
+      ownershipActions: ['term:operated'],
+      evidenceReferences: [sourceRef({
+        artifactId: 'artifact-negative-1',
+        sourceRefId: 'candidate-negative-source-span-1',
+        sourceSpanId: 'candidate-negative-source-span-1',
+        exactText: 'I operated analytics notebooks and did not design cryptography systems.',
+      })],
+    },
+  ];
   corpus.expertLabels = corpus.expertLabels.map((label, index) => ({
     ...label,
     labelId: `expert-label-${index + 1}`,
     labeledBy: 'expert-reviewer-1',
+    negativeCandidateId,
+    minimumScoreSeparation: 0.25,
     explanation:
       'Expert reviewer confirmed the candidate evidence aligns with the declared repo challenge '
       + 'and that the selected PR is an appropriate source-backed assessment.',
@@ -45,16 +63,89 @@ function expertCorpusJson(): string {
       rubricVersion: 'candidate-pr-match-rubric-v1',
     },
   }));
+  const positiveLabel = corpus.expertLabels[0]!;
+  positiveLabel.eligibleChallengeIds = [
+    positiveLabel.challengeId,
+    'challenge-2',
+  ];
+  const secondPositiveLabel: ExpertLabel = {
+    ...positiveLabel,
+    labelId: 'expert-label-2',
+    challengeId: 'challenge-2',
+    explanation:
+      'Expert reviewer confirmed the candidate evidence also aligns with a second '
+      + 'source-backed PR packet, proving the corpus is not a one-challenge gate.',
+    labelProvenance: {
+      reviewerId: 'expert-reviewer-1',
+      reviewerRole: 'senior-engineering-reviewer',
+      reviewArtifactId: 'expert-review-artifact-2',
+      reviewArtifactVersion: 'expert-review-version-2',
+      contentHash: 'sha256:expert-review-2',
+      locator: 'expert-review:2',
+      rubricVersion: 'candidate-pr-match-rubric-v1',
+    },
+  };
+  const negativeLabel: ExpertLabel = {
+    labelId: 'expert-label-negative-1',
+    candidateId: negativeCandidateId,
+    roleId: positiveLabel.roleId,
+    challengeId: positiveLabel.challengeId,
+    relevanceGrade: 'irrelevant',
+    eligibleChallengeIds: [],
+    explanation:
+      'Expert reviewer rejected the same challenge for the contrast candidate because the '
+      + 'evidence is analytics notebook operation, not cryptography design or PR review work.',
+    labelVersion: '1.0.0',
+    labeledAt: positiveLabel.labeledAt,
+    labeledBy: 'expert-reviewer-1',
+    labelProvenance: {
+      reviewerId: 'expert-reviewer-1',
+      reviewerRole: 'senior-engineering-reviewer',
+      reviewArtifactId: 'expert-review-artifact-negative-1',
+      reviewArtifactVersion: 'expert-review-version-negative-1',
+      contentHash: 'sha256:expert-review-negative-1',
+      locator: 'expert-review:negative-1',
+      rubricVersion: 'candidate-pr-match-rubric-v1',
+    },
+  };
+  corpus.expertLabels = [...corpus.expertLabels, secondPositiveLabel, negativeLabel];
   corpus.metadata.syntheticFixtureCount = 0;
+  corpus.metadata.totalLabels = corpus.expertLabels.length;
+  corpus.metadata.totalCandidates = corpus.candidateEvidence.length;
   // Declare expected packets matching the seeded match runs so the production
   // rollout gate's packet coverage requirement is satisfied.
-  corpus.expectedPackets = [{
-    challengeId: 'challenge-1',
-    repoId: 'repo-1',
-    prNumber: 42,
-    sourceVersion: 'commit-abc',
-  }];
-  corpus.metadata.totalExpectedPackets = 1;
+  corpus.expectedPackets = [
+    {
+      challengeId: 'challenge-1',
+      repoId: 'repo-1',
+      prNumber: 42,
+      sourceVersion: 'commit-abc',
+      demands: [{
+        demandId: 'demand-1',
+        concepts: ['term:quantum-cryptography'],
+        sourceRefs: [sourceRef({
+          artifactId: 'repo-artifact-1',
+          artifactVersion: 'commit-abc',
+        })],
+      }],
+    },
+    {
+      challengeId: 'challenge-2',
+      repoId: 'repo-2',
+      prNumber: 84,
+      sourceVersion: 'commit-def',
+      demands: [{
+        demandId: 'demand-2',
+        concepts: ['term:quantum-cryptography'],
+        sourceRefs: [sourceRef({
+          artifactId: 'repo-artifact-2',
+          artifactVersion: 'commit-def',
+        })],
+      }],
+    },
+  ];
+  corpus.metadata.totalChallenges = 2;
+  corpus.metadata.totalExpectedPackets = 2;
   return JSON.stringify(corpus);
 }
 
@@ -62,6 +153,14 @@ function writeExpertCorpusFixture(directory: string): string {
   const corpusPath = join(directory, 'expert-corpus.json');
   writeFileSync(corpusPath, expertCorpusJson());
   return corpusPath;
+}
+
+function onePacketExpertCorpusJson(): string {
+  const corpus = JSON.parse(expertCorpusJson()) as EvaluationCorpus;
+  corpus.corpusId = 'expert-corpus-one-packet';
+  corpus.expectedPackets = corpus.expectedPackets?.slice(0, 1);
+  corpus.metadata.totalExpectedPackets = corpus.expectedPackets?.length ?? 0;
+  return JSON.stringify(corpus);
 }
 
 function sourceRef(overrides?: Partial<Record<string, unknown>>) {
@@ -81,7 +180,7 @@ function sourceRef(overrides?: Partial<Record<string, unknown>>) {
 }
 
 function rankedResults(overrides?: Partial<Record<string, unknown>>): string {
-  return JSON.stringify([{
+  const first = {
     rank: 1,
     recallRank: 1,
     challengeId: 'challenge-1',
@@ -114,7 +213,41 @@ function rankedResults(overrides?: Partial<Record<string, unknown>>): string {
     }],
     rejectionReasons: [],
     ...overrides,
-  }]);
+  };
+  const second = {
+    rank: 2,
+    recallRank: 2,
+    challengeId: 'challenge-2',
+    repoId: 'repo-2',
+    prNumber: 84,
+    sourceVersion: 'commit-def',
+    score: 0.8,
+    candidateEvidenceAlignment: 0.8,
+    roleRelevance: 0.8,
+    contextualSpecificity: 0.8,
+    challengeQuality: 0.8,
+    validationDeepeningValue: 0.8,
+    alignedDemandCount: 1,
+    stretchCount: 0,
+    stretchDemandWeightRatio: 0,
+    provenanceComplete: true,
+    eligible: true,
+    alignments: [{
+      atomId: 'atom-2',
+      demandId: 'demand-2',
+      pairScore: 0.8,
+      stretch: null,
+      sharedConcepts: ['term:quantum-cryptography'],
+      roleSourceRefs: [],
+      candidateSourceRefs: [sourceRef()],
+      challengeSourceRefs: [sourceRef({
+        artifactId: 'repo-artifact-2',
+        artifactVersion: 'commit-def',
+      })],
+    }],
+    rejectionReasons: [],
+  };
+  return JSON.stringify([first, second]);
 }
 
 function seedMatchRuns(db: InstanceType<typeof Database>): void {
@@ -138,11 +271,13 @@ function seedMatchRuns(db: InstanceType<typeof Database>): void {
        id, candidate_id, role_context_id, candidate_snapshot_id,
        role_snapshot_id, policy_version, model_version, status,
        ranked_results_json, created_at
-     ) VALUES (?, 'candidate-1', 'role-1', 'candidate-snapshot-1',
-               'role-snapshot-1', 'candidate-pr-v1', NULL, 'MATCHED', ?, ?)`,
+     ) VALUES (?, ?, 'role-1', ?, 'role-snapshot-1',
+               'candidate-pr-v1', NULL, ?, ?, ?)`,
   );
-  insert.run('run-primary', rankedResults(), 1);
-  insert.run('run-comparison', rankedResults(), 2);
+  insert.run('run-primary', 'candidate-1', 'candidate-snapshot-1', 'MATCHED', rankedResults(), 1);
+  insert.run('run-comparison', 'candidate-1', 'candidate-snapshot-1', 'MATCHED', rankedResults(), 2);
+  insert.run('run-primary-negative', 'candidate-negative-1', 'candidate-snapshot-negative-1', 'NO_MATCH', '[]', 3);
+  insert.run('run-comparison-negative', 'candidate-negative-1', 'candidate-snapshot-negative-1', 'NO_MATCH', '[]', 4);
 }
 
 function insertEvaluationCorpus(
@@ -196,8 +331,8 @@ function persistedResultFixture(overrides?: {
   const metrics = {
     corpusVersion: '1.0.0',
     corpusId,
-    matchRunIds: ['run-primary'],
-    comparisonMatchRunIds: ['run-comparison'],
+    matchRunIds: ['run-primary', 'run-primary-negative'],
+    comparisonMatchRunIds: ['run-comparison', 'run-comparison-negative'],
     evaluatedAt: '2026-06-14T00:00:00Z',
     recallAt50: 1,
     precisionAt3: 1,
@@ -217,16 +352,16 @@ function persistedResultFixture(overrides?: {
       fingerprint: 'fingerprint-1',
       comparisonFingerprint: 'fingerprint-1',
     }],
-    totalEvaluations: 1,
-    evaluatedPairCount: 1,
+    totalEvaluations: 2,
+    evaluatedPairCount: 2,
     highlyRelevantInTop3: 1,
     relevantInTop3: 0,
     irrelevantInTop3: 0,
     forbiddenInResults: 0,
     syntheticFixtureCount: overrides?.syntheticFixtureCount ?? 0,
-    expertLabelCount: overrides?.expertLabelCount ?? 1,
+    expertLabelCount: overrides?.expertLabelCount ?? 3,
     labelResults: [],
-    expectedPacketCount: overrides?.expectedPacketCount ?? 1,
+    expectedPacketCount: overrides?.expectedPacketCount ?? 2,
     packetCoverage: overrides?.packetCoverage ?? 1,
     pairCoverage: overrides?.pairCoverage ?? 1,
     comparisonCoverage: overrides?.comparisonCoverage ?? 1,
@@ -300,8 +435,12 @@ describe('matching evaluation CLI', () => {
       expertCorpusPath,
       '--match-run-id',
       'run-primary',
+      '--match-run-id',
+      'run-primary-negative',
       '--comparison-run-id',
       'run-comparison',
+      '--comparison-run-id',
+      'run-comparison-negative',
       '--json',
       jsonPath,
       '--report',
@@ -313,6 +452,8 @@ describe('matching evaluation CLI', () => {
     expect(JSON.parse(await readFile(jsonPath, 'utf8'))).toMatchObject({
       passed: true,
       metrics: {
+        matchRunIds: ['run-primary', 'run-primary-negative'],
+        comparisonMatchRunIds: ['run-comparison', 'run-comparison-negative'],
         recallAt50: 1,
         precisionAt3: 1,
         ndcgAt5: 1,
@@ -333,6 +474,47 @@ describe('matching evaluation CLI', () => {
         WHERE corpus_id = 'expert-corpus-v1'`,
     ).run()).toThrow('evaluation corpora are frozen');
     verification.close();
+  });
+
+  it('auto-selects same-or-earlier pair runs for determinism comparison', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const jsonPath = join(directory, 'result.json');
+    const reportPath = join(directory, 'result.txt');
+    const expertCorpusPath = writeExpertCorpusFixture(directory);
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    sqlite.close();
+
+    const exitCode = await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--corpus-id',
+      'expert-corpus-v1',
+      '--corpus-file',
+      expertCorpusPath,
+      '--auto-comparison-runs',
+      '--json',
+      jsonPath,
+      '--report',
+      reportPath,
+    ]);
+
+    expect(exitCode).toBe(0);
+    const result = JSON.parse(await readFile(jsonPath, 'utf8'));
+    expect(result).toMatchObject({
+      passed: true,
+      metrics: {
+        matchRunIds: ['run-comparison', 'run-comparison-negative'],
+        comparisonMatchRunIds: ['run-primary', 'run-primary-negative'],
+        byteIdenticalRerun: true,
+        comparisonCoverage: 1,
+      },
+    });
+    expect(await readFile(reportPath, 'utf8')).toContain(
+      'run-comparison vs run-primary => PASS',
+    );
   });
 
   it('refuses to persist fixture-mode synthetic evaluations', async () => {
@@ -373,8 +555,12 @@ describe('matching evaluation CLI', () => {
       expertCorpusPath,
       '--match-run-id',
       'run-primary',
+      '--match-run-id',
+      'run-primary-negative',
       '--comparison-run-id',
       'run-comparison',
+      '--comparison-run-id',
+      'run-comparison-negative',
       '--json',
       evaluationJsonPath,
       '--report',
@@ -386,8 +572,6 @@ describe('matching evaluation CLI', () => {
       '--local',
       '--database-path',
       databasePath,
-      '--corpus-id',
-      'expert-corpus-v1',
       '--check-latest-production-pass',
       '--json',
       jsonPath,
@@ -400,11 +584,56 @@ describe('matching evaluation CLI', () => {
       ready: true,
       corpusId: 'expert-corpus-v1',
       metrics: {
-        expertLabelCount: 1,
+        expertLabelCount: 3,
         syntheticFixtureCount: 0,
         byteIdenticalRerun: true,
       },
     });
+  });
+
+  it('reports an actionable readiness failure when only draft corpora exist', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const jsonPath = join(directory, 'readiness.json');
+    const reportPath = join(directory, 'readiness.txt');
+    const draftCorpus = JSON.parse(expertCorpusJson()) as EvaluationCorpus;
+    draftCorpus.corpusId = 'draft-corpus-v1';
+    draftCorpus.expertLabels = draftCorpus.expertLabels.map((label) => {
+      const { labelProvenance: _labelProvenance, ...rest } = label;
+      return {
+        ...rest,
+        labeledBy: 'corpus-seeder',
+      };
+    });
+    draftCorpus.metadata.syntheticFixtureCount = 0;
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    insertEvaluationCorpus(sqlite, JSON.stringify(draftCorpus));
+    sqlite.close();
+
+    const exitCode = await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--check-latest-production-pass',
+      '--json',
+      jsonPath,
+      '--report',
+      reportPath,
+    ]);
+
+    expect(exitCode).toBe(1);
+    const readiness = JSON.parse(await readFile(jsonPath, 'utf8'));
+    expect(readiness).toMatchObject({
+      ready: false,
+      corpusId: 'draft-corpus-v1',
+      metrics: null,
+      failures: expect.arrayContaining([
+        expect.stringContaining('No expert-labelled CODE_REVIEW evaluation corpus found'),
+        expect.stringContaining('Complete matching-eval:review expert review'),
+      ]),
+    });
+    expect(await readFile(reportPath, 'utf8')).toContain('Ready: NO');
   });
 
   it('fails the readiness gate for historically persisted synthetic results', async () => {
@@ -442,6 +671,38 @@ describe('matching evaluation CLI', () => {
       expect.arrayContaining([
         'production rollout requires at least one expert label',
         'production rollout requires zero synthetic fixture labels',
+      ]),
+    );
+  });
+
+  it('reports corpus production failures even before an evaluation result is persisted', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const jsonPath = join(directory, 'readiness.json');
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    insertEvaluationCorpus(sqlite, onePacketExpertCorpusJson());
+    sqlite.close();
+
+    const exitCode = await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--corpus-id',
+      'expert-corpus-one-packet',
+      '--check-latest-production-pass',
+      '--json',
+      jsonPath,
+    ]);
+
+    expect(exitCode).toBe(1);
+    const readiness = JSON.parse(await readFile(jsonPath, 'utf8'));
+    expect(readiness.ready).toBe(false);
+    expect(readiness.metrics).toBeNull();
+    expect(readiness.failures).toEqual(
+      expect.arrayContaining([
+        'No persisted evaluation result found for corpus expert-corpus-one-packet',
+        'production corpus requires at least two source-backed expected PR challenge packets',
       ]),
     );
   });
@@ -670,6 +931,7 @@ describe('matching evaluation CLI', () => {
     directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
     const databasePath = join(directory, 'evaluation.sqlite');
     const jsonPath = join(directory, 'result.json');
+    const reportPath = join(directory, 'result.txt');
 
     const sqlite = new Database(databasePath);
     sqlite.exec(`
@@ -723,6 +985,8 @@ describe('matching evaluation CLI', () => {
       'run-no-provenance',
       '--json',
       jsonPath,
+      '--report',
+      reportPath,
       '--allow-synthetic',
     ]);
 
@@ -732,6 +996,9 @@ describe('matching evaluation CLI', () => {
     expect(result.metrics.missingProvenanceCount).toBeGreaterThan(0);
     expect(result.failures).toEqual(
       expect.arrayContaining([expect.stringContaining('Missing provenance')]),
+    );
+    expect(await readFile(reportPath, 'utf8')).toContain(
+      'drift: missing comparison run for primary top challenge-1 repo-1#42',
     );
   });
 
@@ -818,5 +1085,54 @@ describe('matching evaluation CLI', () => {
       '--corpus-id', 'test',
       '--stage', 'invalid',
     ])).toThrow('--stage must be one of');
+  });
+
+  it('parses a remote app-dev database id for evaluation readiness checks', () => {
+    expect(parseEvaluationArgs([
+      '--remote',
+      '--database-id',
+      'app-dev-d1',
+      '--corpus-id',
+      'expert-corpus-v1',
+      '--check-latest-production-pass',
+    ])).toEqual(expect.objectContaining({
+      target: 'remote',
+      databaseId: 'app-dev-d1',
+      corpusId: 'expert-corpus-v1',
+      checkLatestProductionPass: true,
+    }));
+  });
+
+  it('allows readiness checks to resolve the corpus from D1 when no corpus id is passed', () => {
+    const options = parseEvaluationArgs([
+      '--remote',
+      '--database-id',
+      'app-dev-d1',
+      '--check-latest-production-pass',
+    ]);
+
+    expect(options).toEqual(expect.objectContaining({
+      target: 'remote',
+      databaseId: 'app-dev-d1',
+      checkLatestProductionPass: true,
+    }));
+    expect(options).not.toHaveProperty('corpusId');
+  });
+
+  it('rejects remote database ids in local evaluation mode', () => {
+    expect(() => parseEvaluationArgs([
+      '--database-id',
+      'app-dev-d1',
+      '--corpus-id',
+      'expert-corpus-v1',
+    ])).toThrow('--database-id requires --remote');
+  });
+
+  it('rejects combining explicit and automatic comparison runs', () => {
+    expect(() => parseEvaluationArgs([
+      '--corpus-id', 'test',
+      '--comparison-run-id', 'run-1',
+      '--auto-comparison-runs',
+    ])).toThrow('--auto-comparison-runs cannot be combined with --comparison-run-id');
   });
 });

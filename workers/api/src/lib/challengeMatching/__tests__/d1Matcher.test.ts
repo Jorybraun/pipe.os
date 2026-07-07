@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   deriveCorpusGenericConcepts,
+  matchContrastSeparation,
   matchCandidateToReviewChallenge,
 } from '../d1Matcher';
 import type { ChallengePacket } from '../types';
@@ -62,6 +63,22 @@ const assessmentLayerMigration = readFileSync(
   new URL('../../../../migrations/0102_assessment_layer.sql', import.meta.url),
   'utf8',
 );
+
+describe('matchContrastSeparation', () => {
+  it('uses candidate-evidence separation when blended final scores are flattened by role constants', () => {
+    expect(matchContrastSeparation(
+      { finalScore: 0.5371535955087716, candidateEvidenceAlignment: 0.10430719101754309 },
+      { finalScore: 0.518449074074074, candidateEvidenceAlignment: 0.06689814814814814 },
+    )).toBeCloseTo(0.03740904286939495, 8);
+  });
+
+  it('returns null when there is no comparable challenge', () => {
+    expect(matchContrastSeparation(
+      { finalScore: 0.5371535955087716, candidateEvidenceAlignment: 0.10430719101754309 },
+      null,
+    )).toBeNull();
+  });
+});
 
 type SqlValue = string | number | null;
 
@@ -132,6 +149,20 @@ function createNodeSqliteD1(sqlite: NodeSqliteDatabase): D1Database {
         },
       };
       return prepared;
+    },
+    async batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> {
+      const results: D1Result<T>[] = [];
+      sqlite.exec('BEGIN');
+      try {
+        for (const statement of statements) {
+          results.push(await statement.run<T>());
+        }
+        sqlite.exec('COMMIT');
+      } catch (error) {
+        sqlite.exec('ROLLBACK');
+        throw error;
+      }
+      return results;
     },
   } as unknown as D1Database;
 }
@@ -2447,35 +2478,13 @@ describe('matchCandidateToReviewChallenge', () => {
       roleSourceReferences,
     });
 
-    expect(result.status).toBe('MATCHED');
-    expect(result.repoId).toBe(973);
-    expect(result.prNumber).toBe(973);
-    expect(result.explanation?.selectedPr).toEqual({
-      challengeId: data.packet.id,
-      repoId: '973',
-      prNumber: 973,
-      sourceVersion: data.input.repoSnapshot.id,
-    });
+    expect(result.status).toBe('NEEDS_MORE_EVIDENCE');
+    expect(result.repoId).toBeUndefined();
+    expect(result.prNumber).toBeUndefined();
+    expect(result.explanation?.selectedPr).toBeUndefined();
+    expect(result.explanation?.evidence).toEqual([]);
     expect(result.explanation?.roleSources).toEqual(roleSourceReferences);
-    expect(result.explanation?.evidence.some((entry) =>
-      entry.roleSourceRefs.some((source) => source.exactText === roleExactText)
-    )).toBe(true);
-    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        scope: 'candidate',
-        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
-      }),
-    ]));
-    expect(result.explanation?.rejectedPackets).toEqual([]);
-    expect(result.explanation?.evidence.length ?? 0).toBeGreaterThanOrEqual(4);
-    expect(result.explanation?.candidateSpans.flatMap((span) =>
-      span.sourceRefs.map((source) => source.exactText),
-    )).toContain(transcriptText);
-    const repoEvidenceTexts = result.explanation?.evidence.flatMap((entry) =>
-      entry.challengeSourceRefs.flatMap((source) => source.exactText ? [source.exactText] : [])
-    ) ?? [];
-    expect(repoEvidenceTexts.some((text) => text.includes('PATIENT_CLICK_THRESHOLD = 500'))).toBe(true);
-    expect(repoEvidenceTexts.some((text) => text.includes('data-popup-open'))).toBe(true);
+    expect(result.explanation?.rejectionReasons).toEqual(['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE']);
     expect(result.diagnostics?.evaluatedChallenges).toEqual([
       expect.objectContaining({
         challengeId: data.packet.id,
@@ -2489,14 +2498,19 @@ describe('matchCandidateToReviewChallenge', () => {
     ]);
 
     const ranked = sqlite.prepare(
-      'SELECT ranked_results_json, selected_packet_id FROM match_runs WHERE id = ?',
+      'SELECT status, ranked_results_json, selected_packet_id FROM match_runs WHERE id = ?',
     ).get(result.matchRunId) as {
+      status: string;
       ranked_results_json: string;
-      selected_packet_id: string;
+      selected_packet_id: string | null;
     };
-    expect(ranked.selected_packet_id).toBe(data.packet.id);
+    expect(ranked.status).toBe('NEEDS_MORE_EVIDENCE');
+    expect(ranked.selected_packet_id).toBeNull();
     const [rankedResult] = JSON.parse(ranked.ranked_results_json) as Array<{
       challengeId: string;
+      assessmentQuality: {
+        metrics: Array<{ id: string; score: number }>;
+      };
       alignments: Array<{
         sharedConcepts: string[];
         roleSourceRefs: Array<{ exactText?: string; conceptKeys?: string[] }>;
@@ -2523,6 +2537,12 @@ describe('matchCandidateToReviewChallenge', () => {
         && ref.exactText
       ),
     )).toBe(true);
+    expect(rankedResult.assessmentQuality.metrics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'contrast_separation',
+        score: 0,
+      }),
+    ]));
 
     const contextRecord = sqlite.prepare(
       `SELECT id, scope_type, scope_id, record_type, predicate
@@ -2540,7 +2560,7 @@ describe('matchCandidateToReviewChallenge', () => {
       scope_type: 'match_run',
       scope_id: result.matchRunId,
       record_type: 'candidate_pr_match_decision',
-      predicate: 'selects review challenge',
+      predicate: 'records match diagnostic',
     });
     const contextRefs = sqlite.prepare(
       `SELECT source_ref_type, source_ref_id, exact_text, content_hash, evidence_role
@@ -2559,7 +2579,7 @@ describe('matchCandidateToReviewChallenge', () => {
         source_ref_type: 'review_challenge_packet',
         source_ref_id: data.packet.id,
         content_hash: data.packet.contentHash,
-        evidence_role: 'selected_packet',
+        evidence_role: 'considered_packet',
       }),
       expect.objectContaining({
         source_ref_type: 'role_source',
@@ -2570,29 +2590,17 @@ describe('matchCandidateToReviewChallenge', () => {
       expect.objectContaining({
         source_ref_type: 'source_span',
         exact_text: transcriptText,
-        evidence_role: 'selected_candidate_evidence',
+        evidence_role: 'candidate_evidence',
       }),
     ]));
-    expect(contextRefs.some((ref) =>
-      ref.source_ref_type === 'repo_source_span'
-      && ref.evidence_role === 'selected_repo_evidence'
-      && ref.exact_text?.includes('PATIENT_CLICK_THRESHOLD = 500')
-    )).toBe(true);
-    expect(contextRefs.some((ref) =>
-      ref.source_ref_type === 'repo_source_span'
-      && ref.evidence_role === 'selected_repo_evidence'
-      && ref.exact_text?.includes('data-popup-open')
-    )).toBe(true);
+    expect(contextRefs.some((ref) => ref.evidence_role === 'selected_packet')).toBe(false);
+    expect(contextRefs.some((ref) => ref.evidence_role === 'selected_repo_evidence')).toBe(false);
     expect(sqlite.prepare(
       `SELECT entity_type, entity_id, relationship
          FROM context_record_entities
         WHERE context_record_id = ?
           AND relationship = 'selected_packet'`,
-    ).get(contextRecord.id)).toEqual({
-      entity_type: 'review_challenge_packet',
-      entity_id: data.packet.id,
-      relationship: 'selected_packet',
-    });
+    ).get(contextRecord.id)).toBeUndefined();
     expect(sqlite.prepare(
       `SELECT entity_type, entity_id, relationship
          FROM context_record_entities
@@ -2611,8 +2619,7 @@ describe('matchCandidateToReviewChallenge', () => {
         ORDER BY c.canonical_key`,
     ).all(contextRecord.id) as Array<{ canonical_key: string }>;
     const matchConceptKeys = matchConcepts.map((row) => row.canonical_key);
-    expect(matchConceptKeys).toContain('term:patient-click-threshold');
-    expect(matchConceptKeys.some((key) => key === 'term:popover' || key === 'term:popover-trigger')).toBe(true);
+    expect(matchConceptKeys).toEqual([]);
 
     const assessmentSession = sqlite.prepare(
       `SELECT mode, state, candidate_id, workspace_id, metadata_json
@@ -2627,14 +2634,14 @@ describe('matchCandidateToReviewChallenge', () => {
     };
     expect(assessmentSession).toEqual(expect.objectContaining({
       mode: 'REPO_MATCHING',
-      state: 'IN_PROGRESS',
+      state: 'DIAGNOSTIC',
       candidate_id: 'candidate-1',
       workspace_id: 'workspace-1',
     }));
     expect(JSON.parse(assessmentSession.metadata_json)).toEqual(expect.objectContaining({
       matchRunId: result.matchRunId,
       roleContextId: 'role-context-mui-popover',
-      selectedPacketId: data.packet.id,
+      selectedPacketId: null,
       source: 'match_runs',
     }));
 
@@ -2657,34 +2664,14 @@ describe('matchCandidateToReviewChallenge', () => {
         source_ref_id: result.matchRunId,
         evidence_role: 'decision_record',
       }),
-      expect.objectContaining({
-        source_ref_type: 'review_challenge_packet',
-        source_ref_id: data.packet.id,
-        evidence_role: 'selected_packet',
-        content_hash: data.packet.contentHash,
-      }),
-      expect.objectContaining({
-        source_ref_type: 'role_source',
-        source_ref_id: 'role-source-mui-popover',
-        evidence_role: 'role_source',
-        exact_text: roleExactText,
-      }),
-      expect.objectContaining({
-        source_ref_type: 'source_span',
-        evidence_role: 'selected_candidate_evidence',
-        exact_text: transcriptText,
-      }),
     ]));
     expect(assessmentRefs.some((ref) =>
       ref.source_ref_type === 'match_run'
-      && ref.exact_text.includes(`"selectedPacketId":"${data.packet.id}"`)
-      && ref.exact_text.includes('"status":"MATCHED"')
+      && ref.exact_text.includes('"selectedPacketId":null')
+      && ref.exact_text.includes('"status":"NEEDS_MORE_EVIDENCE"')
     )).toBe(true);
-    expect(assessmentRefs.some((ref) =>
-      ref.source_ref_type === 'repo_source_span'
-      && ref.evidence_role === 'selected_repo_evidence'
-      && ref.exact_text.includes('PATIENT_CLICK_THRESHOLD = 500')
-    )).toBe(true);
+    expect(assessmentRefs.some((ref) => ref.evidence_role === 'selected_packet')).toBe(false);
+    expect(assessmentRefs.some((ref) => ref.evidence_role === 'selected_repo_evidence')).toBe(false);
   });
 
   it('auto-matches roleless resume evidence to a live-shaped mui/base-ui PR packet', async () => {
@@ -3113,29 +3100,14 @@ describe('matchCandidateToReviewChallenge', () => {
       roleSourceReferences,
     });
 
-    expect(result.status).toBe('MATCHED');
-    expect(result.repoId).toBe(3);
-    expect(result.prNumber).toBe(data.packet.pullRequest.number);
-    expect(result.explanation?.evidence).toHaveLength(2);
-    expect(result.explanation?.selectedPr).toEqual({
-      challengeId: data.packet.id,
-      repoId: '3',
-      prNumber: data.packet.pullRequest.number,
-      sourceVersion: data.input.repoSnapshot.id,
-    });
-    expect(result.explanation?.candidateSpans).toHaveLength(2);
-    expect(result.explanation?.repoSpans).toHaveLength(2);
+    expect(result.status).toBe('NEEDS_MORE_EVIDENCE');
+    expect(result.repoId).toBeUndefined();
+    expect(result.prNumber).toBeUndefined();
+    expect(result.explanation?.evidence).toEqual([]);
+    expect(result.explanation?.selectedPr).toBeUndefined();
+    expect(result.explanation?.candidateSpans).toEqual([]);
+    expect(result.explanation?.repoSpans).toEqual([]);
     expect(result.explanation?.roleSources).toEqual(roleSourceReferences);
-    expect(result.explanation?.evidence.every((entry) =>
-      entry.roleSourceRefs.some((source) => source.entityId === 'context-record-jd')
-    )).toBe(true);
-    expect(result.explanation?.rejectedPackets).toEqual([]);
-    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        scope: 'candidate',
-        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
-      }),
-    ]));
     expect(result.diagnostics?.evaluatedChallenges).toEqual([
       expect.objectContaining({
         challengeId: data.packet.id,
@@ -3159,19 +3131,23 @@ describe('matchCandidateToReviewChallenge', () => {
       scope_type: 'match_run',
       scope_id: result.matchRunId,
       record_type: 'candidate_pr_match_decision',
-      predicate: 'selects review challenge',
+      predicate: 'records match diagnostic',
     });
-    expect(contextRecord.confidence).toBeGreaterThanOrEqual(0.6);
 
     const matchRun = sqlite.prepare(
-      `SELECT role_context_id, role_snapshot_id, query_json
+      `SELECT role_context_id, role_snapshot_id, query_json, status, selected_packet_id, ranked_results_json
          FROM match_runs
         WHERE id = ?`,
     ).get(result.matchRunId) as {
       role_context_id: string;
       role_snapshot_id: string;
       query_json: string;
+      status: string;
+      selected_packet_id: string | null;
+      ranked_results_json: string;
     };
+    expect(matchRun.status).toBe('NEEDS_MORE_EVIDENCE');
+    expect(matchRun.selected_packet_id).toBeNull();
     expect(matchRun.role_context_id).toBe('role-context-1');
     expect(matchRun.role_snapshot_id).toBe('role-context:role-context-1:source-backed:simple-jd-v1');
     expect(JSON.parse(matchRun.query_json)).toEqual(expect.objectContaining({
@@ -3180,6 +3156,17 @@ describe('matchCandidateToReviewChallenge', () => {
         sourceReferences: roleSourceReferences,
       }),
     }));
+    const [rankedResult] = JSON.parse(matchRun.ranked_results_json) as Array<{
+      challengeId: string;
+      assessmentQuality: { metrics: Array<{ id: string; score: number }> };
+    }>;
+    expect(rankedResult.challengeId).toBe(data.packet.id);
+    expect(rankedResult.assessmentQuality.metrics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'contrast_separation',
+        score: 0,
+      }),
+    ]));
 
     const refs = sqlite.prepare(
       `SELECT source_ref_type, source_ref_id, source_span_id, evidence_role, exact_text, content_hash
@@ -3200,7 +3187,7 @@ describe('matchCandidateToReviewChallenge', () => {
         source_ref_type: 'review_challenge_packet',
         source_ref_id: data.packet.id,
         source_span_id: null,
-        evidence_role: 'selected_packet',
+        evidence_role: 'considered_packet',
         exact_text: null,
         content_hash: data.packet.contentHash,
       },
@@ -3216,7 +3203,7 @@ describe('matchCandidateToReviewChallenge', () => {
         source_ref_type: 'source_span',
         source_ref_id: 'candidate-span-1',
         source_span_id: 'candidate-span-1',
-        evidence_role: 'selected_candidate_evidence',
+        evidence_role: 'candidate_evidence',
         exact_text: 'implemented kafka idempotency',
         content_hash: 'sha256:candidate',
       },
@@ -3224,7 +3211,7 @@ describe('matchCandidateToReviewChallenge', () => {
         source_ref_type: 'source_span',
         source_ref_id: 'candidate-span-2',
         source_span_id: 'candidate-span-2',
-        evidence_role: 'selected_candidate_evidence',
+        evidence_role: 'candidate_evidence',
         exact_text: 'validated retry handling',
         content_hash: 'sha256:candidate',
       },
@@ -3232,7 +3219,7 @@ describe('matchCandidateToReviewChallenge', () => {
         source_ref_type: 'repo_source_span',
         source_ref_id: data.packet.demands[0]!.sourceSpanIds[0]!,
         source_span_id: null,
-        evidence_role: 'selected_repo_evidence',
+        evidence_role: 'repo_evidence',
         exact_text: expect.any(String),
         content_hash: expect.any(String),
       },
@@ -3240,11 +3227,14 @@ describe('matchCandidateToReviewChallenge', () => {
         source_ref_type: 'repo_source_span',
         source_ref_id: data.packet.demands[1]!.sourceSpanIds[0]!,
         source_span_id: null,
-        evidence_role: 'selected_repo_evidence',
+        evidence_role: 'repo_evidence',
         exact_text: expect.any(String),
         content_hash: expect.any(String),
       },
     ]));
+    expect(refs.some((ref) => ref.evidence_role === 'selected_packet')).toBe(false);
+    expect(refs.some((ref) => ref.evidence_role === 'selected_candidate_evidence')).toBe(false);
+    expect(refs.some((ref) => ref.evidence_role === 'selected_repo_evidence')).toBe(false);
     expect(sqlite.prepare(
       `SELECT COUNT(*) AS count
          FROM context_record_source_spans
@@ -3255,11 +3245,7 @@ describe('matchCandidateToReviewChallenge', () => {
          FROM context_record_entities
         WHERE context_record_id = ?
           AND relationship = 'selected_packet'`,
-    ).get(contextRecord.id)).toEqual({
-      entity_type: 'review_challenge_packet',
-      entity_id: data.packet.id,
-      relationship: 'selected_packet',
-    });
+    ).get(contextRecord.id)).toBeUndefined();
     expect(sqlite.prepare(
       `SELECT entity_type, entity_id, relationship
          FROM context_record_entities
@@ -3293,13 +3279,7 @@ describe('matchCandidateToReviewChallenge', () => {
          JOIN concepts c ON c.id = crc.concept_id
         WHERE crc.context_record_id = ?
         ORDER BY c.canonical_key`,
-    ).all(contextRecord.id)).toEqual([
-      {
-        canonical_key: 'term:kafka',
-        relationship: 'concept',
-        weight: 1,
-      },
-    ]);
+    ).all(contextRecord.id)).toEqual([]);
   });
 
   it('matches against a production-ready packet persisted through repo graph ingestion', async () => {

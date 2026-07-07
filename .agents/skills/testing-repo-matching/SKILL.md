@@ -10,8 +10,10 @@ description: How to test candidate repo matching and standalone CODE_REVIEW inte
 `/assess/:token` is the CODE_REVIEW assessment runtime, not the ingestion or repo-matching app.
 
 - If a source-backed repo/PR assignment already exists, `/assess` should render the CODE_REVIEW challenge.
-- If the candidate only submitted profile/CV evidence and no assignment is ready, `/assess` should end in the candidate-safe `PROFILE_RECEIVED` handoff and the stage config should be `candidate-intake-queued`.
+- If the candidate has no upstream CV/profile evidence yet, `/assess` should still end in the candidate-safe `PROFILE_RECEIVED` handoff. It must not become a CV upload/intake form.
+- If the candidate submitted profile/CV evidence and no assignment is ready, `/assess` should also end in the candidate-safe `PROFILE_RECEIVED` handoff and the stage config should be `candidate-intake-queued`.
 - A standalone CODE_REVIEW blocked handoff must never show candidate-visible `WAITING_FOR_MATCH`, "Building your personalized challenge", repo-matching diagnostics, decomposition steps, or quality gates.
+- A standalone CODE_REVIEW handoff must never show candidate-facing "Upload Your CV" / "Profile & Resume"; Talent Pool owns that upstream intake surface.
 - Use Talent Pool / intake work for profile capture and challenge-design queue behavior. Do not rebuild that behavior inside the CODE_REVIEW runtime.
 
 ## Prerequisites for automatic matching quality evals
@@ -23,6 +25,7 @@ description: How to test candidate repo matching and standalone CODE_REVIEW inte
 4. Servers: `(cd workers/api && npx wrangler dev --port 8787)` and `npm run dev` (web :5173).
 
 Manual ready-assignment smokes do not require Neo4j auto-match readiness because they validate a recruiter-selected source-backed PR without claiming CV fit.
+In isolated worktrees with an existing `playwright/.auth/user.json`, set `PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP=1` to reuse the recruiter session without rerunning Clerk setup.
 
 ## Test flows
 
@@ -31,11 +34,15 @@ Manual ready-assignment smokes do not require Neo4j auto-match readiness because
 Use the manual override smoke for the stable ready-assignment path:
 
 ```bash
+npm run smoke:code-review-reliability-dev
 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_FULL_SUBMIT=1 npm run smoke:code-review-assess-dev
+npm run smoke:code-review-assess-dev:role-backed-full-submit
+npm run smoke:code-review-assess-dev:workers-matrix
 ```
 
 Expected proof:
+- reliability suite runs manual source-backed ready assignment with one-use-safe recruiter candidate-link resolution proof, blocked handoff, role-backed full-submit/scoring, Workers SDK non-MUI breadth, and latest expert-labelled match-quality readiness
 - delivered URL is `/assess/:token`, not a room URL
 - source-backed PR is `https://github.com/mui/base-ui` PR `973` by default
 - `matchMode` is `manual_override`
@@ -44,12 +51,15 @@ Expected proof:
 - `assessmentQuality` is `USABLE`
 - candidate browser renders the Pierre diff without video-room fallback
 - full-submit mode persists review score and recruiter/person readout
+- role-backed full-submit mode proves automatic match, source-backed PR proof, candidate submission, scoring persistence, and recruiter readout in one app-dev run
+- workers matrix mode must select a source-backed non-MUI `cloudflare/workers-sdk` PR for a Workers SDK runtime profile
 
 ### Blocked/no-assignment standalone CODE_REVIEW
 
 Use the blocked auto-match lane to prove `/assess` does not become a candidate-visible matching app:
 
 ```bash
+CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_SMOKE_NO_CV_BOUNDARY=1 CODE_REVIEW_EXPECT_BLOCKED_MATCH=1 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_EXPECT_BLOCKED_MATCH=1 npm run smoke:code-review-assess-dev
 ```
 
@@ -59,7 +69,7 @@ Expected proof:
 - stage config is complete with `stageId: "candidate-intake-queued"`
 - instructions include "email you when your code review is ready"
 - recruiter detail opens and shows assessment progress
-- no page contains `WAITING_FOR_MATCH`, "Building your personalized challenge", or "MATCHING IN PROGRESS"
+- no page contains `WAITING_FOR_MATCH`, "Building your personalized challenge", "MATCHING IN PROGRESS", "Upload Your CV", or "Profile & Resume"
 
 ### Local UI/manual flow
 

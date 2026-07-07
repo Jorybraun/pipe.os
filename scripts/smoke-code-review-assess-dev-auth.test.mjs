@@ -1,0 +1,275 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  assertPersonRelatedBoundaryProfile,
+  buildCodeReviewAssessBrowserSmokeEnv,
+  buildRecruiterDetailPlaywrightEnv,
+  buildRecruiterDetailPlaywrightArgs,
+  recruiterDetailReady,
+  recruiterProjectionVerificationMode,
+  resolveAppDevBasicAuth,
+  resolveCodeReviewSmokeD1Target,
+  shouldSkipPlaywrightProjectDependencies,
+} from './smoke-code-review-assess-dev.mjs';
+import { shouldSkipClerkGlobalSetup } from '../e2e/global.setup.ts';
+
+describe('CODE_REVIEW assess smoke app-dev Basic Auth resolution', () => {
+  it('prefers app-dev-specific credentials over generic dev credentials', () => {
+    expect(resolveAppDevBasicAuth({
+      PIPE_APP_DEV_BASIC_AUTH_USER: 'app-user',
+      PIPE_APP_DEV_BASIC_AUTH_PASSWORD: 'app-pass',
+      PIPE_DEV_BASIC_AUTH_USER: 'generic-user',
+      PIPE_DEV_BASIC_AUTH_PASSWORD: 'generic-pass',
+    })).toEqual({
+      user: 'app-user',
+      password: 'app-pass',
+    });
+  });
+
+  it('supports APP_DEV aliases used by other deployed app smokes', () => {
+    expect(resolveAppDevBasicAuth({
+      APP_DEV_BASIC_AUTH_USER: 'alias-user',
+      APP_DEV_BASIC_AUTH_PASSWORD: 'alias-pass',
+    })).toEqual({
+      user: 'alias-user',
+      password: 'alias-pass',
+    });
+  });
+
+  it('keeps the legacy PIPE_DEV and DEV fallbacks', () => {
+    expect(resolveAppDevBasicAuth({
+      DEV_BASIC_AUTH_USER: 'legacy-user',
+      DEV_BASIC_AUTH_PASSWORD: 'legacy-pass',
+    })).toEqual({
+      user: 'legacy-user',
+      password: 'legacy-pass',
+    });
+  });
+
+  it('uses remote D1 verification for deployed app-dev smokes', () => {
+    expect(resolveCodeReviewSmokeD1Target({
+      apiBase: 'https://api-dev.hire-pipe.com',
+      rpcBase: 'https://api-dev.hire-pipe.com',
+      env: {},
+    })).toEqual({
+      remote: true,
+      databaseName: 'pipe-db-test',
+      label: 'remote',
+    });
+  });
+
+  it('keeps local D1 verification for localhost smokes', () => {
+    expect(resolveCodeReviewSmokeD1Target({
+      apiBase: 'http://localhost:8787',
+      rpcBase: 'http://localhost:8787',
+      env: {},
+    })).toEqual({
+      remote: false,
+      databaseName: 'pipe-db',
+      label: 'local',
+    });
+  });
+
+  it('honors explicit CODE_REVIEW smoke D1 database names for both targets', () => {
+    expect(resolveCodeReviewSmokeD1Target({
+      apiBase: 'https://api-dev.hire-pipe.com',
+      rpcBase: 'https://api-dev.hire-pipe.com',
+      env: { CODE_REVIEW_SMOKE_D1_DATABASE: 'pipe-db-custom' },
+    })).toEqual({
+      remote: true,
+      databaseName: 'pipe-db-custom',
+      label: 'remote',
+    });
+  });
+
+  it('marks unauthenticated assess browser smokes as not needing Clerk setup', () => {
+    expect(buildCodeReviewAssessBrowserSmokeEnv({
+      baseEnv: {
+        PIPE_APP_DEV_BASIC_AUTH_USER: 'app-user',
+        PIPE_APP_DEV_BASIC_AUTH_PASSWORD: 'app-pass',
+      },
+      appBase: 'https://app-dev.hire-pipe.com',
+      apiBase: 'https://api-dev.hire-pipe.com',
+      videoRoomBase: 'https://room-dev.hire-pipe.com',
+      deliveredUrl: 'https://app-dev.hire-pipe.com/assess/invite-token',
+      inviteToken: 'invite-token',
+      session: {
+        id: 'candidate-id',
+        sessionToken: 'candidate-session-token',
+        pipelineId: null,
+        status: 'IN_PROGRESS',
+        name: 'Smoke Candidate',
+      },
+      expectedMatchProofVerdict: 'PASSED',
+      expectProfileReceived: false,
+      expectAutomatch: '0',
+      expectManualOverride: '1',
+      requireHyperedges: '0',
+      submitReview: false,
+    })).toMatchObject({
+      PIPE_SKIP_CLERK_GLOBAL_SETUP: '1',
+      PIPE_DEV_BASIC_AUTH_USER: 'app-user',
+      PIPE_DEV_BASIC_AUTH_PASSWORD: 'app-pass',
+      CODE_REVIEW_ASSESS_TOKEN: 'https://app-dev.hire-pipe.com/assess/invite-token',
+      CODE_REVIEW_SESSION_TOKEN: 'candidate-session-token',
+    });
+  });
+
+  it('keeps Clerk setup enabled unless an unauthenticated smoke opts out', () => {
+    expect(shouldSkipClerkGlobalSetup({})).toBe(false);
+    expect(shouldSkipClerkGlobalSetup({
+      PIPE_SKIP_CLERK_GLOBAL_SETUP: '1',
+    })).toBe(true);
+  });
+
+  it('can reuse an existing recruiter storage state without running the Clerk setup project', () => {
+    expect(shouldSkipPlaywrightProjectDependencies({})).toBe(false);
+    expect(shouldSkipPlaywrightProjectDependencies({
+      PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP: '1',
+    })).toBe(true);
+    expect(buildRecruiterDetailPlaywrightArgs({
+      PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP: '1',
+    })).toContain('--no-deps');
+  });
+
+  it('can require the recruiter candidate link to resolve before the assessment surface smoke', () => {
+    expect(buildRecruiterDetailPlaywrightEnv({
+      baseEnv: {
+        APP_DEV_BASIC_AUTH_USER: 'app-user',
+        APP_DEV_BASIC_AUTH_PASSWORD: 'app-pass',
+      },
+      appBase: 'https://app-dev.hire-pipe.com',
+      apiBase: 'https://api-dev.hire-pipe.com',
+      videoRoomBase: 'https://room-dev.hire-pipe.com',
+      interviewId: 'interview-with-link',
+      expectedOutcome: 'matched',
+      expectedRepoUrl: 'https://github.com/mui/base-ui',
+      expectedPrNumber: 973,
+      expectCandidateLink: true,
+      expectedCandidateLinkKind: 'assessment',
+    })).toMatchObject({
+      CODE_REVIEW_RECRUITER_INTERVIEW_ID: 'interview-with-link',
+      PIPE_APP_DEV_BASIC_AUTH_USER: 'app-user',
+      PIPE_APP_DEV_BASIC_AUTH_PASSWORD: 'app-pass',
+      PIPE_DEV_BASIC_AUTH_USER: 'app-user',
+      PIPE_DEV_BASIC_AUTH_PASSWORD: 'app-pass',
+      CODE_REVIEW_RECRUITER_EXPECT_CANDIDATE_LINK: '1',
+      CODE_REVIEW_RECRUITER_EXPECT_CANDIDATE_LINK_KIND: 'assessment',
+    });
+  });
+
+  it('allows invited recruiter detail readiness only for pre-candidate link proof', () => {
+    const invitedMatch = {
+      status: 'INVITED',
+      githubRepoUrl: 'https://github.com/mui/base-ui',
+      githubPrNumber: 973,
+      codeReviewMatch: { status: 'MATCHED' },
+    };
+
+    expect(recruiterDetailReady(invitedMatch, {
+      expectedOutcome: 'matched',
+      expectedRepoUrl: 'https://github.com/mui/base-ui',
+      expectedPrNumber: 973,
+    })).toMatchObject({
+      ready: false,
+      reason: 'interview status is INVITED',
+    });
+
+    expect(recruiterDetailReady(invitedMatch, {
+      expectedOutcome: 'matched',
+      expectedRepoUrl: 'https://github.com/mui/base-ui',
+      expectedPrNumber: 973,
+      allowInvitedForCandidateLink: true,
+    })).toMatchObject({
+      ready: true,
+      reason: 'matched recruiter projection ready',
+    });
+  });
+
+  it('still verifies recruiter projection when only recruiter browser proof is skipped', () => {
+    expect(recruiterProjectionVerificationMode({
+      skipBrowser: false,
+      skipRecruiterBrowser: false,
+    })).toBe('browser');
+    expect(recruiterProjectionVerificationMode({
+      skipBrowser: false,
+      skipRecruiterBrowser: true,
+    })).toBe('api_only');
+    expect(recruiterProjectionVerificationMode({
+      skipBrowser: true,
+      skipRecruiterBrowser: false,
+    })).toBe('skip_all');
+  });
+
+  it('keeps related same-person interviews out of the selected code-review recommendation', () => {
+    expect(() => assertPersonRelatedBoundaryProfile({
+      profile: {
+        scheduledInterviews: [
+          {
+            id: 'selected-interview',
+            interviewType: 'CODE_REVIEW',
+            status: 'COMPLETED',
+            githubRepoUrl: 'https://github.com/mui/base-ui',
+            githubPrNumber: 973,
+          },
+          {
+            id: 'related-interview',
+            interviewType: 'CODE_REVIEW',
+            status: 'INVITED',
+            githubRepoUrl: 'https://github.com/facebook/react',
+            githubPrNumber: 1,
+          },
+        ],
+        standaloneReviewMatch: {
+          interviewId: 'selected-interview',
+          submitted: true,
+          matchStatus: 'MATCHED',
+          repoUrl: 'https://github.com/mui/base-ui',
+          prNumber: 973,
+        },
+      },
+      selectedInterviewId: 'selected-interview',
+      selectedInterviewDetail: {
+        id: 'selected-interview',
+        status: 'COMPLETED',
+        relatedEvidenceInterviews: [{
+          id: 'related-interview',
+          relationship: 'same_person_assessment',
+        }],
+      },
+      selectedRepoUrl: 'https://github.com/mui/base-ui',
+      selectedPrNumber: 973,
+      relatedBoundaryInterview: {
+        interviewId: 'related-interview',
+        repoUrl: 'https://github.com/facebook/react',
+        prNumber: 1,
+      },
+    })).not.toThrow();
+  });
+
+  it('fails when the person recommendation promotes the related interview instead of the submitted review', () => {
+    expect(() => assertPersonRelatedBoundaryProfile({
+      profile: {
+        scheduledInterviews: [
+          { id: 'selected-interview', interviewType: 'CODE_REVIEW', status: 'COMPLETED' },
+          { id: 'related-interview', interviewType: 'CODE_REVIEW', status: 'INVITED' },
+        ],
+        standaloneReviewMatch: {
+          interviewId: 'related-interview',
+          submitted: false,
+          matchStatus: 'MATCHED',
+          repoUrl: 'https://github.com/facebook/react',
+          prNumber: 1,
+        },
+      },
+      selectedInterviewId: 'selected-interview',
+      selectedRepoUrl: 'https://github.com/mui/base-ui',
+      selectedPrNumber: 973,
+      relatedBoundaryInterview: {
+        interviewId: 'related-interview',
+        repoUrl: 'https://github.com/facebook/react',
+        prNumber: 1,
+      },
+    })).toThrow('selected code-review recommendation');
+  });
+});

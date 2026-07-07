@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   auditCodeReviewJudgeExamples,
+  createRemoteQueryClient,
+  loadRemoteRows,
   parseWranglerD1Rows,
+  parseArgs,
   type JudgeExampleRow,
 } from './verifyCodeReviewJudgeExamples';
 
@@ -60,6 +63,89 @@ function row(overrides: Partial<JudgeExampleRow> = {}): JudgeExampleRow {
 }
 
 describe('verifyCodeReviewJudgeExamples', () => {
+  it('parses remote D1 options for deployed judge example verification', () => {
+    expect(parseArgs([
+      '--remote',
+      '--database-id',
+      'app-dev-d1',
+      '--limit',
+      '50',
+      '--require-replay-ready',
+      '--json',
+    ])).toEqual({
+      remote: true,
+      databaseId: 'app-dev-d1',
+      limit: 50,
+      json: true,
+      requireReplayReady: true,
+      requireCalibration: false,
+    });
+  });
+
+  it('rejects remote database ids without remote mode', () => {
+    expect(() => parseArgs(['--database-id', 'app-dev-d1']))
+      .toThrow('--database-id requires --remote');
+  });
+
+  it('parses legacy Wrangler database name options for deployed judge verification', () => {
+    expect(parseArgs([
+      '--remote',
+      '--remote-database',
+      'pipe-db-test',
+      '--remote-env',
+      'dev',
+      '--require-replay-ready',
+      '--json',
+    ])).toEqual({
+      remote: true,
+      remoteDatabaseName: 'pipe-db-test',
+      remoteEnv: 'dev',
+      limit: 200,
+      json: true,
+      requireReplayReady: true,
+      requireCalibration: false,
+    });
+  });
+
+  it('loads and normalizes remote D1 judge example rows', async () => {
+    const rows = await loadRemoteRows({
+      async query() {
+        return [{
+          id: 'example_remote',
+          session_id: 'session_remote',
+          status: 'READY',
+          prompt_input_json: row().promptInputJson,
+          expected_output_json: null,
+          judge_feedback_json: null,
+          provenance_json: row().provenanceJson,
+          updated_at: '2026-07-03T00:00:00.000Z',
+        }];
+      },
+    }, 10);
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        id: 'example_remote',
+        sessionId: 'session_remote',
+        status: 'READY',
+      }),
+    ]);
+  });
+
+  it('uses Wrangler D1 when remote verification lacks REST credentials', () => {
+    const client = createRemoteQueryClient('app-dev-db-id', {
+      env: {
+        CODE_REVIEW_RELIABILITY_D1_DATABASE_NAME: 'pipe-db',
+      },
+      wranglerOptions: {
+        command: 'wrangler',
+        configPaths: [],
+      },
+    });
+
+    expect(client.constructor.name).toBe('WranglerD1Client');
+  });
+
   it('reports an empty queue as not ready with next action guidance', () => {
     const audit = auditCodeReviewJudgeExamples([]);
 

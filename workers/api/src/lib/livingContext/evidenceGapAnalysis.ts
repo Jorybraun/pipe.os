@@ -14,6 +14,7 @@ import {
   type TemporalDecayConfig,
 } from '../challengeMatching/temporalDecay';
 import { resolveCandidateWorkspacePersonId } from './compatibility';
+import { findConceptEvidenceMatches, scoreableDemandConcepts } from './conceptSemanticMatch';
 
 export type CoverageLevel = 'strong' | 'partial' | 'weak' | 'none';
 
@@ -77,6 +78,14 @@ interface DemandInput {
   narrative: string;
   weight: number;
   concepts: string[];
+}
+
+interface PacketDemandInput {
+  id?: string;
+  narrative?: string;
+  weight?: number;
+  concepts?: string[];
+  conceptKeys?: string[];
 }
 
 export interface GapAnalysisOptions {
@@ -153,16 +162,7 @@ export function analyzeEvidenceGaps(
   demands: DemandInput[],
   options: GapAnalysisOptions = {},
 ): { demands: DemandCoverage[]; summary: GapSummary; recommendations: string[] } {
-  const evidenceByConceptKey = new Map<string, CandidateEvidenceRow[]>();
-  for (const row of candidateEvidence) {
-    if (!row.concept_key) continue;
-    const existing = evidenceByConceptKey.get(row.concept_key);
-    if (existing) {
-      existing.push(row);
-    } else {
-      evidenceByConceptKey.set(row.concept_key, [row]);
-    }
-  }
+  const evidenceWithConcepts = candidateEvidence.filter((row) => row.concept_key !== null);
 
   const demandCoverages: DemandCoverage[] = demands.map((demand) => {
     const matchedConcepts: string[] = [];
@@ -171,17 +171,19 @@ export function analyzeEvidenceGaps(
     let bestStrength = 0;
     let bestEffective = 0;
     let bestLevel: string | null = null;
+    const scoredConcepts = scoreableDemandConcepts(demand.concepts);
 
-    for (const concept of demand.concepts) {
-      const evidence = evidenceByConceptKey.get(concept);
-      if (!evidence || evidence.length === 0) {
+    for (const concept of scoredConcepts) {
+      const matches = findConceptEvidenceMatches(concept, evidenceWithConcepts);
+      if (matches.length === 0) {
         missingConcepts.push(concept);
         continue;
       }
 
       matchedConcepts.push(concept);
 
-      for (const row of evidence) {
+      for (const match of matches) {
+        const row = match.row;
         const eff = row.effective_strength;
         if (eff > bestEffective) {
           bestEffective = eff;
@@ -202,8 +204,8 @@ export function analyzeEvidenceGaps(
       }
     }
 
-    const conceptOverlap = demand.concepts.length > 0
-      ? matchedConcepts.length / demand.concepts.length
+    const conceptOverlap = scoredConcepts.length > 0
+      ? matchedConcepts.length / scoredConcepts.length
       : 0;
 
     const coverageLevel = classifyCoverage(bestEffective, conceptOverlap, options);
@@ -330,15 +332,27 @@ export async function analyzeEvidenceGapsForChallenge(
 
   const packet = JSON.parse(packetRow.packet_json) as {
     id: string;
-    demands: Array<{ id: string; narrative: string; weight: number; concepts: string[] }>;
+    demands?: PacketDemandInput[];
   };
+  const packetDemands = (packet.demands ?? []).map((demand, index): DemandInput => ({
+    id: demand.id ?? `demand-${index + 1}`,
+    narrative: demand.narrative ?? demand.id ?? `Demand ${index + 1}`,
+    weight: typeof demand.weight === 'number' && Number.isFinite(demand.weight)
+      ? demand.weight
+      : 1,
+    concepts: Array.isArray(demand.concepts)
+      ? demand.concepts
+      : Array.isArray(demand.conceptKeys)
+        ? demand.conceptKeys
+        : [],
+  }));
 
   const { workspacePersonId, evidence } = await loadCandidateEvidenceForGapAnalysis(
     db, candidateId, options.decay,
   );
 
   const { demands, summary, recommendations } = analyzeEvidenceGaps(
-    evidence, packet.demands, options,
+    evidence, packetDemands, options,
   );
 
   return {

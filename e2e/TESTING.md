@@ -95,7 +95,7 @@ await page.locator('[data-testid="start-interview-btn"]').click();
 test.beforeAll(async ({ browser, request }) => {
   // 1. Authenticate as recruiter
   // 2. Seed pipeline → stage → challenge → candidate via API
-  // 3. Resolve candidate token via API (claims it)
+  // 3. Resolve candidate token via API (session only; does not claim the link)
   // 4. Prime backend state (get-stage-config creates assessment row)
   // 5. Store session token for injection into page sessionStorage
 });
@@ -175,7 +175,7 @@ For matched code-review outcomes, set `ASSESSMENT_RECRUITER_EXPECT_OUTCOME=match
 
 For `OPEN_SOURCE_BUG_FIX` or `DEV_CONTAINER_CHALLENGE` recruiter detail pages, reuse the same smoke with `ASSESSMENT_RECRUITER_EXPECT_REPO_URL=<repo-url>`, `ASSESSMENT_RECRUITER_EXPECT_SUBMISSION=1` after a commit has been submitted, `ASSESSMENT_RECRUITER_EXPECT_SCORE=1` after source-backed evaluation claims exist, `ASSESSMENT_RECRUITER_EXPECT_HUMAN_DECISION_FORM=1` when the reviewer decision form should be available, `ASSESSMENT_RECRUITER_EXPECT_HUMAN_DECISION=1` after the human decision has been recorded, or `ASSESSMENT_RECRUITER_EXPECT_PERSON_PROFILE_DECISION=1` to click through to the person profile and verify the workspace assessment rolls up into a person-level decision. The legacy `CODE_REVIEW_RECRUITER_*` environment names still work for existing scripts.
 
-Set `ASSESSMENT_RECRUITER_EXPECT_CANDIDATE_LINK=1` only for disposable dev invites when the smoke should open the delivered candidate link from the recruiter detail page. Use `ASSESSMENT_RECRUITER_EXPECT_CANDIDATE_LINK_KIND=assessment` for CODE_REVIEW `/assess` links or `workspace` for room links. This intentionally starts/joins the candidate surface, so do not enable it against a real one-use candidate link unless the test owns that link. For deployed workspace links, also provide the room-dev Basic Auth credentials with `PIPE_ROOM_DEV_BASIC_AUTH_USER/PASSWORD` or `VIDEO_ROOM_DEV_AUTH_USER/PASSWORD`.
+Set `ASSESSMENT_RECRUITER_EXPECT_CANDIDATE_LINK=1` only for disposable dev invites when the smoke should validate the delivered candidate link from the recruiter detail page. For CODE_REVIEW `/assess` links, `ASSESSMENT_RECRUITER_EXPECT_CANDIDATE_LINK_KIND=assessment` resolves the invite token through `/rpc/resolve-token` without claiming the one-use link; the direct candidate smoke owns starting the assessment. For room links, `ASSESSMENT_RECRUITER_EXPECT_CANDIDATE_LINK_KIND=workspace` opens/joins the workspace surface, so use disposable links and provide room-dev Basic Auth credentials with `PIPE_ROOM_DEV_BASIC_AUTH_USER/PASSWORD` or `VIDEO_ROOM_DEV_AUTH_USER/PASSWORD`.
 
 For the full app-dev flow, create a disposable CODE_REVIEW invite, submit intake evidence, wait for matching, and run the browser smoke in one command:
 
@@ -187,25 +187,120 @@ npm run smoke:code-review-assess-dev
 
 The smoke command loads `.env.local`/`.env`, so local dev basic-auth values do not need to be exported manually when they already live there. By default this uses the source-backed `mui/base-ui#973` manual override so the smoke is stable. To smoke another ready source-backed PR, add `CODE_REVIEW_SMOKE_REPO_URL=https://github.com/<owner>/<repo>` and `CODE_REVIEW_SMOKE_PR_NUMBER=<pr>`. Manual override smoke proves source-backed assess rendering, match proof, validator, assessment-fit calibration, quality gate, diff, no video-room fallback, and recruiter-visible manual match proof. It does not require candidate-to-repo or person-role-repo hyperedges because the recruiter selected the PR and PIPE must not pretend it inferred CV fit. Standalone `/assess` no longer runs candidate-to-repo matching internally; CV-only auto-match attempts should complete intake and return the profile-received email handoff until the upstream ingestion/challenge-design path assigns a source-backed PR.
 
+The unauthenticated candidate `/assess` browser smoke now opts out of Clerk
+global setup because it uses the candidate session token directly. Authenticated
+recruiter browser smokes still require the normal Clerk test environment unless
+`CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER=1` is set for candidate-boundary-only
+proof. With that flag, the smoke still waits for the recruiter detail API
+projection and reports the compact readiness packet; only the browser click path
+is skipped.
+
 For app-dev, recruiter setup goes through `APP_BASE`/`RECRUITER_API_BASE` so the authenticated dev app proxy can inject its internal secret, while candidate `/rpc` calls use `API_BASE`/`RPC_BASE` so the candidate bearer token is not replaced by HTTP Basic auth.
 
 Validated app-dev examples:
 
 ```bash
+npm run smoke:code-review-reliability-dev
+npm run smoke:assess-token-lifecycle-dev
 npm run smoke:code-review-assess-dev
+CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_SMOKE_NO_CV_BOUNDARY=1 CODE_REVIEW_EXPECT_BLOCKED_MATCH=1 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_SUBMIT=1 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_EXPECT_BLOCKED_MATCH=1 npm run smoke:code-review-assess-dev
 npm run smoke:code-review-assess-dev:role-backed
+npm run smoke:code-review-assess-dev:role-backed-full-submit
 ```
 
-The manual ready-assignment commands should select `https://github.com/mui/base-ui` PR `#973`, return `MATCHED`, pass the source-backed quality gate, render a Pierre diff, and avoid any video-room UI. Manual mode is expected to report `assessmentQuality: "USABLE"` because it validates the recruiter-selected source-backed PR without inferring CV fit. The blocked auto-match command should return `PROFILE_RECEIVED`, complete the candidate stage as `candidate-intake-queued`, and prove the recruiter sees assessment progress instead of a candidate-visible matching loop.
+The manual ready-assignment commands should select `https://github.com/mui/base-ui` PR `#973`, return `MATCHED`, pass the source-backed quality gate, render a Pierre diff, and avoid any video-room UI. Manual mode is expected to report `assessmentQuality: "USABLE"` because it validates the recruiter-selected PR without inferring CV fit. The no-CV boundary command should return `PROFILE_RECEIVED` before any resume/intake submission, with no `Upload Your CV`, `Profile & Resume`, or matching dashboard visible in `/assess`. The blocked auto-match command should return `PROFILE_RECEIVED` after intake evidence is submitted but no source-backed PR is ready, complete the candidate stage as `candidate-intake-queued`, and prove the recruiter sees assessment progress instead of a candidate-visible matching loop.
 
-Set `CODE_REVIEW_SMOKE_SUBMIT=1` for the stronger end-to-end gate. That mode keeps the browser assess smoke, drives the visible candidate UI to add an inline diff comment, submits the first review round in the browser, waits for the author response/thread, then completes with `request_changes`, submits the review-session reference through `/rpc/submit-challenge-response`, verifies both `/api/v1/scheduling/interviews/:id` and `/api/v1/candidates/:id` expose the completed recruiter result, fails if scheduled detail loses transcript rounds, reviewer comments, or AI developer responses, checks the judge-example replay queue contains the review session with candidate comments, AI pushback, `human_label_queue`, and `cross_model_calibration` metadata, and polls D1 until `review_sessions.score_report`, `challenge_submissions.score_report_json`, `challenge_submissions.score`, and `assessments.score` are durable. The score-persistence check uses local `pipe-db` for localhost and remote `pipe-db-test` for app-dev; override with `CODE_REVIEW_SMOKE_D1_DATABASE` only when deliberately targeting another D1 database.
+Use `npm run smoke:code-review-reliability-dev` for the full app-dev reliability
+suite. It runs the manual source-backed ready assignment, including recruiter
+one-use-safe candidate-link resolution proof, same-browser `/assess` token A/B
+lifecycle isolation, fresh no-CV `PROFILE_RECEIVED` handoff, blocked
+`PROFILE_RECEIVED` handoff after submitted evidence, role-backed full-submit
+and scoring smoke, completed-person-boundary proof, non-MUI Workers SDK matching
+matrix, judge replay/calibration example readiness, source-backed
+packet-catalog breadth, and latest expert-labelled match-quality readiness
+gate. It writes lane stdout/stderr and summary artifacts
+under `tmp/code-review-reliability/`. Use
+`CODE_REVIEW_RELIABILITY_LANES=manual-ready,token-lifecycle,judge-example-readiness,blocked-handoff,workers-sdk-matrix`
+for focused diagnosis, or `CODE_REVIEW_RELIABILITY_D1_DATABASE_ID=<d1-id>` to
+point the match-quality lane at a different CODE_REVIEW evaluation database.
+The suite summary validator also fails candidate/recruiter-facing lanes when
+the candidate browser smoke or recruiter browser smoke is skipped, so a green
+suite proves the app-dev UI path ran instead of only direct RPC/API checks.
+Candidate-facing lanes must also report the expected
+`candidateSurfaceContract` (`source-backed-code-review-challenge`,
+`source-backed-code-review-with-review-round`, or
+`profile-received-candidate-handoff`), and recruiter-facing lanes must report
+the expected `recruiterReadoutContract`
+(`matched-code-review-hiring-manager-readout`,
+`scored-code-review-hiring-manager-readout`, or
+`blocked-code-review-action-readout`). Treat a missing contract as a failed
+browser proof even if the child Playwright process exited zero.
+Latest full app-dev reliability proof on 2026-07-03 passed 10/10 with artifact
+`tmp/code-review-reliability/2026-07-03T14-37-36-374Z-suite.summary.json`.
+The run covered manual-ready `mui/base-ui#973`, same-browser token lifecycle,
+no-CV and blocked `PROFILE_RECEIVED` handoffs, role-backed full-submit scoring,
+person-boundary recommendation isolation, non-MUI `cloudflare/workers-sdk#14118`
+matching, judge replay/calibration readiness, packet catalog breadth, and
+expert-labelled match-quality readiness. The judge lane proved remote app-dev
+D1 has 20 labelled, replayable, calibration-ready examples, zero invalid
+statuses, zero failures, zero next actions, and a sample example with both
+candidate comments and AI pushback.
+For the role-backed full-submit lane, the suite also requires completed
+recruiter and person-profile statuses, submitted profile state, a passed
+validator verdict, role-source proof, author pushback/thread evidence, remote D1
+score persistence, and complete review/scoring pipeline steps.
+The Workers SDK matrix lane must pass every evaluated profile with zero
+failures, and the match-quality lane must keep positive average score separation
+so broad-match proof cannot go flat while still reporting accuracy.
+In isolated worktrees that already have `playwright/.auth/user.json`, set
+`PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP=1` to reuse that recruiter session without
+running the Clerk setup dependency again.
+
+Latest full suite proof on 2026-07-03 passed all 8 lanes with artifact
+`tmp/code-review-reliability/2026-07-03T14-07-49-339Z-suite.summary.json`:
+manual ready-assignment interview `4d346613-5e3b-432f-9a08-38297601dc5c`
+served `mui/base-ui#973` with `manual_override`, `MATCHED`, validator `PASSED`,
+`USABLE` assessment quality, pre-intake candidate-link proof `state=active`,
+`sessionStatus=INVITED`, and `setupStatus=reviewable_task_assigned`; fresh no-CV
+handoff interview `9387578f-c7ab-4d4e-95f4-f78ab3ea13df` returned
+`PROFILE_RECEIVED` / `candidate-intake-queued`, title `Profile received`, and 0
+candidate challenges before any resume submission; blocked handoff interview
+`086c1766-bda9-43ea-acaf-1de0cf9f1d09` returned `PROFILE_RECEIVED` /
+`candidate-intake-queued` after intake evidence with no source-backed PR ready;
+role-backed full-submit interview `0b891aa7-c47a-4647-8b11-1f1ffcec34d2`
+selected `mui/base-ui#973`, submitted review session
+`3880d8e9-d902-46d3-9fa9-5c89515acf81`, persisted remote D1 score `64`
+(`adequate`), completed review/scoring pipeline steps, and exposed 4 evidence
+hyperedges plus a person-role-repo bridge; person-boundary interview
+`fb73325c-b72a-4d8a-998b-b7d4da6f7a76` selected `mui/base-ui#973`,
+persisted remote D1 score `54`, and proved the person profile stayed anchored
+to that submitted scored review while related same-person interview
+`0a4f7faf-006c-4b7c-97b3-b980563ed241` remained an unsubmitted
+`facebook/react#1` context row; Workers SDK matrix interview
+`58946a41-acb4-4c82-8a1f-4a86b31a0058` selected
+`cloudflare/workers-sdk#14118` with `STRONG` quality and contrast score `2/2`;
+packet catalog readiness passed app-dev D1 `0abe92df-9296-46f5-9f9d-a1fb1bcd3be1`
+with 10 total packets, 8 production-ready packets, 3 production-ready repos,
+8 production-ready PRs, 5 persisted `reviewProfile`-ready packets, and repo
+names `cloudflare/workers-sdk`, `mui/base-ui`, and `vercel/swr`;
+match-quality readiness passed corpus
+`seeded-1783074402522-3c-3r-expert-codex-supplemental-contrast` with 6 pairs,
+accuracy `1`, false positives `0`, false negatives `0`, average score
+separation `0.6503333333333333`, usable challenge rate `1`, and no gate
+failures. Every candidate/recruiter-facing lane reported
+`candidateBrowserSmokeSkipped=false`, `recruiterBrowserSmokeSkipped=false`, and
+the expected `candidateSurfaceContract` plus `recruiterReadoutContract` for its
+lane.
+
+Set `CODE_REVIEW_SMOKE_SUBMIT=1`, or use `npm run smoke:code-review-assess-dev:role-backed-full-submit`, for the stronger end-to-end gate. That mode keeps the browser assess smoke, drives the visible candidate UI to add an inline diff comment, submits the first review round in the browser, waits for the author response/thread, then completes with `request_changes`, submits the review-session reference through `/rpc/submit-challenge-response`, verifies both `/api/v1/scheduling/interviews/:id` and `/api/v1/candidates/:id` expose the completed recruiter result, fails if scheduled detail loses transcript rounds, reviewer comments, or AI developer responses, checks the judge-example replay queue contains the review session with candidate comments, AI pushback, `human_label_queue`, and `cross_model_calibration` metadata, and polls D1 until `review_sessions.score_report`, `challenge_submissions.score_report_json`, `challenge_submissions.score`, and `assessments.score` are durable. The score-persistence check uses local `pipe-db` for localhost and remote `pipe-db-test` for app-dev; override with `CODE_REVIEW_SMOKE_D1_DATABASE` only when deliberately targeting another D1 database.
 
 To run the stronger app-dev gate across multiple realistic candidate profiles, use:
 
 ```bash
 npm run smoke:code-review-assess-dev:matrix
+npm run smoke:code-review-assess-dev:workers-matrix
 ```
 
 The matrix creates fresh CODE_REVIEW invites for realistic CV-only profiles and
@@ -218,6 +313,18 @@ been separated from the CODE_REVIEW runtime. Use
 to run a subset, `CODE_REVIEW_SMOKE_MATRIX_REPEAT=2` for repeated runs, and
 `CODE_REVIEW_SMOKE_MATRIX_STOP_ON_FAILURE=1` when you want the first failure to
 stop the batch.
+
+The `workers-matrix` profile is the non-MUI automatic matching proof. It creates
+a Workers SDK runtime role/candidate pair and fails unless automatic matching
+selects a source-backed `cloudflare/workers-sdk` PR (`#14118` or `#14150`) with
+a passed quality gate. Latest focused app-dev proof on 2026-07-03 passed with
+artifact
+`tmp/code-review-reliability/2026-07-03T13-33-22-247Z-suite.summary.json`,
+selected `cloudflare/workers-sdk#14118` for interview
+`4c0e17db-5193-406e-bd49-db084698603d`, returned `MATCHED`, `PASSED`,
+`STRONG`, scored contrast separation `2/2`, and proved the browser contracts
+`candidateSurfaceContract=source-backed-code-review-challenge` plus
+`recruiterReadoutContract=matched-code-review-hiring-manager-readout`.
 
 For a repeatable pilot-reliability gate with stored artifacts, use:
 
@@ -284,7 +391,7 @@ not use that lane as evidence that repo matching selected the best challenge.
 The browser smoke reads `CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT` from the setup
 script so it can assert either `PASSED` or an intentional `NEEDS_REVIEW` state.
 
-The full-submit smoke bootstraps stage config once before polling and again after the source-backed PR assignment is ready. Standalone CODE_REVIEW blocked-handoff smokes must return `PROFILE_RECEIVED` plus the `candidate-intake-queued` complete stage; they should never accept candidate-visible `WAITING_FOR_MATCH`. Ready CODE_REVIEW smokes also fail immediately if `/rpc/get-challenge` returns `WAITING_FOR_MATCH`, so the old matching dashboard cannot hide behind a later successful assignment. The client also fails closed to the same `Profile received` handoff if a standalone CODE_REVIEW stage config accidentally returns `WAITING_FOR_MATCH`, so the old matching dashboard cannot reappear in `/assess` while the backend boundary is being repaired. Ready-assignment smokes must expose `WELCOME` + `CODE_REVIEW`, which creates the assessment row required by `/rpc/review/session/init`.
+The full-submit smoke bootstraps stage config once before polling and again after the source-backed PR assignment is ready. Standalone CODE_REVIEW blocked-handoff smokes must return `PROFILE_RECEIVED` plus the `candidate-intake-queued` complete stage; they should never accept candidate-visible `WAITING_FOR_MATCH`. Ready CODE_REVIEW smokes also fail immediately if `/rpc/get-challenge` returns `WAITING_FOR_MATCH`, so the old matching dashboard cannot hide behind a later successful assignment. The client also fails closed to the same `Profile received` handoff if any candidate `/assess` stage config accidentally returns `WAITING_FOR_MATCH`, so the old matching dashboard cannot reappear while the backend boundary is being repaired. Ready-assignment smokes must expose `WELCOME` + `CODE_REVIEW`, which creates the assessment row required by `/rpc/review/session/init`.
 
 Latest deployed app-dev proof: after deploying dev API version `043f0c50-1552-4114-9aff-e3f3de1b6b23`, the manual full-submit smoke passed for `mui/base-ui#973` with recruiter-visible `codeReviewMatchStatus: "MATCHED"`, validator `PASSED`, browser inline Pierre comment, AI developer response, completed recruiter/profile results, and judge replay example `code_review_judge_example_c5c31416e69b945c1f2f67256a7ac134`. A later manual full-submit smoke after the recruiter defense-thread UI deployed passed for interview `f351c4f1-c324-4524-bac8-0efe00dc948b`, review session `4090c1fa-91cf-42e4-8534-5e429f038e54`, and judge replay example `code_review_judge_example_98833208c471ec6fc5fa777979d417b9`; an in-app browser check of `/interviews/f351c4f1-c324-4524-bac8-0efe00dc948b` confirmed the recruiter page renders `AI developer defense` with candidate annotations, AI developer pushback, and the final AI developer change response. The roleless full-submit auto-match smoke also passed for `mui/base-ui#973` with measured contrast separation score `1/2`, four evidence hyperedges, recruiter-visible validator `PASSED`, browser pushback, and judge replay example `code_review_judge_example_8c90fdfa5a8d5e6825b42f0a4a5aa8f8`. After deploying dev API version `e1b98750-0f61-407a-9e5d-c2e299cef507` and dev app shell version `3fec1ccc-3311-44c7-8cb2-313a2c06bcc2`, the role-backed full-submit command passed for interview `d8d65789-a653-4617-8ad4-1658a6653bb1`, review session `2149cfd1-3030-4f85-99fa-589c6dbb93d8`, and judge replay example `code_review_judge_example_bb02405ddcb09edd24f6618756dfe496`, selecting `mui/base-ui#973`, rendering readable match reason, `ASSESSMENT_FIT`, validator, hypergraph evidence, and Pierre diff, submitting visible candidate comments, receiving AI developer pushback, and completing recruiter results with 4 evidence hyperedges plus a person-role-repo hyperedge.
 
@@ -293,6 +400,16 @@ The same deployed API/app pair also passed the roleless full-submit auto-match c
 Latest manual app-dev proof on 2026-07-02: render-only smoke passed for interview `8bdd62f1-33d0-470b-88bb-9922134f5b26`, selecting `mui/base-ui#973` with `MATCHED`, `PASSED`, and `USABLE`; post-deploy full-submit smoke passed for interview `edb3b5ef-e6e8-45f4-a654-e4297dc00d2c`, review session `51ab6d6a-da7f-4ad6-9353-3f49ef3ddb3a`, judge replay example `code_review_judge_example_b454c70ea73f5446e32a58d9e0430020`, remote D1 score persistence `54`, review status `scored`, and completed pipeline through durable scoring.
 
 Latest role-backed app-dev proof on 2026-07-04: after the packet-context remote audit reported 10 real review packets, 8 production-ready packets, and persisted review profiles across `cloudflare/workers-sdk`, `mui/base-ui`, and `vercel/swr`, `npm run smoke:code-review-assess-dev:role-backed` passed for interview `e97ec6d1-9b80-4f71-a395-72d1217b15fb`, role context `c7a4a9dfd7fceef8612d4e83adc77252`, pipeline `f05ef82a838d61fd1c504c834bc04322`, and stage `01941a4599f4ec34861d3a3399b54b1a`. The deployed flow auto-matched `mui/base-ui#973`, returned `role_backed_auto_match`, `MATCHED`, `qualityGate: PASSED`, `assessmentQuality: STRONG`, measured contrast separation `1/2` with the selected challenge ahead by 2%, rendered the candidate CODE_REVIEW browser smoke, and verified recruiter detail readiness from `candidate_challenge_assignment`.
+
+Latest full-submit app-dev proof on 2026-07-03: manual override
+`mui/base-ui#973` passed for interview
+`84e5ccca-ec80-42d6-8678-4dc6559569d1`, review session
+`ab168b6f-fba9-4cb9-a728-30deaf57035e`, judge replay example
+`code_review_judge_example_85a19e9c6823fbb57df9b455711d0a87`, candidate
+browser, authenticated recruiter browser, score persistence `62`, review status
+`scored`, completed review-status pipeline, and remote assessment evidence proof:
+2 evidence events, 2 event source refs, 1 evaluation report, 1 evaluation claim,
+and 2 claim source refs in remote D1.
 
 Earlier deployed app-dev proof on 2026-07-02 after manual dev deploy API
 `b3030783-70bd-4db9-a210-04e5201063d0`, app
@@ -405,13 +522,118 @@ Latest single blocked-boundary proof on 2026-07-02 passed for interview
 room link was produced, no repo/PR was assigned, and recruiter readiness stayed
 `waiting_for_source_backed_match`.
 
+Latest blocked-boundary candidate browser proof on 2026-07-03 passed for
+interview `59be7706-ac64-479c-876c-7210d9432cf4` with
+`CODE_REVIEW_SMOKE_AUTO_MATCH=1`, `CODE_REVIEW_EXPECT_BLOCKED_MATCH=1`, and
+`CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER=1`: the candidate handoff was
+`PROFILE_RECEIVED` / `profile-received`, stage `candidate-intake-queued`,
+the unauthenticated browser smoke passed without Clerk test setup, no room link
+was produced, and no matching dashboard was shown.
+
+Latest post-frontend-boundary deploy proof on 2026-07-03: app-dev shell version
+`eb3db879-37df-4ec9-bf52-4284402e1caf` passed the blocked CODE_REVIEW smoke for
+interview `dde26c4f-9645-4e2d-9c04-d133d2fb10ee` with
+`CODE_REVIEW_SMOKE_AUTO_MATCH=1`, `CODE_REVIEW_EXPECT_BLOCKED_MATCH=1`, and
+`CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER=1`. The candidate handoff was
+`PROFILE_RECEIVED` / `profile-received`, stage `candidate-intake-queued`, the
+browser surface contract was `profile-received-candidate-handoff`, and recruiter
+API readiness reported `waiting_for_source_backed_match` with no repo/PR
+assigned. Recruiter browser proof was skipped only because this temp worktree
+does not have Clerk test environment variables.
+
+Latest role-backed ready-assignment app-dev proof on 2026-07-03 passed for
+interview `d3ab9d0b-1786-4ad5-b2af-ac379bdb76ba`: the matcher selected
+`https://github.com/mui/base-ui` PR `#973`, returned `MATCHED`, `PASSED`, and
+`STRONG`, matched 6 source-backed demands with 0 stretch demands, measured
+contrast separation against the next comparable challenge, rendered the
+candidate CODE_REVIEW browser surface, and verified recruiter API readiness as
+`reviewable_task_assigned` from `candidate_challenge_assignment`.
+
+Latest blocked-boundary app-dev proof with recruiter projection fallback on
+2026-07-03 passed for interview `6cbaec1c-8718-41de-9500-fb230b17d35a`: the
+candidate handoff was `PROFILE_RECEIVED` / `profile-received`, stage
+`candidate-intake-queued`, the candidate browser smoke passed, and recruiter API
+readiness reported `waiting_for_source_backed_match` with no repo/PR assigned.
+
+Latest focused no-CV reliability proof on 2026-07-03 passed with artifact
+`tmp/code-review-reliability/2026-07-03T13-22-36-112Z-suite.summary.json` for
+interview `fa5500d5-1256-418e-bb5e-2b0b9f1501ea`: the candidate handoff was
+`PROFILE_RECEIVED` / `candidate-intake-queued`, `candidateHandoffChallengeCount`
+was `0`, no repo/PR/review session was assigned, candidate browser proof was not
+skipped with `candidateSurfaceContract=profile-received-candidate-handoff`, and
+authenticated recruiter browser proof was not skipped with
+`recruiterReadoutContract=blocked-code-review-action-readout`.
+
+Latest focused manual-ready reliability proof on 2026-07-03 passed with artifact
+`tmp/code-review-reliability/2026-07-03T13-26-05-163Z-suite.summary.json` for
+interview `e9930ef8-a574-43c0-9a55-67d661ba6550`: the ready assignment selected
+`mui/base-ui#973`, returned `manual_override`, `MATCHED`, validator `PASSED`,
+and `USABLE` assessment quality; pre-intake candidate-link proof stayed
+`state=active`, `sessionStatus=INVITED`, and `setupStatus=reviewable_task_assigned`;
+candidate browser proof was not skipped with
+`candidateSurfaceContract=source-backed-code-review-challenge`, and authenticated
+recruiter browser proof was not skipped with
+`recruiterReadoutContract=matched-code-review-hiring-manager-readout`.
+
+Latest focused role-backed full-submit reliability proof on 2026-07-03 passed
+with artifact
+`tmp/code-review-reliability/2026-07-03T13-29-56-491Z-suite.summary.json` for
+interview `62867967-8cab-4be9-b8cf-927737f5a2cf`: automatic role-backed matching
+selected `mui/base-ui#973`, returned `MATCHED`, validator `PASSED`, and `STRONG`
+assessment quality; candidate browser proof was not skipped with
+`candidateSurfaceContract=source-backed-code-review-with-review-round`;
+authenticated recruiter browser proof was not skipped with
+`recruiterReadoutContract=scored-code-review-hiring-manager-readout`; review
+session `f438bae9-2eef-4759-ae42-14c786b78bdf` produced 1 AI developer response,
+2 review threads, remote D1 score persistence `59` / `adequate`, completed
+review/scoring pipeline steps, 4 evidence hyperedges, and a person-role-repo
+bridge.
+
+Latest full-submit person-boundary app-dev proof on 2026-07-03 passed for
+interview `e8285690-59ab-4c94-8d05-bcbcee6a2da2`, review session
+`247b3e64-0c8c-4fe1-bada-c7605c93d3cf`, and judge replay example
+`code_review_judge_example_3d5b0fc3ea2580f1305da4f9ee6c9cb9`: the candidate
+browser rendered `mui/base-ui#973`, scoring persisted `52` / `adequate` to
+remote D1, assessment evidence persisted 2 events, 2 event source refs, 1
+report, 1 claim, and 2 claim source refs, and the API-level person-boundary
+proof kept the submitted `mui/base-ui#973` recommendation selected while the
+related same-person `facebook/react#1` interview remained related context from
+interview detail.
+
+Latest expert-seed app-dev proof on 2026-07-03 passed against `pipe-db-test`
+(`MATCHING_EVALUATION_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1`):
+source corpus `seeded-1783071801113-4c-4r`, corpus hash
+`426390ab95640e0c4c82e8ef8de93fd92355b2fa4df0b83691de5b5d9db93b58`, 6
+match runs, 4 candidates, 4 roles, 4 challenges, 6 draft labels, 0 expert
+labels, 0 synthetic fixtures, 3 expected packets, no warnings, 6 editable
+expert-review items, and next action `complete_expert_review`.
+
+Latest focused match-quality readiness proof on 2026-07-03 passed with artifact
+`tmp/code-review-reliability/2026-07-03T13-33-49-456Z-suite.summary.json`
+against `pipe-db-test`: expert-labelled corpus
+`seeded-1783074402522-3c-3r-expert-codex-supplemental-contrast` evaluated 6
+pairs with verdict accuracy `1`, false positives `0`, false negatives `0`,
+average score separation `0.6503333333333333`, usable challenge rate `1`, and
+no gate failures.
+
+Latest deployed `/assess` token lifecycle proof on 2026-07-03 passed via the
+default `npm run smoke:code-review-reliability-dev` suite: `token-lifecycle`
+created two real app-dev CODE_REVIEW assessment links for interviews
+`ba959665-8769-4c24-8e70-18253f490be6` and
+`0b56464c-4df9-4983-a6d4-177f713de22c`, candidates
+`254580b1-d121-4a6e-8a98-b01b7424e074` and
+`925d2e01-ec92-4704-9be2-cd2297dee982`; opening token A then token B in the
+same browser stored candidate B, did not leak the stale pre-start session, did
+not show a used-link state, and did not show the matching/waiting screen.
+
 ## 10. When Tests Break, Ask Why
 
 | Symptom | Likely Cause |
 |---------|-------------|
 | Element not found | Missing `data-testid` or wrong selector |
 | Timeout waiting for element | Backend error, mock not matching, or real bug |
-| "Invalid invite token" | Token already claimed in `beforeAll` + page trying to claim again |
+| "Invalid invite token" | Wrong/stale token, or a test still assumes `resolve-token` claims the link |
+| "This invite link has already been used" | The candidate already clicked start and `/rpc/start-assessment` claimed the link |
 | "No assessment found" | Forgot to call `get-stage-config` before `init` |
 | Mock not intercepting request | URL pattern doesn't match (check trailing slashes, query params) |
 | Test passes locally but not in CI | Race condition — you have a `setTimeout` or `waitForTimeout` somewhere |

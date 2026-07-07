@@ -2,7 +2,7 @@ import type {
   AssessmentProgressChallengeSummary,
   AssessmentProgressEvaluation,
 } from './repoTaskInterviewSession';
-import type { JsonObject, JsonValue } from './livingContext/types';
+import type { JsonObject } from './livingContext/types';
 
 export type CandidateSafeAssessmentProgressEvaluation = Omit<
   AssessmentProgressEvaluation,
@@ -213,7 +213,7 @@ export function candidateSafeEvaluation(input: {
     summary: input.evaluation.summary,
     recommendation: input.evaluation.recommendation,
     createdAt: input.evaluation.createdAt,
-    evidenceCoverage: input.evaluation.evidenceCoverage as JsonValue,
+    evidenceCoverage: input.evaluation.evidenceCoverage,
     claims: input.evaluation.claims.map((claim) => ({
       polarity: claim.polarity,
       dimension: claim.dimension,

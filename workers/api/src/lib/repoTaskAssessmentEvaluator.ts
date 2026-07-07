@@ -96,6 +96,7 @@ const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
 const MAX_SOURCE_REF_EXACT_TEXT_CHARS = 800;
 const MAX_AI_PROMPT_SOURCE_REFS = 16;
 const MAX_EVALUATION_SUMMARY_CHARS = 320;
+const MAX_EVALUATOR_OUTPUT_TOKENS = 1536;
 const DEFAULT_AI_EVALUATION_TIMEOUT_MS = 20_000;
 const MIN_AI_EVALUATION_TIMEOUT_MS = 1_000;
 const MAX_AI_EVALUATION_TIMEOUT_MS = 55_000;
@@ -108,6 +109,12 @@ class RepoTaskAiTimeoutError extends Error {
     this.name = 'RepoTaskAiTimeoutError';
   }
 }
+
+const REPO_TASK_ASSESSMENT_WORKERS_AI_MODELS = [
+  '@cf/qwen/qwen3-30b-a3b-fp8',
+  '@cf/google/gemma-4-26b-a4b-it',
+  DEFAULT_CLOUDFLARE_MODEL,
+] as const;
 
 const EXPECTED_HIGH_CONFIDENCE_REF_GROUPS = [
   {
@@ -257,6 +264,43 @@ function stringArrayValue(value: unknown): string[] {
   return value
     .map((item) => stringValue(item))
     .filter((item): item is string => Boolean(item));
+}
+
+function providerIdentity(provider: LLMProvider): string {
+  const maybeKeyedProvider = provider as unknown as { getModelKey?: () => string };
+  if (typeof maybeKeyedProvider.getModelKey === 'function') {
+    try {
+      const key = maybeKeyedProvider.getModelKey().trim();
+      if (key.length > 0) return key;
+    } catch {
+      // Fall through to provider/model identity.
+    }
+  }
+  return `${provider.name}:${provider.model}`;
+}
+
+function pushUniqueProvider(providers: LLMProvider[], provider: LLMProvider): void {
+  const identity = providerIdentity(provider);
+  if (providers.some((existing) => providerIdentity(existing) === identity)) return;
+  providers.push(provider);
+}
+
+export function createRepoTaskAssessmentProviders(
+  env: EvaluateRepoTaskAssessmentInput['env'],
+): LLMProvider[] {
+  if (!env.AI) return [];
+
+  const providers: LLMProvider[] = [];
+  const configuredModel = stringValue(env.CLOUDFLARE_AI_MODEL);
+  if (configuredModel) {
+    pushUniqueProvider(providers, new CloudflareAIProvider(env.AI, configuredModel));
+  }
+
+  for (const model of REPO_TASK_ASSESSMENT_WORKERS_AI_MODELS) {
+    pushUniqueProvider(providers, new CloudflareAIProvider(env.AI, model));
+  }
+
+  return providers;
 }
 
 function compactExactText(value: string): string {
@@ -1982,8 +2026,10 @@ async function createDeterministicFallbackReport(input: {
   provider: LLMProvider;
   rawResponse: string;
   diagnostics?: readonly AssessmentDiagnosticInput[];
+  fallback: string;
   fallbackReason: string;
   fallbackReasonCode: string;
+  transitionReason: string;
 }): Promise<RepoTaskAssessmentEvaluationResult | null> {
   const deterministicFallback = buildDeterministicAssessmentFallback({
     sessionId: input.sessionId,
@@ -2002,7 +2048,10 @@ async function createDeterministicFallbackReport(input: {
   const status: EvaluationReportStatus = 'EVALUATED';
   const report = await input.store.createEvaluationReport({
     sessionId: input.sessionId,
-    ingestionKey: `assessment-report:${input.sessionId}:deterministic-fallback:${await deterministicEntityId('content', input.rawResponse || deterministicFallback.summary)}`,
+    ingestionKey: `assessment-report:${input.sessionId}:${input.fallback}:${await deterministicEntityId(
+      'content',
+      input.rawResponse || deterministicFallback.summary || diagnostics.map((diagnostic) => diagnostic.code).join(':'),
+    )}`,
     status,
     summary: deterministicFallback.summary,
     output: {
@@ -2028,7 +2077,7 @@ async function createDeterministicFallbackReport(input: {
       }),
       claimIds: deterministicFallback.claims.map((claim) => claim.id),
       diagnosticCodes: diagnostics.map((diagnostic) => diagnostic.code),
-      fallback: 'deterministic_source_evidence',
+      fallback: input.fallback,
       fallbackReason: input.fallbackReason,
       fallbackReasonCode: input.fallbackReasonCode,
     },
@@ -2039,7 +2088,7 @@ async function createDeterministicFallbackReport(input: {
   await input.store.transitionState({
     sessionId: input.sessionId,
     toState: 'EVALUATED',
-    reason: 'PIPE produced a conservative source-backed assessment report from captured evidence.',
+    reason: input.transitionReason,
     createdBy: 'repo-task-assessment-evaluator',
   });
 
@@ -2073,7 +2122,8 @@ export async function evaluateRepoTaskAssessmentSession(
     });
   }
 
-  if (!input.env.AI) {
+  const providers = createRepoTaskAssessmentProviders(input.env);
+  if (providers.length === 0) {
     return createDiagnostic({
       store: input.store,
       sessionId: input.sessionId,
@@ -2091,10 +2141,6 @@ export async function evaluateRepoTaskAssessmentSession(
     });
   }
 
-  const provider = new CloudflareAIProvider(
-    input.env.AI,
-    input.env.CLOUDFLARE_AI_MODEL ?? DEFAULT_CLOUDFLARE_MODEL,
-  );
   const systemPrompt = buildSystemPrompt();
   const userPrompt = buildUserPrompt({
     scheduledInterviewId: input.scheduledInterviewId,
@@ -2109,86 +2155,64 @@ export async function evaluateRepoTaskAssessmentSession(
     userPrompt,
   ].join('\n');
 
-  let aiOutput: AiAssessmentOutput;
+  let aiOutput: AiAssessmentOutput | null = null;
   let rawResponse = '';
-  try {
-    const completionPromise = provider.complete([
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
-    ], { forceJson: true, maxTokens: 4096 });
-    completionPromise.catch(() => undefined);
-    const completion = await withAiTimeout(
-      completionPromise,
-      configuredAiEvaluationTimeoutMs(input.env),
-    );
-    rawResponse = completion.content ?? '';
-  } catch (error) {
-    if (error instanceof RepoTaskAiTimeoutError) {
-      const fallback = await createDeterministicFallbackReport({
+  let provider = providers[0]!;
+  const attemptDiagnostics: AssessmentDiagnosticInput[] = [];
+  const timeoutMs = configuredAiEvaluationTimeoutMs(input.env);
+
+  for (const candidateProvider of providers) {
+    provider = candidateProvider;
+    let candidateRawResponse = '';
+    try {
+      const completionPromise = candidateProvider.complete([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ], { forceJson: true, maxTokens: MAX_EVALUATOR_OUTPUT_TOKENS });
+      completionPromise.catch(() => undefined);
+      const completion = await withAiTimeout(completionPromise, timeoutMs);
+      candidateRawResponse = completion.content ?? '';
+      rawResponse = candidateRawResponse;
+      await recordAiInteraction({
         store: input.store,
         sessionId: input.sessionId,
-        sessionMode: session.mode,
-        scheduledInterviewId: input.scheduledInterviewId,
-        requestEventId: input.requestEventId,
-        requestSourceRef: input.requestSourceRef,
-        progress,
-        sourceRefs,
+        requestedAt: input.requestedAt,
+        requestedBy: input.requestedBy,
+        provider: candidateProvider,
+        prompt: promptTrace,
+        response: rawResponse,
         evidenceCoverage,
-        provider,
-        rawResponse,
-        fallbackReason: 'The AI evaluator exceeded the Worker time budget after source-backed evidence was captured.',
-        fallbackReasonCode: 'MODEL_RESPONSE_TIMEOUT',
-        diagnostics: [
-          diagnosticInput({
-            code: 'MODEL_RESPONSE_TIMEOUT',
-            severity: 'warning',
-            message: `The AI evaluator exceeded ${error.timeoutMs}ms, so PIPE generated conservative claims only from captured source evidence.`,
-            provider: provider.name,
-            retryable: true,
-            sourceRefs: [input.requestSourceRef],
-            details: {
-              scheduledInterviewId: input.scheduledInterviewId,
-              model: provider.model,
-              timeoutMs: error.timeoutMs,
-              fallback: 'deterministic_source_evidence',
-            },
-          }),
-        ],
       });
-      if (fallback) return fallback;
-    }
-    return createDiagnostic({
-      store: input.store,
-      sessionId: input.sessionId,
-      diagnostic: diagnosticInput({
-        code: 'AI_DEVELOPER_UNAVAILABLE',
-        message: `Source-backed repo-task evaluator failed: ${error instanceof Error ? error.message : String(error)}`,
-        provider: provider.name,
-        retryable: true,
+      aiOutput = parseAiJson(rawResponse);
+      break;
+    } catch (error) {
+      rawResponse = candidateRawResponse || rawResponse;
+      const timedOut = error instanceof RepoTaskAiTimeoutError;
+      const message = error instanceof Error ? error.message : String(error);
+      const code = timedOut
+        ? 'MODEL_RESPONSE_TIMEOUT'
+        : candidateRawResponse
+          ? 'MODEL_RESPONSE_UNPARSEABLE'
+          : 'AI_DEVELOPER_UNAVAILABLE';
+      attemptDiagnostics.push(diagnosticInput({
+        code,
+        severity: 'warning',
+        message: `Repo-task evaluator provider ${candidateProvider.name}/${candidateProvider.model} failed: ${message}`,
+        provider: candidateProvider.name,
+        retryable: !candidateRawResponse || timedOut,
         sourceRefs: [input.requestSourceRef],
         details: {
           scheduledInterviewId: input.scheduledInterviewId,
-          model: provider.model,
+          model: candidateProvider.model,
+          attempt: attemptDiagnostics.length + 1,
+          timeoutMs: timedOut ? error.timeoutMs : null,
+          fallback: 'deterministic_source_evidence',
         },
-      }),
-    });
+      }));
+    }
   }
 
-  await recordAiInteraction({
-    store: input.store,
-    sessionId: input.sessionId,
-    requestedAt: input.requestedAt,
-    requestedBy: input.requestedBy,
-    provider,
-    prompt: promptTrace,
-    response: rawResponse,
-    evidenceCoverage,
-  });
-
-  try {
-    aiOutput = parseAiJson(rawResponse);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+  if (!aiOutput) {
     const fallback = await createDeterministicFallbackReport({
       store: input.store,
       sessionId: input.sessionId,
@@ -2201,23 +2225,11 @@ export async function evaluateRepoTaskAssessmentSession(
       evidenceCoverage,
       provider,
       rawResponse,
-      fallbackReason: 'The AI evaluator returned unparseable text after source-backed evidence was captured.',
-      fallbackReasonCode: 'MODEL_RESPONSE_UNPARSEABLE',
-      diagnostics: [
-        diagnosticInput({
-          code: 'MODEL_RESPONSE_UNPARSEABLE',
-          severity: 'warning',
-          message: `The AI evaluator response could not be parsed, so PIPE generated conservative claims only from captured source evidence: ${message}`,
-          provider: provider.name,
-          retryable: false,
-          sourceRefs: [input.requestSourceRef],
-          details: {
-            scheduledInterviewId: input.scheduledInterviewId,
-            model: provider.model,
-            fallback: 'deterministic_source_evidence',
-          },
-        }),
-      ],
+      diagnostics: attemptDiagnostics,
+      fallback: 'deterministic_source_evidence_after_ai_failure',
+      fallbackReason: 'No configured AI evaluator produced parseable JSON after source-backed evidence was captured.',
+      fallbackReasonCode: 'AI_EVALUATOR_UNUSABLE',
+      transitionReason: 'PIPE produced a conservative source-backed assessment report after AI evaluator failure.',
     });
     if (fallback) return fallback;
 
@@ -2225,12 +2237,15 @@ export async function evaluateRepoTaskAssessmentSession(
       store: input.store,
       sessionId: input.sessionId,
       diagnostic: diagnosticInput({
-        code: 'EVALUATION_NEEDS_HUMAN_REVIEW',
-        message: `The AI evaluator response could not be parsed and PIPE could not build a deterministic evidence report: ${message}`,
+        code: 'AI_DEVELOPER_UNAVAILABLE',
+        message: `Source-backed repo-task evaluator failed: ${attemptDiagnostics.at(-1)?.message ?? 'no provider returned usable output'}`,
+        provider: provider.name,
+        retryable: true,
         sourceRefs: [input.requestSourceRef],
         details: {
           scheduledInterviewId: input.scheduledInterviewId,
           model: provider.model,
+          attemptedModels: providers.map((candidate) => candidate.model),
         },
       }),
     });
@@ -2268,12 +2283,14 @@ export async function evaluateRepoTaskAssessmentSession(
       evidenceCoverage,
       provider,
       rawResponse,
+      fallback: 'deterministic_source_evidence',
       fallbackReason: 'The AI evaluator returned no usable non-diagnostic claims backed by exact source evidence.',
       fallbackReasonCode: 'MODEL_CLAIMS_UNUSABLE',
       diagnostics: [
         ...recommendationDiagnosticsSeed,
         ...cappedRecommendation.diagnostics,
       ],
+      transitionReason: 'PIPE produced a conservative source-backed assessment report from captured evidence.',
     });
     if (fallback) return fallback;
 

@@ -136,6 +136,17 @@ interface UseAssessmentReturn extends AssessmentState {
   sessionToken: string | null;
 }
 
+class ProfileReceivedHandoffError extends Error {
+  readonly handoffMessage: string;
+
+  constructor(message?: string | null) {
+    const handoffMessage = candidateFacingProfileReceivedMessage(message);
+    super('PROFILE_RECEIVED');
+    this.name = 'ProfileReceivedHandoffError';
+    this.handoffMessage = handoffMessage;
+  }
+}
+
 function candidateFacingProfileReceivedMessage(message?: string | null): string {
   const trimmed = message?.trim() ?? '';
   if (trimmed.includes('profile has been received') || trimmed.includes('code review is ready')) {
@@ -154,12 +165,60 @@ function profileReceivedContent(message?: string | null): ChallengeContentDTO {
   };
 }
 
+function profileReceivedStageConfig(message?: string | null): StageConfigDTO {
+  return {
+    isComplete: true,
+    stageId: 'candidate-intake-queued',
+    stageTitle: 'Profile received',
+    mode: 'INTAKE',
+    challenges: [],
+    currentIndex: 0,
+    message: candidateFacingProfileReceivedMessage(message),
+  };
+}
+
+function profileReceivedState(message?: string | null): Partial<AssessmentState> {
+  return {
+    isLoading: false,
+    isSubmitted: true,
+    error: null,
+    stageConfig: profileReceivedStageConfig(message),
+    challengeContent: profileReceivedContent(message),
+    followUpQuestions: null,
+    followUpLoading: false,
+  };
+}
+
 function completionContent(config: StageConfigDTO | null): ChallengeContentDTO | null {
   if (!config?.isComplete) return null;
   if (config.stageId === 'candidate-intake-queued' || config.message?.includes('code review is ready')) {
     return profileReceivedContent(config.message);
   }
   return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function profileReceivedMessageFromPayload(payload: unknown): string | null {
+  if (!isRecord(payload)) return null;
+  const error = payload.error;
+  const challenge = payload.challenge;
+  const errorCode = isRecord(error) && typeof error.code === 'string' ? error.code : null;
+  const challengeType = isRecord(challenge) && typeof challenge.type === 'string' ? challenge.type : null;
+  const code = typeof payload.code === 'string' ? payload.code : errorCode;
+  if (code !== 'PROFILE_RECEIVED' && challengeType !== 'PROFILE_RECEIVED') return null;
+  if (isRecord(error) && typeof error.message === 'string') return error.message;
+  if (typeof payload.message === 'string') return payload.message;
+  if (isRecord(challenge) && typeof challenge.instructions === 'string') return challenge.instructions;
+  return '';
+}
+
+function normalizeInviteToken(inviteToken: string): string {
+  return inviteToken.startsWith('CLAIMED::')
+    ? inviteToken.slice('CLAIMED::'.length)
+    : inviteToken;
 }
 
 // ============================================================================
@@ -201,6 +260,11 @@ async function rpcPost<T>(
   }
 
   if (res.status === 409) {
+    const data = await res.json().catch(() => null) as unknown;
+    const profileReceivedMessage = profileReceivedMessageFromPayload(data);
+    if (profileReceivedMessage !== null) {
+      throw new ProfileReceivedHandoffError(profileReceivedMessage);
+    }
     throw new Error('TOKEN_ALREADY_CLAIMED');
   }
 
@@ -238,33 +302,25 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
   // ── Resolve token on mount ──────────────────────────────────────────────
   const fetchData = useCallback(async () => {
+    const normalizedInviteToken = inviteToken ? normalizeInviteToken(inviteToken) : inviteToken;
     const cachedToken = sessionStorage.getItem('pipe_session_token');
     const cachedCandidateJson = sessionStorage.getItem('pipe_session_candidate');
     const cachedInviteToken = sessionStorage.getItem('pipe_session_invite_token');
 
-    if (inviteToken?.startsWith('CLAIMED::')) {
-      sessionStorage.removeItem('pipe_session_token');
-      sessionStorage.removeItem('pipe_session_candidate');
-      sessionStorage.removeItem('pipe_session_invite_token');
-      sessionTokenRef.current = null;
-      setState((prev) => ({ ...prev, isLoading: false, error: new Error('TOKEN_ALREADY_CLAIMED') }));
-      return;
-    }
-
     const cachedSessionMatchesInvite = Boolean(
       cachedToken
       && cachedCandidateJson
-      && (!inviteToken || cachedInviteToken === inviteToken),
+      && (!normalizedInviteToken || cachedInviteToken === normalizedInviteToken),
     );
 
-    if (inviteToken && cachedToken && cachedCandidateJson && cachedInviteToken !== inviteToken) {
+    if (normalizedInviteToken && cachedToken && cachedCandidateJson && cachedInviteToken !== normalizedInviteToken) {
       sessionStorage.removeItem('pipe_session_token');
       sessionStorage.removeItem('pipe_session_candidate');
       sessionStorage.removeItem('pipe_session_invite_token');
     }
 
     // Allow empty inviteToken when a cached session exists (demo/self-reg flow)
-    if (!inviteToken && !(cachedToken && cachedCandidateJson)) {
+    if (!normalizedInviteToken && !(cachedToken && cachedCandidateJson)) {
       setState((prev) => ({ ...prev, isLoading: false, error: new Error('Missing invite token') }));
       return;
     }
@@ -300,12 +356,12 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           status: string;
           name: string | null;
           sessionToken: string;
-        }>('/rpc/resolve-token', { inviteToken });
+        }>('/rpc/resolve-token', { inviteToken: normalizedInviteToken });
 
         sessionTokenRef.current = resolved.sessionToken;
         sessionStorage.setItem('pipe_session_token', resolved.sessionToken);
-        if (inviteToken) {
-          sessionStorage.setItem('pipe_session_invite_token', inviteToken);
+        if (normalizedInviteToken) {
+          sessionStorage.setItem('pipe_session_invite_token', normalizedInviteToken);
         }
 
         candidate = {
@@ -325,6 +381,14 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       setState((prev) => ({ ...prev, candidate, isLoading: false }));
     } catch (err) {
       const error = err instanceof Error ? err : new Error('An unexpected error occurred');
+
+      if (error instanceof ProfileReceivedHandoffError) {
+        setState((prev) => ({
+          ...prev,
+          ...profileReceivedState(error.handoffMessage),
+        }));
+        return;
+      }
       
       // Handle 409 CONFLICT (token already claimed) with a user-friendly message
       if (error.message.includes('409') || error.message.includes('CONFLICT')) {
@@ -402,6 +466,13 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       }));
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Failed to load stage');
+      if (error instanceof ProfileReceivedHandoffError) {
+        setState((prev) => ({
+          ...prev,
+          ...profileReceivedState(error.handoffMessage),
+        }));
+        return;
+      }
       console.error('[useAssessment] onStart error:', error);
       setState((prev) => ({ ...prev, isLoading: false, error }));
     }
@@ -429,6 +500,13 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Failed to start assessment');
+      if (error instanceof ProfileReceivedHandoffError) {
+        setState((prev) => ({
+          ...prev,
+          ...profileReceivedState(error.handoffMessage),
+        }));
+        return;
+      }
       console.error('[useAssessment] start-assessment failed:', error);
       setState((prev) => ({ ...prev, error }));
       throw error;
@@ -466,6 +544,13 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           followUpLoading: false,
         }));
       } catch (err) {
+        if (err instanceof ProfileReceivedHandoffError) {
+          setState((prev) => ({
+            ...prev,
+            ...profileReceivedState(err.handoffMessage),
+          }));
+          return;
+        }
         console.error('[useAssessment] Failed to load next challenge:', err);
         setState((prev) => ({ ...prev, isLoading: false, error: err instanceof Error ? err : new Error('Failed to load challenge') }));
       }
@@ -518,6 +603,13 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           followUpLoading: false,
         }));
       } catch (err) {
+        if (err instanceof ProfileReceivedHandoffError) {
+          setState((prev) => ({
+            ...prev,
+            ...profileReceivedState(err.handoffMessage),
+          }));
+          return;
+        }
         console.error('[useAssessment] Failed to load next stage:', err);
         setState((prev) => ({ ...prev, isLoading: false, error: err instanceof Error ? err : new Error('Failed to load stage') }));
       }
@@ -579,6 +671,13 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         }
       } catch (err) {
         const error = err instanceof Error ? err : new Error('Failed to submit');
+        if (error instanceof ProfileReceivedHandoffError) {
+          setState((prev) => ({
+            ...prev,
+            ...profileReceivedState(error.handoffMessage),
+          }));
+          return;
+        }
         console.error('[useAssessment] SUBMISSION_ERROR:', error);
         setState((prev) => ({ ...prev, isLoading: false, error }));
       }
@@ -639,6 +738,13 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       }));
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Refresh failed');
+      if (error instanceof ProfileReceivedHandoffError) {
+        setState((prev) => ({
+          ...prev,
+          ...profileReceivedState(error.handoffMessage),
+        }));
+        return;
+      }
       console.error('[useAssessment] refresh error:', error);
       setState((prev) => ({ ...prev, isLoading: false, error }));
       throw error;
