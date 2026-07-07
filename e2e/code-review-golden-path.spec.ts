@@ -353,6 +353,7 @@ test.describe("Feature: CODE_REVIEW — candidate session init + review flow", (
 
     // Assert completion screen
     await expect(page.locator('[data-testid="review-session-completion"]')).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('[data-testid="review-session-completion"]')).toContainText('hear back through your recruiter');
 
     // Click continue
     await page.locator('[data-testid="review-session-continue-btn"]').click();
