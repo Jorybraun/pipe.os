@@ -36,8 +36,14 @@ function inviteTokenFromAssessInput(tokenOrUrl: string): string {
   return decodeURIComponent(match[1]);
 }
 
+function escapedRegex(value: string): RegExp {
+  return new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+}
+
 async function startWelcomeScreenIfPresent(page: Page): Promise<void> {
-  const startButtons = page.getByRole('button', { name: 'START_INTERVIEW' });
+  const startButtons = page
+    .getByRole('button', { name: /^(START_INTERVIEW|Start assessment)$/i })
+    .or(page.locator('button').filter({ hasText: /^Start assessment$/i }));
   await startButtons.first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -109,7 +115,7 @@ async function submitBrowserReviewRound(page: Page, codeReview: Locator): Promis
   await expect(page.getByTestId('conversation-thread')).toBeVisible({ timeout: 45_000 });
   await expect(conversationPanel).toContainText('AUTHOR', { timeout: 45_000 });
   await expect(conversationPanel).toContainText('RESPONDED', { timeout: 45_000 });
-  await expect(page.getByTestId('round-indicator')).toContainText('ROUND 2', { timeout: 45_000 });
+  await expect(page.getByTestId('round-indicator')).toContainText(/round\s+2/i, { timeout: 45_000 });
 }
 
 test.describe('CODE_REVIEW assess-link smoke', () => {
@@ -187,7 +193,7 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     const matchProof = page.getByTestId('code-review-match-proof');
     await expect(matchProof).toContainText('Source-backed match');
     if (EXPECT_MATCH_PROOF_VERDICT) {
-      await expect(matchProof).toContainText(EXPECT_MATCH_PROOF_VERDICT);
+      await expect(matchProof).toContainText(escapedRegex(EXPECT_MATCH_PROOF_VERDICT));
     }
     await expect(matchProof).toContainText(`#${prNumber}`);
     const whyThisPr = page.getByTestId('code-review-match-why');
