@@ -491,6 +491,12 @@ const sessionEventSchema = z.object({
     const persistedDiagnosticOk = bridgeMessageSource === 'bridge_diagnostic'
       && properties.bridgePersisted === true
       && hasString(diagnosticSource);
+    const persistedContainerStatusOk = properties.agentStatusEventSource === 'container_agent_bridge'
+      && bridgeMessageSource === 'agent_status'
+      && properties.bridgePersisted === true
+      && typeof status === 'string'
+      && AGENT_STATUSES.has(status)
+      && (diagnosticSource === null || diagnosticSource === undefined);
     if (
       sourceOk
       && actorOk
@@ -500,7 +506,7 @@ const sessionEventSchema = z.object({
       && capturedAtOk
       && statusIdOk
       && bridgeMessageOk
-      && (browserObservationOk || persistedDiagnosticOk)
+      && (browserObservationOk || persistedDiagnosticOk || persistedContainerStatusOk)
     ) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

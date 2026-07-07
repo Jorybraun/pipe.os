@@ -345,6 +345,50 @@ function agentDiagnosticSessionEvent(message) {
   };
 }
 
+function agentStatusSessionEvent(message) {
+  const eventMessage = message && typeof message === 'object' ? message : {};
+  const agent = safeAgentName(eventMessage.agent);
+  if (!agent) return null;
+  const observedAt = eventMessage.observedAt ?? new Date().toISOString();
+  const parsedObservedAt = typeof observedAt === 'string' ? Date.parse(observedAt) : Number.NaN;
+  const capturedAtMs = Number.isFinite(parsedObservedAt) ? parsedObservedAt : Date.now();
+  const rawStatus = typeof eventMessage.status === 'string' ? eventMessage.status : 'disconnected';
+  const status = safeEvidenceIdPart(rawStatus);
+  const text = String(
+    eventMessage.message
+      || `${agent} bridge status: ${rawStatus}.`,
+  );
+  return {
+    type: 'ai_agent_status',
+    text: redactDiagnosticText(text),
+    actor: 'agent',
+    properties: {
+      source: 'agent_bridge',
+      agent,
+      status,
+      diagnosticSource: null,
+      bridgeMessageSource: 'agent_status',
+      observedAt,
+      capturedAtMs,
+      agentStatusEventId: agentStatusEventId({
+        agent,
+        capturedAtMs,
+        bridgeMessageSource: 'agent_status',
+        status,
+        diagnosticSource: null,
+      }),
+      agentStatusEventSource: 'container_agent_bridge',
+      bridgePersisted: true,
+      ...agentRunReferences({
+        agentRuntime: eventMessage.agentRuntime,
+        agentRunProvider: eventMessage.agentRunProvider,
+        agentRunId: eventMessage.agentRunId,
+        agentRunExternalSessionHash: eventMessage.agentRunExternalSessionHash,
+      }),
+    },
+  };
+}
+
 function agentChatSessionEvent({
   agent = null,
   text,
@@ -416,6 +460,7 @@ module.exports = {
   agentChatSessionEvent,
   agentDiagnosticMessage,
   agentDiagnosticSessionEvent,
+  agentStatusSessionEvent,
   agentPromptHandoffDiagnosticMessage,
   boundedDiagnosticText,
   diagnosticTextMetrics,

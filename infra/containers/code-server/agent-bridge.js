@@ -8,6 +8,7 @@ const {
   agentDiagnosticMessage,
   agentDiagnosticSessionEvent,
   agentPromptHandoffDiagnosticMessage,
+  agentStatusSessionEvent,
   isAgentAuthFailureText,
   redactDiagnosticText,
 } = require('./agent-diagnostics.js');
@@ -795,6 +796,10 @@ async function captureAgentDiagnosticEvidence(message) {
   return postSessionEventEvidence(agentDiagnosticSessionEvent(message), 'agent diagnostic');
 }
 
+async function captureAgentStatusEvidence(message) {
+  return postSessionEventEvidence(agentStatusSessionEvent(message), 'agent status');
+}
+
 async function captureAgentChatEvidence(message) {
   return postSessionEventEvidence(agentChatSessionEvent(message), 'agent chat');
 }
@@ -1081,15 +1086,28 @@ function broadcastAgentReady() {
 
 function agentStatusMessage() {
   if (!AGENT_NAME) return null;
-  return { type: 'AGENT_STATUS', agent: AGENT_NAME, status: agentStatus };
+  return {
+    type: 'AGENT_STATUS',
+    agent: AGENT_NAME,
+    status: agentStatus,
+    observedAt: new Date().toISOString(),
+  };
 }
 
 function broadcastAgentStatus() {
-  broadcast(agentStatusMessage());
+  const message = agentStatusMessage();
+  void captureAgentStatusEvidence(message)
+    .then((persisted) => {
+      broadcast({ ...message, persisted });
+    });
 }
 
 function sendAgentStatus(ws) {
-  send(ws, agentStatusMessage());
+  const message = agentStatusMessage();
+  void captureAgentStatusEvidence(message)
+    .then((persisted) => {
+      send(ws, { ...message, persisted });
+    });
 }
 
 function markAgentReady() {

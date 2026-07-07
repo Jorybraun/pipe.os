@@ -986,6 +986,8 @@ describe('sessionEvents', () => {
       try {
         const statusText = 'devin is starting from the real container bridge.';
         const statusId = 'agent-status:devin:1782594720000:agent_status:starting:none';
+        const containerStatusText = 'devin bridge status: auth_needed.';
+        const containerStatusId = 'agent-status:devin:1782594780000:agent_status:auth_needed:none';
         const diagnosticText = 'agent chat prompt delivered to process stdin.';
         const diagnosticId = 'agent-status:devin:1782594000000:bridge_diagnostic:thinking:user_prompt_sent';
         const events: SessionEvent[] = [
@@ -1012,6 +1014,26 @@ describe('sessionEvents', () => {
               workspaceSessionId: 'workspace-session-1',
               messageTimestamp: 1782594720000,
               agentResponseClaimed: false,
+            },
+          },
+          {
+            type: 'ai_agent_status',
+            sessionId: 'meeting-session-agent-status-sources',
+            candidateId: 'cand-assessment',
+            timestamp: 1782594780,
+            actor: 'agent',
+            text: containerStatusText,
+            properties: {
+              source: 'agent_bridge',
+              agentStatusEventSource: 'container_agent_bridge',
+              agent: 'devin',
+              status: 'auth_needed',
+              diagnosticSource: null,
+              bridgeMessageSource: 'agent_status',
+              observedAt: '2026-06-27T21:13:00.000Z',
+              capturedAtMs: 1782594780000,
+              agentStatusEventId: containerStatusId,
+              bridgePersisted: true,
             },
           },
           {
@@ -1052,7 +1074,7 @@ describe('sessionEvents', () => {
              JOIN context_records cr ON cr.id = csr.context_record_id
             WHERE cr.record_type = 'meeting_session_event'
               AND csr.source_ref_type IN ('agent_status', 'ai_agent_diagnostic')
-            ORDER BY csr.source_ref_type`,
+            ORDER BY csr.source_ref_type, csr.source_ref_id`,
         ).all() as Array<{
           source_ref_type: string;
           source_ref_id: string;
@@ -1070,6 +1092,13 @@ describe('sessionEvents', () => {
             content_hash: await sha256Hex(statusText),
           },
           {
+            source_ref_type: 'agent_status',
+            source_ref_id: containerStatusId,
+            evidence_role: 'agent_status',
+            exact_text: containerStatusText,
+            content_hash: await sha256Hex(containerStatusText),
+          },
+          {
             source_ref_type: 'ai_agent_diagnostic',
             source_ref_id: diagnosticId,
             evidence_role: 'ai_agent_diagnostic',
@@ -1081,8 +1110,8 @@ describe('sessionEvents', () => {
         const assessmentSources = sqlite.prepare(
           `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
              FROM assessment_event_source_refs
-            WHERE source_ref_type IN ('agent_status', 'ai_agent_diagnostic')
-            ORDER BY source_ref_type`,
+           WHERE source_ref_type IN ('agent_status', 'ai_agent_diagnostic')
+            ORDER BY source_ref_type, source_ref_id`,
         ).all() as Array<{
           source_ref_type: string;
           source_ref_id: string;
