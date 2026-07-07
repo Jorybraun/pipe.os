@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -76,8 +76,11 @@ const CHANGE_PROFILE = TASK_ALIGNED_PROFILES[CHANGE_MODE] ?? null;
 const REPO_URL = process.env.WORKSPACE_SMOKE_REPO_URL || CHANGE_PROFILE?.repositoryUrl || 'https://github.com/octocat/Hello-World';
 const RAW_PR_NUMBER = process.env.WORKSPACE_SMOKE_PR_NUMBER || (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' ? '' : '1');
 const PR_NUMBER = RAW_PR_NUMBER ? Number(RAW_PR_NUMBER) : null;
+const FORCE_MANUAL_PACKET = process.env.WORKSPACE_SMOKE_USE_MANUAL_PACKET === '1'
+  || process.env.WORKSPACE_SMOKE_FORCE_MANUAL_PACKET === '1';
 const RAW_MATCHED_REPO_ID = process.env.WORKSPACE_SMOKE_MATCHED_REPO_ID
-  || (process.env.WORKSPACE_SMOKE_USE_MATCHED_REPO === '1'
+  || (!FORCE_MANUAL_PACKET
+    && (process.env.WORKSPACE_SMOKE_USE_MATCHED_REPO !== '0')
     && INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX'
     && CHANGE_PROFILE?.matchedRepoId
     ? String(CHANGE_PROFILE.matchedRepoId)
@@ -89,9 +92,42 @@ const EXPECTED_BRIDGE_REVISION = process.env.WORKSPACE_SMOKE_EXPECTED_BRIDGE_REV
 const REQUIRE_ROOM = process.env.WORKSPACE_SMOKE_REQUIRE_ROOM === '1';
 const SKIP_RECRUITER_BROWSER = process.env.WORKSPACE_SMOKE_SKIP_RECRUITER_BROWSER === '1';
 const SKIP_CANDIDATE_BROWSER = process.env.WORKSPACE_SMOKE_SKIP_CANDIDATE_BROWSER === '1';
+const STOP_AFTER_CANDIDATE_SAFETY = process.env.WORKSPACE_SMOKE_STOP_AFTER_CANDIDATE_SAFETY === '1';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
+const DEV_D1_DATABASE_ID = process.env.WORKSPACE_SMOKE_D1_DATABASE_ID
+  || '0abe92df-9296-46f5-9f9d-a1fb1bcd3be1';
+const EVALUATION_WAIT_MS = Number(process.env.WORKSPACE_SMOKE_EVALUATION_WAIT_MS || 600_000);
+const REQUEST_TIMEOUT_MS = Number(process.env.WORKSPACE_SMOKE_REQUEST_TIMEOUT_MS || 60_000);
+
+function challengePacketLineValue(exactText, labels) {
+  const text = typeof exactText === 'string' ? exactText : '';
+  if (!text) return null;
+  const escapedLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const match = text.match(new RegExp(`^\\s*(?:${escapedLabels.join('|')})\\s*:\\s*(.+)$`, 'im'));
+  return match?.[1]?.trim() || null;
+}
+
+function stringObjectValue(object, key) {
+  const value = object && typeof object === 'object' ? object[key] : null;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function assignedChallengeTitleFromProgress(progress) {
+  const challenge = progress?.challenge ?? null;
+  if (!challenge) return null;
+  return stringObjectValue(challenge.locator, 'challengeTitle')
+    ?? stringObjectValue(challenge.locator, 'title')
+    ?? stringObjectValue(challenge.locator, 'taskTitle')
+    ?? stringObjectValue(challenge.metadata, 'challengeTitle')
+    ?? stringObjectValue(challenge.metadata, 'title')
+    ?? stringObjectValue(challenge.metadata, 'taskTitle')
+    ?? challengePacketLineValue(challenge.exactText, ['Title', 'Task']);
+}
 
 function assertEnv() {
+  if (!Number.isFinite(REQUEST_TIMEOUT_MS) || REQUEST_TIMEOUT_MS < 5_000) {
+    throw new Error('WORKSPACE_SMOKE_REQUEST_TIMEOUT_MS must be a number >= 5000.');
+  }
   if (MATCHED_REPO_ID !== null && (!Number.isInteger(MATCHED_REPO_ID) || MATCHED_REPO_ID <= 0)) {
     throw new Error('WORKSPACE_SMOKE_MATCHED_REPO_ID must be a positive integer when provided.');
   }
@@ -101,8 +137,18 @@ function assertEnv() {
   if (!['placeholder', 'mui-popover-fix'].includes(CHANGE_MODE)) {
     throw new Error('WORKSPACE_SMOKE_CHANGE_MODE must be placeholder or mui-popover-fix.');
   }
+  if (!Number.isFinite(EVALUATION_WAIT_MS) || EVALUATION_WAIT_MS < 60_000) {
+    throw new Error('WORKSPACE_SMOKE_EVALUATION_WAIT_MS must be a number >= 60000.');
+  }
   if (CHANGE_PROFILE && INTERVIEW_TYPE !== 'OPEN_SOURCE_BUG_FIX') {
     throw new Error(`${CHANGE_MODE} is a task-aligned OPEN_SOURCE_BUG_FIX smoke profile; set WORKSPACE_SMOKE_INTERVIEW_TYPE=OPEN_SOURCE_BUG_FIX.`);
+  }
+  if (
+    CHANGE_PROFILE
+    && FORCE_MANUAL_PACKET
+    && process.env.WORKSPACE_SMOKE_MATCHED_REPO_ID
+  ) {
+    throw new Error('WORKSPACE_SMOKE_USE_MANUAL_PACKET cannot be combined with WORKSPACE_SMOKE_MATCHED_REPO_ID.');
   }
   if (
     CHANGE_PROFILE
@@ -123,6 +169,14 @@ function assertEnv() {
       'Set WORKSPACE_SMOKE_BASE_COMMIT_SHA to the real 40-character base commit SHA, or set WORKSPACE_SMOKE_MATCHED_REPO_ID for matched OPEN_SOURCE_BUG_FIX smoke runs.',
     );
   }
+}
+
+function logStep(step, fields = {}) {
+  console.log(JSON.stringify({
+    step,
+    at: new Date().toISOString(),
+    ...fields,
+  }));
 }
 
 async function git(args, cwd) {
@@ -217,9 +271,17 @@ function waitForWorkspaceTerminalOutput(proxyBasePath, headers, command, expecte
     });
     let output = '';
     let opened = false;
-    const timeout = setTimeout(() => {
+    let settled = false;
+    let timeout = null;
+    const settle = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      fn(value);
+    };
+    timeout = setTimeout(() => {
       ws.close();
-      reject(new Error(`Timed out waiting for terminal output "${expectedText}" after opened=${opened}. Saw:\n${output}`));
+      settle(reject, new Error(`Timed out waiting for terminal output "${expectedText}" after opened=${opened}. Saw:\n${output}`));
     }, 120_000);
 
     ws.on('open', () => {
@@ -229,20 +291,19 @@ function waitForWorkspaceTerminalOutput(proxyBasePath, headers, command, expecte
     ws.on('message', (data) => {
       output += websocketChunkText(data);
       if (!output.includes(expectedText)) return;
-      clearTimeout(timeout);
       ws.close();
-      resolve(output);
+      settle(resolve, output);
     });
     ws.on('error', (error) => {
-      clearTimeout(timeout);
-      reject(error);
+      settle(reject, error);
     });
     ws.on('unexpected-response', (_request, response) => {
-      clearTimeout(timeout);
-      reject(new Error(`Terminal WebSocket upgrade failed with HTTP ${response.statusCode}.`));
+      settle(reject, new Error(`Terminal WebSocket upgrade failed with HTTP ${response.statusCode}.`));
     });
     ws.on('close', () => {
-      clearTimeout(timeout);
+      if (!settled) {
+        settle(reject, new Error(`Terminal WebSocket closed before output "${expectedText}" after opened=${opened}. Saw:\n${output}`));
+      }
     });
   });
 }
@@ -287,47 +348,201 @@ async function commitWorkspaceSmokeChange(proxyBasePath, headers, unique) {
 }
 
 async function requestJson(base, path, init = {}) {
-  const response = await fetch(`${base}${path}`, {
-    ...init,
-    headers: {
-      ...authHeadersFor(base),
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init.headers ?? {}),
-    },
-  });
-  const text = await response.text();
-  let body = null;
-  if (text) {
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = text;
+  const method = init.method ?? 'GET';
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${base}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        ...authHeadersFor(base),
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(init.headers ?? {}),
+      },
+    });
+    const text = await response.text();
+    let body = null;
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = text;
+      }
     }
+    if (!response.ok) {
+      throw new Error(`${method} ${base}${path} failed (${response.status}): ${text}`);
+    }
+    return body;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`${method} ${base}${path} timed out after ${REQUEST_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  if (!response.ok) {
-    throw new Error(`${init.method ?? 'GET'} ${base}${path} failed (${response.status}): ${text}`);
-  }
-  return body;
+}
+
+function isTransientFetchError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const causeCode = error instanceof Error && error.cause && typeof error.cause === 'object'
+    ? error.cause.code
+    : null;
+  const errorName = error instanceof Error ? error.name : '';
+  return message.includes('fetch failed')
+    || message.includes('timed out')
+    || message.includes('timeout')
+    || errorName === 'AbortError'
+    || causeCode === 'UND_ERR_SOCKET'
+    || causeCode === 'ECONNRESET'
+    || causeCode === 'EPIPE'
+    || causeCode === 'ECONNREFUSED';
 }
 
 async function startAssessmentEvaluationWithRetry(interviewId) {
   let lastError = null;
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       return await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}/assessment/start-evaluation`, {
         method: 'POST',
       });
     } catch (error) {
       lastError = error;
-      if (attempt === 2) break;
+      if (attempt === maxAttempts) break;
       const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes('/assessment/start-evaluation failed (500)')) {
+      if (
+        !message.includes('/assessment/start-evaluation failed (500)')
+        && !isTransientFetchError(error)
+      ) {
         throw error;
       }
-      await sleep(2_000);
+      await sleep(1_000 * attempt);
     }
   }
   throw lastError;
+}
+
+async function pollAssessmentEvaluationComplete(interviewId) {
+  const deadline = Date.now() + EVALUATION_WAIT_MS;
+  let lastProgress = null;
+  let missingProgressCount = 0;
+  while (Date.now() < deadline) {
+    const detail = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}`);
+    const progress = detail?.interview?.assessmentProgress ?? null;
+    lastProgress = progress;
+    if (!progress) {
+      missingProgressCount += 1;
+      logStep('evaluation:progress-missing', {
+        interviewId,
+        missingProgressCount,
+      });
+      if (missingProgressCount >= 3) {
+        throw new Error(`Recruiter detail lost assessmentProgress while evaluation was pending for ${interviewId}.`);
+      }
+      await sleep(5_000);
+      continue;
+    }
+    missingProgressCount = 0;
+    logStep('evaluation:progress', {
+      interviewId,
+      stage: progress.stage ?? null,
+      nextAction: progress.nextAction ?? null,
+      evaluationStatus: progress.evaluation?.status ?? null,
+    });
+    if (
+      progress?.stage === 'EVALUATED'
+      && progress?.nextAction === 'REVIEW_EVALUATION'
+      && progress?.evaluation?.status === 'EVALUATED'
+    ) {
+      return progress;
+    }
+    if (progress?.stage === 'NEEDS_ATTENTION' || progress?.nextAction === 'RESOLVE_DIAGNOSTIC') {
+      throw new Error(`Workspace assessment evaluation reached a diagnostic state: ${JSON.stringify(progress)}`);
+    }
+    await sleep(5_000);
+  }
+  throw new Error(`Workspace assessment evaluation did not complete. Last progress: ${JSON.stringify(lastProgress)}`);
+}
+
+async function assertAssessmentEvidenceBundle({
+  interviewId,
+  workspaceCommit,
+  humanDecision,
+  expectedRepoUrl,
+  expectedBaseCommitSha,
+}) {
+  const response = await requestJson(
+    APP_BASE,
+    `/api/v1/scheduling/interviews/${interviewId}/assessment/evidence-bundle`,
+  );
+  const bundle = response?.bundle ?? null;
+  if (bundle?.schemaVersion !== 'repo-task-final-evidence-bundle-v1') {
+    throw new Error(`Assessment evidence bundle returned the wrong schema: ${JSON.stringify(bundle)}`);
+  }
+  if (bundle?.completeness?.hasChallengePacket !== true || bundle?.completeness?.hasCommitSubmission !== true) {
+    throw new Error(`Assessment evidence bundle is missing challenge or commit proof: ${JSON.stringify(bundle?.completeness)}`);
+  }
+  if (bundle?.completeness?.hasEvaluationReport !== true || bundle?.completeness?.isReviewable !== true) {
+    throw new Error(`Assessment evidence bundle is not reviewable after evaluation: ${JSON.stringify(bundle?.completeness)}`);
+  }
+  if (bundle?.completeness?.hasHumanDecision !== true || bundle?.humanDecision?.decision !== humanDecision.decision) {
+    throw new Error(`Assessment evidence bundle did not include the recorded human decision: ${JSON.stringify(bundle?.humanDecision)}`);
+  }
+  if (bundle?.submission?.commitSha !== workspaceCommit.commitSha) {
+    throw new Error(`Assessment evidence bundle commit mismatch: ${JSON.stringify(bundle?.submission)}`);
+  }
+  if (bundle?.submission?.baseCommitSha !== expectedBaseCommitSha) {
+    throw new Error(`Assessment evidence bundle base commit mismatch: ${JSON.stringify(bundle?.submission)}`);
+  }
+  if ((bundle?.submission?.repositoryUrl ?? '').replace(/\/+$/g, '') !== expectedRepoUrl.replace(/\/+$/g, '')) {
+    throw new Error(`Assessment evidence bundle repo mismatch: ${JSON.stringify(bundle?.submission)}`);
+  }
+  const timeline = Array.isArray(bundle?.timeline) ? bundle.timeline : [];
+  const allSourceRefs = timeline.flatMap((event) => Array.isArray(event.sourceRefs) ? event.sourceRefs : []);
+  const sourceRefTypes = new Set(allSourceRefs.map((sourceRef) => sourceRef.sourceRefType));
+  for (const requiredType of [
+    'review_challenge_packet',
+    'git_commit',
+    'code_diff',
+    'terminal_command',
+    'test_run',
+    'assessment_evaluation_request',
+    'assessment_evaluation_report',
+  ]) {
+    if (!sourceRefTypes.has(requiredType)) {
+      throw new Error(`Assessment evidence bundle missed ${requiredType} source refs: ${JSON.stringify([...sourceRefTypes].sort())}`);
+    }
+  }
+  const commitEvent = timeline.find((event) => event.kind === 'commit_submission');
+  if (!commitEvent?.sourceRefs?.some((sourceRef) =>
+    sourceRef.sourceRefType === 'code_diff'
+    && String(sourceRef.sourceRefId ?? '').includes(workspaceCommit.commitSha)
+    && String(sourceRef.exactText ?? '').includes('diff --git')
+  )) {
+    throw new Error(`Assessment evidence bundle did not expose the committed diff source text: ${JSON.stringify(commitEvent)}`);
+  }
+  if (bundle?.evaluation?.status !== 'EVALUATED') {
+    throw new Error(`Assessment evidence bundle evaluation is not evaluated: ${JSON.stringify(bundle?.evaluation)}`);
+  }
+  const evaluationSourceRefCount = [
+    ...(bundle.evaluation?.claims ?? []),
+    ...(bundle.evaluation?.diagnostics ?? []),
+  ].reduce((count, item) => count + (Array.isArray(item.sourceRefs) ? item.sourceRefs.length : 0), 0);
+  if (evaluationSourceRefCount < 1) {
+    throw new Error(`Assessment evidence bundle evaluation has no cited source refs: ${JSON.stringify(bundle.evaluation)}`);
+  }
+  return {
+    visible: true,
+    timelineEventCount: timeline.length,
+    timelineSourceRefCount: allSourceRefs.length,
+    evaluationClaimCount: bundle.evaluation?.claims?.length ?? 0,
+    evaluationDiagnosticCount: bundle.evaluation?.diagnostics?.length ?? 0,
+    hasHumanDecision: bundle.completeness.hasHumanDecision === true,
+  };
 }
 
 function tokenFromRoomUrl(rawUrl) {
@@ -361,6 +576,133 @@ function cleanMaybeAssessUrl(rawUrl) {
   } catch {
     return null;
   }
+}
+
+function candidateSolutionRefNeedles(input) {
+  const needles = [];
+  const githubPrNumber = Number(input?.githubPrNumber ?? 0);
+  if (Number.isInteger(githubPrNumber) && githubPrNumber > 0) {
+    needles.push(
+      `#${githubPrNumber}`,
+      `/pull/${githubPrNumber}`,
+      `pull/${githubPrNumber}/head`,
+    );
+  }
+  const headCommitSha = typeof input?.headCommitSha === 'string'
+    ? input.headCommitSha.trim()
+    : '';
+  if (headCommitSha) needles.push(headCommitSha);
+  return needles;
+}
+
+function assertNoCandidateSolutionRefs(label, value, input) {
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  for (const needle of candidateSolutionRefNeedles(input)) {
+    if (text.includes(needle)) {
+      throw new Error(`${label} leaked candidate-hidden solution reference ${needle}: ${text.slice(0, 1200)}`);
+    }
+  }
+}
+
+function assertCandidateWorkspaceSolutionSafe(workspace, input) {
+  if (!input?.hideSolutionRefs) return;
+  if (workspace?.githubPrNumber !== null) {
+    throw new Error(`Candidate workspace exposed hidden githubPrNumber: ${JSON.stringify(workspace)}`);
+  }
+  const locator = workspace?.challenge?.packet?.locator ?? {};
+  for (const hiddenKey of [
+    'githubPrNumber',
+    'pullRequestNumber',
+    'prNumber',
+    'pullRequestUrl',
+    'githubPullRequestUrl',
+    'prUrl',
+    'headCommitSha',
+    'headCommit',
+    'headSha',
+    'scheduledInterviewId',
+    'repoSnapshotId',
+    'internalAssessmentSessionId',
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(locator, hiddenKey)) {
+      throw new Error(`Candidate workspace packet locator exposed hidden key ${hiddenKey}: ${JSON.stringify(locator)}`);
+    }
+  }
+  assertNoCandidateSolutionRefs('Candidate workspace packet', workspace?.challenge?.packet ?? workspace, input);
+}
+
+async function assertCandidateRoomSolutionSafety(token, headers, input) {
+  if (!input?.hideSolutionRefs) {
+    return {
+      workspaceSolutionRefsHidden: false,
+      progressSolutionRefsHidden: false,
+      receiptSolutionRefsHidden: false,
+    };
+  }
+
+  const workspaceBody = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/workspace`, {
+    headers,
+  });
+  assertCandidateWorkspaceSolutionSafe(workspaceBody?.workspace, input);
+
+  const progressBody = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/assessment/progress`, {
+    headers,
+  });
+  const progress = progressBody?.progress ?? null;
+  if (progress?.challenge?.githubPrNumber !== null || progress?.challenge?.pullRequestUrl !== null) {
+    throw new Error(`Candidate assessment progress exposed hidden solution PR: ${JSON.stringify(progress?.challenge)}`);
+  }
+  assertNoCandidateSolutionRefs('Candidate assessment progress', progress, input);
+
+  const receiptMarkdown = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/assessment/receipt`, {
+    headers,
+  });
+  if (typeof receiptMarkdown !== 'string') {
+    throw new Error(`Candidate receipt endpoint returned non-markdown payload: ${JSON.stringify(receiptMarkdown)}`);
+  }
+  if (!receiptMarkdown.includes('Pull request: Hidden until recruiter review')) {
+    throw new Error(`Candidate receipt did not label hidden solution PR correctly: ${receiptMarkdown.slice(0, 1200)}`);
+  }
+  assertNoCandidateSolutionRefs('Candidate assessment receipt', receiptMarkdown, input);
+
+  return {
+    workspaceSolutionRefsHidden: true,
+    progressSolutionRefsHidden: true,
+    receiptSolutionRefsHidden: true,
+  };
+}
+
+function assessmentSessionIdFromProgress(progress, label) {
+  const id = progress?.session?.id;
+  if (typeof id !== 'string' || id.trim().length === 0) {
+    throw new Error(`${label} did not expose recruiter-only assessment session id: ${JSON.stringify(progress)}`);
+  }
+  return id;
+}
+
+function assertSameAssessmentSessionId(expected, progress, label) {
+  const actual = assessmentSessionIdFromProgress(progress, label);
+  if (actual !== expected) {
+    throw new Error(`${label} used assessment session ${actual}, expected ${expected}`);
+  }
+  return actual;
+}
+
+function assessmentEvidenceProofCommands(assessmentSessionId) {
+  if (!REMOTE) {
+    return {
+      target: 'local-app',
+      replay: null,
+      audit: null,
+      note: 'Local workspace smokes use the local dev database; run the assessment evidence replay/audit scripts against that database manually.',
+    };
+  }
+  const envPrefix = `CLOUDFLARE_D1_DATABASE_ID=${DEV_D1_DATABASE_ID}`;
+  return {
+    target: 'app-dev remote D1',
+    replay: `cd workers/api && ${envPrefix} npm run assessment-evidence:replay -- --remote --session-id ${assessmentSessionId}`,
+    audit: `cd workers/api && ${envPrefix} npm run assessment-evidence:audit -- --remote --session-id ${assessmentSessionId}`,
+  };
 }
 
 function githubCompareUrl({ commitUrl, baseCommitSha, commitSha }) {
@@ -398,13 +740,117 @@ function repoLabelFromUrl(rawUrl) {
   return null;
 }
 
-async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit, expectedBaseCommitSha) {
-  const detail = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}`);
-  const progress = detail?.interview?.assessmentProgress ?? null;
-  const commit = progress?.commit ?? null;
-  if (!progress || !commit) {
-    throw new Error(`Recruiter detail did not expose assessment commit progress: ${JSON.stringify(detail?.interview)}`);
+function sourceRefCount(rows, kind) {
+  return rows.find((row) => row.kind === kind)?.count ?? 0;
+}
+
+const AI_INTERACTION_SOURCE_REF_TYPES = new Set([
+  'ai_user_prompt',
+  'ai_user_prompt_blocked',
+  'ai_agent_response',
+  'ai_agent_diagnostic',
+  'agent_status',
+  'agent_response',
+  'agent_diagnostic',
+]);
+
+function hasAiInteractionSourceRef(rows) {
+  return rows.some((row) => AI_INTERACTION_SOURCE_REF_TYPES.has(row.kind) && row.count > 0);
+}
+
+function normalizeRuntimeRepoUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return value.trim().replace(/\/+$/g, '').replace(/\.git$/i, '').toLowerCase();
+}
+
+function assertRecruiterRuntimeProjection(interview, label, expected) {
+  if (!interview || typeof interview !== 'object') {
+    throw new Error(`${label} did not expose an interview projection.`);
   }
+  if (!Object.prototype.hasOwnProperty.call(interview, 'roomStatus')) {
+    throw new Error(`${label} did not expose roomStatus: ${JSON.stringify(interview)}`);
+  }
+  if (!Object.prototype.hasOwnProperty.call(interview, 'guestWaiting')) {
+    throw new Error(`${label} did not expose guestWaiting: ${JSON.stringify(interview)}`);
+  }
+  if (typeof interview.guestWaiting !== 'boolean') {
+    throw new Error(`${label} guestWaiting is not boolean: ${JSON.stringify(interview.guestWaiting)}`);
+  }
+  if (typeof interview.roomStatus !== 'string' || interview.roomStatus.trim().length === 0) {
+    throw new Error(`${label} did not expose an active room state for the room-backed assessment: ${JSON.stringify({
+      roomStatus: interview.roomStatus,
+      guestWaiting: interview.guestWaiting,
+    })}`);
+  }
+  if (interview.roomStatus === 'ENDED') {
+    throw new Error(`${label} showed an ended room while the assessment smoke was still reviewing: ${JSON.stringify({
+      roomStatus: interview.roomStatus,
+      guestWaiting: interview.guestWaiting,
+    })}`);
+  }
+
+  const workspace = interview.workspaceSession;
+  if (!workspace || typeof workspace !== 'object') {
+    throw new Error(`${label} did not expose workspaceSession for the room-backed assessment: ${JSON.stringify(interview)}`);
+  }
+  if (typeof workspace.status !== 'string' || workspace.status.trim().length === 0) {
+    throw new Error(`${label} workspaceSession did not expose a status: ${JSON.stringify(workspace)}`);
+  }
+  if (workspace.status === 'ERROR') {
+    const progress = interview.assessmentProgress ?? null;
+    const cleanExitAfterEvaluation = progress?.stage === 'EVALUATED'
+      && (progress.nextAction === 'NONE' || progress.nextAction === 'REVIEW_EVALUATION')
+      && isRecoverableWorkspaceStartFailure(workspace.errorMessage ?? '');
+    if (!cleanExitAfterEvaluation) {
+      throw new Error(`${label} workspaceSession is in ERROR state: ${JSON.stringify(workspace)}`);
+    }
+  }
+
+  const actualRepo = normalizeRuntimeRepoUrl(workspace.repoGitUrl);
+  const expectedRepo = normalizeRuntimeRepoUrl(expected.expectedRepoUrl);
+  if (expectedRepo && actualRepo !== expectedRepo) {
+    throw new Error(`${label} workspaceSession repo mismatch: ${JSON.stringify({
+      actual: workspace.repoGitUrl,
+      expected: expected.expectedRepoUrl,
+    })}`);
+  }
+
+  if (
+    expected.expectedBaseCommitSha
+    && String(workspace.baseCommitSha ?? '').toLowerCase() !== expected.expectedBaseCommitSha.toLowerCase()
+  ) {
+    throw new Error(`${label} workspaceSession base commit mismatch: ${JSON.stringify({
+      actual: workspace.baseCommitSha,
+      expected: expected.expectedBaseCommitSha,
+    })}`);
+  }
+}
+
+async function assertRecruiterAssessmentProjection(
+  interviewId,
+  workspaceCommit,
+  expectedBaseCommitSha,
+  expectedRepoUrl,
+) {
+  const deadline = Date.now() + 60_000;
+  let lastInterview = null;
+  let progress = null;
+  let commit = null;
+  while (Date.now() < deadline) {
+    const detail = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}`);
+    lastInterview = detail?.interview ?? null;
+    progress = lastInterview?.assessmentProgress ?? null;
+    commit = progress?.commit ?? null;
+    if (progress && commit) break;
+    await sleep(2_000);
+  }
+  if (!progress || !commit) {
+    throw new Error(`Recruiter detail did not expose assessment commit progress after polling: ${JSON.stringify(lastInterview)}`);
+  }
+  assertRecruiterRuntimeProjection(lastInterview, 'Recruiter detail', {
+    expectedRepoUrl,
+    expectedBaseCommitSha,
+  });
   if (commit.commitSha !== workspaceCommit.commitSha) {
     throw new Error(`Recruiter detail exposed the wrong submitted commit: ${JSON.stringify(commit)}`);
   }
@@ -432,8 +878,22 @@ async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit,
     baseCommitSha: commit.baseCommitSha,
     commitSha: commit.commitSha,
   });
+  const capturedDiffSnippet = (progress.evidenceSnippets ?? []).find((snippet) =>
+    snippet.sourceRefType === 'code_diff'
+    && typeof snippet.exactText === 'string'
+    && snippet.exactText.trim().length > 0
+  ) ?? null;
   const sourceRefTypes = new Set((progress.sourceRefCounts ?? []).map((row) => row.kind));
-  for (const requiredSourceRefType of ['git_commit', 'code_diff', 'test_run']) {
+  for (const requiredSourceRefType of [
+    'git_commit',
+    'code_diff',
+    'test_run',
+    'dev_container_workspace_launch',
+    'terminal_command',
+    'code_server_file_observation',
+    'meeting_session_event',
+    'room_chat_message',
+  ]) {
     if (!sourceRefTypes.has(requiredSourceRefType)) {
       throw new Error(`Recruiter detail is missing ${requiredSourceRefType} proof for source-backed review: ${JSON.stringify(progress.sourceRefCounts)}`);
     }
@@ -441,11 +901,123 @@ async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit,
   if (commit.commitUrl && !compareUrl) {
     throw new Error(`Recruiter detail cannot produce a GitHub compare URL from external commit metadata: ${JSON.stringify(commit)}`);
   }
+  if (!compareUrl) {
+    if (!capturedDiffSnippet) {
+      throw new Error(`Recruiter detail has no compare URL and no captured code_diff exact text: ${JSON.stringify(progress.evidenceSnippets)}`);
+    }
+    if (!capturedDiffSnippet.exactText.includes('diff --git')) {
+      throw new Error(`Recruiter detail captured code_diff does not look reviewable: ${capturedDiffSnippet.exactText.slice(0, 240)}`);
+    }
+  }
 
   return {
+    assessmentSessionId: assessmentSessionIdFromProgress(progress, 'recruiter detail assessment progress'),
     compareUrl,
+    capturedDiffSnippet,
+    hasAiInteraction: progress.hasAiInteraction === true,
     sourceRefCounts: progress.sourceRefCounts ?? [],
     humanDecision: progress.humanDecision ?? null,
+  };
+}
+
+async function assertRecruiterListApiEvaluationProof(interviewId, expectedRepoUrl, expectedBaseCommitSha) {
+  const body = await requestJson(
+    APP_BASE,
+    `/api/v1/scheduling/interviews?limit=20&offset=0&sort=created_desc&workspaceSmoke=${Date.now()}`,
+  );
+  const interviews = Array.isArray(body?.interviews) ? body.interviews : [];
+  const interview = interviews.find((item) => item?.id === interviewId);
+  if (!interview) {
+    throw new Error(`Recruiter list API did not include the fresh workspace smoke interview ${interviewId}: ${JSON.stringify(body?.pagination ?? body)}`);
+  }
+  assertRecruiterRuntimeProjection(interview, 'Recruiter list API', {
+    expectedRepoUrl,
+    expectedBaseCommitSha,
+  });
+  const progress = interview.assessmentProgress;
+  const evaluation = progress?.evaluation;
+  if (progress?.stage !== 'EVALUATED' || progress?.nextAction !== 'NONE') {
+    throw new Error(`Recruiter list API did not expose the final reviewed assessment state: ${JSON.stringify(progress)}`);
+  }
+  if (evaluation?.status !== 'EVALUATED') {
+    throw new Error(`Recruiter list API did not expose the evaluated report: ${JSON.stringify(evaluation)}`);
+  }
+  if (evaluation.evidenceCoverage?.schemaVersion !== 'assessment-evidence-coverage-v1') {
+    throw new Error(`Recruiter list API did not expose assessment evidence coverage: ${JSON.stringify(evaluation)}`);
+  }
+  if (evaluation.reviewPacket?.schemaVersion !== 'repo-task-review-packet-v1') {
+    throw new Error(`Recruiter list API did not expose the final repo-task review packet: ${JSON.stringify(evaluation.reviewPacket)}`);
+  }
+  const claims = Array.isArray(evaluation.claims) ? evaluation.claims : [];
+  if (!claims.some((claim) => claim.sourceRefCount > 0 && Array.isArray(claim.sourceRefTypes) && claim.sourceRefTypes.length > 0)) {
+    throw new Error(`Recruiter list API did not expose cited evaluation claim previews: ${JSON.stringify(evaluation.claims)}`);
+  }
+  const diagnostics = Array.isArray(evaluation.diagnostics) ? evaluation.diagnostics : [];
+  if (!diagnostics.some((diagnostic) => Array.isArray(diagnostic.sourceRefTypes))) {
+    throw new Error(`Recruiter list API did not expose evaluation diagnostic previews: ${JSON.stringify(evaluation.diagnostics)}`);
+  }
+  return {
+    visible: true,
+    stage: progress.stage,
+    nextAction: progress.nextAction,
+    evaluationStatus: evaluation.status,
+    recommendation: evaluation.recommendation ?? null,
+    coverageSchema: evaluation.evidenceCoverage.schemaVersion,
+    claimCount: claims.length,
+    diagnosticCount: diagnostics.length,
+  };
+}
+
+function recruiterModeFacetKey(interviewType) {
+  switch (interviewType) {
+    case 'CODE_REVIEW':
+      return 'codeReview';
+    case 'DEV_CONTAINER_CHALLENGE':
+      return 'devContainerChallenge';
+    case 'OPEN_SOURCE_BUG_FIX':
+      return 'openSourceBugFix';
+    default:
+      return 'standardCalls';
+  }
+}
+
+async function assertRecruiterListModeFilterApi(interviewId) {
+  const filter = INTERVIEW_TYPE;
+  const body = await requestJson(
+    APP_BASE,
+    `/api/v1/scheduling/interviews?limit=100&offset=0&sort=created_desc&interviewType=${encodeURIComponent(filter)}&workspaceSmokeModeFilter=${Date.now()}`,
+  );
+  const interviews = Array.isArray(body?.interviews) ? body.interviews : [];
+  const pagination = body?.pagination ?? null;
+  const facets = body?.facets?.interviewTypes ?? null;
+  if (pagination?.interviewType !== filter) {
+    throw new Error(`Recruiter list mode filter did not echo ${filter}: ${JSON.stringify(pagination)}`);
+  }
+  if (!facets || typeof facets !== 'object') {
+    throw new Error(`Recruiter list mode filter did not return interview-type facets: ${JSON.stringify(body?.facets)}`);
+  }
+  const mismatched = interviews.filter((item) => item?.interviewType !== filter);
+  if (mismatched.length > 0) {
+    throw new Error(`Recruiter list mode filter returned rows outside ${filter}: ${JSON.stringify(mismatched.slice(0, 3))}`);
+  }
+  const facetKey = recruiterModeFacetKey(filter);
+  const filteredFacetCount = facets[facetKey];
+  if (!Number.isFinite(filteredFacetCount) || filteredFacetCount < interviews.length) {
+    throw new Error(`Recruiter list mode facets are inconsistent for ${filter}: ${JSON.stringify({ facets, pageCount: interviews.length })}`);
+  }
+  if (pagination.total !== filteredFacetCount) {
+    throw new Error(`Recruiter list mode filter total did not match the ${facetKey} facet: ${JSON.stringify({ pagination, facets })}`);
+  }
+  if (!interviews.some((item) => item?.id === interviewId)) {
+    throw new Error(`Recruiter list mode filter did not include the fresh ${filter} workspace smoke interview ${interviewId}: ${JSON.stringify({ pagination, facets })}`);
+  }
+  return {
+    visible: true,
+    filter,
+    total: pagination.total,
+    facetCount: filteredFacetCount,
+    allCount: facets.all,
+    pageCount: interviews.length,
   };
 }
 
@@ -501,7 +1073,14 @@ async function recordHumanAssessmentDecision(interviewId, workspaceCommit, recom
   };
 }
 
-async function assertRecruiterReviewerReceiptBrowser(interviewId, workspaceCommit, submittedBranchName, humanDecision) {
+async function assertRecruiterReviewerReceiptBrowser(
+  interviewId,
+  workspaceCommit,
+  submittedBranchName,
+  humanDecision,
+  recruiterProjection,
+  matchedAssignmentProofText,
+) {
   if (SKIP_RECRUITER_BROWSER) {
     return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_RECRUITER_BROWSER=1' };
   }
@@ -519,6 +1098,50 @@ async function assertRecruiterReviewerReceiptBrowser(interviewId, workspaceCommi
       timeout: 60_000,
     });
 
+    const assignment = page.getByTestId('interview-assessment-assignment');
+    await expect(assignment).toBeVisible({ timeout: 60_000 });
+    if (MATCHED_REPO_ID !== null) {
+      await expect(assignment).toContainText('PIPE-matched challenge');
+      await expect(assignment).toContainText('source-backed candidate evidence');
+      if (matchedAssignmentProofText) {
+        await expect(assignment).toContainText(matchedAssignmentProofText);
+      }
+      await expect(assignment).not.toContainText('Manual task assignment');
+    } else if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
+      await expect(assignment).toContainText('Manual task assignment');
+      await expect(assignment).toContainText('not as proof that PIPE automatically matched');
+    }
+
+    const decision = page.getByTestId('interview-workspace-assessment-decision-summary');
+    await expect(decision).toBeVisible({ timeout: 60_000 });
+    if (MATCHED_REPO_ID !== null) {
+      await expect(decision).toContainText('Challenge fit');
+      await expect(decision).toContainText('Matched task');
+      await expect(decision).toContainText('source-backed candidate evidence');
+      await expect(decision).toContainText('match-fit evidence');
+      await expect(decision).toContainText('Selection rationale');
+      await expect(decision).toContainText('PIPE-selected repo task');
+      await expect(decision).toContainText('instead of handing the candidate a generic repo');
+      await expect(decision).toContainText('hiring signal still depends on the captured branch commit');
+    } else if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
+      await expect(decision).toContainText('Challenge fit');
+      await expect(decision).not.toContainText('Matched task');
+    }
+
+    const validity = page.getByTestId('interview-workspace-assessment-validity-proof');
+    await expect(validity).toBeVisible({ timeout: 60_000 });
+    await expect(validity).toContainText('Score validity', { timeout: 60_000 });
+    await expect(validity).toContainText('Valid because', { timeout: 60_000 });
+    await expect(validity).toContainText('source-backed', { timeout: 60_000 });
+    await expect(validity).toContainText('Evidence basis', { timeout: 60_000 });
+    await expect(validity).toContainText('git commit', { timeout: 60_000 });
+    await expect(validity).toContainText('code diff', { timeout: 60_000 });
+    await expect(validity).toContainText('Use as', { timeout: 60_000 });
+    await expect(validity).toContainText('Use with recorded human decision', { timeout: 60_000 });
+    if (MATCHED_REPO_ID !== null) {
+      await expect(validity).toContainText('PIPE-matched challenge packet', { timeout: 60_000 });
+    }
+
     const receipt = page.getByTestId('interview-assessment-reviewer-receipt');
     await expect(receipt).toBeVisible({ timeout: 60_000 });
     await expect(receipt).toContainText('Reviewer receipt');
@@ -535,15 +1158,88 @@ async function assertRecruiterReviewerReceiptBrowser(interviewId, workspaceCommi
     await expect(receipt).toContainText('Recorded by');
     await expect(receipt).toContainText('Human reviewer');
     await expect(receipt).not.toContainText('dev-user');
+    const reviewPacket = page.getByTestId('interview-assessment-review-packet');
+    await expect(reviewPacket).toBeVisible({ timeout: 60_000 });
+    await expect(reviewPacket).toContainText('Final review packet');
+    await expect(reviewPacket).toContainText('repo-task-review-packet-v1');
+    await expect(reviewPacket).toContainText('Report artifact');
+    await expect(reviewPacket).toContainText('Challenge packet');
+    await expect(reviewPacket).toContainText(repoLabelFromUrl(REPO_URL) ?? REPO_URL);
+    await expect(reviewPacket).toContainText('Submitted work');
+    await expect(reviewPacket).toContainText(workspaceCommit.commitSha.slice(0, 10));
+    await expect(reviewPacket).toContainText('Evidence packet');
+    await expect(reviewPacket).toContainText('source');
+    const evidenceBundle = page.getByTestId('interview-assessment-evidence-bundle');
+    await expect(evidenceBundle).toBeVisible({ timeout: 60_000 });
+    await expect(evidenceBundle).toContainText('Final evidence bundle');
+    await expect(evidenceBundle).toContainText('repo-task-final-evidence-bundle-v1');
+    await expect(evidenceBundle).toContainText('Final packet reviewable');
+    await expect(evidenceBundle.getByRole('button', { name: 'EXPORT BRIEF' })).toBeVisible();
+    await expect(evidenceBundle.getByRole('button', { name: 'EXPORT JSON' })).toBeVisible();
+    const contractReceipt = page.getByTestId('interview-assessment-contract-receipt');
+    await expect(contractReceipt).toBeVisible({ timeout: 60_000 });
+    await expect(contractReceipt).toContainText('Evidence contract receipt');
+    await expect(contractReceipt).toContainText('expected evidence items machine-supported');
+    await expect(contractReceipt).toContainText(/git_commit|git commit/);
+    await expect(contractReceipt).toContainText(/code_diff|code diff/);
+    await expect(contractReceipt).toContainText(/test_run|test run|Gap declared/);
+    await expect(contractReceipt).toContainText('Success criteria are preserved from the challenge packet; they are not auto-passed.');
+    await expect(contractReceipt).not.toContainText('Auto-passed');
+    const aiUseReceipt = page.getByTestId('interview-assessment-ai-use-receipt');
+    await expect(aiUseReceipt).toBeVisible({ timeout: 60_000 });
+    await expect(aiUseReceipt).toContainText('AI-use receipt');
+    await expect(aiUseReceipt).toContainText(/AI assistance observed|AI bridge observed|AI use unobserved/);
+    await expect(aiUseReceipt).toContainText('Prompt/response proof');
+    await expect(aiUseReceipt).toContainText('No inference from silence');
+    await expect(aiUseReceipt).not.toContainText('No AI was used');
+    const workPacket = page.getByTestId('interview-assessment-work-packet');
+    await expect(workPacket).toBeVisible({ timeout: 60_000 });
+    await expect(workPacket).toContainText('Process telemetry');
+    await expect(workPacket).toContainText('Workspace/tool telemetry captured');
+    await expect(workPacket).toContainText('workspace launch');
+    await expect(workPacket).toContainText('terminal command');
+    if (sourceRefCount(recruiterProjection.sourceRefCounts, 'code_server_file_observation') > 0) {
+      await expect(workPacket).toContainText('file observation');
+    }
+    await expect(workPacket).toContainText('Collaboration');
+    await expect(workPacket).toContainText('Room chat captured');
+    if (!recruiterProjection.compareUrl) {
+      const capturedDiff = page.getByTestId('interview-assessment-captured-diff');
+      await expect(capturedDiff).toBeVisible({ timeout: 60_000 });
+      await expect(capturedDiff).toContainText('Captured source-backed diff');
+      await expect(capturedDiff).toContainText('diff --git');
+      const capturedText = recruiterProjection.capturedDiffSnippet?.exactText ?? '';
+      const expectedDiffNeedles = CHANGE_PROFILE?.changedPaths?.slice(0, 2) ?? ['PIPE_WORKSPACE_SMOKE.md'];
+      for (const needle of expectedDiffNeedles) {
+        if (capturedText.includes(needle)) {
+          await expect(capturedDiff).toContainText(needle);
+        }
+      }
+      await expect(page.getByRole('link', { name: 'Compare base to submitted commit' })).toHaveCount(0);
+    }
 
-    return { skipped: false };
+    return {
+      skipped: false,
+      evidenceBundleBriefExportVisible: true,
+      evidenceBundleExportVisible: true,
+      matchedDecisionVisible: MATCHED_REPO_ID !== null,
+      matchedValidityVisible: MATCHED_REPO_ID !== null,
+    };
   } finally {
     await context.close();
     await browser.close();
   }
 }
 
-async function assertRecruiterListCardBrowser(interviewId, workspaceCommit, expectedBaseCommitSha, humanDecision) {
+async function assertRecruiterListCardBrowser(
+  interviewId,
+  workspaceCommit,
+  expectedBaseCommitSha,
+  humanDecision,
+  expectedTaskTitle,
+  recruiterProjection,
+  matchedAssignmentProofText,
+) {
   if (SKIP_RECRUITER_BROWSER) {
     return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_RECRUITER_BROWSER=1' };
   }
@@ -577,14 +1273,60 @@ async function assertRecruiterListCardBrowser(interviewId, workspaceCommit, expe
     await expect(card).toContainText('BASE');
     await expect(card).toContainText(expectedBaseCommitSha.slice(0, 12));
     await expect(card).toContainText('TASK');
-    await expect(card).toContainText('Fix Base UI popover impatient click handling');
+    if (expectedTaskTitle) {
+      await expect(card).toContainText(expectedTaskTitle);
+    }
+    if (MATCHED_REPO_ID !== null) {
+      await expect(card).toContainText('PIPE-matched challenge');
+      await expect(card).toContainText('source-backed candidate evidence');
+      await expect(card).toContainText('MATCH PROOF');
+      await expect(card).toContainText('Review packet quality');
+      await expect(card).toContainText('source-backed repo demand');
+      await expect(card).toContainText('FIT');
+      await expect(card).toContainText('minute target from deterministic engineering prior');
+      if (matchedAssignmentProofText) {
+        await expect(card).toContainText(matchedAssignmentProofText);
+      }
+      await expect(card).not.toContainText('Manual task assignment');
+    } else if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
+      await expect(card).toContainText('Manual task assignment');
+      await expect(card).toContainText('not as proof that PIPE automatically matched');
+    }
     await expect(card).toContainText('EXPECTED');
     await expect(card).toContainText('git_commit source ref');
+    await expect(card).toContainText('AI USE');
+    await expect(card).toContainText(
+      /AI response captured|AI prompt captured|AI prompt blocked|AI bridge diagnostic|AI bridge status|AI bridge trace captured|No AI use captured/,
+    );
+    await expect(card).toContainText('LIMITATIONS');
+    if (recruiterProjection.hasAiInteraction || hasAiInteractionSourceRef(recruiterProjection.sourceRefCounts)) {
+      await expect(card).not.toContainText('AI-use trail missing');
+    } else {
+      await expect(card).toContainText('AI-use trail missing');
+      await expect(card).toContainText('Do not judge AI collaboration from this session.');
+    }
+    await expect(card).toContainText('Transcript missing');
     await expect(card).toContainText('COMMIT');
     await expect(card).toContainText(workspaceCommit.commitSha.slice(0, 12));
     await expect(card).toContainText('COMMIT TRUST');
     await expect(card).toContainText('Workspace-captured commit');
     await expect(card).toContainText('Bound to assigned challenge');
+    await expect(card).toContainText('REVIEW ARTIFACT');
+    if (recruiterProjection.compareUrl) {
+      await expect(card).toContainText('GitHub commit available');
+      await expect(card).toContainText('External commit URL is captured');
+    } else {
+      await expect(card).toContainText('Captured diff available');
+      await expect(card).toContainText('Workspace-only commit has exact code_diff source evidence ready for review.');
+    }
+    await expect(card).toContainText('PROCESS');
+    await expect(card).toContainText('Workspace telemetry captured');
+    await expect(card).toContainText('terminal command');
+    if (sourceRefCount(recruiterProjection.sourceRefCounts, 'code_server_file_observation') > 0) {
+      await expect(card).toContainText('file observation');
+    }
+    await expect(card).toContainText('CHAT');
+    await expect(card).toContainText('Room chat captured');
     await expect(card).toContainText('EVAL');
     await expect(card).toContainText('Evaluated');
     await expect(card).not.toContainText('assessment-session');
@@ -618,7 +1360,17 @@ async function enterRoomFromPrejoinIfNeeded(page) {
   }
 }
 
-async function assertCandidateTaskBriefBrowser(guestUrl, expectedRepoUrl, expectedBaseCommitSha) {
+async function assertCandidateTaskBriefBrowser(
+  guestUrl,
+  expectedRepoUrl,
+  expectedBaseCommitSha,
+  options = {},
+) {
+  const {
+    expectMatchedChallenge = false,
+    expectWorkspaceReady = false,
+    solutionSafety = null,
+  } = options;
   if (SKIP_CANDIDATE_BROWSER) {
     return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_CANDIDATE_BROWSER=1' };
   }
@@ -629,6 +1381,7 @@ async function assertCandidateTaskBriefBrowser(guestUrl, expectedRepoUrl, expect
     ...(REMOTE && roomCredentials
       ? { httpCredentials: roomCredentials }
       : {}),
+    acceptDownloads: true,
     viewport: { width: 1440, height: 1000 },
   });
 
@@ -642,26 +1395,221 @@ async function assertCandidateTaskBriefBrowser(guestUrl, expectedRepoUrl, expect
     });
     await enterRoomFromPrejoinIfNeeded(page);
 
+    const assessmentHeader = page.getByTestId('standard-assessment-header');
+    const statusStrip = assessmentHeader.getByTestId('assessment-status-strip');
+    await expect(statusStrip).toBeVisible({ timeout: 60_000 });
+    await expect(statusStrip).toHaveAttribute('data-assessment-mode', 'dev_container_assessment');
+    await expect(statusStrip).toContainText('Dev-container assessment');
+
     const brief = page.getByTestId('assessment-task-brief');
     await expect(brief).toBeVisible({ timeout: 60_000 });
     await expect(brief).toContainText('Assessment task');
     await expect(brief).toContainText('Open-source implementation');
     const repoLabel = repoLabelFromUrl(expectedRepoUrl);
-    if (repoLabel) await expect(brief).toContainText(repoLabel);
+    if (repoLabel) {
+      await expect(brief).toContainText(repoLabel);
+      await expect(assessmentHeader.getByTestId('assessment-repo')).toContainText(repoLabel);
+    }
     if (expectedBaseCommitSha) {
       await expect(brief).toContainText(expectedBaseCommitSha.slice(0, 10));
+      await expect(assessmentHeader.getByTestId('assessment-base-commit')).toContainText(
+        expectedBaseCommitSha.slice(0, 8),
+      );
     }
     await expect(brief).toContainText('Task');
+    if (expectMatchedChallenge) {
+      if (solutionSafety?.hideSolutionRefs) {
+        await expect(assessmentHeader.getByTestId('assessment-source-context')).toContainText('Source-backed replay');
+        await expect(assessmentHeader.getByTestId('assessment-pr')).toHaveCount(0);
+        for (const needle of candidateSolutionRefNeedles(solutionSafety)) {
+          await expect(brief).not.toContainText(needle);
+          await expect(statusStrip).not.toContainText(needle);
+        }
+      }
+      await expect(brief).toContainText('Match proof');
+      await expect(brief).toContainText('Review packet quality');
+      await expect(brief).toContainText('source-backed repo demand');
+      await expect(brief).toContainText('Assessment fit');
+      await expect(brief).toContainText('minute target from deterministic engineering prior');
+      await expect(brief).toContainText(/Issue context is present|No issue context in the source-backed PR packet/);
+    }
     await expect(brief).toContainText('Success criteria');
     await expect(brief).toContainText('Expected evidence');
+    const proofChecklist = brief.getByTestId('assessment-task-brief-proof');
+    await expect(proofChecklist).toContainText('AI-use transparency');
+    await expect(proofChecklist).toContainText(
+      /real agent bridge|no agent response is counted as assistance|silence is not proof of no AI use/i,
+    );
+    await expect(assessmentHeader.getByTestId('assessment-progress-coverage')).toContainText('challenge', {
+      timeout: 60_000,
+    });
+    await expect(assessmentHeader.getByTestId('assessment-ai-usage-state')).toContainText(
+      /AI response captured|AI prompt captured|AI prompt blocked|AI bridge trace captured|No AI use captured/,
+      { timeout: 60_000 },
+    );
 
     if (CHANGE_PROFILE) {
       await expect(brief).toContainText('popover');
       await expect(brief).toContainText('git_commit');
       await expect(brief).toContainText('code_diff');
+      await expect(assessmentHeader.getByTestId('assessment-next-action')).toContainText('popover');
+    }
+
+    if (expectWorkspaceReady) {
+      await expect(assessmentHeader.getByTestId('assessment-workspace-status')).toContainText('Workspace ready', {
+        timeout: 60_000,
+      });
+      await expect(assessmentHeader.getByTestId('assessment-open-submission')).toContainText('Submit Work');
+      await expect(page.getByTestId('standard-open-submission')).toContainText('Submit Work');
     }
 
     return { skipped: false };
+  } finally {
+    await context.close();
+    await browser.close();
+  }
+}
+
+async function assertCandidateTerminalStateBrowser(
+  guestUrl,
+  expectedCommitSha,
+  expectedChallengeTitle,
+  options = {},
+) {
+  const { solutionSafety = null } = options;
+  if (SKIP_CANDIDATE_BROWSER) {
+    return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_CANDIDATE_BROWSER=1' };
+  }
+
+  const roomCredentials = authCredentialsFromUrl(guestUrl);
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    ...(REMOTE && roomCredentials
+      ? { httpCredentials: roomCredentials }
+      : {}),
+    acceptDownloads: true,
+    viewport: { width: 1440, height: 1000 },
+  });
+
+  try {
+    const page = await context.newPage();
+    const url = new URL(roomUrlWithoutCredentials(guestUrl));
+    url.searchParams.set('workspaceSmokeFinal', String(Date.now()));
+    await page.goto(url.toString(), {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+    await enterRoomFromPrejoinIfNeeded(page);
+
+    const assessmentHeader = page.getByTestId('standard-assessment-header');
+    const statusStrip = assessmentHeader.getByTestId('assessment-status-strip');
+    await expect(statusStrip).toBeVisible({ timeout: 60_000 });
+    await expect(statusStrip).toHaveAttribute('data-assessment-mode', 'dev_container_assessment');
+
+    const headerSubmission = assessmentHeader.getByTestId('assessment-open-submission');
+    if (await headerSubmission.count()) {
+      await expect(headerSubmission).toContainText('Report Ready', { timeout: 60_000 });
+      await expect(headerSubmission).not.toContainText('Submit Work');
+    } else {
+      await expect(statusStrip).toContainText('Evaluated', { timeout: 60_000 });
+    }
+
+    const footerSubmission = page.getByTestId('standard-open-submission');
+    await expect(footerSubmission).toContainText('Report Ready', { timeout: 60_000 });
+    await expect(footerSubmission).not.toContainText('Submit Work');
+
+    const brief = page.getByTestId('assessment-task-brief');
+    await expect(brief).toBeVisible({ timeout: 60_000 });
+    await expect(brief.getByTestId('assessment-brief-open-submission')).toContainText('Report Ready');
+    await expect(brief.getByTestId('assessment-brief-open-submission')).not.toContainText('Submit work');
+    await expect(brief.getByTestId('assessment-task-brief-submission')).toContainText('Assessment report ready');
+    await expect(brief.getByTestId('assessment-task-brief-submission')).toContainText(
+      expectedCommitSha.slice(0, 10),
+    );
+    const finalReviewPacket = brief.getByTestId('assessment-final-review-packet');
+    await expect(finalReviewPacket).toBeVisible({ timeout: 60_000 });
+    await expect(finalReviewPacket).toContainText('Source-backed report ready');
+    await expect(finalReviewPacket).toContainText('repo-task-review-packet-v1');
+    await expect(finalReviewPacket).toContainText(repoLabelFromUrl(REPO_URL) ?? REPO_URL);
+    await expect(finalReviewPacket).toContainText(expectedCommitSha.slice(0, 10));
+    await expect(finalReviewPacket).toContainText('source');
+    await expect(finalReviewPacket).toContainText('claim');
+    const submissionPanel = page.getByTestId('commit-submission-completion');
+    if (solutionSafety?.hideSolutionRefs) {
+      for (const needle of candidateSolutionRefNeedles(solutionSafety)) {
+        await expect(brief).not.toContainText(needle);
+        await expect(finalReviewPacket).not.toContainText(needle);
+        await expect(submissionPanel).not.toContainText(needle);
+      }
+    }
+    await expect(submissionPanel).toContainText('Assessment fit');
+    await expect(submissionPanel).toContainText('minute target from deterministic engineering prior');
+    await expect(submissionPanel).toContainText(/Issue context is present|No issue context in the source-backed PR packet/);
+    await expect(submissionPanel.getByTestId('commit-submission-ai-use')).toContainText(
+      /AI response captured|AI prompt captured|AI prompt blocked|AI bridge diagnostic|AI bridge status|AI bridge trace captured|No AI use captured/,
+    );
+    const finalEvidence = page.getByTestId('commit-submission-final-evidence');
+    await expect(finalEvidence).toBeVisible({ timeout: 60_000 });
+    await expect(finalEvidence).toContainText('Final evidence packet');
+    await expect(finalEvidence).toContainText(/Evaluator claims|Evaluator diagnostics/);
+    await expect(finalEvidence).toContainText(
+      /AI response captured|AI prompt captured|AI prompt blocked|AI bridge diagnostic|AI bridge status|AI bridge trace captured|No AI use captured/,
+    );
+    const receiptButton = finalEvidence.getByRole('button', { name: 'Download receipt' });
+    await expect(receiptButton).toBeVisible({ timeout: 60_000 });
+    const receiptDownload = page.waitForEvent('download');
+    await receiptButton.click();
+    const download = await receiptDownload;
+    const suggestedFilename = download.suggestedFilename();
+    if (!suggestedFilename.endsWith('.md')) {
+      throw new Error(`Expected markdown receipt download, got ${suggestedFilename}`);
+    }
+    let receiptMarkdown = '';
+    const receiptPath = await download.path();
+    if (receiptPath) {
+      receiptMarkdown = await readFile(receiptPath, 'utf8');
+    } else {
+      const receiptTempDir = await mkdtemp(join(tmpdir(), 'pipe-receipt-'));
+      try {
+        const savedReceiptPath = join(receiptTempDir, suggestedFilename);
+        await download.saveAs(savedReceiptPath);
+        receiptMarkdown = await readFile(savedReceiptPath, 'utf8');
+      } finally {
+        await rm(receiptTempDir, { recursive: true, force: true });
+      }
+    }
+    if (!receiptMarkdown.includes('# PIPE Candidate Assessment Receipt')) {
+      throw new Error('Candidate receipt download did not include the receipt heading.');
+    }
+    if (!receiptMarkdown.includes(expectedCommitSha)) {
+      throw new Error('Candidate receipt download did not include the submitted commit SHA.');
+    }
+    if (!receiptMarkdown.includes(REPO_URL)) {
+      throw new Error('Candidate receipt download did not include the assigned repository URL.');
+    }
+    if (BASE_COMMIT_SHA && !receiptMarkdown.includes(BASE_COMMIT_SHA)) {
+      throw new Error('Candidate receipt download did not include the assigned base commit SHA.');
+    }
+    if (expectedChallengeTitle && !receiptMarkdown.includes(expectedChallengeTitle)) {
+      throw new Error('Candidate receipt download did not include the assigned challenge title.');
+    }
+    if (!receiptMarkdown.includes('Upstream PR boundary: PIPE assessment receipts do not imply automatic upstream PR submission')) {
+      throw new Error('Candidate receipt download did not include the upstream PR consent boundary.');
+    }
+    if (!receiptMarkdown.includes('Use this as the candidate receipt')) {
+      throw new Error('Candidate receipt did not come from the server-backed receipt endpoint.');
+    }
+    if (/assessment[-_ ]session|assessment_claim_internal|diagnostic_internal/i.test(receiptMarkdown)) {
+      throw new Error('Candidate receipt leaked internal assessment identifiers.');
+    }
+    if (solutionSafety?.hideSolutionRefs) {
+      if (!receiptMarkdown.includes('Pull request: Hidden until recruiter review')) {
+        throw new Error(`Candidate receipt download did not label hidden solution PR correctly: ${receiptMarkdown.slice(0, 1200)}`);
+      }
+      assertNoCandidateSolutionRefs('Candidate downloaded receipt', receiptMarkdown, solutionSafety);
+    }
+
+    return { skipped: false, candidateReceiptDownloadVisible: true, candidateReceiptDownloadVerified: true };
   } finally {
     await context.close();
     await browser.close();
@@ -672,14 +1620,32 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const RECOVERABLE_WORKSPACE_START_FAILURE_PATTERNS = [
+  /container is not running/i,
+  /consider calling start\(\)/i,
+  /startup did not complete/i,
+  /CONTAINER_START_FAILED/i,
+  /container stopped unexpectedly\s*\(exit code 0,\s*reason exit\)/i,
+];
+
+function isRecoverableWorkspaceStartFailure(message) {
+  const value = typeof message === 'string' ? message.trim() : '';
+  if (!value) return false;
+  return RECOVERABLE_WORKSPACE_START_FAILURE_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+async function fetchWorkspaceSession(token, headers = {}) {
+  const body = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/workspace`, {
+    headers,
+  });
+  return body.workspace?.session ?? null;
+}
+
 async function pollWorkspaceReady(token, headers = {}) {
   const deadline = Date.now() + 240_000;
   let last = null;
   while (Date.now() < deadline) {
-    const body = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/workspace`, {
-      headers,
-    });
-    last = body.workspace?.session ?? null;
+    last = await fetchWorkspaceSession(token, headers);
     if (last?.status === 'READY' || last?.status === 'SLEEPING') return last;
     if (last?.status === 'ERROR') break;
     await sleep(5_000);
@@ -707,13 +1673,148 @@ async function launchWorkspaceUntilReady(token, headers = {}) {
     } catch (error) {
       lastError = error;
       const message = error instanceof Error ? error.message : String(error);
-      if (attempt >= 2 || !message.includes('container is not running')) {
+      if (attempt >= 2 || !isRecoverableWorkspaceStartFailure(message)) {
         throw error;
       }
       await sleep(5_000);
     }
   }
   throw lastError ?? new Error('Workspace did not become ready.');
+}
+
+async function readResponseBody(response) {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+async function postWorkspaceFinalize(proxyBasePath, headers, body) {
+  const response = await fetch(`${ROOM_BASE}${proxyBasePath}/assessment/finalize`, {
+    method: 'POST',
+    headers: {
+      ...mergedRoomAuthHeaders(headers),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  return {
+    response,
+    body: await readResponseBody(response),
+  };
+}
+
+async function expectUnchangedWorkspaceFinalizeBlocked({
+  token,
+  headers,
+  proxyBasePath,
+  workspaceSession,
+}) {
+  let activeProxyBasePath = proxyBasePath;
+  let activeWorkspaceSession = workspaceSession;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const finalizeResult = await postWorkspaceFinalize(activeProxyBasePath, headers, {});
+    if (
+      finalizeResult.response.status === 409
+      && finalizeResult.body?.error?.code === 'ASSESSMENT_FINALIZE_BLOCKED'
+    ) {
+      return {
+        proxyBasePath: activeProxyBasePath,
+        workspaceSession: activeWorkspaceSession,
+      };
+    }
+
+    const code = finalizeResult.body?.error?.code ?? '';
+    if (attempt < 2 && code === 'CONTAINER_ERROR') {
+      const latestSession = await fetchWorkspaceSession(token, headers);
+      const latestMessage = latestSession?.errorMessage ?? '';
+      if (
+        latestSession?.status === 'ERROR'
+        && isRecoverableWorkspaceStartFailure(latestMessage)
+      ) {
+        await sleep(5_000);
+        const relaunchedSession = await launchWorkspaceUntilReady(token, headers);
+        if (!relaunchedSession.proxyPath) {
+          throw new Error(`Relaunched workspace did not expose a proxy path: ${JSON.stringify(relaunchedSession)}`);
+        }
+        activeWorkspaceSession = relaunchedSession;
+        activeProxyBasePath = relaunchedSession.proxyPath.replace(/\/$/, '');
+        continue;
+      }
+    }
+
+    throw new Error(`Workspace finalizer did not honestly block unchanged work: ${JSON.stringify(finalizeResult.body)}`);
+  }
+  throw new Error('Workspace finalizer did not honestly block unchanged work after retry.');
+}
+
+async function assertWorkspaceBridgeHealthy(proxyBasePath, headers) {
+  const bridgeHealth = await requestJson(ROOM_BASE, `${proxyBasePath}/health`, {
+    headers,
+  });
+  if (bridgeHealth?.ok !== true) {
+    throw new Error(`Workspace bridge health check failed: ${JSON.stringify(bridgeHealth)}`);
+  }
+  if (REMOTE && bridgeHealth.bridgeRevision !== EXPECTED_BRIDGE_REVISION) {
+    throw new Error(
+      `Workspace bridge image revision mismatch: expected ${EXPECTED_BRIDGE_REVISION}, got ${JSON.stringify(bridgeHealth)}`,
+    );
+  }
+  return bridgeHealth;
+}
+
+async function recordSourceBackedRoomChatEvidence(token, headers, unique) {
+  const text = `I would verify the assigned task before changing code. workspace smoke ${unique}`;
+  const messageCreatedAt = Date.now();
+  const roomMessageId = `workspace-smoke-chat-${unique}`;
+  const clientId = `workspace-smoke-client-${unique}`;
+  const body = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/session-events`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      type: 'chat_message',
+      text,
+      actor: 'guest',
+      properties: {
+        source: 'room_chat_client_submit',
+        chatEventSource: 'browser_room_chat_panel',
+        actor: 'guest',
+        roomMessageId,
+        clientId,
+        messageCreatedAt,
+        messageLength: text.length,
+        deliveryStatus: 'accepted',
+        surface: 'standard',
+        roomPhase: 'connected',
+        durableObjectReplayExpected: true,
+      },
+    }),
+  });
+  const progress = body?.progress ?? null;
+  if (body?.captured !== true || !body?.nodeId) {
+    throw new Error(`Room chat evidence was not accepted as a source-backed session event: ${JSON.stringify(body)}`);
+  }
+  if (progress?.hasMessageEvidence !== true || progress?.hasWorkEvidence !== true) {
+    throw new Error(`Room chat evidence did not update assessment message/work proof: ${JSON.stringify(progress)}`);
+  }
+  const sourceRefTypes = new Set((progress.sourceRefCounts ?? []).map((row) => row.kind));
+  for (const requiredSourceRefType of ['meeting_session_event', 'room_chat_message']) {
+    if (!sourceRefTypes.has(requiredSourceRefType)) {
+      throw new Error(`Room chat evidence missed ${requiredSourceRefType} source ref: ${JSON.stringify(progress.sourceRefCounts)}`);
+    }
+  }
+  if (progress.latestEvent?.kind !== 'message') {
+    throw new Error(`Room chat evidence was not the latest message event: ${JSON.stringify(progress.latestEvent)}`);
+  }
+  return {
+    nodeId: body.nodeId,
+    text,
+    roomMessageId,
+    sourceRefTypes: [...sourceRefTypes].sort(),
+  };
 }
 
 async function main() {
@@ -754,6 +1855,15 @@ async function main() {
         githubRepoUrl: REPO_URL,
         ...(PR_NUMBER ? { githubPrNumber: PR_NUMBER } : {}),
       };
+  logStep('create-interview:start', {
+    appBase: APP_BASE,
+    roomBase: ROOM_BASE,
+    interviewType: INTERVIEW_TYPE,
+    changeMode: CHANGE_MODE,
+    useMatchedRepo,
+    matchedRepoId: MATCHED_REPO_ID,
+    stopAfterCandidateSafety: STOP_AFTER_CANDIDATE_SAFETY,
+  });
   const created = await requestJson(APP_BASE, '/api/v1/scheduling/interviews', {
     method: 'POST',
     body: JSON.stringify({
@@ -767,6 +1877,11 @@ async function main() {
   });
   const interviewId = created?.interview?.id;
   if (!interviewId) throw new Error(`Create response missing interview id: ${JSON.stringify(created)}`);
+  logStep('create-interview:ok', { interviewId });
+  const assessmentSessionId = assessmentSessionIdFromProgress(
+    created?.interview?.assessmentProgress,
+    'create interview assessment progress',
+  );
   const expectedRepoUrl = useMatchedRepo
     ? created?.interview?.githubRepoUrl
     : REPO_URL;
@@ -776,8 +1891,17 @@ async function main() {
   const expectedBaseCommitSha = useMatchedRepo
     ? created?.interview?.assessmentProgress?.challenge?.locator?.baseCommitSha ?? ''
     : BASE_COMMIT_SHA;
+  const candidateSolutionSafety = {
+    hideSolutionRefs: useMatchedRepo,
+    githubPrNumber: expectedGithubPrNumber,
+    headCommitSha: CHANGE_PROFILE?.expectedHeadCommitSha ?? null,
+  };
+  let matchedAssignmentProofText = null;
   if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
     const setup = created?.interview?.assessmentSetup;
+    matchedAssignmentProofText = useMatchedRepo && typeof setup?.message === 'string'
+      ? setup.message
+      : null;
     const expectedSetupKind = useMatchedRepo ? 'auto_match' : 'manual_open_source_task';
     if (setup?.kind !== expectedSetupKind || setup?.status !== 'reviewable_task_assigned') {
       throw new Error(`Open-source task setup was not ready: ${JSON.stringify(setup)}`);
@@ -794,6 +1918,17 @@ async function main() {
       const missingTerms = CHANGE_PROFILE.challengeTextTerms.filter((term) => !challengeText.includes(term));
       if (missingTerms.length > 0) {
         throw new Error(`Task-aligned challenge packet missed expected terms ${missingTerms.join(', ')}: ${challengeText}`);
+      }
+      if (useMatchedRepo) {
+        const missingMatchProofTerms = [
+          'Match proof:',
+          'Review packet quality',
+          'source-backed repo demand',
+          'Demand families',
+        ].filter((term) => !challengeText.includes(term));
+        if (missingMatchProofTerms.length > 0) {
+          throw new Error(`Task-aligned matched challenge packet missed match proof terms ${missingMatchProofTerms.join(', ')}: ${challengeText}`);
+        }
       }
       const locator = challenge?.locator ?? {};
       const locatorBaseCommitSha = typeof locator.baseCommitSha === 'string'
@@ -823,6 +1958,7 @@ async function main() {
     await assertReachableBaseCommit(expectedRepoUrl, expectedBaseCommitSha);
   }
 
+  logStep('invite:start', { interviewId });
   const invited = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}/invite`, {
     method: 'POST',
     body: JSON.stringify({
@@ -853,11 +1989,18 @@ async function main() {
     console.log(JSON.stringify(proof, null, 2));
     return;
   }
+  logStep('invite:ok', {
+    interviewId,
+    hasHostUrl: Boolean(invited?.room?.hostUrl),
+    hasGuestUrl: Boolean(invited?.room?.guestUrl),
+  });
   const hostToken = tokenFromRoomUrl(invited?.room?.hostUrl ?? '');
   const roomAuthHeaders = authHeadersFromUrl(invited?.room?.hostUrl ?? '');
+  logStep('room-load:start', { interviewId });
   const room = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${hostToken}`, {
     headers: roomAuthHeaders,
   });
+  logStep('room-load:ok', { interviewId });
   const workspace = room?.room?.workspace;
   if (!workspace?.enabled) throw new Error(`Workspace was not enabled: ${JSON.stringify(workspace)}`);
   if (workspace.repoUrl !== expectedRepoUrl) {
@@ -871,74 +2014,99 @@ async function main() {
     if (challenge?.packet?.locator?.baseCommitSha !== expectedBaseCommitSha) {
       throw new Error(`Workspace packet base commit mismatch: ${JSON.stringify(challenge?.packet)}`);
     }
+    assertCandidateWorkspaceSolutionSafe(workspace, candidateSolutionSafety);
   }
+  const candidateRoomSolutionSafety = await assertCandidateRoomSolutionSafety(
+    hostToken,
+    roomAuthHeaders,
+    candidateSolutionSafety,
+  );
+  logStep('candidate-solution-safety:ok', {
+    interviewId,
+    ...candidateRoomSolutionSafety,
+  });
+  if (STOP_AFTER_CANDIDATE_SAFETY) {
+    console.log(JSON.stringify({
+      ok: true,
+      stoppedAfterCandidateSafety: true,
+      interviewId,
+      assessmentSessionId,
+      hostUrl: cleanRoomUrl(invited.room.hostUrl),
+      guestUrl: cleanRoomUrl(invited.room.guestUrl),
+      repoUrl: workspace.repoUrl,
+      githubPrNumber: expectedGithubPrNumber,
+      matchedRepoId: MATCHED_REPO_ID,
+      interviewType: INTERVIEW_TYPE,
+      challengeStatus: workspace.challenge?.status ?? null,
+      challengeSource: workspace.challenge?.source ?? null,
+      candidateWorkspaceSolutionRefsHidden: candidateRoomSolutionSafety.workspaceSolutionRefsHidden === true,
+      candidateProgressSolutionRefsHidden: candidateRoomSolutionSafety.progressSolutionRefsHidden === true,
+      candidateReceiptSolutionRefsHidden: candidateRoomSolutionSafety.receiptSolutionRefsHidden === true,
+    }, null, 2));
+    return;
+  }
+  logStep('workspace-launch:start', { interviewId });
+  let readySession = await launchWorkspaceUntilReady(hostToken, roomAuthHeaders);
+  if (!readySession.proxyPath) {
+    throw new Error(`Ready workspace did not expose a proxy path: ${JSON.stringify(readySession)}`);
+  }
+  logStep('workspace-launch:ok', {
+    interviewId,
+    status: readySession.status,
+    hasProxyPath: Boolean(readySession.proxyPath),
+  });
+  let proxyBasePath = readySession.proxyPath.replace(/\/$/, '');
+  let bridgeHealth = await assertWorkspaceBridgeHealthy(proxyBasePath, roomAuthHeaders);
+  logStep('bridge-health:ok', {
+    interviewId,
+    bridgeRevision: bridgeHealth.bridgeRevision ?? null,
+    agent: bridgeHealth.agent ?? null,
+  });
   const candidateBrowser = await assertCandidateTaskBriefBrowser(
     invited.room.guestUrl,
     expectedRepoUrl,
     expectedBaseCommitSha,
+    {
+      expectMatchedChallenge: useMatchedRepo,
+      expectWorkspaceReady: true,
+      solutionSafety: candidateSolutionSafety,
+    },
   );
-
-  const readySession = await launchWorkspaceUntilReady(hostToken, roomAuthHeaders);
-  if (!readySession.proxyPath) {
-    throw new Error(`Ready workspace did not expose a proxy path: ${JSON.stringify(readySession)}`);
-  }
-  const proxyBasePath = readySession.proxyPath.replace(/\/$/, '');
-  const bridgeHealth = await requestJson(ROOM_BASE, `${proxyBasePath}/health`, {
+  const guestToken = tokenFromRoomUrl(invited?.room?.guestUrl ?? '');
+  const guestRoomAuthHeaders = authHeadersFromUrl(invited?.room?.guestUrl ?? '');
+  logStep('room-chat-evidence:start', { interviewId });
+  const roomChatEvidence = await recordSourceBackedRoomChatEvidence(
+    guestToken,
+    guestRoomAuthHeaders,
+    unique,
+  );
+  logStep('room-chat-evidence:ok', { interviewId, nodeId: roomChatEvidence.nodeId });
+  logStep('unchanged-finalize:start', { interviewId });
+  const unchangedFinalize = await expectUnchangedWorkspaceFinalizeBlocked({
+    token: hostToken,
     headers: roomAuthHeaders,
+    proxyBasePath,
+    workspaceSession: readySession,
   });
-  if (bridgeHealth?.ok !== true) {
-    throw new Error(`Workspace bridge health check failed: ${JSON.stringify(bridgeHealth)}`);
-  }
-  if (REMOTE && bridgeHealth.bridgeRevision !== EXPECTED_BRIDGE_REVISION) {
-    throw new Error(
-      `Workspace bridge image revision mismatch: expected ${EXPECTED_BRIDGE_REVISION}, got ${JSON.stringify(bridgeHealth)}`,
-    );
-  }
-  const finalizeResponse = await fetch(`${ROOM_BASE}${proxyBasePath}/assessment/finalize`, {
-    method: 'POST',
-    headers: {
-      ...mergedRoomAuthHeaders(roomAuthHeaders),
-      'Content-Type': 'application/json',
-    },
-    body: '{}',
-  });
-  const finalizeText = await finalizeResponse.text();
-  let finalizeBody = null;
-  if (finalizeText) {
-    try {
-      finalizeBody = JSON.parse(finalizeText);
-    } catch {
-      finalizeBody = finalizeText;
-    }
-  }
-  if (
-    finalizeResponse.status !== 409
-    || finalizeBody?.error?.code !== 'ASSESSMENT_FINALIZE_BLOCKED'
-  ) {
-    throw new Error(`Workspace finalizer did not honestly block unchanged work: ${JSON.stringify(finalizeBody)}`);
-  }
+  readySession = unchangedFinalize.workspaceSession;
+  proxyBasePath = unchangedFinalize.proxyBasePath;
+  bridgeHealth = await assertWorkspaceBridgeHealthy(proxyBasePath, roomAuthHeaders);
+  logStep('unchanged-finalize:ok', { interviewId });
 
+  logStep('workspace-commit:start', { interviewId });
   const workspaceCommit = await commitWorkspaceSmokeChange(proxyBasePath, roomAuthHeaders, unique);
-  const submittedResponse = await fetch(`${ROOM_BASE}${proxyBasePath}/assessment/finalize`, {
-    method: 'POST',
-    headers: {
-      ...mergedRoomAuthHeaders(roomAuthHeaders),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      narrative: workspaceCommit.narrative,
-      testCommand: workspaceCommit.testCommand,
-    }),
+  logStep('workspace-commit:ok', {
+    interviewId,
+    commitSha: workspaceCommit.commitSha,
+    mode: workspaceCommit.mode,
   });
-  const submittedText = await submittedResponse.text();
-  let submittedBody = null;
-  if (submittedText) {
-    try {
-      submittedBody = JSON.parse(submittedText);
-    } catch {
-      submittedBody = submittedText;
-    }
-  }
+  logStep('workspace-finalize:start', { interviewId, commitSha: workspaceCommit.commitSha });
+  const submittedResult = await postWorkspaceFinalize(proxyBasePath, roomAuthHeaders, {
+    narrative: workspaceCommit.narrative,
+    testCommand: workspaceCommit.testCommand,
+  });
+  const submittedResponse = submittedResult.response;
+  const submittedBody = submittedResult.body;
   if (!submittedResponse.ok || submittedBody?.submitted !== true) {
     throw new Error(`Workspace finalizer did not accept committed work: ${JSON.stringify(submittedBody)}`);
   }
@@ -961,25 +2129,55 @@ async function main() {
   if (submittedBody?.progress?.hasCommitSubmission !== true) {
     throw new Error(`Workspace progress did not reflect the committed submission: ${JSON.stringify(submittedBody?.progress)}`);
   }
-  const evaluationBody = await startAssessmentEvaluationWithRetry(interviewId);
-  const evaluationProgress = evaluationBody?.progress ?? null;
-  if (evaluationProgress?.stage !== 'EVALUATED' || evaluationProgress?.nextAction !== 'REVIEW_EVALUATION') {
-    throw new Error(`Workspace assessment evaluation did not produce a reviewable report: ${JSON.stringify(evaluationBody)}`);
+  logStep('workspace-finalize:ok', {
+    interviewId,
+    commitSha: workspaceCommit.commitSha,
+    sourceRefTypes,
+  });
+  logStep('evaluation:start', { interviewId });
+  const evaluationStartBody = await startAssessmentEvaluationWithRetry(interviewId);
+  const evaluationStartProgress = evaluationStartBody?.progress ?? null;
+  let evaluationProgress = evaluationStartProgress;
+  if (
+    evaluationStartProgress?.stage === 'EVALUATING'
+    && evaluationStartProgress?.nextAction === 'WAIT_FOR_EVALUATION'
+  ) {
+    evaluationProgress = await pollAssessmentEvaluationComplete(interviewId);
   }
-  if (evaluationBody?.report?.status !== 'EVALUATED' || evaluationBody?.diagnostic !== null) {
-    throw new Error(`Workspace assessment evaluation was not a clean source-backed report: ${JSON.stringify(evaluationBody)}`);
+  if (evaluationProgress?.stage !== 'EVALUATED' || evaluationProgress?.nextAction !== 'REVIEW_EVALUATION') {
+    throw new Error(`Workspace assessment evaluation did not produce a reviewable report: ${JSON.stringify(evaluationStartBody)}`);
   }
   if (evaluationProgress?.evaluation?.status !== 'EVALUATED') {
     throw new Error(`Workspace assessment progress did not expose evaluated status: ${JSON.stringify(evaluationProgress?.evaluation)}`);
   }
+  logStep('evaluation:ok', {
+    interviewId,
+    stage: evaluationProgress.stage,
+    recommendation: evaluationProgress.evaluation?.recommendation ?? null,
+  });
+  assertSameAssessmentSessionId(
+    assessmentSessionId,
+    evaluationProgress,
+    'evaluation progress',
+  );
+  const expectedReceiptChallengeTitle = assignedChallengeTitleFromProgress(evaluationProgress)
+    ?? assignedChallengeTitleFromProgress(created?.interview?.assessmentProgress)
+    ?? workspace.challenge?.packet?.title
+    ?? (useMatchedRepo ? null : CHANGE_PROFILE?.challengeTitle)
+    ?? null;
+  const candidateTerminalBrowser = await assertCandidateTerminalStateBrowser(
+    invited.room.guestUrl,
+    workspaceCommit.commitSha,
+    expectedReceiptChallengeTitle,
+    { solutionSafety: candidateSolutionSafety },
+  );
   const recommendation = evaluationProgress?.evaluation?.recommendation
-    ?? evaluationBody?.report?.output?.recommendation
     ?? null;
   if (CHANGE_PROFILE) {
     const acceptedRecommendations = new Set(CHANGE_PROFILE.acceptedRecommendations);
-    const summary = `${evaluationProgress?.evaluation?.summary ?? ''} ${evaluationBody?.report?.summary ?? ''}`.toLowerCase();
+    const summary = `${evaluationProgress?.evaluation?.summary ?? ''}`.toLowerCase();
     if (!acceptedRecommendations.has(recommendation)) {
-      throw new Error(`Task-aligned workspace smoke did not receive a useful evaluator recommendation: ${JSON.stringify(evaluationBody?.report?.output)}`);
+      throw new Error(`Task-aligned workspace smoke did not receive a useful evaluator recommendation: ${JSON.stringify(evaluationProgress?.evaluation)}`);
     }
     const missingTerms = CHANGE_PROFILE.summaryTerms.filter((term) => !summary.includes(term));
     if (missingTerms.length > 0) {
@@ -991,44 +2189,78 @@ async function main() {
     workspaceCommit,
     recommendation,
   );
+  const evidenceBundleProof = await assertAssessmentEvidenceBundle({
+    interviewId,
+    workspaceCommit,
+    humanDecision,
+    expectedRepoUrl,
+    expectedBaseCommitSha,
+  });
   const recruiterProjection = await assertRecruiterAssessmentProjection(
     interviewId,
     workspaceCommit,
     expectedBaseCommitSha,
+    expectedRepoUrl,
   );
+  if (recruiterProjection.assessmentSessionId !== assessmentSessionId) {
+    throw new Error(`Recruiter detail returned assessment session ${recruiterProjection.assessmentSessionId}, expected ${assessmentSessionId}`);
+  }
   if (recruiterProjection.humanDecision?.decision !== humanDecision.decision) {
     throw new Error(`Recruiter detail did not expose the recorded human decision: ${JSON.stringify(recruiterProjection.humanDecision)}`);
   }
+  const recruiterListApiProof = await assertRecruiterListApiEvaluationProof(
+    interviewId,
+    expectedRepoUrl,
+    expectedBaseCommitSha,
+  );
+  const recruiterListModeFilterProof = await assertRecruiterListModeFilterApi(interviewId);
   const recruiterBrowser = await assertRecruiterReviewerReceiptBrowser(
     interviewId,
     workspaceCommit,
     submittedBranchName,
     humanDecision,
+    recruiterProjection,
+    matchedAssignmentProofText,
   );
   const recruiterListBrowser = await assertRecruiterListCardBrowser(
     interviewId,
     workspaceCommit,
     expectedBaseCommitSha,
     humanDecision,
+    useMatchedRepo
+      ? null
+      : CHANGE_PROFILE?.challengeTitle ?? 'Fix deterministic smoke ordering',
+    recruiterProjection,
+    matchedAssignmentProofText,
   );
 
   console.log(JSON.stringify({
     ok: true,
     interviewId,
+    assessmentSessionId,
     hostUrl: cleanRoomUrl(invited.room.hostUrl),
     guestUrl: cleanRoomUrl(invited.room.guestUrl),
     repoUrl: workspace.repoUrl,
     githubPrNumber: expectedGithubPrNumber,
     matchedRepoId: MATCHED_REPO_ID,
     interviewType: INTERVIEW_TYPE,
-    challengeTitle: CHANGE_PROFILE?.challengeTitle
-      ?? workspace.challenge?.packet?.title
-      ?? created?.interview?.assessmentProgress?.challenge?.locator?.title
-      ?? null,
+    challengeTitle: expectedReceiptChallengeTitle,
     challengeStatus: workspace.challenge?.status ?? null,
     challengeSource: workspace.challenge?.source ?? null,
     candidateTaskBriefVisible: !candidateBrowser.skipped,
     candidateTaskBriefSkippedReason: candidateBrowser.skipped ? candidateBrowser.reason : null,
+    candidateAssessmentStatusVisible: !candidateBrowser.skipped,
+    candidateAssessmentStatusSkippedReason: candidateBrowser.skipped ? candidateBrowser.reason : null,
+    candidateTerminalStateVisible: !candidateTerminalBrowser.skipped,
+    candidateTerminalStateSkippedReason: candidateTerminalBrowser.skipped ? candidateTerminalBrowser.reason : null,
+    candidateReceiptDownloadVisible: candidateTerminalBrowser.candidateReceiptDownloadVisible === true,
+    candidateReceiptDownloadVerified: candidateTerminalBrowser.candidateReceiptDownloadVerified === true,
+    candidateWorkspaceSolutionRefsHidden: candidateRoomSolutionSafety.workspaceSolutionRefsHidden === true,
+    candidateProgressSolutionRefsHidden: candidateRoomSolutionSafety.progressSolutionRefsHidden === true,
+    candidateReceiptSolutionRefsHidden: candidateRoomSolutionSafety.receiptSolutionRefsHidden === true,
+    roomChatEvidenceCaptured: true,
+    roomChatEvidenceNodeId: roomChatEvidence.nodeId,
+    roomChatEvidenceSourceRefs: roomChatEvidence.sourceRefTypes,
     workspaceStatus: readySession.status,
     proxyPathReady: Boolean(readySession.proxyPath),
     bridgeHealthReady: true,
@@ -1048,19 +2280,44 @@ async function main() {
     evaluationStatus: evaluationProgress.evaluation?.status ?? null,
     evaluationRecommendation: recommendation,
     evaluationSummary: evaluationProgress.evaluation?.summary ?? null,
-    evaluationReportId: evaluationBody.report?.id ?? null,
+    evaluationReportId: evaluationProgress.evaluation?.id ?? null,
     humanDecisionRecorded: true,
     humanDecision: humanDecision.decision,
     humanDecisionNextAction: humanDecision.nextAction,
     humanDecisionSourceRefCount: humanDecision.sourceRefCount,
     humanDecisionSourceRefTypes: humanDecision.sourceRefTypes,
+    evidenceBundleVisible: evidenceBundleProof.visible,
+    evidenceBundleTimelineEventCount: evidenceBundleProof.timelineEventCount,
+    evidenceBundleTimelineSourceRefCount: evidenceBundleProof.timelineSourceRefCount,
+    evidenceBundleEvaluationClaimCount: evidenceBundleProof.evaluationClaimCount,
+    evidenceBundleEvaluationDiagnosticCount: evidenceBundleProof.evaluationDiagnosticCount,
+    evidenceBundleHasHumanDecision: evidenceBundleProof.hasHumanDecision,
+    evidenceBundleBriefExportVisible: recruiterBrowser.evidenceBundleBriefExportVisible === true,
+    evidenceBundleExportVisible: recruiterBrowser.evidenceBundleExportVisible === true,
     recruiterDetailReviewable: true,
     recruiterReviewerReceiptVisible: !recruiterBrowser.skipped,
     recruiterReviewerReceiptSkippedReason: recruiterBrowser.skipped ? recruiterBrowser.reason : null,
+    recruiterMatchedDecisionVisible: recruiterBrowser.matchedDecisionVisible === true,
+    recruiterMatchedValidityVisible: recruiterBrowser.matchedValidityVisible === true,
+    recruiterListApiProofVisible: recruiterListApiProof.visible,
+    recruiterListApiEvaluationStatus: recruiterListApiProof.evaluationStatus,
+    recruiterListApiEvaluationRecommendation: recruiterListApiProof.recommendation,
+    recruiterListApiEvidenceCoverageSchema: recruiterListApiProof.coverageSchema,
+    recruiterListApiClaimCount: recruiterListApiProof.claimCount,
+    recruiterListApiDiagnosticCount: recruiterListApiProof.diagnosticCount,
+    recruiterListModeFilterVisible: recruiterListModeFilterProof.visible,
+    recruiterListModeFilter: recruiterListModeFilterProof.filter,
+    recruiterListModeFilterTotal: recruiterListModeFilterProof.total,
+    recruiterListModeFilterFacetCount: recruiterListModeFilterProof.facetCount,
+    recruiterListModeFilterAllCount: recruiterListModeFilterProof.allCount,
+    recruiterListModeFilterPageCount: recruiterListModeFilterProof.pageCount,
     recruiterListCardVisible: !recruiterListBrowser.skipped,
     recruiterListCardSkippedReason: recruiterListBrowser.skipped ? recruiterListBrowser.reason : null,
     recruiterCompareUrl: recruiterProjection.compareUrl,
+    recruiterCapturedDiffVisible: !recruiterProjection.compareUrl && !recruiterBrowser.skipped,
+    recruiterCapturedDiffExactTextLength: recruiterProjection.capturedDiffSnippet?.exactText?.length ?? 0,
     recruiterSourceRefCounts: recruiterProjection.sourceRefCounts,
+    assessmentEvidenceProofCommands: assessmentEvidenceProofCommands(assessmentSessionId),
   }, null, 2));
 }
 

@@ -20,6 +20,24 @@ describe('code-server container entrypoint', () => {
     expect(safeDirectoryIndex).toBeLessThan(checkoutIndex);
   });
 
+  it('configures a deterministic git author before candidates create assessment commits', () => {
+    const script = readFileSync(
+      path.join(process.cwd(), 'infra/containers/code-server/entrypoint.sh'),
+      'utf8',
+    );
+
+    const safeDirectoryIndex = script.indexOf('git config --global --add safe.directory /workspace');
+    const authorNameIndex = script.indexOf('git config --global user.name "${GIT_AUTHOR_NAME:-PIPE Assessment Candidate}"');
+    const authorEmailIndex = script.indexOf('git config --global user.email "${GIT_AUTHOR_EMAIL:-candidate@pipe-assessment.local}"');
+    const checkoutIndex = script.indexOf('git checkout -B "${ASSESSMENT_BRANCH:-pipe-assessment}"');
+
+    expect(authorNameIndex).toBeGreaterThan(-1);
+    expect(authorEmailIndex).toBeGreaterThan(-1);
+    expect(authorNameIndex).toBeGreaterThan(safeDirectoryIndex);
+    expect(authorEmailIndex).toBeGreaterThan(authorNameIndex);
+    expect(authorEmailIndex).toBeLessThan(checkoutIndex);
+  });
+
   it('prints repo and base commit when exact commit validation fails', () => {
     const script = readFileSync(
       path.join(process.cwd(), 'infra/containers/code-server/entrypoint.sh'),

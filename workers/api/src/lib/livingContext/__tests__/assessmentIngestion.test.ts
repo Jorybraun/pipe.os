@@ -6,6 +6,7 @@ import {
   ingestAssessmentToLivingContext,
   loadAssessmentSessionData,
   ingestAssessmentSessionRealTime,
+  ingestMissingAssessmentEventsToLivingContext,
 } from '../assessmentIngestion';
 import { recordAssessmentCandidateProfileEvidence } from '../../assessmentLayer/candidateProfileEvidence';
 import type {
@@ -817,5 +818,119 @@ describe('ingestAssessmentSessionRealTime', () => {
        HAVING COUNT(*) > 1`,
     ).all();
     expect(projectedDuplicateGroups).toEqual([]);
+  });
+
+  it('projects only missing assessment events for active sessions without replaying existing records', async () => {
+    const now = '2026-06-12T10:00:00Z';
+    sqlite.exec(`
+      INSERT INTO assessment_sessions
+        (id, ingestion_key, mode, state, candidate_id, workspace_id, metadata_json, created_at, updated_at)
+      VALUES ('sess-missing-events', 'key:sess-missing-events', 'OPEN_SOURCE_BUG_FIX', 'IN_PROGRESS', 'cand-rt-1', 'owner-1', '{}', '${now}', '${now}');
+    `);
+    sqlite.exec(`
+      INSERT INTO assessment_evidence_events
+        (id, ingestion_key, session_id, sequence, kind, actor_type, actor_id, narrative, payload_json, occurred_at, created_at)
+      VALUES
+        ('ev-existing-active', 'key:ev-existing-active', 'sess-missing-events', 1, 'dev_container_event', 'dev_container', 'container-1', 'Workspace launched for assessment.', '{}', '${now}', '${now}'),
+        ('ev-missing-active', 'key:ev-missing-active', 'sess-missing-events', 2, 'tool_usage', 'recruiter', 'rec-1', 'Recruiter opened the active workspace console.', '{}', '${now}', '${now}');
+    `);
+    sqlite.exec(`
+      INSERT INTO assessment_event_source_refs
+        (id, event_id, source_ref_type, source_ref_id, evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at)
+      VALUES
+        ('sr-existing-active', 'ev-existing-active', 'meeting_session_event', 'room-event-existing', 'workspace_event', '{"sessionId":"sess-missing-events"}', 'Workspace launched for assessment.', 'sha256:existing', '{}', '${now}'),
+        ('sr-missing-active', 'ev-missing-active', 'meeting_session_event', 'room-event-missing', 'workspace_event', '{"sessionId":"sess-missing-events"}', 'Recruiter opened the active workspace console.', 'sha256:missing', '{}', '${now}');
+    `);
+
+    const first = await ingestAssessmentSessionRealTime(db, 'sess-missing-events');
+    expect(first?.contextRecordCount).toBe(2);
+
+    sqlite.prepare(
+      `DELETE FROM context_record_concepts
+        WHERE context_record_id = (
+          SELECT id FROM context_records WHERE ingestion_key = 'assessment_event_context:ev-missing-active'
+        )`,
+    ).run();
+    sqlite.prepare(
+      `DELETE FROM context_record_entities
+        WHERE context_record_id = (
+          SELECT id FROM context_records WHERE ingestion_key = 'assessment_event_context:ev-missing-active'
+        )`,
+    ).run();
+    sqlite.prepare(
+      `DELETE FROM context_record_source_refs
+        WHERE context_record_id = (
+          SELECT id FROM context_records WHERE ingestion_key = 'assessment_event_context:ev-missing-active'
+        )`,
+    ).run();
+    sqlite.prepare(
+      `DELETE FROM context_records WHERE ingestion_key = 'assessment_event_context:ev-missing-active'`,
+    ).run();
+
+    const beforeExistingCount = sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records
+        WHERE ingestion_key = 'assessment_event_context:ev-existing-active'`,
+    ).get() as { count: number };
+    expect(beforeExistingCount.count).toBe(1);
+
+    const repair = await ingestMissingAssessmentEventsToLivingContext(db, 'sess-missing-events');
+    expect(repair).toMatchObject({
+      sessionId: 'sess-missing-events',
+      selectedEventCount: 1,
+      episodeCount: 1,
+      assertionCount: 1,
+      contextRecordCount: 1,
+    });
+
+    const records = sqlite.prepare(
+      `SELECT ingestion_key, record_type, narrative
+         FROM context_records
+        WHERE ingestion_key LIKE 'assessment_event_context:ev-%active'
+        ORDER BY ingestion_key`,
+    ).all() as Array<{ ingestion_key: string; record_type: string; narrative: string }>;
+    expect(records).toEqual([
+      {
+        ingestion_key: 'assessment_event_context:ev-existing-active',
+        record_type: 'assessment:dev_container_event',
+        narrative: 'Workspace launched for assessment.',
+      },
+      {
+        ingestion_key: 'assessment_event_context:ev-missing-active',
+        record_type: 'assessment:tool_usage',
+        narrative: 'Recruiter opened the active workspace console.',
+      },
+    ]);
+
+    const repairedRef = sqlite.prepare(
+      `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role, sr.exact_text
+         FROM context_records cr
+         JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
+        WHERE cr.ingestion_key = 'assessment_event_context:ev-missing-active'`,
+    ).get() as Record<string, unknown>;
+    expect(repairedRef).toEqual({
+      source_ref_type: 'meeting_session_event',
+      source_ref_id: 'room-event-missing',
+      evidence_role: 'workspace_event',
+      exact_text: 'Recruiter opened the active workspace console.',
+    });
+
+    const secondRepair = await ingestMissingAssessmentEventsToLivingContext(db, 'sess-missing-events');
+    expect(secondRepair?.selectedEventCount).toBe(0);
+
+    const duplicateGroups = sqlite.prepare(
+      `SELECT cr.workspace_person_id, cr.record_type, cr.narrative,
+              sr.source_ref_type, sr.source_ref_id, sr.evidence_role,
+              COUNT(*) AS count
+         FROM context_records cr
+         JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
+        WHERE cr.interaction_id IN (
+          SELECT id FROM interactions WHERE external_reference = 'sess-missing-events'
+        )
+        GROUP BY cr.workspace_person_id, cr.record_type, cr.narrative,
+                 sr.source_ref_type, sr.source_ref_id, sr.evidence_role
+       HAVING COUNT(*) > 1`,
+    ).all();
+    expect(duplicateGroups).toEqual([]);
   });
 });

@@ -9,11 +9,14 @@ set -euo pipefail
 #   CHALLENGE_BASE_COMMIT_SHA — exact immutable commit to start assessment work from
 #   CHALLENGE_BRANCH   — branch to check out after clone/extract
 #   ASSESSMENT_BRANCH  — local branch name created from CHALLENGE_BASE_COMMIT_SHA
+#   GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL — optional assessment commit identity
 
 mkdir -p /workspace
 # The image runs as root in Cloudflare Containers, while /workspace is owned by
 # coder so code-server can edit it. Mark it safe before exact-commit git checks.
 git config --global --add safe.directory /workspace
+git config --global user.name "${GIT_AUTHOR_NAME:-PIPE Assessment Candidate}"
+git config --global user.email "${GIT_AUTHOR_EMAIL:-candidate@pipe-assessment.local}"
 
 if [[ -n "${REPO_GIT_URL:-}" ]]; then
   echo "[entrypoint] Cloning repo: ${REPO_GIT_URL}"

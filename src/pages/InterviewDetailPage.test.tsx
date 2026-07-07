@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import InterviewDetailPage from './InterviewDetailPage';
-import type { ScheduledInterviewDetail } from '../lib/scheduling/types';
+import type { AssessmentEvidenceBundle, ScheduledInterviewDetail } from '../lib/scheduling/types';
 
 const mocks = vi.hoisted(() => ({
   api: {
@@ -105,6 +105,360 @@ function evidenceFollowUpNotes(): string {
   ].join('\n');
 }
 
+function makeWorkspaceAssessmentProgress(
+  overrides: Partial<NonNullable<ScheduledInterviewDetail['assessmentProgress']>> = {},
+): NonNullable<ScheduledInterviewDetail['assessmentProgress']> {
+  return {
+    session: {
+      id: 'assessment-session-refresh',
+      ingestionKey: 'assessment-session:refresh',
+      interviewId: 'interview-1',
+      candidateId: 'candidate-1',
+      workspaceId: 'workspace-1',
+      workspacePersonId: null,
+      applicationId: null,
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      state: 'EVALUATED',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:22:00.000Z',
+    },
+    stage: 'EVALUATED',
+    nextAction: 'REVIEW_EVALUATION',
+    nextActionLabel: 'Review the assessment report and evidence.',
+    hasChallengePacket: true,
+    hasWorkEvidence: true,
+    hasMessageEvidence: true,
+    hasDevContainerEvidence: true,
+    hasToolUsageEvidence: true,
+    hasCommitSubmission: true,
+    hasFinalSubmission: true,
+    hasAiInteraction: false,
+    hasTranscriptEvidence: true,
+    hasTestEvidence: true,
+    evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+    sourceRefCounts: [
+      { kind: 'review_challenge_packet', count: 1 },
+      { kind: 'git_commit', count: 1 },
+      { kind: 'code_diff', count: 1 },
+      { kind: 'test_run', count: 1 },
+    ],
+    challenge: {
+      sourceRefType: 'review_challenge_packet',
+      sourceRefId: 'challenge-packet-refresh',
+      evidenceRole: 'assigned_challenge',
+      exactText: 'Task: fix the popover cleanup regression.',
+      locator: {
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        baseCommitSha: '1111111111111111111111111111111111111111',
+      },
+    },
+    latestEvent: {
+      id: 'assessment-event-refresh-commit',
+      kind: 'commit_submission',
+      sequence: 2,
+      occurredAt: '2026-06-23T00:18:00.000Z',
+    },
+    commit: {
+      eventId: 'assessment-event-refresh-commit',
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      forkRepositoryUrl: 'https://github.com/candidate/widgets',
+      branchName: 'pipe-assessment/popover-cleanup',
+      baseCommitSha: '1111111111111111111111111111111111111111',
+      commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
+      commitUrl: 'https://github.com/candidate/widgets/commit/abcdef1234567890abcdef1234567890abcdef12',
+      changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+      occurredAt: '2026-06-23T00:18:00.000Z',
+    },
+    evaluation: {
+      id: 'assessment-report-refresh',
+      status: 'EVALUATED',
+      summary: 'Candidate made a focused source-backed change.',
+      recommendation: 'mixed_evidence_human_review',
+      createdAt: '2026-06-23T00:22:00.000Z',
+      evidenceCoverage: {
+        schemaVersion: 'assessment-evidence-coverage-v1',
+        sourceRefCount: 4,
+        sourceRefTypeCounts: {
+          review_challenge_packet: 1,
+          git_commit: 1,
+          code_diff: 1,
+          test_run: 1,
+        },
+        requiredForEvaluation: [
+          {
+            label: 'challenge_packet',
+            required: true,
+            sourceRefTypes: ['review_challenge_packet'],
+            satisfied: true,
+            sourceRefKeys: ['review_challenge_packet:challenge-packet-refresh:assigned_challenge:'],
+            missingImpact: '',
+          },
+          {
+            label: 'git_commit',
+            required: true,
+            sourceRefTypes: ['git_commit'],
+            satisfied: true,
+            sourceRefKeys: ['git_commit:abcdef1234567890abcdef1234567890abcdef12:support:'],
+            missingImpact: '',
+          },
+          {
+            label: 'code_diff',
+            required: true,
+            sourceRefTypes: ['code_diff'],
+            satisfied: true,
+            sourceRefKeys: ['code_diff:abcdef1234567890abcdef1234567890abcdef12:diff:support:'],
+            missingImpact: '',
+          },
+        ],
+        expectedForHighConfidence: [{
+          label: 'test_run',
+          required: false,
+          sourceRefTypes: ['test_run'],
+          satisfied: true,
+          sourceRefKeys: ['test_run:workspace-smoke:support:'],
+          missingImpact: '',
+        }],
+      },
+    },
+    ...overrides,
+  };
+}
+
+function makeAssessmentEvidenceBundle(
+  overrides: Partial<AssessmentEvidenceBundle> = {},
+): AssessmentEvidenceBundle {
+  return {
+    schemaVersion: 'repo-task-final-evidence-bundle-v1',
+    generatedAt: '2026-06-23T00:25:00.000Z',
+    interview: {
+      id: 'interview-1',
+      title: 'Fix Base UI popover impatient click handling',
+      description: 'Investigate the hover-open popover trigger behavior and submit a focused regression fix.',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      recipientName: 'Ada Candidate',
+      recipientEmail: 'ada@example.com',
+      candidateId: 'candidate-1',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:22:00.000Z',
+    },
+    assessment: {
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      state: 'EVALUATED',
+      stage: 'EVALUATED',
+      nextAction: 'REVIEW_EVALUATION',
+      nextActionLabel: 'Review the assessment report and evidence.',
+      sourceRefCounts: [
+        { kind: 'review_challenge_packet', count: 1 },
+        { kind: 'git_commit', count: 1 },
+        { kind: 'code_diff', count: 1 },
+      ],
+      evidenceCounts: [
+        { kind: 'commit_submission', count: 1 },
+        { kind: 'assessment_evaluation_report', count: 1 },
+      ],
+    },
+    completeness: {
+      hasChallengePacket: true,
+      hasCommitSubmission: true,
+      hasEvaluationReport: true,
+      hasHumanDecision: false,
+      isReviewable: true,
+    },
+    challenge: null,
+    challengePacketContract: undefined,
+    submission: null,
+    timeline: [],
+    evaluation: null,
+    humanDecision: null,
+    ...overrides,
+  };
+}
+
+function makeSourceBackedReportEvidenceBundle(
+  progress: NonNullable<ScheduledInterviewDetail['assessmentProgress']>,
+): AssessmentEvidenceBundle {
+  return makeAssessmentEvidenceBundle({
+    challenge: progress.challenge,
+    challengePacketContract: progress.challengePacketContract,
+    submission: progress.commit,
+    assessment: {
+      mode: progress.session.mode,
+      state: progress.session.state,
+      stage: progress.stage,
+      nextAction: progress.nextAction,
+      nextActionLabel: progress.nextActionLabel,
+      assignmentTrust: progress.assignmentTrust,
+      sourceRefCounts: progress.sourceRefCounts,
+      evidenceCounts: progress.evidenceCounts,
+    },
+    completeness: {
+      hasChallengePacket: true,
+      hasCommitSubmission: true,
+      hasEvaluationReport: true,
+      hasHumanDecision: false,
+      isReviewable: true,
+    },
+    timeline: [
+      {
+        sequence: 1,
+        kind: 'challenge_assigned',
+        actorType: 'system',
+        actorId: null,
+        narrative: 'PIPE assigned a source-backed open-source challenge packet.',
+        payload: {},
+        occurredAt: '2026-06-23T00:00:00.000Z',
+        createdAt: '2026-06-23T00:00:00.000Z',
+        sourceRefs: [{
+          sourceRefType: 'review_challenge_packet',
+          sourceRefId: 'challenge-packet-ready',
+          sourceSpanId: null,
+          evidenceRole: 'assigned_challenge',
+          locator: { repositoryUrl: 'https://github.com/open-source/widgets' },
+          exactText: 'Task: fix the popover cleanup regression.',
+          contentHash: 'hash-challenge',
+          metadata: {},
+          createdAt: '2026-06-23T00:00:00.000Z',
+        }],
+      },
+      {
+        sequence: 2,
+        kind: 'commit_submission',
+        actorType: 'candidate',
+        actorId: 'candidate-1',
+        narrative: 'Candidate submitted assessment branch commit abcdef1234567890abcdef1234567890abcdef12.',
+        payload: {},
+        occurredAt: '2026-06-23T00:18:00.000Z',
+        createdAt: '2026-06-23T00:18:00.000Z',
+        sourceRefs: [
+          {
+            sourceRefType: 'git_commit',
+            sourceRefId: 'abcdef1234567890abcdef1234567890abcdef12',
+            sourceSpanId: null,
+            evidenceRole: 'support',
+            locator: { branchName: 'pipe-assessment/popover-cleanup' },
+            exactText: 'commit abcdef1234567890abcdef1234567890abcdef12',
+            contentHash: 'hash-commit',
+            metadata: {},
+            createdAt: '2026-06-23T00:18:00.000Z',
+          },
+          {
+            sourceRefType: 'code_diff',
+            sourceRefId: '1111111111111111111111111111111111111111..abcdef1234567890abcdef1234567890abcdef12',
+            sourceSpanId: null,
+            evidenceRole: 'submitted_diff',
+            locator: { file: 'src/popover.ts' },
+            exactText: 'diff --git a/src/popover.ts b/src/popover.ts\n+cleanupStaleHandler();',
+            contentHash: 'hash-diff',
+            metadata: {},
+            createdAt: '2026-06-23T00:18:00.000Z',
+          },
+          {
+            sourceRefType: 'test_run',
+            sourceRefId: 'pnpm-test-popover',
+            sourceSpanId: null,
+            evidenceRole: 'verification_test_output',
+            locator: { command: 'pnpm test popover' },
+            exactText: 'pnpm test popover passed the impatient click regression.',
+            contentHash: 'hash-test',
+            metadata: {},
+            createdAt: '2026-06-23T00:19:00.000Z',
+          },
+        ],
+      },
+      {
+        sequence: 3,
+        kind: 'assessment_evaluation_requested',
+        actorType: 'recruiter',
+        actorId: 'user-1',
+        narrative: 'Recruiter requested source-backed evaluation from the captured challenge, commit, diff, and verification evidence.',
+        payload: {},
+        occurredAt: '2026-06-23T00:21:00.000Z',
+        createdAt: '2026-06-23T00:21:00.000Z',
+        sourceRefs: [{
+          sourceRefType: 'assessment_evaluation_request',
+          sourceRefId: 'assessment-evaluation-request-source-backed',
+          sourceSpanId: null,
+          evidenceRole: 'support',
+          locator: {},
+          exactText: 'Evaluate only source-backed challenge, commit, diff, test, transcript, chat, and AI-use evidence.',
+          contentHash: 'hash-request',
+          metadata: {},
+          createdAt: '2026-06-23T00:21:00.000Z',
+        }],
+      },
+      {
+        sequence: 4,
+        kind: 'assessment_evaluation_completed',
+        actorType: 'system',
+        actorId: null,
+        narrative: 'PIPE produced a conservative source-backed assessment report.',
+        payload: {},
+        occurredAt: '2026-06-23T00:22:00.000Z',
+        createdAt: '2026-06-23T00:22:00.000Z',
+        sourceRefs: [{
+          sourceRefType: 'assessment_evaluation_report',
+          sourceRefId: 'assessment-report-source-backed',
+          sourceSpanId: null,
+          evidenceRole: 'support',
+          locator: {},
+          exactText: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
+          contentHash: 'hash-report',
+          metadata: {},
+          createdAt: '2026-06-23T00:22:00.000Z',
+        }],
+      },
+    ],
+    evaluation: {
+      reportId: 'assessment-report-source-backed',
+      status: 'EVALUATED',
+      summary: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
+      output: { recommendation: 'mixed_evidence_human_review' },
+      createdAt: '2026-06-23T00:22:00.000Z',
+      updatedAt: '2026-06-23T00:22:00.000Z',
+      claims: [{
+        claimId: 'claim-focused-diff',
+        polarity: 'positive',
+        dimension: 'commit_quality',
+        narrative: 'The candidate produced a focused patch backed by the submitted diff.',
+        confidence: 0.82,
+        createdAt: '2026-06-23T00:22:00.000Z',
+        sourceRefs: [{
+          sourceRefType: 'code_diff',
+          sourceRefId: '1111111111111111111111111111111111111111..abcdef1234567890abcdef1234567890abcdef12',
+          sourceSpanId: null,
+          evidenceRole: 'submitted_diff',
+          locator: { file: 'src/popover.ts' },
+          exactText: 'diff --git a/src/popover.ts b/src/popover.ts\n+cleanupStaleHandler();',
+          contentHash: 'hash-diff',
+          metadata: {},
+          createdAt: '2026-06-23T00:18:00.000Z',
+        }],
+      }],
+      diagnostics: [{
+        diagnosticId: 'diagnostic-missing-runner',
+        code: 'VERIFICATION_UNOBSERVED',
+        severity: 'info',
+        message: 'The test evidence shows changed files but no test runner output.',
+        provider: 'workers-ai',
+        retryable: false,
+        details: {},
+        createdAt: '2026-06-23T00:22:00.000Z',
+        sourceRefs: [{
+          sourceRefType: 'test_run',
+          sourceRefId: 'pnpm-test-popover',
+          sourceSpanId: null,
+          evidenceRole: 'verification_test_output',
+          locator: { command: 'pnpm test popover' },
+          exactText: 'pnpm test popover passed the impatient click regression.',
+          contentHash: 'hash-test',
+          metadata: {},
+          createdAt: '2026-06-23T00:19:00.000Z',
+        }],
+      }],
+    },
+  });
+}
+
 describe('InterviewDetailPage', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -201,6 +555,8 @@ describe('InterviewDetailPage', () => {
   it('shows source-backed assessment progress and next action for open-source workspaces', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
+        title: 'Fix Base UI popover impatient click handling',
+        description: 'Investigate the hover-open popover trigger behavior and submit a focused regression fix.',
         interviewType: 'OPEN_SOURCE_BUG_FIX',
         githubRepoUrl: 'https://github.com/open-source/widgets',
         assessmentSetup: {
@@ -217,6 +573,34 @@ describe('InterviewDetailPage', () => {
           updatedAt: '2026-06-23T00:10:00.000Z',
           repoGitUrl: 'https://github.com/open-source/widgets',
           baseCommitSha: '1111111111111111111111111111111111111111',
+        },
+        roomStatus: 'ACTIVE',
+        guestWaiting: true,
+        linkedMeeting: {
+          id: 'meeting-workspace-progress',
+          title: 'Ada Candidate workspace',
+          description: null,
+          status: 'ACTIVE',
+          scheduledAt: null,
+          startedAt: '2026-06-23T00:10:00.000Z',
+          endedAt: null,
+          durationSecs: null,
+          meetingUrl: 'https://room-dev.hire-pipe.com/room/guest-token',
+          meetingType: 'INTERVIEW',
+          transcriptStatus: 'PROCESSING',
+          transcriptSummary: null,
+          transcriptJson: null,
+          transcriptAnalysisJson: null,
+          transcriptError: null,
+          recordingR2Key: null,
+          room: {
+            id: 'room-workspace-progress',
+            sessionId: 'session-workspace-progress',
+            status: 'ACTIVE',
+            guestWaiting: true,
+          },
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:10:00.000Z',
         },
         assessmentProgress: {
           session: {
@@ -250,9 +634,15 @@ describe('InterviewDetailPage', () => {
             { kind: 'git_commit', count: 1 },
             { kind: 'code_diff', count: 1 },
             { kind: 'test_run', count: 1 },
+            { kind: 'dev_container_workspace_launch', count: 1 },
+            { kind: 'terminal_command', count: 1 },
+            { kind: 'code_server_file_observation', count: 6 },
+            { kind: 'room_chat_message', count: 1 },
+            { kind: 'meeting_session_event', count: 3 },
             { kind: 'ai_user_prompt', count: 2 },
             { kind: 'ai_user_prompt_blocked', count: 1 },
             { kind: 'ai_agent_response', count: 1 },
+            { kind: 'ai_agent_diagnostic', count: 1 },
           ],
           evidenceSnippets: [
             {
@@ -284,7 +674,16 @@ describe('InterviewDetailPage', () => {
             exactText: [
               'Repo: https://github.com/open-source/widgets',
               'Base commit: 1111111111111111111111111111111111111111',
+              'Pull request: #42',
+              'Pull request URL: https://github.com/open-source/widgets/pull/42',
               'Task: Fix the popover cleanup regression.',
+              'Match proof:',
+              '- Review packet quality 92% from source-backed repo analysis.',
+              '- 2 source-backed repo demands in the selected PR packet.',
+              'Assessment fit:',
+              '- focused review calibrated for senior candidates.',
+              '- 45 minute target from deterministic engineering prior.',
+              '- Sizing: 2 changed files, 128 changed lines, 9 source hunks, 4 demand families.',
               'Success criteria:',
               '- Keep hover-open behavior intact.',
               '- Add a regression test for impatient trigger clicks.',
@@ -294,6 +693,8 @@ describe('InterviewDetailPage', () => {
             ].join('\n'),
             locator: {
               repositoryUrl: 'https://github.com/open-source/widgets',
+              githubPrNumber: 42,
+              pullRequestUrl: 'https://github.com/open-source/widgets/pull/42',
               baseCommitSha: '1111111111111111111111111111111111111111',
             },
           },
@@ -338,19 +739,26 @@ describe('InterviewDetailPage', () => {
     renderDetail();
     await flushAsyncUpdates();
 
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'Fix Base UI popover impatient click handling',
+    );
+    expect(screen.getByText(/Ada Candidate · ada@example\.com · Talent Pool · OPEN_SOURCE_BUG_FIX/)).toBeTruthy();
+    expect(screen.getByTestId('interview-detail-objective')).toHaveTextContent(
+      'Investigate the hover-open popover trigger behavior and submit a focused regression fix.',
+    );
     const progress = screen.getByTestId('interview-assessment-progress');
     expect(progress).toHaveTextContent('Assessment progress');
     expect(progress).toHaveTextContent('Ready for evaluation');
     const assignment = screen.getByTestId('interview-assessment-assignment');
     expect(assignment).toHaveTextContent('Assignment');
     expect(assignment).toHaveTextContent('PIPE-matched challenge');
-    expect(assignment).toHaveTextContent(
-      'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
-    );
+    expect(assignment).toHaveTextContent('PIPE matched a reviewable open-source task.');
     expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
     expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, tool activity, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('Workspace');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 1111111111');
+    expect(progress).toHaveTextContent('Room');
+    expect(progress).toHaveTextContent('Active · guest waiting');
     expect(progress).toHaveTextContent('abcdef1234');
     expect(progress).toHaveTextContent('Commit integrity');
     expect(progress).toHaveTextContent('Workspace-captured commit');
@@ -369,22 +777,45 @@ describe('InterviewDetailPage', () => {
     expect(workPacket).toHaveTextContent('Workspace-captured commit');
     expect(workPacket).toHaveTextContent('Bound to assigned challenge');
     expect(workPacket).toHaveTextContent('Branch pipe-assessment/popover-cleanup');
+    expect(workPacket).toHaveTextContent('Review path');
+    expect(workPacket).toHaveTextContent('Consented upstream PR candidate');
+    expect(workPacket).toHaveTextContent(
+      'Review upstream PR open-source/widgets/pull/42 only as candidate-approved tracking; keep human review before any upstream merge or submission.',
+    );
     expect(workPacket).toHaveTextContent('Upstream PR tracked with candidate consent: open-source/widgets/pull/42');
     expect(workPacket).toHaveTextContent('Tracked with consent');
     expect(workPacket).toHaveTextContent('https://github.com/open-source/widgets/pull/42 is stored as optional source-backed upstream tracking.');
     expect(workPacket).toHaveTextContent('1 changed file: src/popover.ts · Modified');
     expect(workPacket).toHaveTextContent('Verification');
     expect(workPacket).toHaveTextContent('Tests captured');
+    expect(workPacket).toHaveTextContent('Process telemetry');
+    expect(workPacket).toHaveTextContent('Workspace/tool telemetry captured');
+    expect(workPacket).toHaveTextContent('1 workspace launch, 1 terminal command, and 6 file observations tied to the assessment evidence trail.');
+    expect(workPacket).toHaveTextContent('Collaboration');
+    expect(workPacket).toHaveTextContent('Room chat captured');
+    expect(workPacket).toHaveTextContent('1 room chat message and 3 room session events tied to the assessment evidence trail.');
     expect(workPacket).toHaveTextContent('AI transparency');
     expect(workPacket).toHaveTextContent('AI use observed');
-    expect(workPacket).toHaveTextContent('2 prompts, 1 blocked prompt, and 1 agent response captured from the real agent bridge.');
+    expect(workPacket).toHaveTextContent('2 prompts, 1 blocked prompt, 1 agent response, and 1 bridge diagnostic captured from the real agent bridge.');
     expect(workPacket).toHaveTextContent('Human review');
     expect(workPacket).toHaveTextContent('Run evaluation');
     const contract = screen.getByTestId('interview-assessment-challenge-contract');
     expect(contract).toHaveTextContent('Repo open-source/widgets');
+    expect(contract).toHaveTextContent('PR #42');
+    expect(screen.getByRole('link', { name: '#42' })).toHaveAttribute(
+      'href',
+      'https://github.com/open-source/widgets/pull/42',
+    );
     expect(contract).toHaveTextContent('Base 1111111111');
     expect(contract).toHaveTextContent('Task');
     expect(contract).toHaveTextContent('Fix the popover cleanup regression.');
+    expect(contract).toHaveTextContent('Match proof');
+    expect(contract).toHaveTextContent('Review packet quality 92% from source-backed repo analysis.');
+    expect(contract).toHaveTextContent('2 source-backed repo demands in the selected PR packet.');
+    expect(contract).toHaveTextContent('Assessment fit');
+    expect(contract).toHaveTextContent('focused review calibrated for senior candidates.');
+    expect(contract).toHaveTextContent('45 minute target from deterministic engineering prior.');
+    expect(contract).toHaveTextContent('Sizing: 2 changed files, 128 changed lines, 9 source hunks, 4 demand families.');
     expect(contract).toHaveTextContent('Success criteria');
     expect(contract).toHaveTextContent('Keep hover-open behavior intact.');
     expect(contract).toHaveTextContent('Add a regression test for impatient trigger clicks.');
@@ -401,9 +832,112 @@ describe('InterviewDetailPage', () => {
     expect(snippets).toHaveTextContent('passed the impatient click regression');
     expect(progress).toHaveTextContent('pipe-assessment/popover-cleanup');
     expect(progress).not.toHaveTextContent('challenge-packet-popover');
+    expect(progress).not.toHaveTextContent('room-workspace-progress');
   });
 
-  it('does not invent a GitHub compare link for workspace-only commits', async () => {
+  it('labels ready open-source assessments with missing confidence proof as limited on detail', async () => {
+    const baseProgress = makeWorkspaceAssessmentProgress();
+    const lowerConfidenceDetail =
+      'Required evidence is captured, but commit provenance still needs repository or workspace verification and test output is missing and only a declared verification gap is available; start evaluation as lower-confidence and do not treat correctness as proven.';
+    const readyWithLimitations: NonNullable<ScheduledInterviewDetail['assessmentProgress']> = {
+      ...baseProgress,
+      session: {
+        ...baseProgress.session,
+        state: 'FINAL_SUBMITTED',
+        updatedAt: '2026-06-23T00:20:00.000Z',
+      },
+      stage: 'READY_FOR_EVALUATION',
+      nextAction: 'START_EVALUATION',
+      nextActionLabel: 'Start source-backed AI or human evaluation.',
+      hasFinalSubmission: false,
+      hasTestEvidence: false,
+      hasVerificationGap: true,
+      sourceRefCounts: [
+        { kind: 'review_challenge_packet', count: 1 },
+        { kind: 'git_commit', count: 1 },
+        { kind: 'code_diff', count: 1 },
+        { kind: 'verification_gap', count: 1 },
+      ],
+      readiness: {
+        status: 'READY_FOR_EVALUATION',
+        label: 'Ready for evaluation',
+        detail: lowerConfidenceDetail,
+        isReadyForEvaluation: true,
+        isUsableHiringSignal: false,
+        missingRequiredCount: 0,
+        required: [],
+        confidence: [
+          {
+            id: 'workspace_captured_commit',
+            label: 'Workspace-captured commit',
+            required: false,
+            satisfied: false,
+            sourceRefTypes: ['git_commit', 'dev_container_workspace_state'],
+            missingImpact: 'Manual commit evidence can start review, but workspace capture is needed for highest trust.',
+          },
+          {
+            id: 'test_run',
+            label: 'Test output',
+            required: false,
+            satisfied: false,
+            sourceRefTypes: ['test_run'],
+            missingImpact: 'A verification gap was declared, but no test output was captured; keep correctness lower-confidence.',
+          },
+          {
+            id: 'verification_gap_declared',
+            label: 'Verification gap declared',
+            required: false,
+            satisfied: true,
+            sourceRefTypes: ['verification_gap'],
+            missingImpact: 'A source-backed verification gap explains missing or partial test output; it does not prove correctness.',
+          },
+        ],
+      },
+      evaluation: null,
+    };
+
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/open-source/widgets',
+        assessmentSetup: {
+          status: 'reviewable_task_assigned',
+          kind: 'manual_open_source_task',
+          source: 'recruiter_manual_override',
+          blocksPositiveAssessment: false,
+          message: 'A concrete open-source task packet was assigned by the recruiter.',
+        },
+        assessmentProgress: readyWithLimitations,
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    const progress = screen.getByTestId('interview-assessment-progress');
+    expect(progress).toHaveTextContent('Ready with limitations');
+    expect(progress).toHaveTextContent(lowerConfidenceDetail);
+    expect(progress).toHaveTextContent('Confidence signals');
+    expect(progress).toHaveTextContent('Workspace-captured commit');
+    expect(progress).toHaveTextContent('Test output');
+    expect(progress).toHaveTextContent('Verification gap declared');
+    expect(screen.getByRole('button', { name: /start evaluation/i })).toBeTruthy();
+
+    const decision = screen.getByTestId('interview-workspace-assessment-decision-summary');
+    expect(decision).toHaveTextContent('Ready with limitations');
+    expect(decision).toHaveTextContent('start evaluation as lower-confidence');
+  });
+
+  it('shows the full captured diff for workspace-only commits without inventing a GitHub compare link', async () => {
+    const capturedDiff = [
+      'diff --git a/src/popover.ts b/src/popover.ts',
+      '--- a/src/popover.ts',
+      '+++ b/src/popover.ts',
+      '@@ -42,6 +42,7 @@ export function cleanupPopover() {',
+      '+  cleanupStaleHandler();',
+      '+  FULL_DIFF_SENTINEL_REVIEW_THIS_LINE();',
+      '}',
+    ].join('\n');
     const progress: NonNullable<ScheduledInterviewDetail['assessmentProgress']> = {
       session: {
         id: 'assessment-session-workspace-only',
@@ -441,7 +975,7 @@ describe('InterviewDetailPage', () => {
         eventKind: 'commit_submission',
         sourceRefType: 'code_diff',
         evidenceRole: 'submitted_diff',
-        exactText: 'diff --git a/src/popover.ts b/src/popover.ts',
+        exactText: capturedDiff,
         occurredAt: '2026-06-23T00:18:00.000Z',
       }],
       challenge: {
@@ -503,6 +1037,15 @@ describe('InterviewDetailPage', () => {
     expect(progressPanel).toHaveTextContent('Stored in the assessment evidence trail: diff --git a/src/popover.ts b/src/popover.ts');
     expect(progressPanel).toHaveTextContent('Diff evidence');
     expect(screen.queryByRole('link', { name: 'Compare base to submitted commit' })).toBeNull();
+    const workPacket = screen.getByTestId('interview-assessment-work-packet');
+    expect(workPacket).toHaveTextContent('Review path');
+    expect(workPacket).toHaveTextContent('Workspace diff ready');
+    expect(workPacket).toHaveTextContent(
+      'No remote commit URL was captured; PIPE preserved exact code_diff evidence for abcdef1234 on open-source/widgets branch pipe-assessment.',
+    );
+    const capturedDiffPanel = screen.getByTestId('interview-assessment-captured-diff');
+    expect(capturedDiffPanel).toHaveTextContent('Captured source-backed diff');
+    expect(capturedDiffPanel).toHaveTextContent('FULL_DIFF_SENTINEL_REVIEW_THIS_LINE');
   });
 
   it('treats missing AI bridge evidence as unobserved instead of absent in the work packet', async () => {
@@ -582,6 +1125,89 @@ describe('InterviewDetailPage', () => {
     expect(workPacket).toHaveTextContent(
       'No candidate AI-assistance evidence is attached; treat AI use as unobserved, not absent.',
     );
+    expect(workPacket).not.toHaveTextContent('AI use observed');
+    expect(workPacket).not.toHaveTextContent('agent response captured');
+  });
+
+  it('distinguishes agent bridge status from candidate AI assistance in the work packet', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        status: 'COMPLETED',
+        assessmentProgress: {
+          session: {
+            id: 'assessment-session-agent-status',
+            ingestionKey: 'assessment-session:agent-status',
+            interviewId: 'interview-1',
+            candidateId: 'candidate-1',
+            workspaceId: 'workspace-1',
+            workspacePersonId: null,
+            applicationId: null,
+            mode: 'OPEN_SOURCE_BUG_FIX',
+            state: 'FINAL_SUBMITTED',
+            createdAt: '2026-06-23T00:00:00.000Z',
+            updatedAt: '2026-06-23T00:20:00.000Z',
+          },
+          stage: 'READY_FOR_EVALUATION',
+          nextAction: 'START_EVALUATION',
+          nextActionLabel: 'Start source-backed AI or human evaluation.',
+          hasChallengePacket: true,
+          hasWorkEvidence: true,
+          hasMessageEvidence: false,
+          hasDevContainerEvidence: true,
+          hasToolUsageEvidence: true,
+          hasCommitSubmission: true,
+          hasFinalSubmission: true,
+          hasAiInteraction: true,
+          hasTranscriptEvidence: false,
+          hasTestEvidence: true,
+          evidenceCounts: [
+            { kind: 'ai_interaction', count: 1 },
+            { kind: 'commit_submission', count: 1 },
+          ],
+          sourceRefCounts: [
+            { kind: 'review_challenge_packet', count: 1 },
+            { kind: 'git_commit', count: 1 },
+            { kind: 'code_diff', count: 1 },
+            { kind: 'test_run', count: 1 },
+            { kind: 'agent_status', count: 1 },
+          ],
+          challenge: {
+            sourceRefType: 'review_challenge_packet',
+            sourceRefId: 'challenge-packet-agent-status',
+            evidenceRole: 'assigned_challenge',
+            exactText: 'Task: fix the agent bridge transparency copy.',
+            locator: { repositoryUrl: 'https://github.com/open-source/widgets' },
+          },
+          latestEvent: {
+            id: 'assessment-event-agent-status',
+            kind: 'commit_submission',
+            sequence: 2,
+            occurredAt: '2026-06-23T00:18:00.000Z',
+          },
+          commit: {
+            eventId: 'assessment-event-agent-status',
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            forkRepositoryUrl: 'https://github.com/candidate/widgets',
+            branchName: 'pipe-assessment/agent-status-copy',
+            baseCommitSha: '3333333333333333333333333333333333333333',
+            commitSha: 'cccccccccccccccccccccccccccccccccccccccc',
+            commitUrl: 'https://github.com/candidate/widgets/commit/cccccccccccccccccccccccccccccccccccccccc',
+            changedFiles: [{ path: 'src/transparency.ts', status: 'modified' }],
+            occurredAt: '2026-06-23T00:18:00.000Z',
+          },
+          evaluation: null,
+        },
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    const workPacket = screen.getByTestId('interview-assessment-work-packet');
+    expect(workPacket).toHaveTextContent('AI transparency');
+    expect(workPacket).toHaveTextContent('AI bridge observed');
+    expect(workPacket).toHaveTextContent('1 bridge status captured from the real agent bridge.');
     expect(workPacket).not.toHaveTextContent('AI use observed');
     expect(workPacket).not.toHaveTextContent('agent response captured');
   });
@@ -849,6 +1475,20 @@ describe('InterviewDetailPage', () => {
       interview: makeInterview({
         interviewType: 'OPEN_SOURCE_BUG_FIX',
         status: 'COMPLETED',
+        assessmentSetup: {
+          status: 'reviewable_task_assigned',
+          kind: 'auto_match',
+          source: 'matched_repo_id',
+          blocksPositiveAssessment: false,
+          message: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands.',
+          selectionRationale: {
+            summary: 'PIPE-selected repo task',
+            whyThisChallenge: 'PIPE selected this concrete GitHub PR from source-backed candidate evidence, role requirements when present, and repository demand instead of handing the candidate a generic repo.',
+            whyNotAlternatives: 'Lower-ranked or withheld challenges did not provide stronger source-backed alignment, reviewability, or contrast for automatic assignment.',
+            residualRisk: 'The assignment proves challenge fit only; the hiring signal still depends on the captured branch commit, diff, tests or verification gap, transcript/chat, AI-use trail, evaluator report, and human review.',
+            nextAction: 'Run the controlled workspace assessment and review the source-backed evidence before making a hiring decision.',
+          },
+        },
         assessmentProgress: readyProgress,
       }),
     });
@@ -868,6 +1508,7 @@ describe('InterviewDetailPage', () => {
     await flushAsyncUpdates();
 
     fireEvent.click(screen.getByRole('button', { name: /start evaluation/i }));
+    await flushAsyncUpdates();
     await flushAsyncUpdates();
 
     expect(mocks.api.post).toHaveBeenCalledWith(
@@ -902,6 +1543,12 @@ describe('InterviewDetailPage', () => {
       stage: 'READY_FOR_EVALUATION',
       nextAction: 'START_EVALUATION',
       nextActionLabel: 'Start source-backed AI or human evaluation.',
+      assignmentTrust: {
+        state: 'matched_challenge',
+        label: 'PIPE-matched challenge',
+        detail: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside captured candidate work.',
+        tone: 'matched',
+      },
       hasChallengePacket: true,
       hasWorkEvidence: true,
       hasCommitSubmission: true,
@@ -911,6 +1558,7 @@ describe('InterviewDetailPage', () => {
       hasTestEvidence: true,
       evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
       sourceRefCounts: [
+        { kind: 'review_challenge_packet', count: 1 },
         { kind: 'git_commit', count: 1 },
         { kind: 'code_diff', count: 1 },
         { kind: 'test_run', count: 1 },
@@ -1059,15 +1707,137 @@ describe('InterviewDetailPage', () => {
             },
           ],
         },
+        reviewPacket: {
+          schemaVersion: 'repo-task-review-packet-v1',
+          challenge: {
+            focus: 'Fix the popover cleanup regression',
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            baseCommitSha: '1111111111111111111111111111111111111111',
+            pullRequestUrl: 'https://github.com/open-source/widgets/pull/42',
+            assignmentTrust: {
+              state: 'matched_challenge',
+              label: 'PIPE-matched challenge',
+              detail: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands.',
+              tone: 'matched',
+            },
+            contract: {
+              schemaVersion: 'challenge-packet-contract-v1',
+              isComplete: true,
+              missingFields: [],
+            },
+          },
+          submission: {
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            forkRepositoryUrl: 'https://github.com/candidate/widgets',
+            branchName: 'pipe-assessment/popover-cleanup',
+            commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
+            commitUrl: 'https://github.com/candidate/widgets/commit/abcdef1234567890abcdef1234567890abcdef12',
+            submissionSourceLabel: 'Live workspace finalizer',
+            changedFileCount: 1,
+            integrity: {
+              status: 'workspace_captured',
+              label: 'Workspace-captured commit',
+              detail: 'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
+              tone: 'verified',
+            },
+            challengeBinding: {
+              status: 'bound_to_assigned_challenge',
+              label: 'Bound to assigned challenge',
+              detail: 'The submitted commit matches the assigned challenge repository and base commit.',
+              tone: 'verified',
+            },
+          },
+          evidence: {
+            sourceRefCount: 4,
+            sourceRefTypeCounts: {
+              review_challenge_packet: 1,
+              git_commit: 1,
+              code_diff: 1,
+              test_run: 1,
+            },
+            readiness: {
+              status: 'EVALUATED',
+              label: 'Evaluated',
+              detail: 'A source-backed evaluation report is available for review.',
+              isReadyForEvaluation: false,
+              isUsableHiringSignal: true,
+              missingRequiredCount: 0,
+            },
+            contractEvidence: {
+              schemaVersion: 'assessment-contract-evidence-receipt-v1',
+              expectedEvidence: [
+                {
+                  label: 'git_commit',
+                  status: 'captured',
+                  expectedSourceRefTypes: ['git_commit'],
+                  matchedSourceRefTypes: ['git_commit'],
+                  sourceRefCount: 1,
+                  detail: 'Captured from git commit source refs.',
+                },
+                {
+                  label: 'code_diff',
+                  status: 'captured',
+                  expectedSourceRefTypes: ['code_diff'],
+                  matchedSourceRefTypes: ['code_diff'],
+                  sourceRefCount: 1,
+                  detail: 'Captured from code diff source refs.',
+                },
+                {
+                  label: 'Explain tradeoffs in chat',
+                  status: 'needs_human_review',
+                  expectedSourceRefTypes: [],
+                  matchedSourceRefTypes: [],
+                  sourceRefCount: 0,
+                  detail: 'No deterministic source-ref mapping exists for this expected evidence item; reviewer must inspect the packet.',
+                },
+              ],
+              successCriteria: [
+                {
+                  label: 'Preserve popover cleanup behavior.',
+                  status: 'needs_human_review',
+                  detail: 'Success criteria are preserved from the challenge packet; they are not auto-passed.',
+                },
+              ],
+              summary: {
+                expectedEvidenceCount: 3,
+                capturedCount: 2,
+                gapDeclaredCount: 0,
+                needsHumanReviewCount: 2,
+              },
+            },
+          },
+          evaluation: {
+            recommendation: 'hire_now',
+            claimCount: 1,
+            diagnosticCount: 1,
+          },
+        },
       },
     };
-    mocks.api.get.mockResolvedValueOnce({
-      interview: makeInterview({
+    const evidenceBundle = makeSourceBackedReportEvidenceBundle(evaluatedProgress);
+    mocks.api.get
+      .mockResolvedValueOnce({
+        interview: makeInterview({
         interviewType: 'OPEN_SOURCE_BUG_FIX',
         status: 'COMPLETED',
+        assessmentSetup: {
+          status: 'reviewable_task_assigned',
+          kind: 'manual_open_source_task',
+          source: 'recruiter_manual_override',
+          blocksPositiveAssessment: false,
+          message: 'A recruiter supplied the source-backed task packet.',
+          selectionRationale: {
+            summary: 'Recruiter-assigned task packet',
+            whyThisChallenge: 'The task is reviewable because the recruiter supplied a concrete repo URL, immutable base commit, task brief, success criteria, and expected evidence.',
+            whyNotAlternatives: 'Automatic candidate-to-repo contrast ranking was not used on this path, so PIPE is not claiming this was the best candidate-specific match.',
+            residualRisk: 'Use the completed commit, diff, tests, transcript, chat, and AI-use trail as assessment evidence; do not treat the manual assignment itself as fit proof.',
+            nextAction: 'Open the controlled workspace and capture the candidate work against the assigned source-backed packet.',
+          },
+        },
         assessmentProgress: readyProgress,
       }),
-    });
+      })
+      .mockResolvedValueOnce({ bundle: evidenceBundle });
     mocks.api.post.mockResolvedValueOnce({
       progress: evaluatedProgress,
       report: {
@@ -1098,7 +1868,14 @@ describe('InterviewDetailPage', () => {
     expect(decision).not.toHaveTextContent('Hire now');
     expect(decision).toHaveTextContent('Candidate made a focused source-backed change and cited the submitted diff evidence.');
     expect(decision).toHaveTextContent('Challenge fit');
-    expect(decision).toHaveTextContent('Source-backed task');
+    expect(decision).toHaveTextContent('Matched task');
+    expect(decision).toHaveTextContent('Use the assignment as match-fit evidence alongside captured candidate work.');
+    expect(decision).toHaveTextContent('Selection rationale');
+    expect(decision).toHaveTextContent('PIPE-selected repo task');
+    expect(decision).toHaveTextContent('instead of handing the candidate a generic repo');
+    expect(decision).toHaveTextContent('Lower-ranked or withheld challenges');
+    expect(decision).toHaveTextContent('the hiring signal still depends on the captured branch commit');
+    expect(decision).toHaveTextContent('Next: Run the controlled workspace assessment');
     expect(decision).toHaveTextContent('Required proof');
     expect(decision).toHaveTextContent('Required proof captured');
     expect(decision).toHaveTextContent('Challenge, commit, and diff are source-backed');
@@ -1107,6 +1884,16 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Test evidence is missing');
     expect(decision).toHaveTextContent('Next action');
     expect(decision).toHaveTextContent('Review evaluation');
+    const validity = screen.getByTestId('interview-workspace-assessment-validity-proof');
+    expect(validity).toHaveTextContent('Score validity');
+    expect(validity).toHaveTextContent('Valid because');
+    expect(validity).toHaveTextContent('PIPE-matched challenge packet, Assessment branch commit, and Code diff are source-backed');
+    expect(validity).toHaveTextContent('Still calibrate because');
+    expect(validity).toHaveTextContent('Test or verification run, Code editor activity, and AI-use trail are not captured');
+    expect(validity).toHaveTextContent('Evidence basis');
+    expect(validity).toHaveTextContent('1 PIPE-matched challenge packet, 1 git commit, 1 code diff, and 1 test run');
+    expect(validity).toHaveTextContent('Use as');
+    expect(validity).toHaveTextContent('Use as source-backed signal, not an automatic decision');
     const claims = screen.getByTestId('interview-assessment-evaluation-claims');
     expect(claims).toHaveTextContent('Evidence-backed claims');
     expect(claims).toHaveTextContent('Strength');
@@ -1122,6 +1909,149 @@ describe('InterviewDetailPage', () => {
     expect(diagnostics).toHaveTextContent('Verification unobserved');
     expect(diagnostics).toHaveTextContent('The test evidence shows changed files but no test runner output.');
     expect(diagnostics).toHaveTextContent('1 source ref: Test run');
+    const reviewPacket = screen.getByTestId('interview-assessment-review-packet');
+    expect(reviewPacket).toHaveTextContent('Final review packet');
+    expect(reviewPacket).toHaveTextContent('repo-task-review-packet-v1');
+    expect(reviewPacket).toHaveTextContent('Fix the popover cleanup regression');
+    expect(reviewPacket).toHaveTextContent('Repo open-source/widgets');
+    expect(reviewPacket).toHaveTextContent('Base 1111111111');
+    expect(reviewPacket).toHaveTextContent('PIPE-matched challenge');
+    expect(reviewPacket).toHaveTextContent('abcdef1234');
+    expect(reviewPacket).toHaveTextContent('Branch pipe-assessment/popover-cleanup');
+    expect(reviewPacket).toHaveTextContent('Workspace-captured commit');
+    expect(reviewPacket).toHaveTextContent('Bound to assigned challenge');
+    expect(reviewPacket).toHaveTextContent('4 source refs');
+    expect(reviewPacket).toHaveTextContent('1 claim');
+    expect(reviewPacket).toHaveTextContent('1 diagnostic');
+    const evidenceBundlePanel = screen.getByTestId('interview-assessment-evidence-bundle');
+    expect(evidenceBundlePanel).toHaveTextContent('Final evidence bundle');
+    expect(evidenceBundlePanel).toHaveTextContent('repo-task-final-evidence-bundle-v1');
+    expect(evidenceBundlePanel).toHaveTextContent('Reviewable, decision pending');
+    expect(evidenceBundlePanel).toHaveTextContent('Still missing human decision.');
+    expect(evidenceBundlePanel).toHaveTextContent('4 events · 6 source refs');
+    expect(evidenceBundlePanel).toHaveTextContent('Candidate made a focused source-backed change and cited the submitted diff evidence. 1 cited claim and 1 diagnostic.');
+    expect(evidenceBundlePanel).toHaveTextContent('Human decision');
+    expect(evidenceBundlePanel).toHaveTextContent('Not recorded');
+    expect(evidenceBundlePanel).toHaveTextContent('Timeline');
+    expect(evidenceBundlePanel).toHaveTextContent('Challenge assigned');
+    expect(evidenceBundlePanel).toHaveTextContent('Commit submitted');
+    expect(evidenceBundlePanel).toHaveTextContent('3 source refs');
+    expect(evidenceBundlePanel).toHaveTextContent('Evaluation requested');
+    expect(evidenceBundlePanel).toHaveTextContent('Evaluation completed');
+    expect(evidenceBundlePanel).toHaveTextContent('Source preview');
+    expect(evidenceBundlePanel).toHaveTextContent('Diff evidence · Submitted diff');
+    expect(evidenceBundlePanel).toHaveTextContent('cleanupStaleHandler');
+    const createObjectURL = vi
+      .fn()
+      .mockReturnValueOnce('blob:pipe-assessment-brief')
+      .mockReturnValueOnce('blob:pipe-assessment-evidence');
+    const revokeObjectURL = vi.fn();
+    const originalBlob = globalThis.Blob;
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    const clickedAnchors: HTMLAnchorElement[] = [];
+    class InspectableBlob extends originalBlob {
+      readonly parts: BlobPart[];
+
+      constructor(parts: BlobPart[] = [], options?: BlobPropertyBag) {
+        super(parts, options);
+        this.parts = parts;
+      }
+    }
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function click(this: HTMLAnchorElement): void {
+        clickedAnchors.push(this);
+      });
+    Object.defineProperty(globalThis, 'Blob', {
+      configurable: true,
+      value: InspectableBlob,
+    });
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectURL,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: revokeObjectURL,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /export brief/i }));
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    const exportedBriefBlob = createObjectURL.mock.calls[0]?.[0] as InspectableBlob;
+    expect(exportedBriefBlob).toBeInstanceOf(Blob);
+    expect(exportedBriefBlob.type).toBe('text/markdown');
+    const exportedBrief = String(exportedBriefBlob.parts[0] ?? '');
+    expect(exportedBrief).toContain('# PIPE Assessment Brief');
+    expect(exportedBrief).toContain('Candidate: Ada Candidate');
+    expect(exportedBrief).toContain('Evaluator recommendation: Mixed evidence human review');
+    expect(exportedBrief).toContain('Task: Fix the popover cleanup regression');
+    expect(exportedBrief).toContain('Commit: abcdef1234567890abcdef1234567890abcdef12');
+    expect(exportedBrief).toContain('Commit quality');
+    expect(exportedBrief).toContain('Verification unobserved');
+    expect(exportedBrief).toContain('Use this as a source-backed assessment artifact, not an automatic hiring decision.');
+    expect(clickedAnchors).toHaveLength(1);
+    expect(clickedAnchors[0]?.href).toBe('blob:pipe-assessment-brief');
+    expect(clickedAnchors[0]?.download).toBe(
+      'pipe-assessment-ada-candidate-fix-base-ui-popover-impatient-click-handling-2026-06-23-brief.md',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /export json/i }));
+
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
+    const exportedJsonBlob = createObjectURL.mock.calls[1]?.[0] as InspectableBlob;
+    expect(exportedJsonBlob).toBeInstanceOf(Blob);
+    expect(exportedJsonBlob.type).toBe('application/json');
+    const exportedBundle = JSON.parse(String(exportedJsonBlob.parts[0] ?? '')) as AssessmentEvidenceBundle;
+    expect(exportedBundle.schemaVersion).toBe('repo-task-final-evidence-bundle-v1');
+    expect(exportedBundle.interview.id).toBe('interview-1');
+    expect(exportedBundle.timeline).toHaveLength(4);
+    expect(exportedBundle.timeline[1]?.sourceRefs.some((sourceRef) => sourceRef.sourceRefType === 'code_diff')).toBe(true);
+    expect(clickedAnchors).toHaveLength(2);
+    expect(clickedAnchors[1]?.href).toBe('blob:pipe-assessment-evidence');
+    expect(clickedAnchors[1]?.download).toBe(
+      'pipe-assessment-ada-candidate-fix-base-ui-popover-impatient-click-handling-2026-06-23.json',
+    );
+
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync();
+    });
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:pipe-assessment-brief');
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:pipe-assessment-evidence');
+    clickSpy.mockRestore();
+    Object.defineProperty(globalThis, 'Blob', {
+      configurable: true,
+      value: originalBlob,
+    });
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: originalCreateObjectURL,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: originalRevokeObjectURL,
+    });
+    const contractReceipt = screen.getByTestId('interview-assessment-contract-receipt');
+    expect(contractReceipt).toHaveTextContent('Evidence contract receipt');
+    expect(contractReceipt).toHaveTextContent('2 of 3 expected evidence items machine-supported');
+    expect(contractReceipt).toHaveTextContent('git_commit');
+    expect(contractReceipt).toHaveTextContent('Captured from git commit source refs.');
+    expect(contractReceipt).toHaveTextContent('code_diff');
+    expect(contractReceipt).toHaveTextContent('Captured from code diff source refs.');
+    expect(contractReceipt).toHaveTextContent('Explain tradeoffs in chat');
+    expect(contractReceipt).toHaveTextContent('Needs human review');
+    expect(contractReceipt).toHaveTextContent('Preserve popover cleanup behavior.');
+    expect(contractReceipt).toHaveTextContent('Success criteria are preserved from the challenge packet; they are not auto-passed.');
+    expect(contractReceipt).not.toHaveTextContent('Auto-passed');
+    const aiUseReceipt = screen.getByTestId('interview-assessment-ai-use-receipt');
+    expect(aiUseReceipt).toHaveTextContent('AI-use receipt');
+    expect(aiUseReceipt).toHaveTextContent('AI bridge observed');
+    expect(aiUseReceipt).toHaveTextContent('AI interaction event recorded, but no prompt or response source refs were returned.');
+    expect(aiUseReceipt).toHaveTextContent('No prompt/response source refs');
+    expect(aiUseReceipt).toHaveTextContent('Treat AI use as unobserved when prompt/response evidence is missing.');
+    expect(aiUseReceipt).not.toHaveTextContent('No AI was used');
+    expect(aiUseReceipt).not.toHaveTextContent('internal');
     expect(progress).toHaveTextContent('Required proof');
     expect(progress).toHaveTextContent('Challenge captured');
     expect(progress).toHaveTextContent('Commit captured');
@@ -2329,6 +3259,88 @@ describe('InterviewDetailPage', () => {
     expect(decision).not.toHaveTextContent('The PR assignment is ready. Wait for the candidate review');
   });
 
+  it('shows quality-gate diagnostics when a matched code-review assignment lacks source evidence', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'match-run-embedding-only',
+          packetId: 'packet-embedding-only',
+          summary: 'Embedding recall selected a challenge without source-backed alignment.',
+          score: 0.7,
+          assessmentQuality: {
+            verdict: 'USABLE',
+            score: 9,
+            maxScore: 12,
+            metrics: [{
+              id: 'contrast_separation',
+              label: 'Contrast separation',
+              score: 0,
+              maxScore: 2,
+              reason: 'Roleless recall did not measure candidate-specific contrast.',
+            }],
+          },
+          qualityGate: {
+            verdict: 'NEEDS_REVIEW',
+            checks: ['assessment_quality_verified'],
+            diagnostics: [
+              'MISSING_CANDIDATE_SOURCE_EVIDENCE',
+              'MISSING_REPO_SOURCE_EVIDENCE',
+              'EMBEDDING_ONLY_MATCH_REJECTED',
+            ],
+          },
+          reviewProfile: null,
+          validatorAgent: {
+            agentName: 'quality-gate',
+            agentVersion: '1',
+            mode: 'source_backed',
+            verdict: 'PASSED',
+            rationale: 'Embedding recall did not produce source-backed candidate or repository spans.',
+            checks: [],
+            sourceBridge: {
+              prNumber: 973,
+              candidateSourceCount: 0,
+              roleSourceCount: 0,
+              repoSourceCount: 0,
+              alignedDemandCount: 0,
+              stretchCount: 0,
+              provenanceComplete: false,
+            },
+          },
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: [],
+          evidencePlan: [],
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const decision = screen.getByTestId('interview-code-review-decision-summary');
+    expect(decision).toHaveTextContent('No confident repo match yet');
+    expect(decision).toHaveTextContent('No safe challenge');
+    expect(decision).toHaveTextContent('Missing Candidate Source Evidence');
+    expect(decision).toHaveTextContent('Missing Repo Source Evidence');
+    expect(decision).toHaveTextContent('Embedding Only Match Rejected');
+    expect(decision).toHaveTextContent('Quality gate: Missing Candidate Source Evidence');
+    expect(decision).not.toHaveTextContent('The PR assignment is ready. Wait for the candidate review');
+
+    const diagnostics = screen.getByTestId('interview-code-review-match-diagnostics');
+    expect(diagnostics).toHaveTextContent('Match diagnostics');
+    expect(diagnostics).toHaveTextContent('The assignment is blocked');
+    expect(diagnostics).toHaveTextContent('Embedding Only Match Rejected');
+    const qualityDiagnostics = screen.getByTestId('interview-code-review-quality-diagnostics');
+    expect(qualityDiagnostics).toHaveTextContent('Quality diagnostics');
+    expect(qualityDiagnostics).toHaveTextContent('Missing Repo Source Evidence');
+  });
+
   it('keeps accumulated person context out of the meeting evidence timeline', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
@@ -2852,6 +3864,58 @@ describe('InterviewDetailPage', () => {
 
     expect(writeText).toHaveBeenCalledWith(deliveredUrl);
     expect(linkPanel).toHaveTextContent('Workspace link copied.');
+  });
+
+  it('refreshes assigned workspace assessments when the first detail read is missing progress', async () => {
+    const setup = {
+      status: 'reviewable_task_assigned' as const,
+      kind: 'github_pr' as const,
+      source: 'matched_repo_id' as const,
+      blocksPositiveAssessment: false,
+      message: 'PIPE matched a reviewable source-backed PR task.',
+      nextAction: 'OPEN_ROOM_OR_WORKSPACE' as const,
+      nextActionLabel: 'Open the controlled workspace room.',
+      lastDeliveredUrl: 'https://room-dev.hire-pipe.com/room/workspace-token',
+      lastDeliveredUrlState: 'active' as const,
+      lastDeliveredUrlMessage: null,
+    };
+    const progress = makeWorkspaceAssessmentProgress();
+    mocks.api.get
+      .mockResolvedValueOnce({
+        interview: makeInterview({
+          interviewType: 'OPEN_SOURCE_BUG_FIX',
+          status: 'ACTIVE',
+          assessmentSetup: setup,
+          assessmentProgress: null,
+        }),
+      })
+      .mockResolvedValueOnce({
+        interview: makeInterview({
+          interviewType: 'OPEN_SOURCE_BUG_FIX',
+          status: 'COMPLETED',
+          assessmentSetup: setup,
+          assessmentProgress: progress,
+        }),
+      });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    const initialValidity = screen.getByTestId('interview-workspace-assessment-validity-proof');
+    expect(initialValidity).toHaveTextContent('No source-backed assessment session exists yet.');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    await flushAsyncUpdates();
+
+    expect(mocks.api.get).toHaveBeenCalledTimes(3);
+    const refreshedValidity = screen.getByTestId('interview-workspace-assessment-validity-proof');
+    expect(refreshedValidity).toHaveTextContent('Score validity');
+    expect(refreshedValidity).toHaveTextContent('Required proof is source-backed');
+    expect(refreshedValidity).toHaveTextContent('git commit');
+    expect(refreshedValidity).toHaveTextContent('code diff');
+    expect(refreshedValidity).not.toHaveTextContent('No source-backed assessment session exists yet.');
   });
 
   it('keeps the assessment link selected when browser clipboard APIs are blocked', async () => {

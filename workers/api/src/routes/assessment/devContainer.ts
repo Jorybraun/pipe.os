@@ -34,10 +34,20 @@ import {
 } from '../../lib/devContainerSessions';
 import { signJwt, verifyJwt } from '../../lib/jwt';
 import {
+  deterministicEntityId,
+} from '../../lib/livingContext';
+import {
   RepoTaskInterviewSessionStore,
   type AssessmentProgressSnapshot,
   type CommitSubmissionChangedFileStatus,
 } from '../../lib/repoTaskInterviewSession';
+import {
+  candidateSafeChallengeExactText,
+  candidateSafeChallengeLocator,
+  candidateSafeEvaluation,
+} from '../../lib/assessmentCandidateSafety';
+import { evaluateRepoTaskAssessmentSession } from '../../lib/repoTaskAssessmentEvaluator';
+import type { AssessmentEvidenceSourceRefInput } from '../../lib/assessmentLayer/persistence';
 import type { JsonObject, JsonValue } from '../../lib/livingContext/types';
 
 // ─── Defaults (used when the wrangler vars are not set) ─────────────────────
@@ -52,6 +62,7 @@ const finalizeAllowedStatus: ReadonlySet<string> = new Set(['READY', 'SLEEPING']
 
 interface CandidateAssessmentSessionRow {
   id: string;
+  interviewId: string | null;
   mode: string;
   state: string;
 }
@@ -95,6 +106,8 @@ const changedFileSchema = z.object({
 
 const workspaceFinalizeRequestSchema = z.object({
   narrative: z.string().trim().min(1).optional(),
+  testCommand: z.string().trim().min(1).max(1_000).optional(),
+  verificationNotes: z.string().trim().min(1).max(4_000).optional(),
   forkRepositoryUrl: z.string().trim().min(1).nullable().optional(),
   commitUrl: z.string().trim().min(1).nullable().optional(),
   upstreamPullRequestUrl: z.string().trim().min(1).nullable().optional(),
@@ -123,6 +136,8 @@ const bridgeFinalizeResponseSchema = z.object({
 });
 
 type WorkspaceFinalizeRequest = z.infer<typeof workspaceFinalizeRequestSchema>;
+type BridgeSubmissionPayload = z.infer<typeof bridgeSubmissionPayloadSchema>;
+type BridgeSubmissionSourceRef = BridgeSubmissionPayload['sourceRefs'][number];
 
 function parseIntEnv(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
@@ -171,7 +186,7 @@ async function loadAssessmentSessionForDevContainer(
 ): Promise<CandidateAssessmentSessionRow | null> {
   if (!await assessmentSessionsTableExists(db)) return null;
   return db.prepare(
-    `SELECT s.id, s.mode, s.state
+    `SELECT s.id, s.interview_id AS interviewId, s.mode, s.state
        FROM assessment_sessions s
        LEFT JOIN scheduled_interviews si ON si.id = s.interview_id
       WHERE s.state <> 'CANCELLED'
@@ -197,28 +212,6 @@ async function loadAssessmentSessionForDevContainer(
   ).first<CandidateAssessmentSessionRow>();
 }
 
-function candidateSafeAssessmentLocator(locator: JsonObject): JsonObject {
-  const safe: JsonObject = {};
-  for (const key of [
-    'repositoryUrl',
-    'githubPrNumber',
-    'pullRequestUrl',
-    'baseCommitSha',
-    'headCommitSha',
-  ]) {
-    const value = locator[key];
-    if (
-      typeof value === 'string'
-      || typeof value === 'number'
-      || typeof value === 'boolean'
-      || value === null
-    ) {
-      safe[key] = value;
-    }
-  }
-  return safe;
-}
-
 function toJsonObject(value: Record<string, unknown>): JsonObject {
   return JSON.parse(JSON.stringify(value)) as JsonObject;
 }
@@ -226,6 +219,7 @@ function toJsonObject(value: Record<string, unknown>): JsonObject {
 function serializeCandidateAssessmentProgress(
   progress: AssessmentProgressSnapshot,
 ): JsonObject {
+  const challengeSourceRefType = progress.challenge?.sourceRefType ?? null;
   return toJsonObject({
     mode: progress.session.mode,
     state: progress.session.state,
@@ -248,14 +242,26 @@ function serializeCandidateAssessmentProgress(
     hasVerificationGap: progress.hasVerificationGap,
     evidenceCounts: progress.evidenceCounts,
     sourceRefCounts: progress.sourceRefCounts,
-    evidenceSnippets: progress.evidenceSnippets,
+    evidenceSnippets: progress.evidenceSnippets.map((snippet) => ({
+      ...snippet,
+      exactText: candidateSafeChallengeExactText({
+        sourceRefType: snippet.sourceRefType,
+        exactText: snippet.exactText,
+      }),
+    })),
     challenge: progress.challenge
       ? {
           sourceRefType: progress.challenge.sourceRefType,
           evidenceRole: progress.challenge.evidenceRole,
-          exactText: progress.challenge.exactText,
+          exactText: candidateSafeChallengeExactText({
+            sourceRefType: progress.challenge.sourceRefType,
+            exactText: progress.challenge.exactText,
+          }),
           contentHash: progress.challenge.contentHash,
-          locator: candidateSafeAssessmentLocator(progress.challenge.locator),
+          locator: candidateSafeChallengeLocator({
+            sourceRefType: progress.challenge.sourceRefType,
+            locator: progress.challenge.locator,
+          }),
         }
       : null,
     latestEvent: progress.latestEvent
@@ -284,15 +290,10 @@ function serializeCandidateAssessmentProgress(
         }
       : null,
     evaluation: progress.evaluation
-      ? {
-          status: progress.evaluation.status,
-          summary: progress.evaluation.summary,
-          recommendation: progress.evaluation.recommendation,
-          createdAt: progress.evaluation.createdAt,
-          evidenceCoverage: progress.evaluation.evidenceCoverage,
-          claims: progress.evaluation.claims,
-          diagnostics: progress.evaluation.diagnostics,
-        }
+      ? candidateSafeEvaluation({
+          challengeSourceRefType,
+          evaluation: progress.evaluation,
+        })
       : null,
   });
 }
@@ -361,6 +362,192 @@ function bridgeErrorMessage(value: unknown): string | null {
   if (typeof error !== 'object' || error === null || Array.isArray(error)) return null;
   const message = (error as { message?: unknown }).message;
   return typeof message === 'string' && message.trim() ? message.trim() : null;
+}
+
+function bridgePayloadHasVerificationEvidence(
+  payload: z.infer<typeof bridgeSubmissionPayloadSchema>,
+): boolean {
+  return payload.sourceRefs.some((sourceRef) =>
+    sourceRef.sourceRefType === 'test_run'
+    || sourceRef.sourceRefType === 'verification_gap');
+}
+
+function bridgePayloadHasProcessTelemetry(
+  payload: BridgeSubmissionPayload,
+): boolean {
+  return payload.sourceRefs.some((sourceRef) =>
+    sourceRef.sourceRefType === 'terminal_command');
+}
+
+function bridgePayloadHasBoundSourceRefs(payload: BridgeSubmissionPayload): boolean {
+  return payload.sourceRefs.some((sourceRef) =>
+    sourceRef.sourceRefType === 'git_commit'
+    && sourceRef.sourceRefId.toLowerCase() === payload.commitSha.toLowerCase()
+    && bridgeSourceRefLocatorMatchesSubmittedCommit(sourceRef, payload, { requireBaseCommitSha: false }))
+    && payload.sourceRefs.some((sourceRef) =>
+      sourceRef.sourceRefType === 'code_diff'
+      && sourceRef.sourceRefId.toLowerCase()
+        === `${payload.baseCommitSha.toLowerCase()}..${payload.commitSha.toLowerCase()}`
+      && bridgeSourceRefLocatorMatchesSubmittedCommit(sourceRef, payload, { requireBaseCommitSha: true }))
+    && payload.sourceRefs.some((sourceRef) =>
+      sourceRef.sourceRefType === 'terminal_command'
+      && bridgeSourceRefLocatorMatchesSubmittedCommit(sourceRef, payload, { requireBaseCommitSha: true }))
+    && payload.sourceRefs.some((sourceRef) =>
+      (sourceRef.sourceRefType === 'test_run' || sourceRef.sourceRefType === 'verification_gap')
+      && bridgeSourceRefLocatorMatchesSubmittedCommit(sourceRef, payload, { requireBaseCommitSha: true }));
+}
+
+function bridgeSourceRefLocatorMatchesSubmittedCommit(
+  sourceRef: BridgeSubmissionSourceRef,
+  payload: BridgeSubmissionPayload,
+  options: { requireBaseCommitSha: boolean },
+): boolean {
+  const locatorRepositoryUrl = sourceRefLocatorString(sourceRef, 'repositoryUrl');
+  if (!locatorRepositoryUrl) return false;
+
+  const allowedRepositoryUrls = new Set(
+    [payload.repositoryUrl, payload.forkRepositoryUrl ?? null]
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .map(normalizeEvidenceRepositoryUrl),
+  );
+  if (!allowedRepositoryUrls.has(normalizeEvidenceRepositoryUrl(locatorRepositoryUrl))) return false;
+
+  const locatorCommitSha = sourceRefLocatorString(sourceRef, 'commitSha')?.toLowerCase();
+  if (locatorCommitSha !== payload.commitSha.toLowerCase()) return false;
+
+  if (!options.requireBaseCommitSha) return true;
+  const locatorBaseCommitSha = sourceRefLocatorString(sourceRef, 'baseCommitSha')?.toLowerCase();
+  return locatorBaseCommitSha === payload.baseCommitSha.toLowerCase();
+}
+
+function sourceRefLocatorString(sourceRef: BridgeSubmissionSourceRef, key: string): string | null {
+  const value = sourceRef.locator?.[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeEvidenceRepositoryUrl(value: string): string {
+  return value.trim().replace(/\/+$/g, '').replace(/\.git$/i, '').toLowerCase();
+}
+
+interface WorkspaceEvaluationStartResult {
+  progress: AssessmentProgressSnapshot;
+  autoStarted: boolean;
+  backgrounded: boolean;
+}
+
+async function startWorkspaceFinalizedEvaluation(input: {
+  db: D1Database;
+  env: Env;
+  store: RepoTaskInterviewSessionStore;
+  executionCtx: ExecutionContext | undefined;
+  assessmentSessionId: string;
+  scheduledInterviewId: string | null;
+  candidateId: string;
+  devContainerSessionId: string;
+  commitSha: string;
+}): Promise<WorkspaceEvaluationStartResult> {
+  const currentProgress = await input.store.loadProgress(input.assessmentSessionId);
+  if (currentProgress.nextAction !== 'START_EVALUATION' || !input.scheduledInterviewId) {
+    return {
+      progress: currentProgress,
+      autoStarted: false,
+      backgrounded: false,
+    };
+  }
+
+  const requestedAt = new Date().toISOString();
+  const exactText = [
+    `Candidate ${input.candidateId} finalized workspace commit ${input.commitSha} for scheduled interview ${input.scheduledInterviewId}.`,
+    `Dev-container session: ${input.devContainerSessionId}.`,
+    `Assessment session: ${input.assessmentSessionId}.`,
+    'Result: PIPE queued source-backed evaluation using only captured challenge, commit, diff, test, transcript, chat, terminal, code-server, and AI-use evidence.',
+  ].join('\n');
+  const contentHash = await deterministicEntityId('content', exactText);
+  const requestSourceRef: AssessmentEvidenceSourceRefInput = {
+    sourceRefType: 'assessment_evaluation_request',
+    sourceRefId: `dev-container:${input.devContainerSessionId}:workspace-finalize-evaluation-request:${contentHash}`,
+    evidenceRole: 'evaluation_request',
+    locator: {
+      route: '/rpc/dev-container/:sessionId/assessment/finalize',
+      scheduledInterviewId: input.scheduledInterviewId,
+      assessmentSessionId: input.assessmentSessionId,
+      devContainerSessionId: input.devContainerSessionId,
+      candidateId: input.candidateId,
+      commitSha: input.commitSha,
+      requestedAt,
+      triggeredBy: 'workspace_finalizer',
+    },
+    exactText,
+    contentHash,
+  };
+
+  const requestEvent = await input.store.recordEvent({
+    sessionId: input.assessmentSessionId,
+    ingestionKey: `assessment-event:${input.assessmentSessionId}:workspace-finalize-evaluation-request:${contentHash}`,
+    kind: 'dev_container_event',
+    actorType: 'system',
+    actorId: 'pipe-assessment-evaluator',
+    narrative: 'PIPE queued source-backed assessment evaluation after workspace commit finalization.',
+    payload: {
+      scheduledInterviewId: input.scheduledInterviewId,
+      devContainerSessionId: input.devContainerSessionId,
+      commitSha: input.commitSha,
+      action: 'auto_start_evaluation',
+      evaluatorStatus: 'source_backed_evaluator_requested',
+    },
+    occurredAt: requestedAt,
+    sourceRefs: [requestSourceRef],
+  });
+
+  await input.store.transitionState({
+    sessionId: input.assessmentSessionId,
+    toState: 'EVALUATING',
+    reason: 'Workspace commit finalized; PIPE queued source-backed assessment evaluation.',
+    eventId: requestEvent.id,
+    createdBy: 'pipe-assessment-evaluator',
+  });
+
+  const queuedProgress = await input.store.loadProgress(input.assessmentSessionId);
+  const evaluationJob = evaluateRepoTaskAssessmentSession({
+    db: input.db,
+    store: input.store,
+    env: input.env,
+    sessionId: input.assessmentSessionId,
+    scheduledInterviewId: input.scheduledInterviewId,
+    requestedBy: 'pipe-assessment-evaluator',
+    requestedAt,
+    requestEventId: requestEvent.id,
+    requestSourceRef,
+  }).catch(async (error) => {
+    console.error('[devContainer.assessment.finalize] background evaluation failed:', {
+      assessmentSessionId: input.assessmentSessionId,
+      devContainerSessionId: input.devContainerSessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    await input.store.transitionState({
+      sessionId: input.assessmentSessionId,
+      toState: 'DIAGNOSTIC',
+      reason: 'Source-backed assessment evaluation failed before producing a report.',
+      eventId: requestEvent.id,
+      createdBy: 'pipe-assessment-evaluator',
+    });
+  });
+
+  if (input.executionCtx && typeof input.executionCtx.waitUntil === 'function') {
+    input.executionCtx.waitUntil(evaluationJob);
+    return {
+      progress: queuedProgress,
+      autoStarted: true,
+      backgrounded: true,
+    };
+  }
+
+  await evaluationJob;
+  return {
+    progress: await input.store.loadProgress(input.assessmentSessionId),
+    autoStarted: true,
+    backgrounded: false,
+  };
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -757,6 +944,25 @@ devContainer.post('/:sessionId/assessment/finalize', async (c) => {
   }
 
   const payload = parsedBridge.data.submissionPayload;
+  if (!bridgePayloadHasVerificationEvidence(payload)) {
+    return devContainerErrorResponse(
+      'Workspace finalizer returned commit evidence without a test_run or verification_gap source ref.',
+      502,
+    );
+  }
+  if (!bridgePayloadHasProcessTelemetry(payload)) {
+    return devContainerErrorResponse(
+      'Workspace finalizer returned commit evidence without a terminal_command source ref.',
+      502,
+    );
+  }
+  if (!bridgePayloadHasBoundSourceRefs(payload)) {
+    return devContainerErrorResponse(
+      'Workspace finalizer source refs are not bound to the submitted repo/base/commit.',
+      502,
+    );
+  }
+
   const commitSha = payload.commitSha.trim().toLowerCase();
   try {
     await store.submitCommit({
@@ -777,18 +983,32 @@ devContainer.post('/:sessionId/assessment/finalize', async (c) => {
       occurredAt: payload.occurredAt,
       sourceRefs: payload.sourceRefs,
     });
-    const updatedProgress = await store.loadProgress(assessmentSession.id);
+    const evaluationStart = await startWorkspaceFinalizedEvaluation({
+      db: c.env.DB,
+      env: c.env,
+      store,
+      executionCtx: c.executionCtx,
+      assessmentSessionId: assessmentSession.id,
+      scheduledInterviewId: assessmentSession.interviewId,
+      candidateId,
+      devContainerSessionId: sessionId,
+      commitSha,
+    });
     return c.json({
       submission: {
         accepted: true,
-        repositoryUrl: updatedProgress.commit?.repositoryUrl ?? payload.repositoryUrl,
-        branchName: updatedProgress.commit?.branchName ?? payload.branchName,
-        commitSha: updatedProgress.commit?.commitSha ?? commitSha,
-        commitUrl: updatedProgress.commit?.commitUrl ?? payload.commitUrl ?? null,
-        upstreamPullRequestUrl: updatedProgress.commit?.upstreamPullRequestUrl ?? payload.upstreamPullRequestUrl ?? null,
-        upstreamPrConsent: updatedProgress.commit?.upstreamPrConsent ?? payload.upstreamPrConsent === true,
+        repositoryUrl: evaluationStart.progress.commit?.repositoryUrl ?? payload.repositoryUrl,
+        branchName: evaluationStart.progress.commit?.branchName ?? payload.branchName,
+        commitSha: evaluationStart.progress.commit?.commitSha ?? commitSha,
+        commitUrl: evaluationStart.progress.commit?.commitUrl ?? payload.commitUrl ?? null,
+        upstreamPullRequestUrl: evaluationStart.progress.commit?.upstreamPullRequestUrl ?? payload.upstreamPullRequestUrl ?? null,
+        upstreamPrConsent: evaluationStart.progress.commit?.upstreamPrConsent ?? payload.upstreamPrConsent === true,
       },
-      progress: serializeCandidateAssessmentProgress(updatedProgress),
+      evaluationStart: {
+        autoStarted: evaluationStart.autoStarted,
+        backgrounded: evaluationStart.backgrounded,
+      },
+      progress: serializeCandidateAssessmentProgress(evaluationStart.progress),
     }, 201);
   } catch (error) {
     return storeErrorResponse(error);

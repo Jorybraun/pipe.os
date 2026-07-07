@@ -53,9 +53,14 @@ import { globalErrorHandler } from './middleware/errors';
 import type { Env, Variables } from './types';
 import { processProjectionOutbox } from './lib/livingContext';
 import { processCodeReviewScoringBacklog } from './lib/review/scoringBacklog';
-import { processStaleWorkersAIModelIngestionRetries } from './lib/candidateDiscovery/staleWorkersAiRetry';
+import {
+  processStaleWorkersAIModelIngestionRetries,
+  processTalentPoolOperationalContextRepairs,
+  processTalentPoolRolelessApplicationRepairs,
+} from './lib/candidateDiscovery/staleWorkersAiRetry';
 import { runScheduledBackfill } from './lib/livingContext/backfillScheduled';
 import { PIPE_EMAIL_LOGO_PATH, pipeEmailLogoResponse } from './lib/emailAssets';
+import { processStaleRepoTaskAssessmentEvaluations } from './lib/repoTaskAssessmentEvaluator';
 
 // Unified Agent Runtime plugin registration (ADR-034)
 import { registerAllPlugins } from './lib/agents';
@@ -80,6 +85,11 @@ function isDevContainerRoomRuntimeRequest(pathname: string, method: string): boo
   if (
     method === 'POST'
     && /^\/api\/v1\/meeting-rooms\/[^/]+\/assessment\/commit-submission$/.test(pathname)
+  ) return true;
+
+  if (
+    method === 'GET'
+    && /^\/api\/v1\/meeting-rooms\/[^/]+\/assessment\/receipt$/.test(pathname)
   ) return true;
 
   return false;
@@ -339,6 +349,11 @@ export default {
     ctx.waitUntil(processProjectionOutbox(env));
     ctx.waitUntil(processCodeReviewScoringBacklog(env));
     ctx.waitUntil(processStaleWorkersAIModelIngestionRetries(env));
+    ctx.waitUntil(processTalentPoolOperationalContextRepairs(env));
+    ctx.waitUntil(processTalentPoolRolelessApplicationRepairs(env));
+    ctx.waitUntil(processStaleRepoTaskAssessmentEvaluations(env).catch((err) => {
+      console.error('[scheduled] stale assessment evaluation recovery error:', err);
+    }));
     ctx.waitUntil(runScheduledBackfill(env).catch((err) => {
       console.error('[scheduled] backfill error:', err);
     }));

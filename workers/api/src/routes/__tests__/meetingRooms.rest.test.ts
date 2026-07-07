@@ -1618,6 +1618,29 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(browserAgentStatusRes.status).toBe(200);
 
+    const containerAgentStatusRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_agent_status',
+        text: 'devin bridge status: auth_needed.',
+        actor: 'agent',
+        properties: {
+          source: 'agent_bridge',
+          agentStatusEventSource: 'container_agent_bridge',
+          agent: 'devin',
+          status: 'auth_needed',
+          diagnosticSource: null,
+          bridgeMessageSource: 'agent_status',
+          observedAt: '2026-06-27T21:12:30.000Z',
+          capturedAtMs: 1782594750000,
+          agentStatusEventId: 'agent-status:devin:1782594750000:agent_status:auth_needed:none',
+          bridgePersisted: true,
+        },
+      }),
+    }, env, ctx);
+    expect(containerAgentStatusRes.status).toBe(200);
+
     const bridgeDiagnosticStatusRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1655,7 +1678,7 @@ describe('meeting room recording living-context route', () => {
       source_type: string;
       extracted_properties_json: string;
     }>;
-    expect(agentStatusNodes).toHaveLength(2);
+    expect(agentStatusNodes).toHaveLength(3);
     expect(agentStatusNodes.map((entry) => JSON.parse(entry.extracted_properties_json))).toEqual(expect.arrayContaining([
       expect.objectContaining({
         actor: 'agent',
@@ -1666,6 +1689,16 @@ describe('meeting room recording living-context route', () => {
         capturedAtMs: 1782594720000,
         agentStatusEventId: 'agent-status:devin:1782594720000:agent_status:starting:none',
         agentResponseClaimed: false,
+      }),
+      expect.objectContaining({
+        actor: 'agent',
+        source: 'agent_bridge',
+        agentStatusEventSource: 'container_agent_bridge',
+        bridgeMessageSource: 'agent_status',
+        observedAt: '2026-06-27T21:12:30.000Z',
+        capturedAtMs: 1782594750000,
+        agentStatusEventId: 'agent-status:devin:1782594750000:agent_status:auth_needed:none',
+        bridgePersisted: true,
       }),
       expect.objectContaining({
         actor: 'agent',
@@ -3856,7 +3889,12 @@ describe('meeting room recording living-context route', () => {
       'Repo: https://github.com/pipe/source-backed-worker',
       `Base commit: ${baseCommitSha}`,
       'Pull request: #5110',
+      'Pull request URL: https://github.com/pipe/source-backed-worker/pull/5110',
+      `Head commit: ${headCommitSha}`,
       'Task: Fix the matched retry scheduler packet.',
+      'Instructions: Use the selected upstream pull request context as the source-backed task brief: https://github.com/pipe/source-backed-worker/pull/5110.',
+      'Source-backed demands:',
+      '- Review source artifact in pull request #5110. Source evidence: src/retry.ts:@@ -1 +1',
       `Verification command: ${verificationCommand}`,
       'Success criteria:',
       '- Launch uses the immutable base commit',
@@ -3973,6 +4011,7 @@ describe('meeting room recording living-context route', () => {
           source: string;
           packet: {
             sourceRefType: string;
+            exactText: string;
             locator: Record<string, unknown>;
             contentHash: string;
           } | null;
@@ -3980,7 +4019,7 @@ describe('meeting room recording living-context route', () => {
       };
     };
     expect(workspaceBody.workspace.repoUrl).toBe('https://github.com/pipe/source-backed-worker');
-    expect(workspaceBody.workspace.githubPrNumber).toBe(5110);
+    expect(workspaceBody.workspace.githubPrNumber).toBeNull();
     expect(workspaceBody.workspace.matchedRepoId).toBe(973);
     expect(workspaceBody.workspace.challenge).toMatchObject({
       status: 'repo_task_assigned',
@@ -3989,15 +4028,55 @@ describe('meeting room recording living-context route', () => {
       packet: {
         sourceRefType: 'review_challenge_packet',
         locator: {
-          matchedRepoId: 973,
-          githubPrNumber: 5110,
           baseCommitSha,
-          headCommitSha,
           verificationCommand,
         },
         contentHash: 'sha256:matched-packet-pr-content-hash',
       },
     });
+    expect(workspaceBody.workspace.challenge.packet?.locator).not.toHaveProperty('githubPrNumber');
+    expect(workspaceBody.workspace.challenge.packet?.locator).not.toHaveProperty('pullRequestUrl');
+    expect(workspaceBody.workspace.challenge.packet?.locator).not.toHaveProperty('headCommitSha');
+    expect(workspaceBody.workspace.challenge.packet?.locator).not.toHaveProperty('scheduledInterviewId');
+    expect(workspaceBody.workspace.challenge.packet?.locator).not.toHaveProperty('repoSnapshotId');
+    expect(workspaceBody.workspace.challenge.packet?.exactText).toContain('Fix the matched retry scheduler packet.');
+    expect(workspaceBody.workspace.challenge.packet?.exactText).toContain('[hidden source-backed task]');
+    expect(workspaceBody.workspace.challenge.packet?.exactText).toContain(verificationCommand);
+    expect(workspaceBody.workspace.challenge.packet?.exactText).not.toContain('Source-backed demands');
+    expect(workspaceBody.workspace.challenge.packet?.exactText).not.toContain('Source evidence');
+    expect(workspaceBody.workspace.challenge.packet?.exactText).not.toContain('Pull request');
+    expect(workspaceBody.workspace.challenge.packet?.exactText).not.toContain('5110');
+    expect(workspaceBody.workspace.challenge.packet?.exactText).not.toContain(headCommitSha);
+
+    const progressRes = await app.request(`/meeting/${created.hostToken}/assessment/progress`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(progressRes.status).toBe(200);
+    const progressBody = await progressRes.json() as {
+      progress: {
+        assignmentTrust: { state: string };
+        challenge: {
+          repositoryUrl: string | null;
+          githubPrNumber: number | null;
+          pullRequestUrl: string | null;
+          baseCommitSha: string | null;
+          task: string | null;
+          verificationCommand: string | null;
+        } | null;
+        evidenceSnippets: Array<{ exactText: string }>;
+      };
+    };
+    expect(progressBody.progress.assignmentTrust.state).toBe('matched_challenge');
+    expect(progressBody.progress.challenge).toMatchObject({
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      githubPrNumber: null,
+      pullRequestUrl: null,
+      baseCommitSha,
+      task: 'Fix the matched retry scheduler packet.',
+      verificationCommand,
+    });
+    expect(JSON.stringify(progressBody.progress.evidenceSnippets)).not.toContain('/pull/5110');
+    expect(JSON.stringify(progressBody.progress.evidenceSnippets)).not.toContain(headCommitSha);
 
     const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
       method: 'POST',
@@ -4034,10 +4113,20 @@ describe('meeting room recording living-context route', () => {
       verificationCommand,
       challengePacketContentHash: 'sha256:matched-packet-pr-content-hash',
       matchedRepoId: 973,
-      githubPrNumber: 5110,
+      githubPrNumber: null,
       challengeStatus: 'repo_task_assigned',
       challengeSource: 'scheduled_interview.challenge_packet',
     }));
+
+    const receiptRes = await app.request(`/meeting/${created.hostToken}/assessment/receipt`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(receiptRes.status).toBe(200);
+    const receiptMarkdown = await receiptRes.text();
+    expect(receiptMarkdown).toContain('Pull request: Hidden until recruiter review');
+    expect(receiptMarkdown).not.toContain('/pull/5110');
+    expect(receiptMarkdown).not.toContain('#5110');
+    expect(receiptMarkdown).not.toContain(headCommitSha);
   });
 
   it('returns refreshed assessment progress after source-backed room events', async () => {
@@ -4540,6 +4629,8 @@ describe('meeting room recording living-context route', () => {
       '+export const retryBackoff = "source-backed";',
     ].join('\n');
     const commitEvidenceText = `commit ${commitSha}\nAuthor: Commit Candidate\n\nFix retry path`;
+    const testRunText = 'npm test -- retry-path\nPASS src/retry.test.ts';
+    const upstreamPullRequestUrl = 'https://github.com/pipe/source-backed-worker/pull/42';
     const commitSourceRef = {
       sourceRefType: 'git_commit',
       sourceRefId: commitSha,
@@ -4563,6 +4654,35 @@ describe('meeting room recording living-context route', () => {
       exactText: diffText,
       contentHash: await sha256ContentHash(diffText),
     };
+    const testRunSourceRef = {
+      sourceRefType: 'test_run',
+      sourceRefId: `${commitSha}:test-run`,
+      evidenceRole: 'verification',
+      locator: {
+        repositoryUrl: 'https://github.com/candidate/source-backed-worker',
+        baseCommitSha,
+        commitSha,
+        command: 'npm test -- retry-path',
+      },
+      exactText: testRunText,
+      contentHash: await sha256ContentHash(testRunText),
+    };
+    const upstreamPullRequestSourceRef = {
+      sourceRefType: 'upstream_pull_request',
+      sourceRefId: upstreamPullRequestUrl,
+      evidenceRole: 'optional_upstream_pr_tracking',
+      locator: {
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        forkRepositoryUrl: 'https://github.com/candidate/source-backed-worker',
+        commitSha,
+        upstreamPullRequestUrl,
+      },
+      exactText: upstreamPullRequestUrl,
+      contentHash: await sha256ContentHash(upstreamPullRequestUrl),
+      metadata: {
+        upstreamPrConsent: true,
+      },
+    };
     const tamperedHashRes = await app.request(`/meeting/${guestToken}/assessment/commit-submission`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -4574,7 +4694,8 @@ describe('meeting room recording living-context route', () => {
         baseCommitSha,
         commitSha,
         commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
-        upstreamPrConsent: false,
+        upstreamPullRequestUrl,
+        upstreamPrConsent: true,
         changedFiles: [{
           path: 'src/retry.ts',
           status: 'modified',
@@ -4588,6 +4709,7 @@ describe('meeting room recording living-context route', () => {
             contentHash: await sha256ContentHash(`${commitEvidenceText}\nnot the submitted exact text`),
           },
           diffSourceRef,
+          testRunSourceRef,
         ],
       }),
     }, env, ctx);
@@ -4610,7 +4732,8 @@ describe('meeting room recording living-context route', () => {
         baseCommitSha,
         commitSha,
         commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
-        upstreamPrConsent: false,
+        upstreamPullRequestUrl,
+        upstreamPrConsent: true,
         changedFiles: [{
           path: 'src/retry.ts',
           status: 'modified',
@@ -4621,6 +4744,8 @@ describe('meeting room recording living-context route', () => {
         sourceRefs: [
           commitSourceRef,
           diffSourceRef,
+          testRunSourceRef,
+          upstreamPullRequestSourceRef,
         ],
       }),
     }, env, ctx);
@@ -4632,6 +4757,8 @@ describe('meeting room recording living-context route', () => {
         branchName: string;
         commitSha: string;
         commitUrl: string;
+        upstreamPullRequestUrl: string | null;
+        upstreamPrConsent: boolean;
       };
       progress: {
         mode: string;
@@ -4640,6 +4767,13 @@ describe('meeting room recording living-context route', () => {
         nextAction: string;
         hasChallengePacket: boolean;
         hasCommitSubmission: boolean;
+        challenge: {
+          repositoryUrl: string | null;
+          baseCommitSha: string | null;
+          task: string | null;
+          successCriteria: string[];
+          expectedEvidence: string[];
+        } | null;
         latestEvent: { kind: string; sequence: number };
         commit: { commitSha: string; branchName: string; changedFiles: unknown[] };
       };
@@ -4651,6 +4785,8 @@ describe('meeting room recording living-context route', () => {
       branchName: 'pipe-assessment/retry-path',
       commitSha,
       commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
+      upstreamPullRequestUrl,
+      upstreamPrConsent: true,
     });
     expect(body.progress).toMatchObject({
       mode: 'OPEN_SOURCE_BUG_FIX',
@@ -4659,6 +4795,18 @@ describe('meeting room recording living-context route', () => {
       nextAction: 'START_EVALUATION',
       hasChallengePacket: true,
       hasCommitSubmission: true,
+      challenge: {
+        title: 'Fix the source-backed worker retry path.',
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+        task: 'Fix the source-backed worker retry path.',
+        successCriteria: ['Existing worker tests pass'],
+        expectedEvidence: [
+          'Commit SHA on assessment branch',
+          'Code diff for the retry path fix',
+          'Test command output',
+        ],
+      },
       latestEvent: { kind: 'commit_submission', sequence: 2 },
     });
     expect(body.progress.commit).toMatchObject({
@@ -4679,7 +4827,21 @@ describe('meeting room recording living-context route', () => {
         nextAction: string;
         hasChallengePacket: boolean;
         hasCommitSubmission: boolean;
-        commit: { commitSha: string; branchName: string; changedFiles: unknown[] };
+        challenge: {
+          title: string | null;
+          repositoryUrl: string | null;
+          baseCommitSha: string | null;
+          task: string | null;
+          successCriteria: string[];
+          expectedEvidence: string[];
+        } | null;
+        commit: {
+          commitSha: string;
+          branchName: string;
+          upstreamPullRequestUrl?: string | null;
+          upstreamPrConsent?: boolean;
+          changedFiles: unknown[];
+        };
       };
     };
     expect(progressBody.progress).toMatchObject({
@@ -4689,10 +4851,18 @@ describe('meeting room recording living-context route', () => {
       nextAction: 'START_EVALUATION',
       hasChallengePacket: true,
       hasCommitSubmission: true,
+      challenge: {
+        title: 'Fix the source-backed worker retry path.',
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+        task: 'Fix the source-backed worker retry path.',
+      },
     });
     expect(progressBody.progress.commit).toMatchObject({
       commitSha,
       branchName: 'pipe-assessment/retry-path',
+      upstreamPullRequestUrl,
+      upstreamPrConsent: true,
     });
     const serializedResponse = JSON.stringify(body);
     expect(serializedResponse).not.toContain(assessmentSessionId);
@@ -4702,6 +4872,33 @@ describe('meeting room recording living-context route', () => {
     expect(serializedProgressResponse).not.toContain(assessmentSessionId);
     expect(serializedProgressResponse).not.toContain(`assessment-session:open-source:${scheduledInterviewId}`);
     expect(serializedProgressResponse).not.toContain(created.meeting.contactId);
+
+    const receiptRes = await app.request(`/meeting/${guestToken}/assessment/receipt`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(receiptRes.status).toBe(200);
+    expect(receiptRes.headers.get('Content-Type')).toContain('text/markdown');
+    expect(receiptRes.headers.get('Cache-Control')).toBe('no-store');
+    expect(receiptRes.headers.get('Content-Disposition')).toContain('pipe-assessment-receipt-');
+    const receiptMarkdown = await receiptRes.text();
+    expect(receiptMarkdown).toContain('# PIPE Candidate Assessment Receipt');
+    expect(receiptMarkdown).toContain('Status: Ready For Evaluation');
+    expect(receiptMarkdown).toContain('## Assigned Challenge');
+    expect(receiptMarkdown).toContain('Title: Fix the source-backed worker retry path.');
+    expect(receiptMarkdown).toContain('Repository: https://github.com/pipe/source-backed-worker');
+    expect(receiptMarkdown).toContain('Base commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(receiptMarkdown).toContain('Task: Fix the source-backed worker retry path.');
+    expect(receiptMarkdown).toContain('- Existing worker tests pass');
+    expect(receiptMarkdown).toContain('- Commit SHA on assessment branch');
+    expect(receiptMarkdown).toContain(`Commit: ${commitSha}`);
+    expect(receiptMarkdown).toContain(`Upstream PR: ${upstreamPullRequestUrl}`);
+    expect(receiptMarkdown).toContain('Upstream PR consent: Yes');
+    expect(receiptMarkdown).toContain('Upstream PR boundary: PIPE assessment receipts do not imply automatic upstream PR submission');
+    expect(receiptMarkdown).toContain('Source refs:');
+    expect(receiptMarkdown).toContain('Use this as the candidate receipt');
+    expect(receiptMarkdown).not.toContain(assessmentSessionId);
+    expect(receiptMarkdown).not.toContain(`assessment-session:open-source:${scheduledInterviewId}`);
+    expect(receiptMarkdown).not.toContain(created.meeting.contactId);
 
     const persistedCommit = sqlite.prepare(
       `SELECT e.kind, e.actor_type, e.actor_id, e.narrative, e.payload_json,
@@ -4724,7 +4921,7 @@ describe('meeting room recording living-context route', () => {
       actor_type: 'candidate',
       actor_id: created.meeting.contactId,
       narrative: 'Candidate submitted a focused retry-path fix with tests passing locally.',
-      source_ref_count: 2,
+      source_ref_count: 4,
     });
     expect(JSON.parse(persistedCommit.payload_json)).toMatchObject({
       repositoryUrl: 'https://github.com/pipe/source-backed-worker',
@@ -4732,7 +4929,8 @@ describe('meeting room recording living-context route', () => {
       branchName: 'pipe-assessment/retry-path',
       baseCommitSha,
       commitSha,
-      upstreamPrConsent: false,
+      upstreamPullRequestUrl,
+      upstreamPrConsent: true,
     });
     expect(sqlite.prepare(
       'SELECT state FROM assessment_sessions WHERE id = ?',
@@ -4826,6 +5024,16 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(progressRes.status).toBe(200);
     await expect(progressRes.json()).resolves.toEqual({ progress: null });
+    const receiptRes = await app.request(`/meeting/${guestToken}/assessment/receipt`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(receiptRes.status).toBe(404);
+    await expect(receiptRes.json()).resolves.toMatchObject({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Assessment receipt is not available for this room yet.',
+      },
+    });
     expect(sqlite.prepare(
       `SELECT COUNT(*) AS count
          FROM assessment_evidence_events

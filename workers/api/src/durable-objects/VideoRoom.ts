@@ -502,6 +502,11 @@ export class VideoRoom {
       const persistedDiagnosticOk = bridgeMessageSource === 'bridge_diagnostic'
         && evidence.bridgePersisted === true
         && diagnosticSource !== null;
+      const persistedContainerStatusOk = evidence.agentStatusEventSource === 'container_agent_bridge'
+        && bridgeMessageSource === 'agent_status'
+        && evidence.bridgePersisted === true
+        && status !== null
+        && diagnosticSource === null;
       return event.actor === 'agent'
         && evidence.source === 'agent_bridge'
         && agent !== null
@@ -514,7 +519,7 @@ export class VideoRoom {
         && typeof evidence.agentStatusEventId === 'string'
         && AGENT_STATUS_EVENT_ID_RE.test(evidence.agentStatusEventId)
         && evidence.agentStatusEventId === expectedId
-        && (browserObservationOk || persistedDiagnosticOk);
+        && (browserObservationOk || persistedDiagnosticOk || persistedContainerStatusOk);
     }
 
     return false;

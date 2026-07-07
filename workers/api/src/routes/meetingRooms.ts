@@ -23,11 +23,21 @@ import {
 } from '../lib/devContainerTtl';
 import {
   RepoTaskInterviewSessionStore,
+  assessmentProgressChallengeSummary,
   challengePacketContract,
   type AssessmentActorType,
+  type AssessmentProgressChallengeSummary,
   type AssessmentProgressSnapshot,
   type CommitSubmissionChangedFileStatus,
 } from '../lib/repoTaskInterviewSession';
+import {
+  candidateSafeChallengeExactText,
+  candidateSafeChallengeLocator,
+  candidateSafeChallengeSummary,
+  candidateSafeEvaluation,
+  shouldHideCandidateChallengeSolution,
+  type CandidateSafeAssessmentProgressEvaluation,
+} from '../lib/assessmentCandidateSafety';
 import {
   getLatestSessionForRoom,
   getSessionByIdForRoom,
@@ -482,6 +492,12 @@ const sessionEventSchema = z.object({
     const persistedDiagnosticOk = bridgeMessageSource === 'bridge_diagnostic'
       && properties.bridgePersisted === true
       && hasString(diagnosticSource);
+    const persistedContainerStatusOk = properties.agentStatusEventSource === 'container_agent_bridge'
+      && bridgeMessageSource === 'agent_status'
+      && properties.bridgePersisted === true
+      && typeof status === 'string'
+      && AGENT_STATUSES.has(status)
+      && (diagnosticSource === null || diagnosticSource === undefined);
     if (
       sourceOk
       && actorOk
@@ -491,7 +507,7 @@ const sessionEventSchema = z.object({
       && capturedAtOk
       && statusIdOk
       && bridgeMessageOk
-      && (browserObservationOk || persistedDiagnosticOk)
+      && (browserObservationOk || persistedDiagnosticOk || persistedContainerStatusOk)
     ) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -752,6 +768,7 @@ interface RoomWorkspaceChallengePacketPayload {
   evidenceRole: string;
   exactText: string;
   locator: JsonObject;
+  metadata: JsonObject;
   contentHash: string;
 }
 
@@ -1358,8 +1375,15 @@ function serializeRoomWorkspaceChallengePacket(
   return {
     sourceRefType: progress.challenge.sourceRefType,
     evidenceRole: progress.challenge.evidenceRole,
-    exactText: progress.challenge.exactText,
-    locator: progress.challenge.locator,
+    exactText: candidateSafeChallengeExactText({
+      sourceRefType: progress.challenge.sourceRefType,
+      exactText: progress.challenge.exactText,
+    }),
+    locator: candidateSafeChallengeLocator({
+      sourceRefType: progress.challenge.sourceRefType,
+      locator: progress.challenge.locator,
+    }),
+    metadata: {},
     contentHash: progress.challenge.contentHash,
   };
 }
@@ -1404,11 +1428,14 @@ async function buildRoomWorkspacePayload(
   const challengePacket = enabled ? await loadRoomWorkspaceChallengePacket(db, room) : null;
   const repoUrl = interview?.github_repo_url ?? session?.repo_git_url ?? null;
   const challenge = buildRoomWorkspaceChallenge(interview, enabled, challengePacket);
+  const hideChallengeSolution = shouldHideCandidateChallengeSolution({
+    sourceRefType: challengePacket?.sourceRefType,
+  });
   return {
     enabled,
     canLaunch: enabled && room.role === 'HOST' && !roomWorkspaceLaunchBlocker({ enabled, challenge }),
     repoUrl,
-    githubPrNumber: interview?.github_pr_number ?? null,
+    githubPrNumber: hideChallengeSolution ? null : interview?.github_pr_number ?? null,
     matchedRepoId: interview?.matched_repo_id ?? null,
     challenge,
     session: serializeWorkspaceSession(token, session),
@@ -1919,6 +1946,7 @@ interface RoomAssessmentProgressPayload {
   nextAction: AssessmentProgressSnapshot['nextAction'];
   nextActionLabel: string;
   assignmentTrust: AssessmentProgressSnapshot['assignmentTrust'];
+  challenge: AssessmentProgressChallengeSummary | null;
   readiness: AssessmentProgressSnapshot['readiness'];
   challengePacketContract: AssessmentProgressSnapshot['challengePacketContract'];
   hasChallengePacket: boolean;
@@ -1937,7 +1965,7 @@ interface RoomAssessmentProgressPayload {
   evidenceSnippets: AssessmentProgressSnapshot['evidenceSnippets'];
   latestEvent: Omit<NonNullable<AssessmentProgressSnapshot['latestEvent']>, 'id'> | null;
   commit: Omit<NonNullable<AssessmentProgressSnapshot['commit']>, 'eventId'> | null;
-  evaluation: Omit<NonNullable<AssessmentProgressSnapshot['evaluation']>, 'id'> | null;
+  evaluation: CandidateSafeAssessmentProgressEvaluation | null;
 }
 
 interface RoomWorkspaceLaunchEvidenceInput {
@@ -1995,6 +2023,7 @@ async function assessmentSessionsTableExists(db: D1Database): Promise<boolean> {
 function serializeRoomAssessmentProgress(
   progress: AssessmentProgressSnapshot,
 ): RoomAssessmentProgressPayload {
+  const challengeSourceRefType = progress.challenge?.sourceRefType ?? null;
   return {
     mode: progress.session.mode,
     state: progress.session.state,
@@ -2002,6 +2031,12 @@ function serializeRoomAssessmentProgress(
     nextAction: progress.nextAction,
     nextActionLabel: progress.nextActionLabel,
     assignmentTrust: progress.assignmentTrust,
+    challenge: progress.challenge
+      ? candidateSafeChallengeSummary({
+          sourceRefType: progress.challenge.sourceRefType,
+          summary: assessmentProgressChallengeSummary(progress.challenge),
+        })
+      : null,
     readiness: progress.readiness,
     challengePacketContract: progress.challengePacketContract,
     hasChallengePacket: progress.hasChallengePacket,
@@ -2017,7 +2052,13 @@ function serializeRoomAssessmentProgress(
     hasVerificationGap: progress.hasVerificationGap,
     evidenceCounts: progress.evidenceCounts,
     sourceRefCounts: progress.sourceRefCounts,
-    evidenceSnippets: progress.evidenceSnippets,
+    evidenceSnippets: progress.evidenceSnippets.map((snippet) => ({
+      ...snippet,
+      exactText: candidateSafeChallengeExactText({
+        sourceRefType: snippet.sourceRefType,
+        exactText: snippet.exactText,
+      }),
+    })),
     latestEvent: progress.latestEvent
       ? {
           kind: progress.latestEvent.kind,
@@ -2044,17 +2085,172 @@ function serializeRoomAssessmentProgress(
         }
       : null,
     evaluation: progress.evaluation
-      ? {
-          status: progress.evaluation.status,
-          summary: progress.evaluation.summary,
-          recommendation: progress.evaluation.recommendation,
-          createdAt: progress.evaluation.createdAt,
-          evidenceCoverage: progress.evaluation.evidenceCoverage,
-          claims: progress.evaluation.claims,
-          diagnostics: progress.evaluation.diagnostics,
-        }
+      ? candidateSafeEvaluation({
+          challengeSourceRefType,
+          evaluation: progress.evaluation,
+        })
       : null,
   };
+}
+
+function assessmentReceiptLabel(value: string | null | undefined): string {
+  const normalized = value?.trim();
+  if (!normalized) return 'Unknown';
+  return normalized
+    .replace(/[_-]+/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .replace(/\bAi\b/g, 'AI');
+}
+
+function assessmentReceiptShortSha(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized ? normalized.slice(0, 12) : null;
+}
+
+function assessmentReceiptCompactText(value: string, maxLength = 360): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function assessmentReceiptBullet(value: string): string {
+  return `- ${assessmentReceiptCompactText(value)}`;
+}
+
+function assessmentReceiptBulletList(values: string[], fallback: string): string[] {
+  const cleaned = values.map((value) => value.trim()).filter((value) => value.length > 0);
+  return cleaned.length > 0 ? cleaned.map(assessmentReceiptBullet) : [assessmentReceiptBullet(fallback)];
+}
+
+function assessmentReceiptSourceRefSummary(sourceRefTypes: readonly string[], sourceRefCount: number): string {
+  const countLabel = sourceRefCount === 1 ? 'source ref' : 'source refs';
+  const sourceTypes = sourceRefTypes.length > 0
+    ? sourceRefTypes.map(assessmentReceiptLabel).join(', ')
+    : 'Source refs captured';
+  return `${sourceRefCount} ${countLabel}: ${sourceTypes}`;
+}
+
+function assessmentReceiptFilename(progress: RoomAssessmentProgressPayload): string {
+  const commit = assessmentReceiptShortSha(progress.commit?.commitSha ?? null);
+  const stage = assessmentReceiptLabel(progress.stage).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const basis = commit ?? (stage || 'report');
+  return `pipe-assessment-receipt-${basis}.md`;
+}
+
+function assessmentReceiptMarkdown(progress: RoomAssessmentProgressPayload): string {
+  const evaluation = progress.evaluation;
+  const commit = progress.commit;
+  const challenge = progress.challenge;
+  const snippets = progress.evidenceSnippets.slice(0, 6).map((snippet) =>
+    assessmentReceiptBullet(
+      `${assessmentReceiptLabel(snippet.sourceRefType)} - ${assessmentReceiptLabel(snippet.evidenceRole)}: ${snippet.exactText}`,
+    )
+  );
+  const claims = (evaluation?.claims ?? []).slice(0, 6).map((claim) => {
+    const confidence = claim.confidence === null ? '' : ` (${Math.round(claim.confidence * 100)}% confidence)`;
+    return assessmentReceiptBullet(
+      `${assessmentReceiptLabel(claim.dimension)} - ${assessmentReceiptLabel(claim.polarity)}${confidence}: ${claim.narrative} [${assessmentReceiptSourceRefSummary(claim.sourceRefTypes, claim.sourceRefCount)}]`,
+    );
+  });
+  const diagnostics = (evaluation?.diagnostics ?? []).slice(0, 6).map((diagnostic) =>
+    assessmentReceiptBullet(
+      `${assessmentReceiptLabel(diagnostic.severity)} ${assessmentReceiptLabel(diagnostic.code)}: ${diagnostic.message} [${assessmentReceiptSourceRefSummary(diagnostic.sourceRefTypes, diagnostic.sourceRefCount)}]`,
+    )
+  );
+  const sourceCounts = progress.sourceRefCounts.map((sourceRef) =>
+    assessmentReceiptBullet(`${assessmentReceiptLabel(sourceRef.kind)}: ${sourceRef.count}`)
+  );
+  const readinessRequired = progress.readiness.required.map((item) =>
+    `${item.label}: ${item.satisfied ? 'Captured' : 'Missing'}${item.satisfied ? '' : ` - ${item.missingImpact}`}`
+  );
+  const successCriteria = challenge?.successCriteria ?? [];
+  const expectedEvidence = challenge?.expectedEvidence ?? [];
+  const matchProof = [
+    ...(challenge?.assessmentFit ?? []),
+    ...(challenge?.matchProof ?? []),
+  ];
+  const assignedPullRequestLabel = progress.assignmentTrust.state === 'matched_challenge'
+    ? 'Hidden until recruiter review'
+    : challenge?.pullRequestUrl ?? (challenge?.githubPrNumber ? `#${challenge.githubPrNumber}` : 'Not recorded');
+  const aiState = progress.hasAiInteraction ? 'AI interaction captured' : 'No AI use captured';
+  const aiDetail = progress.hasAiInteraction
+    ? 'Candidate AI prompts, agent responses, blocked states, or bridge diagnostics are represented only when captured as source-backed evidence.'
+    : 'No candidate AI interaction has been captured in the source-backed event trail.';
+
+  return [
+    '# PIPE Candidate Assessment Receipt',
+    '',
+    `Status: ${assessmentReceiptLabel(progress.stage)}`,
+    `State: ${assessmentReceiptLabel(progress.state)}`,
+    `Next action: ${progress.nextActionLabel}`,
+    `Evaluation: ${evaluation ? assessmentReceiptLabel(evaluation.status) : 'Not available'}`,
+    `Summary: ${evaluation?.summary ?? 'No evaluator summary is available yet.'}`,
+    `Recommendation: ${evaluation?.recommendation ? assessmentReceiptLabel(evaluation.recommendation) : 'Not shared'}`,
+    '',
+    '## Assigned Challenge',
+    '',
+    `Title: ${challenge?.title ?? 'Not recorded'}`,
+    `Repository: ${challenge?.repositoryUrl ?? 'Not recorded'}`,
+    `Base commit: ${challenge?.baseCommitSha ?? 'Not recorded'}`,
+    `Pull request: ${assignedPullRequestLabel}`,
+    `Task: ${challenge?.task ?? 'Not recorded'}`,
+    `Verification command: ${challenge?.verificationCommand ?? 'Not recorded'}`,
+    'Success criteria:',
+    ...assessmentReceiptBulletList(successCriteria, 'No success criteria were attached to the candidate-safe challenge packet.'),
+    'Expected evidence:',
+    ...assessmentReceiptBulletList(expectedEvidence, 'No expected evidence list was attached to the candidate-safe challenge packet.'),
+    'Match proof:',
+    ...assessmentReceiptBulletList(matchProof, 'No candidate-safe match proof was attached to the challenge packet.'),
+    '',
+    '## Submitted Work',
+    '',
+    `Repository: ${commit?.repositoryUrl ?? 'Not recorded'}`,
+    `Fork: ${commit?.forkRepositoryUrl ?? 'Not recorded'}`,
+    `Branch: ${commit?.branchName ?? 'Not recorded'}`,
+    `Base commit: ${commit?.baseCommitSha ?? 'Not recorded'}`,
+    `Commit: ${commit?.commitSha ?? 'Not recorded'}`,
+    `Commit URL: ${commit?.commitUrl ?? 'Not recorded'}`,
+    `Upstream PR: ${commit?.upstreamPullRequestUrl ?? 'Not recorded'}`,
+    `Upstream PR consent: ${commit?.upstreamPrConsent === true ? 'Yes' : 'No'}`,
+    'Upstream PR boundary: PIPE assessment receipts do not imply automatic upstream PR submission; upstream tracking is recorded only when a candidate-approved PR URL is source-backed.',
+    `Changed files: ${commit?.changedFiles.length ?? 0}`,
+    '',
+    '## AI Use',
+    '',
+    `AI state: ${aiState}`,
+    `AI detail: ${aiDetail}`,
+    '',
+    '## Evidence Coverage',
+    '',
+    `Readiness: ${progress.readiness.label}`,
+    `Readiness detail: ${progress.readiness.detail}`,
+    `Ready for evaluation: ${progress.readiness.isReadyForEvaluation ? 'Yes' : 'No'}`,
+    `Usable hiring signal: ${progress.readiness.isUsableHiringSignal ? 'Yes' : 'No'}`,
+    'Required proof:',
+    ...assessmentReceiptBulletList(readinessRequired, 'No required proof checklist was attached.'),
+    'Source refs:',
+    ...(sourceCounts.length > 0 ? sourceCounts : [assessmentReceiptBullet('No source refs recorded.')]),
+    '',
+    '## Evaluator Claims',
+    '',
+    ...(claims.length > 0 ? claims : [assessmentReceiptBullet('No candidate-safe evaluator claims recorded.')]),
+    '',
+    '## Evaluator Diagnostics',
+    '',
+    ...(diagnostics.length > 0 ? diagnostics : [assessmentReceiptBullet('No candidate-safe evaluator diagnostics recorded.')]),
+    '',
+    '## Source Preview',
+    '',
+    ...(snippets.length > 0 ? snippets : [assessmentReceiptBullet('No exact source snippets are included in this candidate-safe receipt.')]),
+    '',
+    '## Use Guidance',
+    '',
+    '- Use this as the candidate receipt, not as an automatic hiring decision.',
+    '- The recruiter still needs to inspect the source-backed report, commit, diff, tests, transcript/chat, AI-use trail, and diagnostics.',
+    '- Missing evidence should reduce confidence instead of being treated as positive signal.',
+    '',
+  ].join('\n');
 }
 
 function roomAssessmentActor(room: ResolvedRoom): { actorType: AssessmentActorType; actorId: string | null } {
@@ -2236,6 +2432,40 @@ meetingRooms.get('/:token/assessment/progress', async (c) => {
       error: error instanceof Error ? error.message : String(error),
     });
     return apiError(c, 'INTERNAL_ERROR', 'Assessment progress failed.');
+  }
+});
+
+meetingRooms.get('/:token/assessment/receipt', async (c) => {
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
+  if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+
+  const assessmentSession = await loadLatestAssessmentSessionForRoom(c.env.DB, room);
+  if (!assessmentSession) {
+    return apiError(c, 'NOT_FOUND', 'Assessment receipt is not available for this room yet.');
+  }
+
+  try {
+    const progress = serializeRoomAssessmentProgress(
+      await new RepoTaskInterviewSessionStore(c.env.DB).loadProgress(assessmentSession.id),
+    );
+    const filename = assessmentReceiptFilename(progress);
+    return new Response(assessmentReceiptMarkdown(progress), {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/markdown; charset=UTF-8',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+  } catch (error) {
+    console.error('[meetingRooms.assessment.receipt] failed:', {
+      roomId: room.room_id,
+      interviewId: room.scheduled_interview_id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return apiError(c, 'INTERNAL_ERROR', 'Assessment receipt download failed.');
   }
 });
 

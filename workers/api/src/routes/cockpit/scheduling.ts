@@ -43,15 +43,24 @@ import {
 import { AssessmentLayerStore, type AssessmentEvidenceSourceRefInput } from '../../lib/assessmentLayer/persistence';
 import { recordAssessmentCandidateProfileEvidence } from '../../lib/assessmentLayer/candidateProfileEvidence';
 import {
+  MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL,
   RepoTaskInterviewSessionStore,
+  type AssessmentEvidenceCoverageItem,
+  type AssessmentEvidenceCoverageSnapshot,
   type AssessmentProgressSnapshot,
   type HumanAssessmentDecisionValue,
 } from '../../lib/repoTaskInterviewSession';
 import { evaluateRepoTaskAssessmentSession } from '../../lib/repoTaskAssessmentEvaluator';
 import * as d1Matcher from '../../lib/challengeMatching/d1Matcher';
 import type { CandidateReviewChallengeOptions } from '../../lib/challengeMatching/d1Matcher';
+import {
+  candidateSafeQualityGateFor,
+  type CandidateSafeMatchStatus,
+  type CandidateSafeQualityGateDiagnostic,
+  type CandidateSafeQualityGateVerdict,
+} from '../../lib/challengeMatching/candidateSafeQualityGate';
 import { loadRoleChallengeSemantics } from '../../lib/challengeMatching/roleGuardrails';
-import type { ChallengePacket } from '../../lib/repoSemanticGraph';
+import type { ChallengePacket, ChallengeReviewProfile } from '../../lib/repoSemanticGraph';
 import type { Env, Variables } from '../../types';
 
 // ─── Provider config ────────────────────────────────────────────────────────
@@ -121,6 +130,13 @@ function getProviderConfig(providerId: string, env: Env): ProviderOAuthConfig | 
 
 const SCHEDULED_INTERVIEWS_DEFAULT_LIMIT = 20;
 const SCHEDULED_INTERVIEWS_MAX_LIMIT = 100;
+type ScheduledInterviewsSort = 'created_desc' | 'created_asc' | 'scheduled_asc';
+type ScheduledInterviewsTypeFilter =
+  | 'ALL'
+  | 'STANDARD_CALLS'
+  | 'CODE_REVIEW'
+  | 'DEV_CONTAINER_CHALLENGE'
+  | 'OPEN_SOURCE_BUG_FIX';
 
 function parsePositiveInt(value: string | undefined, fallback: number, max: number): number {
   if (!value) return fallback;
@@ -134,6 +150,61 @@ function parseNonNegativeInt(value: string | undefined, fallback: number): numbe
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(0, parsed);
+}
+
+function parseScheduledInterviewsSort(value: string | undefined): ScheduledInterviewsSort {
+  if (value === 'created_asc' || value === 'scheduled_asc') return value;
+  return 'created_desc';
+}
+
+function parseScheduledInterviewsTypeFilter(value: string | undefined): ScheduledInterviewsTypeFilter {
+  if (
+    value === 'STANDARD_CALLS'
+    || value === 'CODE_REVIEW'
+    || value === 'DEV_CONTAINER_CHALLENGE'
+    || value === 'OPEN_SOURCE_BUG_FIX'
+  ) {
+    return value;
+  }
+  return 'ALL';
+}
+
+function scheduledInterviewsOrderByClause(sort: ScheduledInterviewsSort): string {
+  switch (sort) {
+    case 'created_asc':
+      return 'si.created_at ASC, si.id ASC';
+    case 'scheduled_asc':
+      return 'si.scheduled_at IS NULL ASC, si.scheduled_at ASC, si.created_at DESC, si.id ASC';
+    case 'created_desc':
+    default:
+      return 'si.created_at DESC, si.id ASC';
+  }
+}
+
+function scheduledInterviewsTypeFilterClause(filter: ScheduledInterviewsTypeFilter): {
+  clause: string;
+  params: string[];
+} {
+  switch (filter) {
+    case 'STANDARD_CALLS':
+      return {
+        clause: `AND (
+          si.interview_type IS NULL
+          OR si.interview_type NOT IN ('CODE_REVIEW', 'DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')
+        )`,
+        params: [],
+      };
+    case 'CODE_REVIEW':
+    case 'DEV_CONTAINER_CHALLENGE':
+    case 'OPEN_SOURCE_BUG_FIX':
+      return {
+        clause: 'AND si.interview_type = ?',
+        params: [filter],
+      };
+    case 'ALL':
+    default:
+      return { clause: '', params: [] };
+  }
 }
 
 const connectSchema = z.object({
@@ -279,9 +350,28 @@ interface ScheduledAssessmentSetupProjection {
   message: string | null;
   nextAction: ScheduledAssessmentSetupNextAction;
   nextActionLabel: string | null;
+  selectionRationale?: {
+    summary: string;
+    whyThisChallenge: string;
+    whyNotAlternatives: string;
+    residualRisk: string;
+    nextAction: string;
+  } | null;
   lastDeliveredUrl?: string | null;
   lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null;
   lastDeliveredUrlMessage?: string | null;
+}
+
+interface ScheduledPendingMatchDiagnostic {
+  matchRunId: string;
+  status: string;
+  selectedPacketId: string | null;
+  githubRepoUrl: string | null;
+  githubPrNumber: number | null;
+  assessmentQualityVerdict: string | null;
+  assessmentQualityScore: string | null;
+  contrastScore: number | null;
+  contrastReason: string | null;
 }
 
 interface WorkspaceSessionProjection {
@@ -312,6 +402,44 @@ function buildWorkspaceSessionProjection(input: {
   };
 }
 
+function scheduledMatchDiagnosticForAssignment(input: {
+  diagnostic: ScheduledPendingMatchDiagnostic | null | undefined;
+  githubRepoUrl: string | null | undefined;
+  githubPrNumber: number | null | undefined;
+}): ScheduledPendingMatchDiagnostic | null {
+  const diagnostic = input.diagnostic ?? null;
+  if (!diagnostic) return null;
+  if (input.githubPrNumber && diagnostic.githubPrNumber && diagnostic.githubPrNumber !== input.githubPrNumber) {
+    return null;
+  }
+  const diagnosticRepoUrl = diagnostic.githubRepoUrl?.trim() || null;
+  const assignmentRepoUrl = input.githubRepoUrl?.trim() || null;
+  if (diagnosticRepoUrl && assignmentRepoUrl && diagnosticRepoUrl !== assignmentRepoUrl) {
+    return null;
+  }
+  return diagnostic;
+}
+
+function scheduledMatchDiagnosticQualityLabel(
+  diagnostic: ScheduledPendingMatchDiagnostic | null,
+): string | null {
+  if (!diagnostic?.assessmentQualityVerdict && !diagnostic?.assessmentQualityScore) return null;
+  return [
+    diagnostic.assessmentQualityVerdict,
+    diagnostic.assessmentQualityScore,
+  ].filter(Boolean).join(' ');
+}
+
+function scheduledMatchDiagnosticContrastLabel(
+  diagnostic: ScheduledPendingMatchDiagnostic | null,
+): string | null {
+  if (!diagnostic) return null;
+  return diagnostic.contrastReason
+    ?? (diagnostic.contrastScore !== null
+      ? `Contrast score ${diagnostic.contrastScore}.`
+      : null);
+}
+
 function buildScheduledAssessmentSetup(input: {
   interviewType: string | null | undefined;
   candidateId: string | null | undefined;
@@ -320,6 +448,7 @@ function buildScheduledAssessmentSetup(input: {
   githubPrNumber: number | null | undefined;
   matchedRepoSource?: Extract<ScheduledAssessmentSetupSource, 'matched_repo_id' | 'candidate_challenge_assignment'> | undefined;
   manualOpenSourceChallengePacket?: boolean | undefined;
+  pendingMatchDiagnostic?: ScheduledPendingMatchDiagnostic | null | undefined;
   lastDeliveredUrl?: string | null | undefined;
   lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null | undefined;
   lastDeliveredUrlMessage?: string | null | undefined;
@@ -355,6 +484,13 @@ function buildScheduledAssessmentSetup(input: {
       message: 'A concrete open-source task packet was assigned by the recruiter. PIPE can launch that repo task from the exact base commit without inferring candidate-specific alignment.',
       nextAction: 'OPEN_ROOM_OR_WORKSPACE',
       nextActionLabel: 'Open the assessment room and launch the controlled workspace from the assigned base commit.',
+      selectionRationale: {
+        summary: 'Recruiter-assigned task packet',
+        whyThisChallenge: 'The task is reviewable because the recruiter supplied a concrete repo URL, immutable base commit, task brief, success criteria, and expected evidence.',
+        whyNotAlternatives: 'Automatic candidate-to-repo contrast ranking was not used on this path, so PIPE is not claiming this was the best candidate-specific match.',
+        residualRisk: 'Use the completed commit, diff, tests, transcript, chat, and AI-use trail as assessment evidence; do not treat the manual assignment itself as fit proof.',
+        nextAction: 'Open the controlled workspace and capture the candidate work against the assigned source-backed packet.',
+      },
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -362,14 +498,35 @@ function buildScheduledAssessmentSetup(input: {
   }
 
   if (input.matchedRepoId && input.githubRepoUrl && input.githubPrNumber) {
+    const diagnostic = scheduledMatchDiagnosticForAssignment({
+      diagnostic: input.pendingMatchDiagnostic,
+      githubRepoUrl: input.githubRepoUrl,
+      githubPrNumber: input.githubPrNumber,
+    });
+    const quality = scheduledMatchDiagnosticQualityLabel(diagnostic);
+    const contrast = scheduledMatchDiagnosticContrastLabel(diagnostic);
     return {
       status: 'reviewable_task_assigned',
       kind: 'auto_match',
       source: input.matchedRepoSource ?? 'matched_repo_id',
       blocksPositiveAssessment: false,
-      message: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside the candidate review.',
+      message: [
+        MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL,
+        quality ? `Assessment quality: ${quality}.` : null,
+        contrast,
+      ].filter(Boolean).join(' '),
       nextAction: 'OPEN_ROOM_OR_WORKSPACE',
       nextActionLabel: 'Open the assessment room and capture the candidate work against the matched PR task.',
+      selectionRationale: {
+        summary: 'PIPE-selected repo task',
+        whyThisChallenge: quality
+          ? `PIPE selected this concrete GitHub PR from source-backed candidate evidence, role requirements when present, and repository demand; latest match proof reported ${quality} assessment quality.`
+          : 'PIPE selected this concrete GitHub PR from source-backed candidate evidence, role requirements when present, and repository demand instead of handing the candidate a generic repo.',
+        whyNotAlternatives: contrast
+          ?? 'Lower-ranked or withheld challenges did not provide stronger source-backed alignment, reviewability, or contrast for automatic assignment.',
+        residualRisk: 'The assignment proves challenge fit only; the hiring signal still depends on the captured branch commit, diff, tests or verification gap, transcript/chat, AI-use trail, evaluator report, and human review.',
+        nextAction: 'Run the controlled workspace assessment and review the source-backed evidence before making a hiring decision.',
+      },
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -385,6 +542,13 @@ function buildScheduledAssessmentSetup(input: {
       message: 'A concrete GitHub PR was assigned by the recruiter. PIPE can launch that task, but candidate-specific alignment is not inferred from this manual override.',
       nextAction: 'OPEN_ROOM_OR_WORKSPACE',
       nextActionLabel: 'Open the assessment room and capture source-backed review or implementation evidence.',
+      selectionRationale: {
+        summary: 'Recruiter-selected PR',
+        whyThisChallenge: 'The PR gives the candidate a concrete source-backed repo task that PIPE can launch and observe.',
+        whyNotAlternatives: 'Automatic candidate-to-PR ranking was bypassed, so alternative challenge fit was not measured.',
+        residualRisk: 'The PR assignment is not candidate-fit proof; rely on the candidate review or implementation evidence and human calibration.',
+        nextAction: 'Capture the source-backed review or workspace evidence, then evaluate the submitted work.',
+      },
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -400,6 +564,13 @@ function buildScheduledAssessmentSetup(input: {
       message: 'A matched repository exists, but no GitHub PR or task was assigned. Treat this as an assessment setup gap, not candidate evidence.',
       nextAction: 'ATTACH_CHALLENGE_PACKET',
       nextActionLabel: 'Attach a source-backed PR/task packet for the matched repo, or ingest more eligible repo challenges before inviting the candidate to work.',
+      selectionRationale: {
+        summary: 'Matched repo needs a task',
+        whyThisChallenge: 'PIPE found a repository-level match, but there is no concrete PR, issue, base commit, task brief, success criteria, or expected evidence packet yet.',
+        whyNotAlternatives: 'No eligible reviewable task has been approved for automatic delivery from this match.',
+        residualRisk: 'Do not send this as a positive assessment until a concrete source-backed challenge packet exists.',
+        nextAction: 'Attach a task packet for the matched repo or ingest more eligible repo challenges before launching the room.',
+      },
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -415,6 +586,56 @@ function buildScheduledAssessmentSetup(input: {
       message: 'This contact-first assessment invite has no candidate evidence yet. PIPE must ingest source-backed resume, transcript, chat, or interview evidence before selecting a PR task.',
       nextAction: 'COLLECT_CANDIDATE_EVIDENCE',
       nextActionLabel: 'Send the intake link or schedule a context call that captures source-backed examples of the candidate’s real engineering work.',
+      selectionRationale: {
+        summary: 'Needs candidate evidence',
+        whyThisChallenge: 'No repo task should be selected until PIPE has source-backed evidence about the candidate.',
+        whyNotAlternatives: 'Any automatic challenge assignment would be a guess because there is no candidate evidence to compare against repo demands.',
+        residualRisk: 'Launching a coding assessment now would measure task survival, not candidate-role fit.',
+        nextAction: 'Collect resume, profile, transcript, chat, or context-call evidence before matching a repo task.',
+      },
+      lastDeliveredUrl,
+      lastDeliveredUrlState,
+      lastDeliveredUrlMessage,
+    };
+  }
+
+  if (input.pendingMatchDiagnostic) {
+    const diagnostic = input.pendingMatchDiagnostic;
+    const candidate = [
+      diagnostic.githubRepoUrl,
+      diagnostic.githubPrNumber ? `#${diagnostic.githubPrNumber}` : null,
+    ].filter(Boolean).join(' ');
+    const quality = [
+      diagnostic.assessmentQualityVerdict,
+      diagnostic.assessmentQualityScore,
+    ].filter(Boolean).join(' ');
+    const contrast = diagnostic.contrastReason
+      ?? (diagnostic.contrastScore !== null
+        ? `Contrast score ${diagnostic.contrastScore}.`
+        : null);
+    return {
+      status: 'waiting_for_source_backed_match',
+      kind: 'auto_match',
+      source: 'candidate_id',
+      blocksPositiveAssessment: true,
+      message: [
+        candidate
+          ? `PIPE found a source-backed candidate challenge (${candidate}) but held back automatic assignment because the match did not pass the auto-assignment quality gate.`
+          : 'PIPE found a source-backed candidate challenge but held back automatic assignment because the match did not pass the auto-assignment quality gate.',
+        quality ? `Assessment quality: ${quality}.` : null,
+        contrast,
+      ].filter(Boolean).join(' '),
+      nextAction: 'RERUN_OR_ENRICH_MATCHING',
+      nextActionLabel: 'Review the latest match run, add differentiating role or candidate evidence, or manually assign a source-backed PR once approved.',
+      selectionRationale: {
+        summary: 'Candidate challenge held back',
+        whyThisChallenge: candidate
+          ? `The strongest current candidate challenge is ${candidate}${quality ? ` with ${quality} assessment quality` : ''}.`
+          : `The strongest current candidate challenge has ${quality || 'insufficient'} assessment quality.`,
+        whyNotAlternatives: contrast ?? 'The matcher did not find enough contrast against alternatives for safe automatic assignment.',
+        residualRisk: 'Sending this automatically would overstate match confidence; treat it as a review queue item, not candidate evidence.',
+        nextAction: 'Add differentiating candidate or role evidence, approve the source-backed PR manually, or rerun matching after repo challenge ingestion improves.',
+      },
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -429,6 +650,13 @@ function buildScheduledAssessmentSetup(input: {
     message: 'Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.',
     nextAction: 'RERUN_OR_ENRICH_MATCHING',
     nextActionLabel: 'Rerun repo matching after adding role requirements, candidate work evidence, or more eligible source-backed repo challenges.',
+    selectionRationale: {
+      summary: 'Needs source-backed match',
+      whyThisChallenge: 'No concrete repo challenge is selected yet.',
+      whyNotAlternatives: 'The current evidence did not produce an eligible automatic assignment.',
+      residualRisk: 'Do not launch an assessment until PIPE can point to a source-backed task or a deliberate manual override.',
+      nextAction: 'Ingest candidate evidence or repo challenge packets, then rerun matching.',
+    },
     lastDeliveredUrl,
     lastDeliveredUrlState,
     lastDeliveredUrlMessage,
@@ -463,6 +691,31 @@ type GitHubCommitVerificationResult =
   | { ok: true }
   | { ok: false; reason: 'not_found' | 'unavailable'; status?: number };
 
+const GITHUB_COMMIT_VERIFY_MAX_ATTEMPTS = 3;
+
+async function verifyGitHubCommitPageReachable(input: {
+  owner: string;
+  repo: string;
+  commitSha: string;
+}): Promise<GitHubCommitVerificationResult> {
+  const url = `https://github.com/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/commit/${input.commitSha.toLowerCase()}`;
+  const headers: Record<string, string> = {
+    Accept: 'text/html',
+    'User-Agent': 'PIPE-OS-assessment-validator',
+  };
+
+  try {
+    const response = await fetch(url, { headers, method: 'HEAD' });
+    if (response.ok) return { ok: true };
+    if (response.status === 404) {
+      return { ok: false, reason: 'not_found', status: response.status };
+    }
+    return { ok: false, reason: 'unavailable', status: response.status };
+  } catch {
+    return { ok: false, reason: 'unavailable' };
+  }
+}
+
 async function verifyGitHubCommitReachable(input: {
   repositoryUrl: string;
   commitSha: string;
@@ -481,28 +734,47 @@ async function verifyGitHubCommitReachable(input: {
     headers.Authorization = `Bearer ${input.githubToken}`;
   }
 
-  let response: Response;
-  try {
-    const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${input.commitSha.toLowerCase()}`;
-    response = await fetch(
-      url,
-      { headers },
-    );
-  } catch {
-    return { ok: false, reason: 'unavailable' };
+  const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${input.commitSha.toLowerCase()}`;
+  let lastUnavailableStatus: number | undefined;
+  for (let attempt = 1; attempt <= GITHUB_COMMIT_VERIFY_MAX_ATTEMPTS; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(
+        url,
+        { headers },
+      );
+    } catch {
+      if (attempt === GITHUB_COMMIT_VERIFY_MAX_ATTEMPTS) {
+        return { ok: false, reason: 'unavailable' };
+      }
+      continue;
+    }
+
+    if (response.ok) return { ok: true };
+    if (response.status === 404 || response.status === 422) {
+      return { ok: false, reason: 'not_found', status: response.status };
+    }
+    lastUnavailableStatus = response.status;
   }
 
-  if (response.ok) return { ok: true };
-  if (response.status === 404 || response.status === 422) {
-    return { ok: false, reason: 'not_found', status: response.status };
+  const pageVerification = await verifyGitHubCommitPageReachable({
+    owner,
+    repo,
+    commitSha: input.commitSha,
+  });
+  if (pageVerification.ok || pageVerification.reason === 'not_found') {
+    return pageVerification;
   }
-  return { ok: false, reason: 'unavailable', status: response.status };
+
+  return { ok: false, reason: 'unavailable', status: pageVerification.status ?? lastUnavailableStatus };
 }
 
 const createInterviewSchema = z.object({
   candidateId: z.string().min(1).optional(),
   pipelineId: z.string().optional(),
   stageId: z.string().optional(),
+  title: z.string().trim().min(1).max(240).optional(),
+  description: z.string().trim().min(1).max(5000).optional(),
   recipientName: z.string().trim().min(1).max(200).optional(),
   recipientEmail: z.string().trim().email().optional(),
   meetingType: z.enum(['DIRECT_VIDEO_CALL', 'SCREENING_INTERVIEW']).optional(),
@@ -1148,6 +1420,12 @@ interface ScheduledCodeReviewAssessmentQuality {
   metrics: ScheduledCodeReviewQualityMetric[];
 }
 
+interface ScheduledCodeReviewQualityGate {
+  verdict: CandidateSafeQualityGateVerdict;
+  checks: string[];
+  diagnostics: CandidateSafeQualityGateDiagnostic[];
+}
+
 type ScheduledCodeReviewDifficultyBand = 'introductory' | 'focused' | 'advanced' | 'oversized';
 type ScheduledCodeReviewExpectedSeniority = 'mid' | 'senior' | 'staff';
 
@@ -1242,6 +1520,7 @@ interface ScheduledCodeReviewMatchDetail {
   summary: string;
   score: number | null;
   assessmentQuality: ScheduledCodeReviewAssessmentQuality | null;
+  qualityGate: ScheduledCodeReviewQualityGate | null;
   reviewProfile: ScheduledCodeReviewReviewProfile | null;
   validatorAgent: ScheduledCodeReviewValidatorAgent | null;
   roleSources: ScheduledCodeReviewRoleSource[];
@@ -1945,6 +2224,82 @@ function normalizeScheduledCodeReviewValidatorAgent(
   };
 }
 
+function scheduledCandidateSafeMatchStatus(status: string): CandidateSafeMatchStatus {
+  if (status === 'MATCHED') return 'MATCHED';
+  if (status === 'NO_ROLE_SAFE_CHALLENGE') return 'NO_ROLE_SAFE_CHALLENGE';
+  return 'NEEDS_MORE_EVIDENCE';
+}
+
+function scheduledValidatorVerdict(
+  verdict: string | undefined,
+): 'PASSED' | 'NEEDS_REVIEW' | 'REJECTED' | undefined {
+  const normalized = verdict?.toUpperCase();
+  if (normalized === 'PASSED' || normalized === 'NEEDS_REVIEW' || normalized === 'REJECTED') {
+    return normalized;
+  }
+  return undefined;
+}
+
+function scheduledSourceRefKey(ref: ScheduledCodeReviewSourceRef): string | null {
+  const key = [
+    ref.sourceRefType,
+    ref.sourceRefId,
+    ref.sourceSpanId,
+    ref.locator,
+    ref.contentHash,
+    ref.exactText,
+  ].map((part) => part?.trim() ?? '').join('\u001f');
+  return key.replace(/\u001f/g, '').trim().length > 0 ? key : null;
+}
+
+function countScheduledCodeReviewSourceRefs(refs: ScheduledCodeReviewSourceRef[]): number {
+  const keys = new Set<string>();
+  for (const ref of refs) {
+    const key = scheduledSourceRefKey(ref);
+    if (key) keys.add(key);
+  }
+  return keys.size;
+}
+
+function scheduledCodeReviewQualityGateFor(input: {
+  status: string;
+  selected: ScheduledCodeReviewRankedResult | null;
+  assessmentQuality: ScheduledCodeReviewAssessmentQuality | null;
+  validatorAgent: ScheduledCodeReviewValidatorAgent | null;
+  roleSources: ScheduledCodeReviewRoleSource[];
+}): ScheduledCodeReviewQualityGate {
+  const alignments = input.selected?.alignments ?? [];
+  const candidateSourceCount = countScheduledCodeReviewSourceRefs(
+    alignments.flatMap((alignment) => alignment.candidateSourceRefs),
+  );
+  const repoSourceCount = countScheduledCodeReviewSourceRefs(
+    alignments.flatMap((alignment) => alignment.challengeSourceRefs),
+  );
+  const roleSourceCount = countScheduledCodeReviewSourceRefs([
+    ...alignments.flatMap((alignment) => alignment.roleSourceRefs),
+    ...input.roleSources,
+  ]);
+
+  return candidateSafeQualityGateFor({
+    status: scheduledCandidateSafeMatchStatus(input.status),
+    candidateSourceCount,
+    repoSourceCount,
+    roleSourceCount,
+    validatorVerdict: scheduledValidatorVerdict(input.validatorAgent?.verdict),
+    assessmentQualityVerdict: input.assessmentQuality?.verdict.toUpperCase(),
+    assessmentQualityMetrics: input.assessmentQuality?.metrics,
+    requireContrastSeparation: roleSourceCount > 0,
+  });
+}
+
+function scheduledManualCodeReviewQualityGate(): ScheduledCodeReviewQualityGate {
+  return {
+    verdict: 'PASSED',
+    checks: ['repo_source_spans', 'source_backed_manual_override', 'agent_validated_match'],
+    diagnostics: [],
+  };
+}
+
 function buildScheduledCodeReviewHyperedges(
   alignments: ScheduledCodeReviewAlignment[],
   roleSources: ScheduledCodeReviewRoleSource[],
@@ -2116,6 +2471,7 @@ async function loadManualCodeReviewMatchDetail(
     summary: 'Manual override: recruiter-selected source-backed review challenge. PIPE validated that the PR is reviewable and source-backed, but did not infer candidate-specific CV alignment.',
     score: numberOrNull(packet.quality_score),
     assessmentQuality: scheduledManualCodeReviewAssessmentQuality(),
+    qualityGate: scheduledManualCodeReviewQualityGate(),
     reviewProfile: parseScheduledCodeReviewPacketReviewProfile(packet.packet_json),
     validatorAgent: scheduledManualCodeReviewValidator(interview.github_pr_number),
     roleSources: [],
@@ -2425,6 +2781,96 @@ async function loadLatestCandidateMatchRun(
       ORDER BY created_at DESC, id DESC
       LIMIT 1`,
   ).bind(candidateId).first<{ id: string; status: string; created_at: string | null }>();
+}
+
+function assessmentQualityScoreLabel(quality: ScheduledCodeReviewAssessmentQuality | null): string | null {
+  if (!quality) return null;
+  return `${quality.score}/${quality.maxScore}`;
+}
+
+function contrastMetricFor(
+  quality: ScheduledCodeReviewAssessmentQuality | null,
+): ScheduledCodeReviewQualityMetric | null {
+  return quality?.metrics.find((metric) => metric.id === 'contrast_separation') ?? null;
+}
+
+function pendingMatchDiagnosticFromRow(row: {
+  id: string;
+  status: string;
+  selected_packet_id: string | null;
+  ranked_results_json: string | null;
+  github_url: string | null;
+  pr_number: number | null;
+}): ScheduledPendingMatchDiagnostic | null {
+  const ranked = parseScheduledCodeReviewRankedResults(row.ranked_results_json);
+  const selected = row.selected_packet_id
+    ? ranked.find((entry) => entry.challengeId === row.selected_packet_id)
+    : ranked.find((entry) => entry.rank === 1) ?? ranked[0];
+  if (!selected) return null;
+  const contrast = contrastMetricFor(selected.assessmentQuality);
+  return {
+    matchRunId: row.id,
+    status: row.status,
+    selectedPacketId: row.selected_packet_id,
+    githubRepoUrl: row.github_url,
+    githubPrNumber: row.pr_number ?? selected.prNumber,
+    assessmentQualityVerdict: selected.assessmentQuality?.verdict ?? null,
+    assessmentQualityScore: assessmentQualityScoreLabel(selected.assessmentQuality),
+    contrastScore: contrast?.score ?? null,
+    contrastReason: contrast?.reason ?? null,
+  };
+}
+
+async function loadPendingCodeReviewMatchDiagnosticsByCandidateIds(
+  db: D1Database,
+  candidateIds: string[],
+): Promise<Map<string, ScheduledPendingMatchDiagnostic>> {
+  const uniqueCandidateIds = [...new Set(candidateIds.filter((id) => id.trim().length > 0))];
+  const diagnostics = new Map<string, ScheduledPendingMatchDiagnostic>();
+  if (uniqueCandidateIds.length === 0) return diagnostics;
+  if (
+    !await tableExists(db, 'match_runs')
+    || !await tableExists(db, 'review_challenge_packets')
+    || !await tableExists(db, 'qualified_repos')
+  ) {
+    return diagnostics;
+  }
+
+  const placeholders = uniqueCandidateIds.map((_, index) => `?${index + 1}`).join(', ');
+  const rows = await db.prepare(
+    `SELECT mr.candidate_id,
+            mr.id,
+            mr.status,
+            mr.selected_packet_id,
+            mr.ranked_results_json,
+            rcp.pr_number,
+            qr.github_url
+       FROM match_runs mr
+       LEFT JOIN review_challenge_packets rcp ON rcp.id = mr.selected_packet_id
+       LEFT JOIN qualified_repos qr ON qr.id = rcp.repo_id
+      WHERE mr.candidate_id IN (${placeholders})
+        AND mr.id = (
+          SELECT latest.id
+            FROM match_runs latest
+           WHERE latest.candidate_id = mr.candidate_id
+           ORDER BY latest.created_at DESC, latest.id DESC
+           LIMIT 1
+        )`,
+  ).bind(...uniqueCandidateIds).all<{
+    candidate_id: string;
+    id: string;
+    status: string;
+    selected_packet_id: string | null;
+    ranked_results_json: string | null;
+    pr_number: number | null;
+    github_url: string | null;
+  }>();
+
+  for (const row of rows.results ?? []) {
+    const diagnostic = pendingMatchDiagnosticFromRow(row);
+    if (diagnostic) diagnostics.set(row.candidate_id, diagnostic);
+  }
+  return diagnostics;
 }
 
 function evidenceRefreshAlreadyTried(
@@ -2946,10 +3392,21 @@ async function loadScheduledCodeReviewMatchDetail(
   const selectedPacketId = selected?.challengeId ?? run.selected_packet_id;
   const reviewProfile = selected?.reviewProfile
     ?? await loadScheduledCodeReviewPacketReviewProfile(db, selectedPacketId);
+  const assessmentQuality = normalizeScheduledCodeReviewAssessmentQuality(selected, roleSources);
+  const validatorAgent = normalizeScheduledCodeReviewValidatorAgent(selected, roleSources);
+  const qualityGate = scheduledCodeReviewQualityGateFor({
+    status: run.status,
+    selected,
+    assessmentQuality,
+    validatorAgent,
+    roleSources,
+  });
   const contrastGap = roleBackedContrastGapReason(selected, roleSources);
+  const qualityGateGaps = run.status === 'MATCHED' ? qualityGate.diagnostics : [];
   const gaps = [
     ...summary.gaps,
     ...(contrastGap ? [contrastGap] : []),
+    ...qualityGateGaps,
   ];
   const uniqueGaps = [...new Set(gaps)];
 
@@ -2959,9 +3416,10 @@ async function loadScheduledCodeReviewMatchDetail(
     packetId: selectedPacketId,
     summary: summary.summary,
     score: selected?.score ?? null,
-    assessmentQuality: normalizeScheduledCodeReviewAssessmentQuality(selected, roleSources),
+    assessmentQuality,
+    qualityGate,
     reviewProfile,
-    validatorAgent: normalizeScheduledCodeReviewValidatorAgent(selected, roleSources),
+    validatorAgent,
     roleSources,
     evidence,
     evidenceHyperedges: buildScheduledCodeReviewHyperedges(evidence, roleSources),
@@ -3036,16 +3494,31 @@ async function loadScheduledAssessmentProgress(
   const sessionId = await loadScheduledAssessmentSessionId(db, interviewId);
   if (!sessionId) return null;
 
-  return new RepoTaskInterviewSessionStore(db).loadProgress(sessionId);
+  const progress = await new RepoTaskInterviewSessionStore(db).loadProgress(sessionId);
+  return normalizeScheduledAssessmentProgressAssignmentTrust(progress);
+}
+
+function normalizeScheduledAssessmentProgressAssignmentTrust(
+  progress: AssessmentProgressSnapshot | null,
+): AssessmentProgressSnapshot | null {
+  if (progress?.assignmentTrust?.state !== 'matched_challenge') return progress;
+  if (progress.assignmentTrust.detail === MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL) return progress;
+  return {
+    ...progress,
+    assignmentTrust: {
+      ...progress.assignmentTrust,
+      detail: MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL,
+    },
+  };
 }
 
 async function loadScheduledAssessmentProgressByInterviewIds(
   db: D1Database,
   interviewIds: readonly string[],
-): Promise<Map<string, AssessmentProgressSnapshot>> {
+): Promise<Map<string, ScheduledAssessmentListProgressSnapshot>> {
   const maxD1QueryVariables = 90;
   const uniqueInterviewIds = [...new Set(interviewIds)].filter((id) => id.length > 0);
-  const progressByInterviewId = new Map<string, AssessmentProgressSnapshot>();
+  const progressByInterviewId = new Map<string, ScheduledAssessmentListProgressSnapshot>();
   if (uniqueInterviewIds.length === 0) return progressByInterviewId;
 
   if (!await hasScheduledAssessmentProgressSchema(db)) {
@@ -3119,7 +3592,9 @@ async function loadScheduledAssessmentProgressByInterviewIds(
           evaluation: evaluationBySessionId.get(session.id) ?? null,
           humanDecision: humanDecisionBySessionId.get(session.id) ?? null,
         });
-        if (session.interviewId) progressByInterviewId.set(session.interviewId, progress);
+        if (session.interviewId) {
+          progressByInterviewId.set(session.interviewId, slimScheduledAssessmentListProgress(progress));
+        }
       } catch (error) {
         console.error('[scheduling/listAssessmentProgress] failed to load assessment progress:', {
           interviewId: session.interviewId,
@@ -3131,6 +3606,25 @@ async function loadScheduledAssessmentProgressByInterviewIds(
   }
   return progressByInterviewId;
 }
+
+interface ScheduledAssessmentChallengeSummary {
+  repositoryUrl: string | null;
+  githubPrNumber: number | null;
+  pullRequestUrl: string | null;
+  baseCommitSha: string | null;
+  task: string | null;
+  assessmentFit: string[];
+  matchProof: string[];
+  successCriteria: string[];
+  expectedEvidence: string[];
+}
+
+type ScheduledAssessmentListProgressSnapshot = Omit<AssessmentProgressSnapshot, 'challenge'> & {
+  challenge: (Omit<NonNullable<AssessmentProgressSnapshot['challenge']>, 'exactText'> & {
+    exactText: null;
+    summary: ScheduledAssessmentChallengeSummary;
+  }) | null;
+};
 
 type ScheduledAssessmentListSession = AssessmentProgressSnapshot['session'];
 type ScheduledAssessmentListSessionRow = {
@@ -3155,9 +3649,270 @@ type ScheduledAssessmentListEvaluation = NonNullable<AssessmentProgressSnapshot[
 type ScheduledAssessmentListHumanDecision = NonNullable<AssessmentProgressSnapshot['humanDecision']>;
 type ScheduledAssessmentListStage = AssessmentProgressSnapshot['stage'];
 type ScheduledAssessmentListNextAction = AssessmentProgressSnapshot['nextAction'];
+type ScheduledAssessmentListEvaluationClaim = ScheduledAssessmentListEvaluation['claims'][number];
+type ScheduledAssessmentListEvaluationDiagnostic = ScheduledAssessmentListEvaluation['diagnostics'][number];
+const SCHEDULED_ASSESSMENT_TRANSCRIPT_SOURCE_REF_TYPES = [
+  'meeting_transcript_segment',
+  'transcript_span',
+] as const;
+const SCHEDULED_ASSESSMENT_AI_INTERACTION_SOURCE_REF_TYPES = [
+  'ai_user_prompt',
+  'ai_user_prompt_blocked',
+  'ai_agent_response',
+  'ai_agent_diagnostic',
+  'agent_status',
+  'agent_response',
+  'agent_diagnostic',
+] as const;
+const SCHEDULED_ASSESSMENT_TOOL_ACTIVITY_SOURCE_REF_TYPES = [
+  'terminal_command',
+  'terminal_output',
+  'code_server_file_observation',
+  'code_server_editor_open',
+  'room_media_control',
+] as const;
 
 function scheduledAssessmentPlaceholders(count: number): string {
   return Array.from({ length: count }, (_, index) => `?${index + 1}`).join(', ');
+}
+
+function scheduledAssessmentJsonRecord(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
+}
+
+function scheduledAssessmentJsonBoolean(value: unknown): boolean {
+  return value === true;
+}
+
+function scheduledAssessmentCoverageTypeCounts(value: unknown): Record<string, number> {
+  const record = scheduledAssessmentJsonRecord(value);
+  if (!record) return {};
+  const counts: Record<string, number> = {};
+  for (const [key, rawValue] of Object.entries(record)) {
+    const count = numberOrNull(rawValue);
+    if (count !== null) counts[key] = count;
+  }
+  return counts;
+}
+
+function scheduledAssessmentCoverageItem(value: unknown): AssessmentEvidenceCoverageItem | null {
+  const item = scheduledAssessmentJsonRecord(value);
+  if (!item) return null;
+  const label = optionalString(item.label);
+  if (!label) return null;
+  return {
+    label,
+    required: scheduledAssessmentJsonBoolean(item.required),
+    sourceRefTypes: stringArray(item.sourceRefTypes),
+    satisfied: scheduledAssessmentJsonBoolean(item.satisfied),
+    sourceRefKeys: stringArray(item.sourceRefKeys),
+    missingImpact: optionalString(item.missingImpact) ?? '',
+  };
+}
+
+function scheduledAssessmentCoverageItems(value: unknown): AssessmentEvidenceCoverageItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(scheduledAssessmentCoverageItem)
+    .filter((item): item is AssessmentEvidenceCoverageItem => Boolean(item));
+}
+
+function scheduledAssessmentEvidenceCoverage(
+  output: Record<string, unknown>,
+): AssessmentEvidenceCoverageSnapshot | null {
+  const coverage = scheduledAssessmentJsonRecord(output.evidenceCoverage);
+  if (!coverage) return null;
+  const schemaVersion = optionalString(coverage.schemaVersion);
+  if (schemaVersion !== 'assessment-evidence-coverage-v1') return null;
+  return {
+    schemaVersion,
+    sourceRefCount: numberOrNull(coverage.sourceRefCount) ?? 0,
+    sourceRefTypeCounts: scheduledAssessmentCoverageTypeCounts(coverage.sourceRefTypeCounts),
+    requiredForEvaluation: scheduledAssessmentCoverageItems(coverage.requiredForEvaluation),
+    expectedForHighConfidence: scheduledAssessmentCoverageItems(coverage.expectedForHighConfidence),
+  };
+}
+
+function scheduledAssessmentReviewPacketToneBlock(value: unknown): {
+  status?: string;
+  state?: string;
+  label: string;
+  detail: string;
+  tone: string;
+} | null {
+  const record = scheduledAssessmentJsonRecord(value);
+  if (!record) return null;
+  const label = optionalString(record.label);
+  const detail = optionalString(record.detail);
+  const tone = optionalString(record.tone);
+  if (!label || !detail || !tone) return null;
+  const status = optionalString(record.status);
+  const state = optionalString(record.state);
+  return {
+    ...(status ? { status } : {}),
+    ...(state ? { state } : {}),
+    label,
+    detail,
+    tone,
+  };
+}
+
+function scheduledAssessmentContractEvidenceStatus(
+  value: unknown,
+): 'captured' | 'gap_declared' | 'needs_human_review' | null {
+  if (value === 'captured' || value === 'gap_declared' || value === 'needs_human_review') return value;
+  return null;
+}
+
+function scheduledAssessmentReviewPacketContractEvidence(value: unknown): NonNullable<
+  NonNullable<ScheduledAssessmentListEvaluation['reviewPacket']>['evidence']['contractEvidence']
+> | undefined {
+  const receipt = scheduledAssessmentJsonRecord(value);
+  if (!receipt) return undefined;
+  if (optionalString(receipt.schemaVersion) !== 'assessment-contract-evidence-receipt-v1') return undefined;
+  const summary = scheduledAssessmentJsonRecord(receipt.summary);
+  if (!summary) return undefined;
+
+  const expectedEvidence = Array.isArray(receipt.expectedEvidence)
+    ? receipt.expectedEvidence.map((item) => {
+      const record = scheduledAssessmentJsonRecord(item);
+      if (!record) return null;
+      const label = optionalString(record.label);
+      const status = scheduledAssessmentContractEvidenceStatus(record.status);
+      const detail = optionalString(record.detail);
+      if (!label || !status || !detail) return null;
+      return {
+        label,
+        status,
+        expectedSourceRefTypes: stringArray(record.expectedSourceRefTypes),
+        matchedSourceRefTypes: stringArray(record.matchedSourceRefTypes),
+        sourceRefCount: numberOrNull(record.sourceRefCount) ?? 0,
+        detail,
+      };
+    }).filter((item): item is NonNullable<typeof item> => Boolean(item))
+    : [];
+
+  const successCriteria = Array.isArray(receipt.successCriteria)
+    ? receipt.successCriteria.map((item) => {
+      const record = scheduledAssessmentJsonRecord(item);
+      if (!record) return null;
+      const label = optionalString(record.label);
+      const detail = optionalString(record.detail);
+      if (!label || !detail) return null;
+      return {
+        label,
+        status: 'needs_human_review' as const,
+        detail,
+      };
+    }).filter((item): item is NonNullable<typeof item> => Boolean(item))
+    : [];
+
+  return {
+    schemaVersion: 'assessment-contract-evidence-receipt-v1',
+    expectedEvidence,
+    successCriteria,
+    summary: {
+      expectedEvidenceCount: numberOrNull(summary.expectedEvidenceCount) ?? expectedEvidence.length,
+      capturedCount: numberOrNull(summary.capturedCount) ?? expectedEvidence.filter((item) => item.status === 'captured').length,
+      gapDeclaredCount: numberOrNull(summary.gapDeclaredCount) ?? expectedEvidence.filter((item) => item.status === 'gap_declared').length,
+      needsHumanReviewCount: numberOrNull(summary.needsHumanReviewCount)
+        ?? (expectedEvidence.filter((item) => item.status !== 'captured').length + successCriteria.length),
+    },
+  };
+}
+
+function scheduledAssessmentReviewPacket(
+  output: Record<string, unknown>,
+): ScheduledAssessmentListEvaluation['reviewPacket'] {
+  const packet = scheduledAssessmentJsonRecord(output.reviewPacket);
+  if (!packet) return null;
+  const schemaVersion = optionalString(packet.schemaVersion);
+  if (schemaVersion !== 'repo-task-review-packet-v1') return null;
+
+  const challenge = scheduledAssessmentJsonRecord(packet.challenge);
+  const evidence = scheduledAssessmentJsonRecord(packet.evidence);
+  const evaluation = scheduledAssessmentJsonRecord(packet.evaluation);
+  if (!challenge || !evidence || !evaluation) return null;
+
+  const assignmentTrust = scheduledAssessmentReviewPacketToneBlock(challenge.assignmentTrust);
+  const contract = scheduledAssessmentJsonRecord(challenge.contract);
+  const readiness = scheduledAssessmentJsonRecord(evidence.readiness);
+  if (!assignmentTrust?.state || !contract || !readiness) return null;
+
+  const readinessStatus = optionalString(readiness.status);
+  const readinessLabel = optionalString(readiness.label);
+  const readinessDetail = optionalString(readiness.detail);
+  if (!readinessStatus || !readinessLabel || !readinessDetail) return null;
+
+  const submissionRecord = scheduledAssessmentJsonRecord(packet.submission);
+  const submission = submissionRecord
+    ? (() => {
+        const integrity = scheduledAssessmentReviewPacketToneBlock(submissionRecord.integrity);
+        const challengeBinding = scheduledAssessmentReviewPacketToneBlock(submissionRecord.challengeBinding);
+        if (!integrity?.status || !challengeBinding?.status) return null;
+        return {
+          repositoryUrl: optionalString(submissionRecord.repositoryUrl) ?? null,
+          forkRepositoryUrl: optionalString(submissionRecord.forkRepositoryUrl) ?? null,
+          branchName: optionalString(submissionRecord.branchName) ?? null,
+          commitSha: optionalString(submissionRecord.commitSha) ?? null,
+          commitUrl: optionalString(submissionRecord.commitUrl) ?? null,
+          submissionSourceLabel: optionalString(submissionRecord.submissionSourceLabel) ?? null,
+          changedFileCount: numberOrNull(submissionRecord.changedFileCount) ?? 0,
+          integrity: {
+            status: integrity.status,
+            label: integrity.label,
+            detail: integrity.detail,
+            tone: integrity.tone,
+          },
+          challengeBinding: {
+            status: challengeBinding.status,
+            label: challengeBinding.label,
+            detail: challengeBinding.detail,
+            tone: challengeBinding.tone,
+          },
+        };
+      })()
+    : null;
+
+  return {
+    schemaVersion,
+    challenge: {
+      focus: optionalString(challenge.focus) ?? null,
+      repositoryUrl: optionalString(challenge.repositoryUrl) ?? null,
+      baseCommitSha: optionalString(challenge.baseCommitSha) ?? null,
+      pullRequestUrl: optionalString(challenge.pullRequestUrl) ?? null,
+      assignmentTrust: {
+        state: assignmentTrust.state,
+        label: assignmentTrust.label,
+        detail: assignmentTrust.detail,
+        tone: assignmentTrust.tone,
+      },
+      contract: {
+        schemaVersion: optionalString(contract.schemaVersion) ?? '',
+        isComplete: scheduledAssessmentJsonBoolean(contract.isComplete),
+        missingFields: stringArray(contract.missingFields),
+      },
+    },
+    submission,
+    evidence: {
+      sourceRefCount: numberOrNull(evidence.sourceRefCount) ?? 0,
+      sourceRefTypeCounts: scheduledAssessmentCoverageTypeCounts(evidence.sourceRefTypeCounts),
+      contractEvidence: scheduledAssessmentReviewPacketContractEvidence(evidence.contractEvidence),
+      readiness: {
+        status: readinessStatus,
+        label: readinessLabel,
+        detail: readinessDetail,
+        isReadyForEvaluation: scheduledAssessmentJsonBoolean(readiness.isReadyForEvaluation),
+        isUsableHiringSignal: scheduledAssessmentJsonBoolean(readiness.isUsableHiringSignal),
+        missingRequiredCount: numberOrNull(readiness.missingRequiredCount) ?? 0,
+      },
+    },
+    evaluation: {
+      recommendation: optionalString(evaluation.recommendation) ?? null,
+      claimCount: stringArray(evaluation.claimIds).length,
+      diagnosticCount: stringArray(evaluation.diagnosticCodes).length,
+    },
+  };
 }
 
 function toScheduledAssessmentListSession(row: ScheduledAssessmentListSessionRow): ScheduledAssessmentListSession {
@@ -3320,6 +4075,7 @@ async function loadScheduledAssessmentChallengeRefs(
       exactText: row.exact_text ?? '',
       contentHash: row.content_hash ?? '',
       locator: parsedLocator.value as JsonObject,
+      metadata: {},
       hasInvalidLocatorJson: parsedLocator.invalid,
     });
   }
@@ -3459,12 +4215,160 @@ async function loadScheduledAssessmentEvaluations(
       summary: row.summary,
       recommendation: optionalString(output.recommendation) ?? null,
       createdAt: row.created_at,
-      evidenceCoverage: null,
+      evidenceCoverage: scheduledAssessmentEvidenceCoverage(output),
       claims: [],
       diagnostics: [],
+      reviewPacket: scheduledAssessmentReviewPacket(output),
+    });
+  }
+  const reportIds = [...evaluations.values()].map((evaluation) => evaluation.id);
+  if (reportIds.length === 0) return evaluations;
+
+  const [
+    claimsByReportId,
+    diagnosticsByReportId,
+  ] = await Promise.all([
+    loadScheduledAssessmentEvaluationClaims(db, reportIds),
+    loadScheduledAssessmentEvaluationDiagnostics(db, reportIds),
+  ]);
+
+  for (const [sessionId, evaluation] of evaluations) {
+    evaluations.set(sessionId, {
+      ...evaluation,
+      claims: claimsByReportId.get(evaluation.id) ?? [],
+      diagnostics: diagnosticsByReportId.get(evaluation.id) ?? [],
     });
   }
   return evaluations;
+}
+
+async function loadScheduledAssessmentEvaluationClaims(
+  db: D1Database,
+  reportIds: readonly string[],
+): Promise<Map<string, ScheduledAssessmentListEvaluationClaim[]>> {
+  const placeholders = scheduledAssessmentPlaceholders(reportIds.length);
+  const result = await db.prepare(
+    `SELECT id, report_id, polarity, dimension, narrative, confidence,
+            source_ref_count, source_ref_types
+       FROM (
+         SELECT c.id,
+                c.report_id,
+                c.polarity,
+                c.dimension,
+                c.narrative,
+                c.confidence,
+                COUNT(sr.id) AS source_ref_count,
+                GROUP_CONCAT(DISTINCT sr.source_ref_type) AS source_ref_types,
+                ROW_NUMBER() OVER (
+                  PARTITION BY c.report_id
+                  ORDER BY
+                    CASE c.polarity
+                      WHEN 'positive' THEN 0
+                      WHEN 'negative' THEN 1
+                      WHEN 'neutral' THEN 2
+                      ELSE 3
+                    END,
+                    c.created_at,
+                    c.id
+                ) AS rn
+           FROM assessment_evaluation_claims c
+           LEFT JOIN assessment_claim_source_refs sr ON sr.claim_id = c.id
+          WHERE c.report_id IN (${placeholders})
+          GROUP BY c.id, c.report_id, c.polarity, c.dimension, c.narrative, c.confidence, c.created_at
+         HAVING COUNT(sr.id) > 0
+       )
+      WHERE rn <= 3
+      ORDER BY report_id, rn`,
+  ).bind(...reportIds).all<{
+    id: string;
+    report_id: string;
+    polarity: ScheduledAssessmentListEvaluationClaim['polarity'];
+    dimension: string;
+    narrative: string;
+    confidence: number | null;
+    source_ref_count: number;
+    source_ref_types: string | null;
+  }>();
+  const byReportId = new Map<string, ScheduledAssessmentListEvaluationClaim[]>();
+  for (const row of result.results ?? []) {
+    const claims = byReportId.get(row.report_id) ?? [];
+    claims.push({
+      id: row.id,
+      polarity: row.polarity,
+      dimension: row.dimension,
+      narrative: row.narrative,
+      confidence: row.confidence,
+      sourceRefCount: row.source_ref_count,
+      sourceRefTypes: row.source_ref_types
+        ? row.source_ref_types.split(',').map((value) => value.trim()).filter(Boolean)
+        : [],
+    });
+    byReportId.set(row.report_id, claims);
+  }
+  return byReportId;
+}
+
+async function loadScheduledAssessmentEvaluationDiagnostics(
+  db: D1Database,
+  reportIds: readonly string[],
+): Promise<Map<string, ScheduledAssessmentListEvaluationDiagnostic[]>> {
+  const placeholders = scheduledAssessmentPlaceholders(reportIds.length);
+  const result = await db.prepare(
+    `SELECT id, report_id, code, severity, message, source_ref_count, source_ref_types
+       FROM (
+         SELECT d.id,
+                d.report_id,
+                d.code,
+                d.severity,
+                d.message,
+                COUNT(sr.id) AS source_ref_count,
+                GROUP_CONCAT(DISTINCT sr.source_ref_type) AS source_ref_types,
+                ROW_NUMBER() OVER (
+                  PARTITION BY d.report_id
+                  ORDER BY
+                    CASE d.severity
+                      WHEN 'blocking' THEN 0
+                      WHEN 'error' THEN 1
+                      WHEN 'warning' THEN 2
+                      WHEN 'info' THEN 3
+                      ELSE 4
+                    END,
+                    d.created_at,
+                    d.id
+                ) AS rn
+           FROM assessment_diagnostics d
+           LEFT JOIN assessment_diagnostic_source_refs sr ON sr.diagnostic_id = d.id
+          WHERE d.report_id IN (${placeholders})
+          GROUP BY d.id, d.report_id, d.code, d.severity, d.message, d.created_at
+       )
+      WHERE rn <= 4
+      ORDER BY report_id, rn`,
+  ).bind(...reportIds).all<{
+    id: string;
+    report_id: string;
+    code: string;
+    severity: string;
+    message: string;
+    source_ref_count: number;
+    source_ref_types: string | null;
+  }>();
+  const byReportId = new Map<string, ScheduledAssessmentListEvaluationDiagnostic[]>();
+  for (const row of result.results ?? []) {
+    if (!row.report_id) continue;
+    const diagnostics = byReportId.get(row.report_id) ?? [];
+    diagnostics.push({
+      id: row.id,
+      code: row.code,
+      severity: row.severity,
+      message: row.message,
+      sourceRefCount: row.source_ref_count,
+      sourceRefTypes: row.source_ref_types
+        ? row.source_ref_types.split(',').map((value) => value.trim()).filter(Boolean)
+        : [],
+    });
+    byReportId.set(row.report_id, diagnostics);
+  }
+  return byReportId;
 }
 
 async function loadScheduledAssessmentHumanDecisions(
@@ -3566,15 +4470,11 @@ function buildScheduledAssessmentListProgress(input: {
     'dev_container_event',
     'message',
     'commit_submission',
-  ]);
+  ]) || scheduledAssessmentHasKind(input.sourceRefCounts, SCHEDULED_ASSESSMENT_TRANSCRIPT_SOURCE_REF_TYPES);
   const hasCommitSubmission = commit !== null;
   const hasFinalSubmission = scheduledAssessmentHasKind(input.evidenceCounts, ['final_submission']);
   const hasAiInteraction = scheduledAssessmentHasKind(input.evidenceCounts, ['ai_interaction'])
-    || scheduledAssessmentHasKind(input.sourceRefCounts, [
-      'ai_user_prompt',
-      'ai_user_prompt_blocked',
-      'ai_agent_response',
-    ]);
+    || scheduledAssessmentHasKind(input.sourceRefCounts, SCHEDULED_ASSESSMENT_AI_INTERACTION_SOURCE_REF_TYPES);
   const hasMessageEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['message'])
     || scheduledAssessmentHasKind(input.sourceRefCounts, ['room_chat_message']);
   const hasDevContainerEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['dev_container_event'])
@@ -3586,18 +4486,28 @@ function buildScheduledAssessmentListProgress(input: {
       'code_server_editor_open',
     ]);
   const hasToolUsageEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['tool_usage'])
-    || scheduledAssessmentHasKind(input.sourceRefCounts, ['room_media_control']);
-  const hasTranscriptEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['transcript_span']);
+    || scheduledAssessmentHasKind(input.sourceRefCounts, SCHEDULED_ASSESSMENT_TOOL_ACTIVITY_SOURCE_REF_TYPES);
+  const hasTranscriptEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['transcript_span'])
+    || scheduledAssessmentHasKind(input.sourceRefCounts, SCHEDULED_ASSESSMENT_TRANSCRIPT_SOURCE_REF_TYPES);
   const hasTestEvidence = scheduledAssessmentHasKind(input.evidenceCounts, ['test_run'])
     || scheduledAssessmentHasKind(input.sourceRefCounts, ['test_run']);
   const hasVerificationGap = scheduledAssessmentHasKind(input.sourceRefCounts, ['verification_gap']);
+  const requiresCommit = scheduledAssessmentModeRequiresCommit(input.session.mode);
+  const hasGitCommit = scheduledAssessmentHasKind(input.sourceRefCounts, ['git_commit']);
+  const hasCodeDiff = scheduledAssessmentHasKind(input.sourceRefCounts, ['code_diff']);
+  const hasReviewableCommitSubmission = !requiresCommit
+    || Boolean(
+      commit
+      && hasGitCommit
+      && hasCodeDiff
+      && commit.challengeBinding.status === 'bound_to_assigned_challenge',
+    );
   const { stage, nextAction } = scheduledAssessmentProgressStageAndAction({
     session: input.session,
     hasCompleteChallengePacket: contract.isComplete,
     hasWorkEvidence,
     hasCommitSubmission,
-    hasBoundCommitSubmission: !scheduledAssessmentModeRequiresCommit(input.session.mode)
-      || commit?.challengeBinding.status === 'bound_to_assigned_challenge',
+    hasReviewableCommitSubmission,
     hasFinalSubmission,
     evaluation: input.evaluation,
     humanDecision: input.humanDecision,
@@ -3663,6 +4573,48 @@ function stripScheduledAssessmentChallengeMeta(
     exactText: challenge.exactText,
     contentHash: challenge.contentHash,
     locator: challenge.locator,
+    metadata: challenge.metadata,
+  };
+}
+
+function slimScheduledAssessmentListProgress(
+  progress: AssessmentProgressSnapshot,
+): ScheduledAssessmentListProgressSnapshot {
+  if (!progress.challenge) {
+    return {
+      ...progress,
+      challenge: null,
+    };
+  }
+
+  return {
+    ...progress,
+    challenge: {
+      ...progress.challenge,
+      exactText: null,
+      summary: scheduledAssessmentChallengeSummary(progress.challenge),
+    },
+  };
+}
+
+function scheduledAssessmentChallengeSummary(
+  challenge: NonNullable<AssessmentProgressSnapshot['challenge']>,
+): ScheduledAssessmentChallengeSummary {
+  return {
+    repositoryUrl: scheduledAssessmentChallengeRepositoryUrl(challenge),
+    githubPrNumber: scheduledAssessmentChallengePrNumber(challenge),
+    pullRequestUrl: scheduledAssessmentChallengePullRequestUrl(challenge),
+    baseCommitSha: scheduledAssessmentChallengeBaseCommitSha(challenge),
+    task: scheduledAssessmentChallengeLineValue(challenge.exactText, ['Task', 'Title']),
+    assessmentFit: scheduledAssessmentChallengeSectionItems(challenge.exactText, ['Assessment fit']),
+    matchProof: scheduledAssessmentChallengeSectionItems(challenge.exactText, ['Match proof']),
+    successCriteria: [
+      ...scheduledAssessmentChallengeSectionItems(challenge.exactText, ['Success criteria']),
+      ...(scheduledAssessmentChallengeLineValue(challenge.exactText, ['Success'])
+        ? [scheduledAssessmentChallengeLineValue(challenge.exactText, ['Success']) as string]
+        : []),
+    ],
+    expectedEvidence: scheduledAssessmentChallengeSectionItems(challenge.exactText, ['Expected evidence']),
   };
 }
 
@@ -3684,20 +4636,21 @@ function scheduledAssessmentProgressStageAndAction(input: {
   hasCompleteChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasCommitSubmission: boolean;
-  hasBoundCommitSubmission: boolean;
+  hasReviewableCommitSubmission: boolean;
   hasFinalSubmission: boolean;
   evaluation: ScheduledAssessmentListEvaluation | null;
   humanDecision: ScheduledAssessmentListHumanDecision | null;
 }): { stage: ScheduledAssessmentListStage; nextAction: ScheduledAssessmentListNextAction } {
   if (input.session.state === 'CANCELLED') return { stage: 'CANCELLED', nextAction: 'NONE' };
   if (input.humanDecision) return { stage: 'EVALUATED', nextAction: 'NONE' };
+  if (input.evaluation?.status === 'EVALUATED') return { stage: 'EVALUATED', nextAction: 'REVIEW_EVALUATION' };
   if (input.session.state === 'DIAGNOSTIC') return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
   if (input.evaluation) {
-    if (input.evaluation.status === 'EVALUATED') return { stage: 'EVALUATED', nextAction: 'REVIEW_EVALUATION' };
     return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
   }
+  if (input.session.state === 'EVALUATING') return { stage: 'EVALUATING', nextAction: 'WAIT_FOR_EVALUATION' };
   if (!input.hasCompleteChallengePacket) return { stage: 'WAITING_FOR_CHALLENGE', nextAction: 'ASSIGN_CHALLENGE' };
-  if (scheduledAssessmentModeRequiresCommit(input.session.mode) && !input.hasBoundCommitSubmission) {
+  if (scheduledAssessmentModeRequiresCommit(input.session.mode) && !input.hasReviewableCommitSubmission) {
     if (input.hasWorkEvidence || input.hasFinalSubmission) return { stage: 'WORK_IN_PROGRESS', nextAction: 'SUBMIT_COMMIT' };
     return { stage: 'CHALLENGE_READY', nextAction: 'OPEN_ROOM_OR_WORKSPACE' };
   }
@@ -3720,6 +4673,8 @@ function scheduledAssessmentProgressNextActionLabel(action: ScheduledAssessmentL
       return 'Submit a source-backed assessment commit.';
     case 'START_EVALUATION':
       return 'Start source-backed AI or human evaluation.';
+    case 'WAIT_FOR_EVALUATION':
+      return 'Source-backed evaluation is running.';
     case 'REVIEW_EVALUATION':
       return 'Review the assessment report and evidence.';
     case 'RESOLVE_DIAGNOSTIC':
@@ -3786,33 +4741,65 @@ function scheduledAssessmentReadiness(input: {
     },
   ];
   if (requiresCommit) {
-    required.push({
-      id: 'assessment_commit',
-      label: 'Assessment branch commit',
-      required: true,
-      satisfied: input.hasCommitSubmission && hasGitCommit,
-      sourceRefTypes: ['git_commit'],
-      missingImpact: 'A real commit hash is required before evaluating open-source implementation work.',
-    });
+    required.push(
+      {
+        id: 'assessment_commit',
+        label: 'Assessment branch commit',
+        required: true,
+        satisfied: input.hasCommitSubmission && hasGitCommit,
+        sourceRefTypes: ['git_commit'],
+        missingImpact: 'A real commit hash is required before evaluating open-source implementation work.',
+      },
+      {
+        id: 'code_diff',
+        label: 'Exact code diff',
+        required: true,
+        satisfied: hasCodeDiff,
+        sourceRefTypes: ['code_diff'],
+        missingImpact: 'The evaluator must inspect the exact diff from base commit to submitted commit.',
+      },
+    );
+
+    if (input.hasCommitSubmission) {
+      required.push({
+        id: 'commit_challenge_binding',
+        label: 'Commit bound to assigned challenge',
+        required: true,
+        satisfied: input.commit?.challengeBinding.status === 'bound_to_assigned_challenge',
+        sourceRefTypes: [
+          'git_commit',
+          'code_diff',
+          'review_challenge_packet',
+          'open_source_challenge_packet',
+          'repo_task_challenge_packet',
+          'challenge_packet',
+        ],
+        missingImpact: 'The submitted commit must match the latest assigned challenge repo and base commit before evaluation.',
+      });
+    }
   }
 
   const confidence: NonNullable<AssessmentProgressSnapshot['readiness']>['confidence'] = [
     {
-      id: 'code_diff',
-      label: 'Code diff',
-      required: false,
-      satisfied: hasCodeDiff,
-      sourceRefTypes: ['code_diff'],
-      missingImpact: 'A diff makes the implementation reviewable without opening the workspace.',
-    },
-    {
       id: 'test_run',
-      label: 'Test or verification run',
+      label: 'Test output',
       required: false,
       satisfied: input.hasTestEvidence,
       sourceRefTypes: ['test_run'],
-      missingImpact: 'Test output improves confidence that the commit was exercised.',
+      missingImpact: input.hasVerificationGap
+        ? 'A verification gap was declared, but no test output was captured; keep correctness lower-confidence.'
+        : 'Test output improves confidence that the commit was exercised; require tests or a reviewed verification explanation before trusting correctness.',
     },
+    ...input.hasVerificationGap
+      ? [{
+          id: 'verification_gap_declared',
+          label: 'Verification gap declared',
+          required: false,
+          satisfied: true,
+          sourceRefTypes: ['verification_gap'],
+          missingImpact: 'A source-backed verification gap explains missing or partial test output; it does not prove correctness.',
+        } satisfies NonNullable<AssessmentProgressSnapshot['readiness']>['confidence'][number]]
+      : [],
     {
       id: 'workspace_captured_commit',
       label: 'Workspace-captured commit',
@@ -3826,15 +4813,15 @@ function scheduledAssessmentReadiness(input: {
       label: 'AI-use trail',
       required: false,
       satisfied: input.hasAiInteraction,
-      sourceRefTypes: ['ai_user_prompt', 'ai_agent_response', 'ai_usage_event'],
-      missingImpact: 'AI prompts and responses explain how the candidate used assistance.',
+      sourceRefTypes: [...SCHEDULED_ASSESSMENT_AI_INTERACTION_SOURCE_REF_TYPES, 'ai_usage_event'],
+      missingImpact: 'Real prompts, blocked attempts, bridge statuses, diagnostics, and agent responses explain how the candidate used assistance.',
     },
     {
       id: 'transcript_or_chat',
       label: 'Explanation trail',
       required: false,
       satisfied: input.hasTranscriptEvidence || input.hasMessageEvidence,
-      sourceRefTypes: ['meeting_transcript_segment', 'room_chat_message'],
+      sourceRefTypes: ['meeting_transcript_segment', 'transcript_span', 'room_chat_message'],
       missingImpact: 'Transcript or chat evidence helps assess reasoning and communication.',
     },
   ];
@@ -3851,6 +4838,8 @@ function scheduledAssessmentReadiness(input: {
       missingRequiredCount,
       requiresCommit,
       commit: input.commit,
+      hasTestEvidence: input.hasTestEvidence,
+      hasVerificationGap: input.hasVerificationGap,
       evaluation: input.evaluation,
       humanDecision: input.humanDecision,
     }),
@@ -3875,6 +4864,8 @@ function scheduledAssessmentReadinessStatus(input: {
       return 'WORK_IN_PROGRESS';
     case 'READY_FOR_EVALUATION':
       return input.missingRequiredCount > 0 ? 'WORK_IN_PROGRESS' : 'READY_FOR_EVALUATION';
+    case 'EVALUATING':
+      return 'EVALUATING';
     case 'EVALUATED':
       return 'EVALUATED';
     case 'NEEDS_ATTENTION':
@@ -3896,6 +4887,8 @@ function scheduledAssessmentReadinessStatusLabel(
       return 'Work evidence in progress';
     case 'READY_FOR_EVALUATION':
       return 'Ready for evaluation';
+    case 'EVALUATING':
+      return 'Evaluation running';
     case 'EVALUATED':
       return 'Evaluated';
     case 'NEEDS_ATTENTION':
@@ -3910,11 +4903,14 @@ function scheduledAssessmentReadinessStatusDetail(input: {
   missingRequiredCount: number;
   requiresCommit: boolean;
   commit: ScheduledAssessmentListCommit | null;
+  hasTestEvidence: boolean;
+  hasVerificationGap: boolean;
   evaluation: ScheduledAssessmentListEvaluation | null;
   humanDecision: ScheduledAssessmentListHumanDecision | null;
 }): string {
   if (input.status === 'CANCELLED') return 'This assessment session was cancelled.';
   if (input.status === 'NEEDS_ATTENTION') return 'Resolve the diagnostic before relying on this assessment.';
+  if (input.status === 'EVALUATING') return 'PIPE is evaluating the source-backed commit, diff, tests, transcript, chat, terminal, and AI-use evidence.';
   if (input.status === 'EVALUATED') {
     if (input.humanDecision) return 'A human decision is recorded with source-backed evidence.';
     if (input.evaluation?.status === 'EVALUATED') return 'A source-backed evaluation report is available for review.';
@@ -3926,10 +4922,26 @@ function scheduledAssessmentReadinessStatusDetail(input: {
   if (input.missingRequiredCount > 0) {
     return `${input.missingRequiredCount} required proof ${input.missingRequiredCount === 1 ? 'item is' : 'items are'} still missing before evaluation.`;
   }
+  const confidenceLimitations: string[] = [];
   if (input.requiresCommit && input.commit?.integrity.status !== 'workspace_captured') {
-    return 'Required evidence is captured, but commit provenance needs repository or workspace verification before final reliance.';
+    confidenceLimitations.push('commit provenance still needs repository or workspace verification');
   }
-  return 'Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.';
+  if (!input.hasTestEvidence) {
+    confidenceLimitations.push(
+      input.hasVerificationGap
+        ? 'test output is missing and only a declared verification gap is available'
+        : 'test output is missing',
+    );
+  }
+  if (confidenceLimitations.length > 0) {
+    return `Required evidence is captured, but ${formatScheduledAssessmentLimitationList(confidenceLimitations)}; start evaluation as lower-confidence and do not treat correctness as proven.`;
+  }
+  return 'Challenge, work evidence, required source refs, and test output are captured; start source-backed AI or human evaluation.';
+}
+
+function formatScheduledAssessmentLimitationList(limitations: readonly string[]): string {
+  if (limitations.length <= 1) return limitations[0] ?? '';
+  return `${limitations.slice(0, -1).join(', ')} and ${limitations[limitations.length - 1]}`;
 }
 
 function scheduledAssessmentAssignmentTrust(input: {
@@ -3950,7 +4962,7 @@ function scheduledAssessmentAssignmentTrust(input: {
     return {
       state: 'matched_challenge',
       label: 'PIPE-matched challenge',
-      detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+      detail: MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL,
       tone: 'matched',
     };
   }
@@ -4151,14 +5163,81 @@ function scheduledAssessmentChallengeBaseCommitSha(
     ?? scheduledAssessmentChallengeLineValue(challenge.exactText, ['Base commit', 'Base commit SHA', 'Base']);
 }
 
+function scheduledAssessmentChallengePrNumber(
+  challenge: NonNullable<AssessmentProgressSnapshot['challenge']>,
+): number | null {
+  return scheduledAssessmentLocatorNumber(challenge.locator, 'githubPrNumber')
+    ?? scheduledAssessmentLocatorNumber(challenge.locator, 'prNumber')
+    ?? scheduledAssessmentLocatorNumber(challenge.locator, 'pullRequestNumber')
+    ?? scheduledAssessmentChallengeLineNumber(challenge.exactText, ['Pull request', 'PR']);
+}
+
+function scheduledAssessmentChallengePullRequestUrl(
+  challenge: NonNullable<AssessmentProgressSnapshot['challenge']>,
+): string | null {
+  const explicitUrl = normalizeScheduledAssessmentGitHubPullRequestUrl(
+    scheduledAssessmentLocatorString(challenge.locator, 'pullRequestUrl')
+      ?? scheduledAssessmentLocatorString(challenge.locator, 'githubPullRequestUrl')
+      ?? scheduledAssessmentLocatorString(challenge.locator, 'prUrl')
+      ?? scheduledAssessmentChallengeLineValue(challenge.exactText, ['Pull request URL', 'PR URL']),
+  );
+  if (explicitUrl) return explicitUrl;
+
+  const repositoryUrl = scheduledAssessmentChallengeRepositoryUrl(challenge);
+  const githubPrNumber = scheduledAssessmentChallengePrNumber(challenge);
+  if (!repositoryUrl || !githubPrNumber) return null;
+  try {
+    const url = new URL(repositoryUrl);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com') return null;
+    const parts = url.pathname.replace(/\.git$/i, '').split('/').filter(Boolean);
+    if (parts.length < 2) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/pull/${githubPrNumber}`;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeScheduledAssessmentGitHubPullRequestUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com') return null;
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length < 4 || parts[2] !== 'pull') return null;
+    const prNumber = Number.parseInt(parts[3] ?? '', 10);
+    if (!Number.isInteger(prNumber) || prNumber <= 0) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/pull/${prNumber}`;
+  } catch {
+    return null;
+  }
+}
+
 function scheduledAssessmentLocatorString(locator: Record<string, unknown>, key: string): string | null {
   return optionalString(locator[key]) ?? null;
+}
+
+function scheduledAssessmentLocatorNumber(locator: Record<string, unknown>, key: string): number | null {
+  const value = locator[key];
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value.trim().replace(/^#/, ''), 10);
+    if (Number.isInteger(parsed) && parsed > 0) return parsed;
+  }
+  return null;
 }
 
 function scheduledAssessmentChallengeLineValue(exactText: string, labels: readonly string[]): string | null {
   const escapedLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const match = exactText.match(new RegExp(`^\\s*(?:${escapedLabels.join('|')})\\s*:\\s*(.+)$`, 'im'));
   return match?.[1]?.trim() || null;
+}
+
+function scheduledAssessmentChallengeLineNumber(exactText: string, labels: readonly string[]): number | null {
+  const value = scheduledAssessmentChallengeLineValue(exactText, labels);
+  if (!value) return null;
+  const parsed = Number.parseInt(value.trim().replace(/^#/, ''), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function scheduledAssessmentChallengeSectionItems(exactText: string, labels: readonly string[]): string[] {
@@ -4256,6 +5335,419 @@ async function loadLatestAssessmentEvaluationReport(
   return row ?? null;
 }
 
+interface AssessmentEvidenceBundleSourceRef {
+  sourceRefType: string;
+  sourceRefId: string;
+  sourceSpanId: string | null;
+  evidenceRole: string;
+  locator: JsonObject;
+  exactText: string;
+  contentHash: string;
+  metadata: JsonObject;
+  createdAt: string;
+}
+
+interface AssessmentEvidenceBundleEvent {
+  sequence: number;
+  kind: string;
+  actorType: string;
+  actorId: string | null;
+  narrative: string;
+  payload: JsonObject;
+  occurredAt: string;
+  createdAt: string;
+  sourceRefs: AssessmentEvidenceBundleSourceRef[];
+}
+
+interface AssessmentEvidenceBundleClaim {
+  claimId: string;
+  polarity: string;
+  dimension: string;
+  narrative: string;
+  confidence: number | null;
+  createdAt: string;
+  sourceRefs: AssessmentEvidenceBundleSourceRef[];
+}
+
+interface AssessmentEvidenceBundleDiagnostic {
+  diagnosticId: string;
+  code: string;
+  severity: string;
+  message: string;
+  provider: string | null;
+  retryable: boolean;
+  details: JsonObject;
+  createdAt: string;
+  sourceRefs: AssessmentEvidenceBundleSourceRef[];
+}
+
+interface AssessmentEvidenceBundleEvaluationReport {
+  reportId: string;
+  status: string;
+  summary: string;
+  output: JsonObject;
+  createdAt: string;
+  updatedAt: string;
+  claims: AssessmentEvidenceBundleClaim[];
+  diagnostics: AssessmentEvidenceBundleDiagnostic[];
+}
+
+interface AssessmentEvidenceBundle {
+  schemaVersion: 'repo-task-final-evidence-bundle-v1';
+  generatedAt: string;
+  interview: {
+    id: string;
+    title: string | null;
+    description: string | null;
+    interviewType: string | null;
+    recipientName: string | null;
+    recipientEmail: string | null;
+    candidateId: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  assessment: {
+    mode: string;
+    state: string;
+    stage: string;
+    nextAction: string;
+    nextActionLabel: string;
+    readiness: AssessmentProgressSnapshot['readiness'];
+    assignmentTrust: AssessmentProgressSnapshot['assignmentTrust'];
+    sourceRefCounts: AssessmentProgressSnapshot['sourceRefCounts'];
+    evidenceCounts: AssessmentProgressSnapshot['evidenceCounts'];
+  };
+  completeness: {
+    hasChallengePacket: boolean;
+    hasCommitSubmission: boolean;
+    hasEvaluationReport: boolean;
+    hasHumanDecision: boolean;
+    isReviewable: boolean;
+  };
+  challenge: AssessmentProgressSnapshot['challenge'];
+  challengePacketContract: AssessmentProgressSnapshot['challengePacketContract'];
+  submission: AssessmentProgressSnapshot['commit'];
+  timeline: AssessmentEvidenceBundleEvent[];
+  evaluation: AssessmentEvidenceBundleEvaluationReport | null;
+  humanDecision: AssessmentProgressSnapshot['humanDecision'];
+}
+
+interface AssessmentEvidenceBundleSourceRefRow {
+  source_ref_type: string | null;
+  source_ref_id: string | null;
+  source_span_id: string | null;
+  evidence_role: string | null;
+  locator_json: string | null;
+  exact_text: string | null;
+  content_hash: string | null;
+  metadata_json: string | null;
+  source_created_at: string | null;
+}
+
+function assessmentBundleSourceRefFromRow(
+  row: AssessmentEvidenceBundleSourceRefRow,
+): AssessmentEvidenceBundleSourceRef | null {
+  if (!row.source_ref_type || !row.source_ref_id || !row.exact_text || !row.content_hash) {
+    return null;
+  }
+  return {
+    sourceRefType: row.source_ref_type,
+    sourceRefId: row.source_ref_id,
+    sourceSpanId: row.source_span_id ?? null,
+    evidenceRole: row.evidence_role ?? 'support',
+    locator: parseJsonObject(row.locator_json) as JsonObject,
+    exactText: row.exact_text,
+    contentHash: row.content_hash,
+    metadata: parseJsonObject(row.metadata_json) as JsonObject,
+    createdAt: row.source_created_at ?? '',
+  };
+}
+
+async function loadAssessmentEvidenceBundleTimeline(
+  db: D1Database,
+  sessionId: string,
+): Promise<AssessmentEvidenceBundleEvent[]> {
+  const result = await db.prepare(
+    `SELECT e.id AS event_id,
+            e.sequence,
+            e.kind,
+            e.actor_type,
+            e.actor_id,
+            e.narrative,
+            e.payload_json,
+            e.occurred_at,
+            e.created_at,
+            sr.source_ref_type,
+            sr.source_ref_id,
+            sr.source_span_id,
+            sr.evidence_role,
+            sr.locator_json,
+            sr.exact_text,
+            sr.content_hash,
+            sr.metadata_json,
+            sr.created_at AS source_created_at
+       FROM assessment_evidence_events e
+       LEFT JOIN assessment_event_source_refs sr ON sr.event_id = e.id
+      WHERE e.session_id = ?1
+      ORDER BY e.sequence ASC, sr.created_at ASC, sr.id ASC`,
+  ).bind(sessionId).all<AssessmentEvidenceBundleSourceRefRow & {
+    event_id: string;
+    sequence: number;
+    kind: string;
+    actor_type: string;
+    actor_id: string | null;
+    narrative: string;
+    payload_json: string | null;
+    occurred_at: string;
+    created_at: string;
+  }>();
+
+  const timeline = new Map<string, AssessmentEvidenceBundleEvent>();
+  for (const row of result.results ?? []) {
+    const existing = timeline.get(row.event_id);
+    const event = existing ?? {
+      sequence: row.sequence,
+      kind: row.kind,
+      actorType: row.actor_type,
+      actorId: row.actor_id,
+      narrative: row.narrative,
+      payload: parseJsonObject(row.payload_json) as JsonObject,
+      occurredAt: row.occurred_at,
+      createdAt: row.created_at,
+      sourceRefs: [],
+    };
+    const sourceRef = assessmentBundleSourceRefFromRow(row);
+    if (sourceRef) event.sourceRefs.push(sourceRef);
+    timeline.set(row.event_id, event);
+  }
+  return [...timeline.values()];
+}
+
+async function loadAssessmentEvidenceBundleClaims(
+  db: D1Database,
+  reportId: string,
+): Promise<AssessmentEvidenceBundleClaim[]> {
+  const result = await db.prepare(
+    `SELECT c.id AS claim_id,
+            c.polarity,
+            c.dimension,
+            c.narrative,
+            c.confidence,
+            c.created_at,
+            sr.source_ref_type,
+            sr.source_ref_id,
+            sr.source_span_id,
+            sr.evidence_role,
+            sr.locator_json,
+            sr.exact_text,
+            sr.content_hash,
+            sr.metadata_json,
+            sr.created_at AS source_created_at
+       FROM assessment_evaluation_claims c
+       LEFT JOIN assessment_claim_source_refs sr ON sr.claim_id = c.id
+      WHERE c.report_id = ?1
+      ORDER BY c.created_at ASC, c.id ASC, sr.created_at ASC, sr.id ASC`,
+  ).bind(reportId).all<AssessmentEvidenceBundleSourceRefRow & {
+    claim_id: string;
+    polarity: string;
+    dimension: string;
+    narrative: string;
+    confidence: number | null;
+    created_at: string;
+  }>();
+
+  const claims = new Map<string, AssessmentEvidenceBundleClaim>();
+  for (const row of result.results ?? []) {
+    const existing = claims.get(row.claim_id);
+    const claim = existing ?? {
+      claimId: row.claim_id,
+      polarity: row.polarity,
+      dimension: row.dimension,
+      narrative: row.narrative,
+      confidence: row.confidence,
+      createdAt: row.created_at,
+      sourceRefs: [],
+    };
+    const sourceRef = assessmentBundleSourceRefFromRow(row);
+    if (sourceRef) claim.sourceRefs.push(sourceRef);
+    claims.set(row.claim_id, claim);
+  }
+  return [...claims.values()];
+}
+
+async function loadAssessmentEvidenceBundleDiagnostics(
+  db: D1Database,
+  input: { sessionId: string; reportId: string | null },
+): Promise<AssessmentEvidenceBundleDiagnostic[]> {
+  const result = await db.prepare(
+    `SELECT d.id AS diagnostic_id,
+            d.code,
+            d.severity,
+            d.message,
+            d.provider,
+            d.retryable,
+            d.details_json,
+            d.created_at,
+            sr.source_ref_type,
+            sr.source_ref_id,
+            sr.source_span_id,
+            sr.evidence_role,
+            sr.locator_json,
+            sr.exact_text,
+            sr.content_hash,
+            sr.metadata_json,
+            sr.created_at AS source_created_at
+       FROM assessment_diagnostics d
+       LEFT JOIN assessment_diagnostic_source_refs sr ON sr.diagnostic_id = d.id
+      WHERE d.session_id = ?1
+         OR (?2 IS NOT NULL AND d.report_id = ?2)
+      ORDER BY
+        CASE d.severity
+          WHEN 'blocking' THEN 0
+          WHEN 'error' THEN 1
+          WHEN 'warning' THEN 2
+          WHEN 'info' THEN 3
+          ELSE 4
+        END,
+        d.created_at ASC,
+        d.id ASC,
+        sr.created_at ASC,
+        sr.id ASC`,
+  ).bind(input.sessionId, input.reportId).all<AssessmentEvidenceBundleSourceRefRow & {
+    diagnostic_id: string;
+    code: string;
+    severity: string;
+    message: string;
+    provider: string | null;
+    retryable: number;
+    details_json: string | null;
+    created_at: string;
+  }>();
+
+  const diagnostics = new Map<string, AssessmentEvidenceBundleDiagnostic>();
+  for (const row of result.results ?? []) {
+    const existing = diagnostics.get(row.diagnostic_id);
+    const diagnostic = existing ?? {
+      diagnosticId: row.diagnostic_id,
+      code: row.code,
+      severity: row.severity,
+      message: row.message,
+      provider: row.provider,
+      retryable: row.retryable === 1,
+      details: parseJsonObject(row.details_json) as JsonObject,
+      createdAt: row.created_at,
+      sourceRefs: [],
+    };
+    const sourceRef = assessmentBundleSourceRefFromRow(row);
+    if (sourceRef) diagnostic.sourceRefs.push(sourceRef);
+    diagnostics.set(row.diagnostic_id, diagnostic);
+  }
+  return [...diagnostics.values()];
+}
+
+async function loadAssessmentEvidenceBundleEvaluation(
+  db: D1Database,
+  sessionId: string,
+): Promise<AssessmentEvidenceBundleEvaluationReport | null> {
+  const report = await db.prepare(
+    `SELECT id, status, summary, output_json, created_at, updated_at
+       FROM assessment_evaluation_reports
+      WHERE session_id = ?1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(sessionId).first<{
+    id: string;
+    status: string;
+    summary: string;
+    output_json: string | null;
+    created_at: string;
+    updated_at: string;
+  }>();
+  if (!report) return null;
+  const [claims, diagnostics] = await Promise.all([
+    loadAssessmentEvidenceBundleClaims(db, report.id),
+    loadAssessmentEvidenceBundleDiagnostics(db, {
+      sessionId,
+      reportId: report.id,
+    }),
+  ]);
+  return {
+    reportId: report.id,
+    status: report.status,
+    summary: report.summary,
+    output: parseJsonObject(report.output_json) as JsonObject,
+    createdAt: report.created_at,
+    updatedAt: report.updated_at,
+    claims,
+    diagnostics,
+  };
+}
+
+async function loadAssessmentEvidenceBundle(input: {
+  db: D1Database;
+  interview: {
+    id: string;
+    title: string | null;
+    description: string | null;
+    interview_type: string | null;
+    recipient_name: string | null;
+    recipient_email: string | null;
+    candidate_id: string | null;
+    created_at: string;
+    updated_at: string;
+  };
+  sessionId: string;
+}): Promise<AssessmentEvidenceBundle> {
+  const store = new RepoTaskInterviewSessionStore(input.db);
+  const [progress, timeline, evaluation] = await Promise.all([
+    store.loadProgress(input.sessionId),
+    loadAssessmentEvidenceBundleTimeline(input.db, input.sessionId),
+    loadAssessmentEvidenceBundleEvaluation(input.db, input.sessionId),
+  ]);
+  const isReviewable = progress.hasChallengePacket
+    && progress.hasCommitSubmission
+    && progress.evaluation?.status === 'EVALUATED';
+  return {
+    schemaVersion: 'repo-task-final-evidence-bundle-v1',
+    generatedAt: new Date().toISOString(),
+    interview: {
+      id: input.interview.id,
+      title: input.interview.title,
+      description: input.interview.description,
+      interviewType: input.interview.interview_type,
+      recipientName: input.interview.recipient_name,
+      recipientEmail: input.interview.recipient_email,
+      candidateId: input.interview.candidate_id,
+      createdAt: input.interview.created_at,
+      updatedAt: input.interview.updated_at,
+    },
+    assessment: {
+      mode: progress.session.mode,
+      state: progress.session.state,
+      stage: progress.stage,
+      nextAction: progress.nextAction,
+      nextActionLabel: progress.nextActionLabel,
+      readiness: progress.readiness,
+      assignmentTrust: progress.assignmentTrust,
+      sourceRefCounts: progress.sourceRefCounts,
+      evidenceCounts: progress.evidenceCounts,
+    },
+    completeness: {
+      hasChallengePacket: progress.hasChallengePacket,
+      hasCommitSubmission: progress.hasCommitSubmission,
+      hasEvaluationReport: progress.evaluation !== null,
+      hasHumanDecision: progress.humanDecision !== null,
+      isReviewable,
+    },
+    challenge: progress.challenge,
+    challengePacketContract: progress.challengePacketContract,
+    submission: progress.commit,
+    timeline,
+    evaluation,
+    humanDecision: progress.humanDecision,
+  };
+}
+
 interface ManualOpenSourceChallengePacketInput {
   interviewId: string;
   userId: string;
@@ -4288,6 +5780,31 @@ interface MatchedOpenSourceChallengePacket {
   qualityScore: number | null;
   demandCount: number;
   demandFamilies: string[];
+  reviewProfile: ChallengeReviewProfile;
+}
+
+function normalizeScheduledInterviewCopy(input: {
+  title?: string;
+  description?: string;
+  interviewType: string;
+  challengeTitle?: string;
+  challengeInstructions?: string;
+  matchedOpenSourceChallengePacket?: MatchedOpenSourceChallengePacket | null;
+}): { title: string | null; description: string | null } {
+  const title = input.title?.trim()
+    || (input.interviewType === 'OPEN_SOURCE_BUG_FIX'
+      ? input.challengeTitle?.trim()
+        || input.matchedOpenSourceChallengePacket?.title.trim()
+        || null
+      : null);
+  const description = input.description?.trim()
+    || (input.interviewType === 'OPEN_SOURCE_BUG_FIX'
+      ? input.challengeInstructions?.trim()
+        || input.matchedOpenSourceChallengePacket?.instructions.trim()
+        || null
+      : null);
+
+  return { title, description };
 }
 
 function hasManualOpenSourceChallengePacket(input: {
@@ -4355,6 +5872,57 @@ function matchedPacketVerificationCommand(): string {
   return 'git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD';
 }
 
+function matchedPacketMatchProof(input: MatchedOpenSourceChallengePacket): string[] {
+  const demandCount = Math.max(0, input.demandCount);
+  const demandLabel = demandCount === 1 ? 'demand' : 'demands';
+  const families = input.demandFamilies
+    .map(demandFamilyLabel)
+    .filter(Boolean)
+    .slice(0, 4);
+  return [
+    ...(typeof input.qualityScore === 'number' && Number.isFinite(input.qualityScore)
+      ? [`Review packet quality ${Math.round(input.qualityScore * 100)}% from source-backed repo analysis.`]
+      : []),
+    `${demandCount} source-backed repo ${demandLabel} in the selected PR packet.`,
+    ...(families.length > 0 ? [`Demand families: ${families.join(', ')}.`] : []),
+    'Matched packet passed repo source-span and concept evidence checks before assignment.',
+  ];
+}
+
+function isChallengeReviewProfile(value: unknown): value is ChallengeReviewProfile {
+  if (!isRecord(value)) return false;
+  if (value.source !== 'deterministic_engineering_prior') return false;
+  if (!['introductory', 'focused', 'advanced', 'oversized'].includes(String(value.difficultyBand))) return false;
+  if (!['mid', 'senior', 'staff'].includes(String(value.expectedSeniority))) return false;
+  if (typeof value.expectedTimeMinutes !== 'number' || !Number.isFinite(value.expectedTimeMinutes)) return false;
+  if (typeof value.rationale !== 'string' || value.rationale.trim().length === 0) return false;
+  if (!isRecord(value.basis)) return false;
+  const numericBasis = [
+    value.basis.changedFileCount,
+    value.basis.changedLineCount,
+    value.basis.sourceHunkCount,
+    value.basis.testChangeCount,
+    value.basis.demandFamilyCount,
+  ];
+  return numericBasis.every((item) => typeof item === 'number' && Number.isFinite(item))
+    && typeof value.basis.hasIssueContext === 'boolean';
+}
+
+function matchedPacketAssessmentFit(profile: ChallengeReviewProfile): string[] {
+  const basis = profile.basis;
+  return [
+    `${profile.difficultyBand} review calibrated for ${profile.expectedSeniority} candidates.`,
+    `${profile.expectedTimeMinutes} minute target from deterministic engineering prior.`,
+    `Sizing: ${basis.changedFileCount} changed ${basis.changedFileCount === 1 ? 'file' : 'files'}, ${basis.changedLineCount} changed ${basis.changedLineCount === 1 ? 'line' : 'lines'}, ${basis.sourceHunkCount} source ${basis.sourceHunkCount === 1 ? 'hunk' : 'hunks'}, ${basis.demandFamilyCount} demand ${basis.demandFamilyCount === 1 ? 'family' : 'families'}.`,
+    basis.testChangeCount > 0
+      ? `${basis.testChangeCount} test ${basis.testChangeCount === 1 ? 'change' : 'changes'} present in the source-backed PR packet.`
+      : 'No test changes in the source-backed PR packet; require candidate verification evidence.',
+    basis.hasIssueContext
+      ? 'Issue context is present in the source-backed PR packet.'
+      : 'No issue context in the source-backed PR packet; assess from code demand evidence.',
+  ];
+}
+
 function materializeMatchedOpenSourcePacket(
   row: {
     id: string;
@@ -4395,6 +5963,9 @@ function materializeMatchedOpenSourcePacket(
     return null;
   }
 
+  const reviewProfile = isChallengeReviewProfile(packet.reviewProfile) ? packet.reviewProfile : null;
+  if (!reviewProfile) return null;
+
   return {
     packetId: packet.id,
     repositoryUrl: row.github_url,
@@ -4412,6 +5983,7 @@ function materializeMatchedOpenSourcePacket(
     qualityScore: row.quality_score,
     demandCount: packet.demands.length,
     demandFamilies: [...packet.demandFamilies],
+    reviewProfile,
   };
 }
 
@@ -4498,6 +6070,10 @@ function buildMatchedOpenSourceChallengeExactText(
     `Task: ${input.title}`,
     `Instructions: ${input.instructions}`,
     `Verification command: ${input.verificationCommand}`,
+    'Match proof:',
+    ...matchedPacketMatchProof(input).map((proof) => `- ${proof}`),
+    'Assessment fit:',
+    ...matchedPacketAssessmentFit(input.reviewProfile).map((fit) => `- ${fit}`),
     'Success criteria:',
     ...input.successCriteria.map((criterion) => `- ${criterion}`),
     'Expected evidence:',
@@ -4543,6 +6119,7 @@ async function createManualOpenSourceChallengeAssessmentSession(
     metadata: {
       schemaVersion: 'manual-open-source-challenge-packet-v1',
       source: 'recruiter_manual_open_source_task',
+      challengeTitle: input.title,
     },
   };
 
@@ -4627,6 +6204,7 @@ async function createMatchedOpenSourceChallengeAssessmentSession(
     metadata: {
       schemaVersion: 'matched-open-source-challenge-packet-v1',
       source: 'matched_review_challenge_packet',
+      challengeTitle: input.packet.title,
       qualityScore: input.packet.qualityScore,
       demandCount: input.packet.demandCount,
       demandFamilies: input.packet.demandFamilies,
@@ -5681,6 +7259,17 @@ function queueScheduledBookingConfirmation(
   );
 }
 
+function queueBestEffortBackgroundTask(
+  c: { executionCtx: ExecutionContext },
+  task: Promise<unknown>,
+): void {
+  try {
+    c.executionCtx.waitUntil(task);
+  } catch {
+    void task;
+  }
+}
+
 interface CalendlyInvitee {
   uri?: string;
   name?: string;
@@ -6135,6 +7724,10 @@ schedulingAuth.get('/interviews', async (c) => {
     SCHEDULED_INTERVIEWS_MAX_LIMIT,
   );
   const offset = parseNonNegativeInt(c.req.query('offset'), 0);
+  const sort = parseScheduledInterviewsSort(c.req.query('sort'));
+  const interviewTypeFilter = parseScheduledInterviewsTypeFilter(c.req.query('interviewType'));
+  const orderByClause = scheduledInterviewsOrderByClause(sort);
+  const typeFilter = scheduledInterviewsTypeFilterClause(interviewTypeFilter);
   const hasWorkspaceSessions = await tableExists(db, 'dev_container_sessions');
   const workspaceSessionSelect = hasWorkspaceSessions
     ? `dcs.status AS workspace_status,
@@ -6180,15 +7773,46 @@ schedulingAuth.get('/interviews', async (c) => {
        )`
     : '';
 
-  const countRow = await db
-    .prepare('SELECT COUNT(*) AS total FROM scheduled_interviews WHERE owner_id = ?')
+  const facetRow = await db
+    .prepare(
+      `SELECT COUNT(*) AS all_count,
+              SUM(CASE WHEN interview_type = 'CODE_REVIEW' THEN 1 ELSE 0 END) AS code_review_count,
+              SUM(CASE WHEN interview_type = 'DEV_CONTAINER_CHALLENGE' THEN 1 ELSE 0 END) AS dev_container_challenge_count,
+              SUM(CASE WHEN interview_type = 'OPEN_SOURCE_BUG_FIX' THEN 1 ELSE 0 END) AS open_source_bug_fix_count,
+              SUM(CASE
+                    WHEN interview_type IS NULL
+                      OR interview_type NOT IN ('CODE_REVIEW', 'DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')
+                    THEN 1 ELSE 0
+                  END) AS standard_calls_count
+         FROM scheduled_interviews
+        WHERE owner_id = ?`
+    )
     .bind(userId)
+    .first<{
+      all_count: number | null;
+      code_review_count: number | null;
+      dev_container_challenge_count: number | null;
+      open_source_bug_fix_count: number | null;
+      standard_calls_count: number | null;
+    }>();
+  const interviewTypeFacets = {
+    all: facetRow?.all_count ?? 0,
+    standardCalls: facetRow?.standard_calls_count ?? 0,
+    codeReview: facetRow?.code_review_count ?? 0,
+    devContainerChallenge: facetRow?.dev_container_challenge_count ?? 0,
+    openSourceBugFix: facetRow?.open_source_bug_fix_count ?? 0,
+  };
+
+  const countRow = await db
+    .prepare(`SELECT COUNT(*) AS total FROM scheduled_interviews si WHERE si.owner_id = ? ${typeFilter.clause}`)
+    .bind(userId, ...typeFilter.params)
     .first<{ total: number }>();
   const total = countRow?.total ?? 0;
 
   const result = await db
     .prepare(
       `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id,
+              si.title, si.description,
               si.interview_type, si.meeting_type, si.status,
               si.scheduled_at, si.meeting_url, si.scheduling_provider,
               si.scheduling_url, si.external_event_id, si.recruiter_notes,
@@ -6231,15 +7855,18 @@ schedulingAuth.get('/interviews', async (c) => {
        LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
        ${workspaceSessionJoin}
        WHERE si.owner_id = ?
-       ORDER BY si.created_at DESC, si.id ASC
+       ${typeFilter.clause}
+       ORDER BY ${orderByClause}
        LIMIT ? OFFSET ?`
     )
-    .bind(userId, limit, offset)
+    .bind(userId, ...typeFilter.params, limit, offset)
     .all<{
       id: string;
       candidate_id: string | null;
       pipeline_id: string | null;
       stage_id: string | null;
+      title: string | null;
+      description: string | null;
       interview_type: string | null;
       meeting_type: string | null;
       status: string;
@@ -6283,9 +7910,20 @@ schedulingAuth.get('/interviews', async (c) => {
     }>();
 
   const rows = result.results ?? [];
+  const assessmentInterviewIds = rows
+    .filter((row) => isWorkspaceAssessmentInterviewType(row.interview_type))
+    .map((row) => row.id);
   const assessmentProgressByInterviewId = await loadScheduledAssessmentProgressByInterviewIds(
     db,
-    rows.map((row) => row.id),
+    assessmentInterviewIds,
+  );
+  const candidateIdsNeedingPendingMatchDiagnostics = rows.flatMap((row) => {
+    if (!isWorkspaceAssessmentInterviewType(row.interview_type)) return [];
+    return row.candidate_id ? [row.candidate_id] : [];
+  });
+  const pendingMatchDiagnosticsByCandidateId = await loadPendingCodeReviewMatchDiagnosticsByCandidateIds(
+    db,
+    candidateIdsNeedingPendingMatchDiagnostics,
   );
 
   const interviews = rows.map((r) => {
@@ -6293,6 +7931,9 @@ schedulingAuth.get('/interviews', async (c) => {
     const matchedRepoId = r.matched_repo_id ?? r.assignment_repo_id;
     const githubRepoUrl = r.github_repo_url ?? r.assignment_github_repo_url;
     const githubPrNumber = r.github_pr_number ?? r.assignment_github_pr_number;
+    const pendingMatchDiagnostic = r.candidate_id
+      ? pendingMatchDiagnosticsByCandidateId.get(r.candidate_id) ?? null
+      : null;
     const matchedRepoSource = r.matched_repo_id != null
       ? 'matched_repo_id'
       : r.assignment_repo_id != null
@@ -6303,6 +7944,8 @@ schedulingAuth.get('/interviews', async (c) => {
       candidateId: r.candidate_id,
       pipelineId: r.pipeline_id,
       stageId: r.stage_id,
+      title: r.title,
+      description: r.description,
       interviewType: r.interview_type,
       meetingType: r.meeting_type,
       status: r.status,
@@ -6330,6 +7973,7 @@ schedulingAuth.get('/interviews', async (c) => {
         githubPrNumber,
         matchedRepoSource,
         manualOpenSourceChallengePacket: assessmentProgress?.hasChallengePacket === true,
+        pendingMatchDiagnostic,
       }),
       assessmentProgress,
       completedAt: r.completed_at,
@@ -6356,8 +8000,13 @@ schedulingAuth.get('/interviews', async (c) => {
       total,
       limit,
       offset,
+      sort,
+      interviewType: interviewTypeFilter,
       nextOffset,
       hasMore: nextOffset !== null,
+    },
+    facets: {
+      interviewTypes: interviewTypeFacets,
     },
   });
 });
@@ -6391,6 +8040,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
   const interview = await db
     .prepare(
       `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id,
+              si.title, si.description,
               si.interview_type, si.meeting_type, si.status,
               si.scheduled_at, si.meeting_url, si.scheduling_provider,
               si.scheduling_url, si.external_event_id, si.recruiter_notes,
@@ -6425,6 +8075,8 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       candidate_id: string | null;
       pipeline_id: string | null;
       stage_id: string | null;
+      title: string | null;
+      description: string | null;
       interview_type: string | null;
       meeting_type: string | null;
       status: string;
@@ -6538,7 +8190,16 @@ schedulingAuth.get('/interviews/:id', async (c) => {
                 m.transcript_json, m.transcript_analysis_json, m.transcript_error,
                 m.recording_r2_key, m.created_at, m.updated_at,
                 mr.id AS room_id, mr.session_id, mr.status AS room_status,
-                ${workspaceSessionSelect}
+                ${workspaceSessionSelect},
+                EXISTS (
+                  SELECT 1
+                    FROM meeting_participants guest_mp
+                   WHERE guest_mp.meeting_id = m.id
+                     AND guest_mp.role = 'ATTENDEE'
+                     AND guest_mp.joined_at IS NOT NULL
+                     AND guest_mp.left_at IS NULL
+                     AND COALESCE(mr.status, '') <> 'ENDED'
+                ) AS guest_waiting
          FROM meetings m
          LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
          ${workspaceSessionJoin}
@@ -6571,6 +8232,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         room_id: string | null;
         session_id: string | null;
         room_status: string | null;
+        guest_waiting: number | null;
         workspace_status: string | null;
         workspace_error_message: string | null;
         workspace_expires_at: string | null;
@@ -6617,6 +8279,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     'assessmentProgress',
     loadScheduledAssessmentProgress(db, interview.id),
     null,
+    10_000,
   );
   const assessmentInviteLinkPromise = (async () =>
     await loadLatestDeliveredAssessmentUrl(db, interview.id, interview.candidate_id)
@@ -6629,6 +8292,11 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     assessmentInviteLinkPromise,
     null,
   );
+  const pendingMatchDiagnosticPromise = isWorkspaceAssessmentInterviewType(interview.interview_type)
+    && interview.candidate_id
+    ? loadPendingCodeReviewMatchDiagnosticsByCandidateIds(db, [interview.candidate_id])
+      .then((diagnostics) => diagnostics.get(interview.candidate_id!) ?? null)
+    : Promise.resolve(null);
 
   const [
     transcriptArtifact,
@@ -6639,6 +8307,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     codeReviewScore,
     assessmentProgress,
     assessmentInviteLink,
+    pendingMatchDiagnostic,
   ] = await Promise.all([
     transcriptArtifactPromise,
     linkedMeetingPromise,
@@ -6648,6 +8317,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     codeReviewScorePromise,
     assessmentProgressPromise,
     safeAssessmentInviteLinkPromise,
+    pendingMatchDiagnosticPromise,
   ]);
 
   return c.json({
@@ -6657,6 +8327,8 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       contactId: interview.recipient_contact_id,
       pipelineId: interview.pipeline_id,
       stageId: interview.stage_id,
+      title: interview.title,
+      description: interview.description,
       interviewType: interview.interview_type ?? 'VIDEO',
       meetingType: interview.meeting_type,
       status: interview.status,
@@ -6688,6 +8360,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         githubPrNumber: effectiveGithubPrNumber,
         matchedRepoSource: effectiveMatchedRepoSource,
         manualOpenSourceChallengePacket: assessmentProgress?.hasChallengePacket === true,
+        pendingMatchDiagnostic,
         lastDeliveredUrl: assessmentInviteLink?.url ?? null,
         lastDeliveredUrlState: assessmentInviteLink?.state ?? null,
         lastDeliveredUrlMessage: assessmentInviteLink?.message ?? null,
@@ -6728,10 +8401,13 @@ schedulingAuth.get('/interviews/:id', async (c) => {
           id: linkedMeeting.room_id,
           sessionId: linkedMeeting.session_id,
           status: linkedMeeting.room_status,
+          guestWaiting: Boolean(linkedMeeting.guest_waiting),
         } : null,
         createdAt: linkedMeeting.created_at,
         updatedAt: linkedMeeting.updated_at,
       } : null,
+      roomStatus: linkedMeeting?.room_status ?? null,
+      guestWaiting: Boolean(linkedMeeting?.guest_waiting),
       workspaceSession: linkedMeeting ? buildWorkspaceSessionProjection(linkedMeeting) : null,
       livingContext: redactScheduledInterviewLivingContext(livingContext),
       relatedEvidenceInterviews,
@@ -6742,6 +8418,58 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       updatedAt: interview.updated_at,
     },
   });
+});
+
+// GET /interviews/:id/assessment/evidence-bundle — recruiter audit packet for source-backed assessment output
+schedulingAuth.get('/interviews/:id/assessment/evidence-bundle', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const interview = await db.prepare(
+    `SELECT id, title, description, interview_type, recipient_name, recipient_email,
+            candidate_id, created_at, updated_at
+       FROM scheduled_interviews
+      WHERE id = ?1
+        AND owner_id = ?2
+      LIMIT 1`,
+  ).bind(id, userId).first<{
+    id: string;
+    title: string | null;
+    description: string | null;
+    interview_type: string | null;
+    recipient_name: string | null;
+    recipient_email: string | null;
+    candidate_id: string | null;
+    created_at: string;
+    updated_at: string;
+  }>();
+  if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
+
+  const sessionId = await loadScheduledAssessmentSessionId(db, id);
+  if (!sessionId) {
+    return apiError(
+      c,
+      'CONFLICT',
+      'This interview is not linked to an assessment session yet.',
+    );
+  }
+
+  try {
+    const bundle = await loadAssessmentEvidenceBundle({
+      db,
+      interview,
+      sessionId,
+    });
+    return c.json({ bundle }, 200);
+  } catch (error) {
+    console.error('[scheduling/loadAssessmentEvidenceBundle] failed:', {
+      interviewId: id,
+      assessmentSessionId: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return apiError(c, 'SERVER_ERROR', 'Unable to load assessment evidence bundle.');
+  }
 });
 
 // POST /interviews/:id/assessment/start-evaluation — recruiter requests source-backed assessment
@@ -6772,6 +8500,23 @@ schedulingAuth.post('/interviews/:id/assessment/start-evaluation', async (c) => 
   try {
     const currentProgress = await store.loadProgress(sessionId);
     if (currentProgress.nextAction !== 'START_EVALUATION') {
+      if (currentProgress.nextAction === 'WAIT_FOR_EVALUATION') {
+        return c.json({
+          progress: currentProgress,
+          report: null,
+          diagnostic: null,
+          accepted: true,
+        }, 202);
+      }
+      if (currentProgress.nextAction === 'REVIEW_EVALUATION' && currentProgress.evaluation) {
+        return c.json({
+          progress: currentProgress,
+          report: currentProgress.evaluation,
+          diagnostic: null,
+          accepted: true,
+          alreadyEvaluated: true,
+        }, 200);
+      }
       return apiError(
         c,
         'CONFLICT',
@@ -6825,7 +8570,7 @@ schedulingAuth.post('/interviews/:id/assessment/start-evaluation', async (c) => 
       createdBy: userId,
     });
 
-    const evaluation = await evaluateRepoTaskAssessmentSession({
+    const evaluationJob = evaluateRepoTaskAssessmentSession({
       db,
       store,
       env: c.env,
@@ -6835,14 +8580,37 @@ schedulingAuth.post('/interviews/:id/assessment/start-evaluation', async (c) => 
       requestedAt,
       requestEventId: requestEvent.id,
       requestSourceRef,
+    }).catch(async (error) => {
+      console.error('[scheduling/startAssessmentEvaluation] background evaluation failed:', {
+        interviewId: id,
+        assessmentSessionId: sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await store.transitionState({
+        sessionId,
+        toState: 'DIAGNOSTIC',
+        reason: 'Source-backed assessment evaluation failed before producing a report.',
+        eventId: requestEvent.id,
+        createdBy: userId,
+      });
     });
 
+    let backgrounded = false;
+    const executionCtx = c.executionCtx as ExecutionContext | undefined;
+    if (executionCtx && typeof executionCtx.waitUntil === 'function') {
+      executionCtx.waitUntil(evaluationJob);
+      backgrounded = true;
+    } else {
+      await evaluationJob;
+    }
     const progress = await store.loadProgress(sessionId);
     return c.json({
       progress,
-      report: evaluation.kind === 'evaluated' ? evaluation.report : null,
-      diagnostic: evaluation.kind === 'diagnostic' ? evaluation.diagnostic : null,
-    });
+      report: null,
+      diagnostic: null,
+      accepted: true,
+      backgrounded,
+    }, backgrounded ? 202 : 200);
   } catch (error) {
     console.error('[scheduling/startAssessmentEvaluation] failed:', {
       interviewId: id,
@@ -6987,6 +8755,8 @@ schedulingAuth.post('/interviews', async (c) => {
     candidateId,
     pipelineId,
     stageId,
+    title,
+    description,
     recipientName,
     recipientEmail,
     meetingType,
@@ -7106,6 +8876,14 @@ schedulingAuth.post('/interviews', async (c) => {
     githubPrNumber: effectiveGithubPrNumber,
     manualOpenSourceChallengePacket: hasManualOpenSourceTaskPacket,
   });
+  const interviewCopy = normalizeScheduledInterviewCopy({
+    title,
+    description,
+    interviewType: effectiveInterviewType,
+    challengeTitle,
+    challengeInstructions,
+    matchedOpenSourceChallengePacket,
+  });
   const contactId = !candidateId && recipientName && recipientEmail
     ? await ensureRecipientContact(db, userId, { name: recipientName, email: recipientEmail })
     : null;
@@ -7115,14 +8893,16 @@ schedulingAuth.post('/interviews', async (c) => {
     .prepare(
       `INSERT INTO scheduled_interviews
        (id, candidate_id, pipeline_id, stage_id, owner_id, status,
+        title, description,
         interview_type, meeting_type, scheduled_at, scheduling_provider,
         scheduling_url, recipient_name, recipient_email, sync_source,
         matched_repo_id, github_repo_url, github_pr_number,
         recruiter_notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id, candidateId ?? null, pipelineId ?? null, stageId ?? null, userId,
+      interviewCopy.title, interviewCopy.description,
       effectiveInterviewType, effectiveMeetingType, scheduledAt ?? null,
       schedulingProvider ?? null, sanitizedSchedulingUrl,
       recipientName ?? null, recipientEmail?.trim().toLowerCase() ?? null,
@@ -7175,6 +8955,7 @@ schedulingAuth.post('/interviews', async (c) => {
       createdAt: now,
     });
   }
+  assessmentProgress = normalizeScheduledAssessmentProgressAssignmentTrust(assessmentProgress);
 
   return c.json({
     interview: {
@@ -7183,6 +8964,8 @@ schedulingAuth.post('/interviews', async (c) => {
       contactId,
       pipelineId: pipelineId ?? null,
       stageId: stageId ?? null,
+      title: interviewCopy.title,
+      description: interviewCopy.description,
       recipientName: recipientName ?? null,
       recipientEmail: recipientEmail?.trim().toLowerCase() ?? null,
       meetingType: effectiveMeetingType,
@@ -7839,66 +9622,16 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     });
   }
 
-  let result: Awaited<ReturnType<typeof sendTransactionalEmail>> | null = null;
-  try {
-    result = await sendTransactionalEmail(c.env, {
-      to: email,
-      subject,
-      html,
-    });
-  } catch (err) {
-    const emailError = err instanceof Error ? err.message : String(err);
-    console.error('[scheduling/invite] Email send failed:', err);
-    await db
-      .prepare(
-        `UPDATE scheduled_interviews
-         SET invite_link_sent_at = ?, updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(now, now, id)
-      .run();
-    await persistScheduledInterviewInviteDeliveryContext(db, {
-      contactId,
-      ownerId: userId,
-      interviewId: id,
-      meetingId: roomLinks?.meetingId ?? null,
-      recipientEmail: email.trim().toLowerCase(),
-      subject,
-      deliveredUrl,
-      roomUrl: meetingUrl,
-      customMessage: customMessage ?? null,
-      emailSent: false,
-      providerMessageId: null,
-      createdAt: now,
-    });
-    return c.json({
-      success: true,
-      emailSent: false,
-      emailError,
-      meetingUrl,
-      schedulingUrl: effectiveSchedulingInviteUrl,
-      deliveredUrl,
-      room: roomLinks
-        ? {
-            id: roomLinks.roomId,
-            sessionId: roomLinks.sessionId,
-            hostUrl: roomLinks.hostUrl,
-            guestUrl: roomLinks.guestUrl,
-            expiresAt: roomLinks.expiresAt,
-          }
-        : null,
-    });
-  }
+  await db
+    .prepare(
+      `UPDATE scheduled_interviews
+       SET invite_link_sent_at = ?, updated_at = ?
+       WHERE id = ?`,
+    )
+    .bind(now, now, id)
+    .run();
 
-  if (!result) {
-    await db
-      .prepare(
-        `UPDATE scheduled_interviews
-         SET invite_link_sent_at = ?, updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(now, now, id)
-      .run();
+  if (!c.env.EMAIL && !c.env.RESEND_API_KEY) {
     await persistScheduledInterviewInviteDeliveryContext(db, {
       contactId,
       ownerId: userId,
@@ -7931,40 +9664,83 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     });
   }
 
-  // Update the interview to track the invite
-  if (result) {
-    await db
-      .prepare(
-        `UPDATE scheduled_interviews
-         SET invite_link_sent_at = ?, email_sent_at = ?, updated_at = ?
-         WHERE id = ?`
-      )
-      .bind(now, now, now, id)
-      .run();
-  }
-
-  await persistScheduledInterviewInviteDeliveryContext(db, {
-    contactId,
-    ownerId: userId,
-    interviewId: id,
-    meetingId: roomLinks?.meetingId ?? null,
-    recipientEmail: email.trim().toLowerCase(),
-    subject,
-    deliveredUrl,
-    roomUrl: meetingUrl,
-    customMessage: customMessage ?? null,
-    emailSent: Boolean(result),
-    providerMessageId: result.id,
-    createdAt: now,
+  const emailDeliveryTask = (async () => {
+    try {
+      const result = await sendTransactionalEmail(c.env, {
+        to: email,
+        subject,
+        html,
+      });
+      if (!result) {
+        await persistScheduledInterviewInviteDeliveryContext(db, {
+          contactId,
+          ownerId: userId,
+          interviewId: id,
+          meetingId: roomLinks?.meetingId ?? null,
+          recipientEmail: email.trim().toLowerCase(),
+          subject,
+          deliveredUrl,
+          roomUrl: meetingUrl,
+          customMessage: customMessage ?? null,
+          emailSent: false,
+          providerMessageId: null,
+          createdAt: new Date().toISOString(),
+        });
+        return;
+      }
+      const completedAt = new Date().toISOString();
+      await db
+        .prepare(
+          `UPDATE scheduled_interviews
+           SET email_sent_at = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .bind(completedAt, completedAt, id)
+        .run();
+      await persistScheduledInterviewInviteDeliveryContext(db, {
+        contactId,
+        ownerId: userId,
+        interviewId: id,
+        meetingId: roomLinks?.meetingId ?? null,
+        recipientEmail: email.trim().toLowerCase(),
+        subject,
+        deliveredUrl,
+        roomUrl: meetingUrl,
+        customMessage: customMessage ?? null,
+        emailSent: true,
+        providerMessageId: result.id,
+        createdAt: completedAt,
+      });
+    } catch (err) {
+      const failedAt = new Date().toISOString();
+      console.error('[scheduling/invite] Email send failed:', err);
+      await persistScheduledInterviewInviteDeliveryContext(db, {
+        contactId,
+        ownerId: userId,
+        interviewId: id,
+        meetingId: roomLinks?.meetingId ?? null,
+        recipientEmail: email.trim().toLowerCase(),
+        subject,
+        deliveredUrl,
+        roomUrl: meetingUrl,
+        customMessage: customMessage ?? null,
+        emailSent: false,
+        providerMessageId: null,
+        createdAt: failedAt,
+      });
+    }
+  })().catch((err) => {
+    console.error('[scheduling/invite] Background email delivery task failed:', err);
   });
+  queueBestEffortBackgroundTask(c, emailDeliveryTask);
 
   return c.json({
     success: true,
-    emailSent: true,
+    emailSent: false,
+    emailQueued: true,
     meetingUrl,
     schedulingUrl: effectiveSchedulingInviteUrl,
     deliveredUrl,
-    provider: result.provider,
     room: roomLinks
       ? {
           id: roomLinks.roomId,

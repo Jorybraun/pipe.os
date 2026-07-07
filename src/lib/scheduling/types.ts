@@ -83,6 +83,13 @@ export interface AssessmentSetupProjection {
   message: string | null;
   nextAction?: AssessmentSetupNextAction;
   nextActionLabel?: string | null;
+  selectionRationale?: {
+    summary: string;
+    whyThisChallenge: string;
+    whyNotAlternatives: string;
+    residualRisk: string;
+    nextAction: string;
+  } | null;
   lastDeliveredUrl?: string | null;
   lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null;
   lastDeliveredUrlMessage?: string | null;
@@ -93,6 +100,7 @@ export type AssessmentProgressStage =
   | 'CHALLENGE_READY'
   | 'WORK_IN_PROGRESS'
   | 'READY_FOR_EVALUATION'
+  | 'EVALUATING'
   | 'EVALUATED'
   | 'NEEDS_ATTENTION'
   | 'CANCELLED';
@@ -103,6 +111,7 @@ export type AssessmentProgressNextAction =
   | 'CAPTURE_WORK_EVIDENCE'
   | 'SUBMIT_COMMIT'
   | 'START_EVALUATION'
+  | 'WAIT_FOR_EVALUATION'
   | 'REVIEW_EVALUATION'
   | 'RESOLVE_DIAGNOSTIC'
   | 'NONE';
@@ -124,11 +133,93 @@ export interface AssessmentEvidenceCoverageSnapshot {
   expectedForHighConfidence: AssessmentEvidenceCoverageItem[];
 }
 
+export interface AssessmentProgressReviewPacketSummary {
+  schemaVersion: 'repo-task-review-packet-v1';
+  challenge: {
+    focus: string | null;
+    repositoryUrl: string | null;
+    baseCommitSha: string | null;
+    pullRequestUrl: string | null;
+    assignmentTrust: {
+      state: string;
+      label: string;
+      detail: string;
+      tone: string;
+    };
+    contract: {
+      schemaVersion: string;
+      isComplete: boolean;
+      missingFields: string[];
+    };
+  };
+  submission: {
+    repositoryUrl: string | null;
+    forkRepositoryUrl: string | null;
+    branchName: string | null;
+    commitSha: string | null;
+    commitUrl: string | null;
+    submissionSourceLabel: string | null;
+    changedFileCount: number;
+    integrity: {
+      status: string;
+      label: string;
+      detail: string;
+      tone: string;
+    };
+    challengeBinding: {
+      status: string;
+      label: string;
+      detail: string;
+      tone: string;
+    };
+  } | null;
+  evidence: {
+    sourceRefCount: number;
+    sourceRefTypeCounts: Record<string, number>;
+    contractEvidence?: {
+      schemaVersion: 'assessment-contract-evidence-receipt-v1';
+      expectedEvidence: Array<{
+        label: string;
+        status: 'captured' | 'gap_declared' | 'needs_human_review';
+        expectedSourceRefTypes: string[];
+        matchedSourceRefTypes: string[];
+        sourceRefCount: number;
+        detail: string;
+      }>;
+      successCriteria: Array<{
+        label: string;
+        status: 'needs_human_review';
+        detail: string;
+      }>;
+      summary: {
+        expectedEvidenceCount: number;
+        capturedCount: number;
+        gapDeclaredCount: number;
+        needsHumanReviewCount: number;
+      };
+    };
+    readiness: {
+      status: string;
+      label: string;
+      detail: string;
+      isReadyForEvaluation: boolean;
+      isUsableHiringSignal: boolean;
+      missingRequiredCount: number;
+    };
+  };
+  evaluation: {
+    recommendation: string | null;
+    claimCount: number;
+    diagnosticCount: number;
+  };
+}
+
 export type AssessmentProgressReadinessStatus =
   | 'WAITING_FOR_CHALLENGE'
   | 'READY_TO_START'
   | 'WORK_IN_PROGRESS'
   | 'READY_FOR_EVALUATION'
+  | 'EVALUATING'
   | 'EVALUATED'
   | 'NEEDS_ATTENTION'
   | 'CANCELLED';
@@ -162,6 +253,18 @@ export interface AssessmentProgressChallengePacketContract {
   hasTask: boolean;
   hasSuccessCriteria: boolean;
   hasExpectedEvidence: boolean;
+}
+
+export interface AssessmentProgressChallengeSummary {
+  repositoryUrl: string | null;
+  githubPrNumber: number | null;
+  pullRequestUrl?: string | null;
+  baseCommitSha: string | null;
+  task: string | null;
+  assessmentFit: string[];
+  matchProof: string[];
+  successCriteria: string[];
+  expectedEvidence: string[];
 }
 
 export interface AssessmentProgressSnapshot {
@@ -207,8 +310,9 @@ export interface AssessmentProgressSnapshot {
     sourceRefType: string;
     sourceRefId: string;
     evidenceRole: string;
-    exactText: string;
+    exactText: string | null;
     locator: Record<string, unknown>;
+    summary?: AssessmentProgressChallengeSummary;
   } | null;
   latestEvent: {
     id: string;
@@ -252,6 +356,7 @@ export interface AssessmentProgressSnapshot {
     evidenceCoverage?: AssessmentEvidenceCoverageSnapshot | null;
     claims?: AssessmentEvaluationClaimPreview[];
     diagnostics?: AssessmentEvaluationDiagnosticPreview[];
+    reviewPacket?: AssessmentProgressReviewPacketSummary | null;
   } | null;
   humanDecision?: {
     eventId: string;
@@ -292,6 +397,103 @@ export interface AssessmentEvaluationDiagnosticPreview {
   sourceRefTypes: string[];
 }
 
+export interface AssessmentEvidenceBundleSourceRef {
+  sourceRefType: string;
+  sourceRefId: string;
+  sourceSpanId: string | null;
+  evidenceRole: string;
+  locator: Record<string, unknown>;
+  exactText: string;
+  contentHash: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AssessmentEvidenceBundleEvent {
+  sequence: number;
+  kind: string;
+  actorType: string;
+  actorId: string | null;
+  narrative: string;
+  payload: Record<string, unknown>;
+  occurredAt: string;
+  createdAt: string;
+  sourceRefs: AssessmentEvidenceBundleSourceRef[];
+}
+
+export interface AssessmentEvidenceBundleClaim {
+  claimId: string;
+  polarity: string;
+  dimension: string;
+  narrative: string;
+  confidence: number | null;
+  createdAt: string;
+  sourceRefs: AssessmentEvidenceBundleSourceRef[];
+}
+
+export interface AssessmentEvidenceBundleDiagnostic {
+  diagnosticId: string;
+  code: string;
+  severity: string;
+  message: string;
+  provider: string | null;
+  retryable: boolean;
+  details: Record<string, unknown>;
+  createdAt: string;
+  sourceRefs: AssessmentEvidenceBundleSourceRef[];
+}
+
+export interface AssessmentEvidenceBundleEvaluationReport {
+  reportId: string;
+  status: string;
+  summary: string;
+  output: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  claims: AssessmentEvidenceBundleClaim[];
+  diagnostics: AssessmentEvidenceBundleDiagnostic[];
+}
+
+export interface AssessmentEvidenceBundle {
+  schemaVersion: 'repo-task-final-evidence-bundle-v1';
+  generatedAt: string;
+  interview: {
+    id: string;
+    title: string | null;
+    description: string | null;
+    interviewType: string | null;
+    recipientName: string | null;
+    recipientEmail: string | null;
+    candidateId: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  assessment: {
+    mode: string;
+    state: string;
+    stage: string;
+    nextAction: string;
+    nextActionLabel: string;
+    readiness?: AssessmentProgressReadinessSnapshot;
+    assignmentTrust?: AssessmentProgressSnapshot['assignmentTrust'];
+    sourceRefCounts: Array<{ kind: string; count: number }>;
+    evidenceCounts: Array<{ kind: string; count: number }>;
+  };
+  completeness: {
+    hasChallengePacket: boolean;
+    hasCommitSubmission: boolean;
+    hasEvaluationReport: boolean;
+    hasHumanDecision: boolean;
+    isReviewable: boolean;
+  };
+  challenge: AssessmentProgressSnapshot['challenge'];
+  challengePacketContract: AssessmentProgressSnapshot['challengePacketContract'];
+  submission: AssessmentProgressSnapshot['commit'];
+  timeline: AssessmentEvidenceBundleEvent[];
+  evaluation: AssessmentEvidenceBundleEvaluationReport | null;
+  humanDecision: AssessmentProgressSnapshot['humanDecision'];
+}
+
 export interface WorkspaceSessionSummary {
   status: string;
   errorMessage: string | null;
@@ -305,6 +507,8 @@ export interface ScheduledInterview {
   readonly id: string;
   readonly createdAt: string;
   readonly updatedAt: string;
+  title?: string | null;
+  description?: string | null;
   candidateId?: string | null;
   contactId?: string | null;
   pipelineId?: string | null;
@@ -377,6 +581,12 @@ export interface CodeReviewMatchAssessmentQuality {
   score: number;
   maxScore: number;
   metrics: CodeReviewMatchQualityMetric[];
+}
+
+export interface CodeReviewMatchQualityGate {
+  verdict: string;
+  checks: string[];
+  diagnostics: string[];
 }
 
 export interface CodeReviewMatchReviewProfile {
@@ -466,6 +676,7 @@ export interface CodeReviewMatchDetail {
   summary: string;
   score: number | null;
   assessmentQuality: CodeReviewMatchAssessmentQuality | null;
+  qualityGate?: CodeReviewMatchQualityGate | null;
   reviewProfile?: CodeReviewMatchReviewProfile | null;
   validatorAgent: CodeReviewMatchValidatorAgent | null;
   roleSources: CodeReviewMatchRoleSource[];
@@ -558,6 +769,7 @@ export interface LinkedMeetingSummary {
     id: string;
     sessionId: string | null;
     status: string | null;
+    guestWaiting?: boolean;
   } | null;
   createdAt: string;
   updatedAt: string;

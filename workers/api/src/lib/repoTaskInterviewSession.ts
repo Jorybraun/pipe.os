@@ -269,6 +269,7 @@ export type AssessmentProgressStage =
   | 'CHALLENGE_READY'
   | 'WORK_IN_PROGRESS'
   | 'READY_FOR_EVALUATION'
+  | 'EVALUATING'
   | 'EVALUATED'
   | 'NEEDS_ATTENTION'
   | 'CANCELLED';
@@ -279,6 +280,7 @@ export type AssessmentProgressNextAction =
   | 'CAPTURE_WORK_EVIDENCE'
   | 'SUBMIT_COMMIT'
   | 'START_EVALUATION'
+  | 'WAIT_FOR_EVALUATION'
   | 'REVIEW_EVALUATION'
   | 'RESOLVE_DIAGNOSTIC'
   | 'NONE';
@@ -295,6 +297,7 @@ export interface AssessmentProgressSourceRef {
   exactText: string;
   contentHash: string;
   locator: JsonObject;
+  metadata: JsonObject;
 }
 
 export interface AssessmentProgressChallengePacketContract {
@@ -308,9 +311,23 @@ export interface AssessmentProgressChallengePacketContract {
   hasExpectedEvidence: boolean;
 }
 
+export interface AssessmentProgressChallengeSummary {
+  title: string | null;
+  repositoryUrl: string | null;
+  githubPrNumber: number | null;
+  pullRequestUrl: string | null;
+  baseCommitSha: string | null;
+  task: string | null;
+  assessmentFit: string[];
+  matchProof: string[];
+  successCriteria: string[];
+  expectedEvidence: string[];
+  verificationCommand: string | null;
+}
+
 export type AssessmentProgressChallengePacketContractInput = Pick<
   AssessmentProgressSourceRef,
-  'exactText' | 'locator'
+  'exactText' | 'locator' | 'metadata'
 >;
 
 export interface AssessmentProgressLatestEvent {
@@ -440,6 +457,87 @@ export interface AssessmentEvidenceCoverageSnapshot {
   expectedForHighConfidence: AssessmentEvidenceCoverageItem[];
 }
 
+export interface AssessmentProgressReviewPacketSummary {
+  schemaVersion: 'repo-task-review-packet-v1';
+  challenge: {
+    focus: string | null;
+    repositoryUrl: string | null;
+    baseCommitSha: string | null;
+    pullRequestUrl: string | null;
+    assignmentTrust: {
+      state: string;
+      label: string;
+      detail: string;
+      tone: string;
+    };
+    contract: {
+      schemaVersion: string;
+      isComplete: boolean;
+      missingFields: string[];
+    };
+  };
+  submission: {
+    repositoryUrl: string | null;
+    forkRepositoryUrl: string | null;
+    branchName: string | null;
+    commitSha: string | null;
+    commitUrl: string | null;
+    submissionSourceLabel: string | null;
+    changedFileCount: number;
+    integrity: {
+      status: string;
+      label: string;
+      detail: string;
+      tone: string;
+    };
+    challengeBinding: {
+      status: string;
+      label: string;
+      detail: string;
+      tone: string;
+    };
+  } | null;
+  evidence: {
+    sourceRefCount: number;
+    sourceRefTypeCounts: Record<string, number>;
+    contractEvidence?: {
+      schemaVersion: 'assessment-contract-evidence-receipt-v1';
+      expectedEvidence: Array<{
+        label: string;
+        status: 'captured' | 'gap_declared' | 'needs_human_review';
+        expectedSourceRefTypes: string[];
+        matchedSourceRefTypes: string[];
+        sourceRefCount: number;
+        detail: string;
+      }>;
+      successCriteria: Array<{
+        label: string;
+        status: 'needs_human_review';
+        detail: string;
+      }>;
+      summary: {
+        expectedEvidenceCount: number;
+        capturedCount: number;
+        gapDeclaredCount: number;
+        needsHumanReviewCount: number;
+      };
+    };
+    readiness: {
+      status: string;
+      label: string;
+      detail: string;
+      isReadyForEvaluation: boolean;
+      isUsableHiringSignal: boolean;
+      missingRequiredCount: number;
+    };
+  };
+  evaluation: {
+    recommendation: string | null;
+    claimCount: number;
+    diagnosticCount: number;
+  };
+}
+
 export interface AssessmentProgressEvaluation {
   id: string;
   status: EvaluationReportStatus;
@@ -449,6 +547,7 @@ export interface AssessmentProgressEvaluation {
   evidenceCoverage: AssessmentEvidenceCoverageSnapshot | null;
   claims: AssessmentProgressEvaluationClaim[];
   diagnostics: AssessmentProgressEvaluationDiagnostic[];
+  reviewPacket: AssessmentProgressReviewPacketSummary | null;
 }
 
 export interface AssessmentProgressEvaluationClaim {
@@ -478,6 +577,8 @@ export type AssessmentProgressAssignmentTrustState =
   | 'source_backed_challenge'
   | 'waiting_for_challenge';
 
+export const MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL = 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside captured candidate work.';
+
 export interface AssessmentProgressAssignmentTrust {
   state: AssessmentProgressAssignmentTrustState;
   label: string;
@@ -490,6 +591,7 @@ export type AssessmentProgressReadinessStatus =
   | 'READY_TO_START'
   | 'WORK_IN_PROGRESS'
   | 'READY_FOR_EVALUATION'
+  | 'EVALUATING'
   | 'EVALUATED'
   | 'NEEDS_ATTENTION'
   | 'CANCELLED';
@@ -566,14 +668,34 @@ const ASSESSMENT_PROGRESS_SNIPPET_TYPES = [
   'ai_user_prompt',
   'ai_user_prompt_blocked',
   'ai_agent_response',
+  'ai_agent_diagnostic',
+  'agent_status',
+  'agent_response',
+  'agent_diagnostic',
   'ai_usage_event',
   'room_chat_message',
   'meeting_transcript_segment',
+  'transcript_span',
 ] as const;
 const AI_INTERACTION_SOURCE_REF_TYPES = [
   'ai_user_prompt',
   'ai_user_prompt_blocked',
   'ai_agent_response',
+  'ai_agent_diagnostic',
+  'agent_status',
+  'agent_response',
+  'agent_diagnostic',
+] as const;
+const TRANSCRIPT_SOURCE_REF_TYPES = [
+  'meeting_transcript_segment',
+  'transcript_span',
+] as const;
+const WORKSPACE_TOOL_ACTIVITY_SOURCE_REF_TYPES = [
+  'terminal_command',
+  'terminal_output',
+  'code_server_file_observation',
+  'code_server_editor_open',
+  'room_media_control',
 ] as const;
 const MAX_ASSESSMENT_PROGRESS_SNIPPETS = 6;
 const MAX_ASSESSMENT_PROGRESS_SNIPPET_CHARS = 1_200;
@@ -910,6 +1032,12 @@ function assertCommitSubmissionSourceRefs(input: SubmitCommitAssessmentInput): v
   if (!diffRef) {
     throw new Error('commit submission requires a code_diff source ref for the submitted baseCommitSha..commitSha changes');
   }
+
+  const verificationRef = input.sourceRefs.find((ref) =>
+    verificationSourceRefMatchesSubmittedCommit(ref, input));
+  if (!verificationRef) {
+    throw new Error('commit submission requires a test_run or verification_gap source ref for the submitted commit');
+  }
 }
 
 function diffSourceRefMatchesSubmittedRange(
@@ -928,9 +1056,36 @@ function diffSourceRefMatchesSubmittedRange(
     && locatorCommitSha === input.commitSha.toLowerCase();
 }
 
+function verificationSourceRefMatchesSubmittedCommit(
+  ref: AssessmentEvidenceSourceRefInput,
+  input: SubmitCommitAssessmentInput,
+): boolean {
+  if (ref.sourceRefType !== 'test_run' && ref.sourceRefType !== 'verification_gap') return false;
+  if (typeof ref.exactText !== 'string' || ref.exactText.trim().length === 0) return false;
+
+  const commitSha = input.commitSha.toLowerCase();
+  const sourceRefId = ref.sourceRefId.toLowerCase();
+  if (sourceRefId !== commitSha && !sourceRefId.startsWith(`${commitSha}:`)) return false;
+
+  const locator = ref.locator ?? {};
+  const locatorCommitSha = stringLocatorValue(locator, 'commitSha')?.toLowerCase();
+  if (locatorCommitSha && locatorCommitSha !== commitSha) return false;
+
+  const locatorBaseCommitSha = stringLocatorValue(locator, 'baseCommitSha')?.toLowerCase();
+  return !locatorBaseCommitSha || locatorBaseCommitSha === input.baseCommitSha.toLowerCase();
+}
+
 function stringLocatorValue(locator: JsonObject, key: string): string | null {
   const value = locator[key];
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function numberLocatorValue(locator: JsonObject, key: string): number | null {
+  const value = locator[key];
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
+  if (typeof value !== 'string') return null;
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function assertCommitSubmissionMatchesChallenge(
@@ -1111,6 +1266,186 @@ function parseEvidenceCoverage(output: JsonObject): AssessmentEvidenceCoverageSn
   };
 }
 
+function parseReviewPacketToneBlock(value: JsonValue | undefined): {
+  status?: string;
+  state?: string;
+  label: string;
+  detail: string;
+  tone: string;
+} | null {
+  const object = jsonObjectValue(value);
+  if (!object) return null;
+  const label = jsonStringValue(object.label);
+  const detail = jsonStringValue(object.detail);
+  const tone = jsonStringValue(object.tone);
+  if (!label || !detail || !tone) return null;
+  const status = jsonStringValue(object.status);
+  const state = jsonStringValue(object.state);
+  return {
+    ...(status ? { status } : {}),
+    ...(state ? { state } : {}),
+    label,
+    detail,
+    tone,
+  };
+}
+
+function parseContractEvidenceStatus(
+  value: JsonValue | undefined,
+): 'captured' | 'gap_declared' | 'needs_human_review' | null {
+  if (value === 'captured' || value === 'gap_declared' || value === 'needs_human_review') return value;
+  return null;
+}
+
+function parseReviewPacketContractEvidence(
+  value: JsonValue | undefined,
+): NonNullable<AssessmentProgressReviewPacketSummary['evidence']['contractEvidence']> | undefined {
+  const receipt = jsonObjectValue(value);
+  if (!receipt) return undefined;
+  if (jsonStringValue(receipt.schemaVersion) !== 'assessment-contract-evidence-receipt-v1') return undefined;
+  const summary = jsonObjectValue(receipt.summary);
+  if (!summary) return undefined;
+
+  const expectedEvidence = jsonArrayValue(receipt.expectedEvidence)
+    .map((item) => {
+      const record = jsonObjectValue(item);
+      if (!record) return null;
+      const label = jsonStringValue(record.label);
+      const status = parseContractEvidenceStatus(record.status);
+      const detail = jsonStringValue(record.detail);
+      if (!label || !status || !detail) return null;
+      return {
+        label,
+        status,
+        expectedSourceRefTypes: jsonStringArrayValue(record.expectedSourceRefTypes),
+        matchedSourceRefTypes: jsonStringArrayValue(record.matchedSourceRefTypes),
+        sourceRefCount: jsonNumberValue(record.sourceRefCount) ?? 0,
+        detail,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  const successCriteria = jsonArrayValue(receipt.successCriteria)
+    .map((item) => {
+      const record = jsonObjectValue(item);
+      if (!record) return null;
+      const label = jsonStringValue(record.label);
+      const detail = jsonStringValue(record.detail);
+      if (!label || !detail) return null;
+      return {
+        label,
+        status: 'needs_human_review' as const,
+        detail,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  return {
+    schemaVersion: 'assessment-contract-evidence-receipt-v1',
+    expectedEvidence,
+    successCriteria,
+    summary: {
+      expectedEvidenceCount: jsonNumberValue(summary.expectedEvidenceCount) ?? expectedEvidence.length,
+      capturedCount: jsonNumberValue(summary.capturedCount) ?? expectedEvidence.filter((item) => item.status === 'captured').length,
+      gapDeclaredCount: jsonNumberValue(summary.gapDeclaredCount) ?? expectedEvidence.filter((item) => item.status === 'gap_declared').length,
+      needsHumanReviewCount: jsonNumberValue(summary.needsHumanReviewCount)
+        ?? (expectedEvidence.filter((item) => item.status !== 'captured').length + successCriteria.length),
+    },
+  };
+}
+
+function parseReviewPacketSummary(output: JsonObject): AssessmentProgressReviewPacketSummary | null {
+  const packet = jsonObjectValue(output.reviewPacket);
+  if (!packet) return null;
+  const schemaVersion = jsonStringValue(packet.schemaVersion);
+  if (schemaVersion !== 'repo-task-review-packet-v1') return null;
+
+  const challenge = jsonObjectValue(packet.challenge);
+  const submission = jsonObjectValue(packet.submission);
+  const evidence = jsonObjectValue(packet.evidence);
+  const evaluation = jsonObjectValue(packet.evaluation);
+  if (!challenge || !evidence || !evaluation) return null;
+
+  const assignmentTrust = parseReviewPacketToneBlock(challenge.assignmentTrust);
+  const contract = jsonObjectValue(challenge.contract);
+  const readiness = jsonObjectValue(evidence.readiness);
+  if (!assignmentTrust?.state || !contract || !readiness) return null;
+
+  const readinessStatus = jsonStringValue(readiness.status);
+  const readinessLabel = jsonStringValue(readiness.label);
+  const readinessDetail = jsonStringValue(readiness.detail);
+  if (!readinessStatus || !readinessLabel || !readinessDetail) return null;
+
+  const parsedSubmission = submission
+    ? (() => {
+        const integrity = parseReviewPacketToneBlock(submission.integrity);
+        const challengeBinding = parseReviewPacketToneBlock(submission.challengeBinding);
+        if (!integrity?.status || !challengeBinding?.status) return null;
+        return {
+          repositoryUrl: jsonStringValue(submission.repositoryUrl),
+          forkRepositoryUrl: jsonStringValue(submission.forkRepositoryUrl),
+          branchName: jsonStringValue(submission.branchName),
+          commitSha: jsonStringValue(submission.commitSha),
+          commitUrl: jsonStringValue(submission.commitUrl),
+          submissionSourceLabel: jsonStringValue(submission.submissionSourceLabel),
+          changedFileCount: jsonNumberValue(submission.changedFileCount) ?? 0,
+          integrity: {
+            status: integrity.status,
+            label: integrity.label,
+            detail: integrity.detail,
+            tone: integrity.tone,
+          },
+          challengeBinding: {
+            status: challengeBinding.status,
+            label: challengeBinding.label,
+            detail: challengeBinding.detail,
+            tone: challengeBinding.tone,
+          },
+        };
+      })()
+    : null;
+
+  return {
+    schemaVersion,
+    challenge: {
+      focus: jsonStringValue(challenge.focus),
+      repositoryUrl: jsonStringValue(challenge.repositoryUrl),
+      baseCommitSha: jsonStringValue(challenge.baseCommitSha),
+      pullRequestUrl: jsonStringValue(challenge.pullRequestUrl),
+      assignmentTrust: {
+        state: assignmentTrust.state,
+        label: assignmentTrust.label,
+        detail: assignmentTrust.detail,
+        tone: assignmentTrust.tone,
+      },
+      contract: {
+        schemaVersion: jsonStringValue(contract.schemaVersion) ?? '',
+        isComplete: jsonBooleanValue(contract.isComplete) === true,
+        missingFields: jsonStringArrayValue(contract.missingFields),
+      },
+    },
+    submission: parsedSubmission,
+    evidence: {
+      sourceRefCount: jsonNumberValue(evidence.sourceRefCount) ?? 0,
+      sourceRefTypeCounts: parseCoverageTypeCounts(evidence.sourceRefTypeCounts),
+      contractEvidence: parseReviewPacketContractEvidence(evidence.contractEvidence),
+      readiness: {
+        status: readinessStatus,
+        label: readinessLabel,
+        detail: readinessDetail,
+        isReadyForEvaluation: jsonBooleanValue(readiness.isReadyForEvaluation) === true,
+        isUsableHiringSignal: jsonBooleanValue(readiness.isUsableHiringSignal) === true,
+        missingRequiredCount: jsonNumberValue(readiness.missingRequiredCount) ?? 0,
+      },
+    },
+    evaluation: {
+      recommendation: jsonStringValue(evaluation.recommendation),
+      claimCount: jsonStringArrayValue(evaluation.claimIds).length,
+      diagnosticCount: jsonStringArrayValue(evaluation.diagnosticCodes).length,
+    },
+  };
+}
+
 function hasEventKind(
   counts: readonly AssessmentEvidenceKindCount[],
   kinds: readonly string[],
@@ -1122,6 +1457,14 @@ function challengePacketLineValue(exactText: string, labels: readonly string[]):
   const escapedLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const match = exactText.match(new RegExp(`^\\s*(?:${escapedLabels.join('|')})\\s*:\\s*(.+)$`, 'im'));
   return match?.[1]?.trim() || null;
+}
+
+function challengePacketLineNumber(exactText: string, labels: readonly string[]): number | null {
+  const value = challengePacketLineValue(exactText, labels);
+  const match = value?.match(/#?(\d+)/);
+  if (!match?.[1]) return null;
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function normalizeChallengePacketListItem(value: string): string {
@@ -1228,6 +1571,86 @@ function challengeBaseCommitSha(challenge: AssessmentProgressChallengePacketCont
     ?? challengePacketLineValue(challenge.exactText, ['Base commit', 'Base commit SHA', 'Base']);
 }
 
+function challengePullRequestNumber(challenge: AssessmentProgressChallengePacketContractInput): number | null {
+  return numberLocatorValue(challenge.locator, 'githubPrNumber')
+    ?? numberLocatorValue(challenge.locator, 'prNumber')
+    ?? numberLocatorValue(challenge.locator, 'pullRequestNumber')
+    ?? challengePacketLineNumber(challenge.exactText, ['Pull request', 'PR']);
+}
+
+function normalizeChallengePullRequestUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com') return null;
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length < 4 || parts[2] !== 'pull') return null;
+    const pullRequestNumber = Number.parseInt(parts[3] ?? '', 10);
+    if (!Number.isInteger(pullRequestNumber) || pullRequestNumber <= 0) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/pull/${pullRequestNumber}`;
+  } catch {
+    return null;
+  }
+}
+
+function challengePullRequestUrl(challenge: AssessmentProgressChallengePacketContractInput): string | null {
+  const explicitUrl = normalizeChallengePullRequestUrl(
+    stringLocatorValue(challenge.locator, 'pullRequestUrl')
+      ?? stringLocatorValue(challenge.locator, 'githubPullRequestUrl')
+      ?? stringLocatorValue(challenge.locator, 'prUrl')
+      ?? challengePacketLineValue(challenge.exactText, ['Pull request URL', 'PR URL']),
+  );
+  if (explicitUrl) return explicitUrl;
+
+  const repositoryUrl = challengeRepositoryUrl(challenge);
+  const pullRequestNumber = challengePullRequestNumber(challenge);
+  if (!repositoryUrl || !pullRequestNumber) return null;
+  try {
+    const url = new URL(repositoryUrl);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com') return null;
+    const parts = url.pathname.replace(/\.git$/i, '').split('/').filter(Boolean);
+    if (parts.length < 2) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/pull/${pullRequestNumber}`;
+  } catch {
+    return null;
+  }
+}
+
+function challengeTitle(challenge: AssessmentProgressChallengePacketContractInput): string | null {
+  return jsonStringValue(challenge.locator.challengeTitle)
+    ?? jsonStringValue(challenge.locator.title)
+    ?? jsonStringValue(challenge.locator.taskTitle)
+    ?? jsonStringValue(challenge.metadata.challengeTitle)
+    ?? jsonStringValue(challenge.metadata.title)
+    ?? jsonStringValue(challenge.metadata.taskTitle)
+    ?? challengePacketLineValue(challenge.exactText, ['Title', 'Task']);
+}
+
+export function assessmentProgressChallengeSummary(
+  challenge: AssessmentProgressChallengePacketContractInput,
+): AssessmentProgressChallengeSummary {
+  const title = challengeTitle(challenge);
+  return {
+    title,
+    repositoryUrl: challengeRepositoryUrl(challenge),
+    githubPrNumber: challengePullRequestNumber(challenge),
+    pullRequestUrl: challengePullRequestUrl(challenge),
+    baseCommitSha: challengeBaseCommitSha(challenge),
+    task: challengePacketLineValue(challenge.exactText, ['Task', 'Title']) ?? title,
+    assessmentFit: challengePacketSectionItems(challenge.exactText, ['Assessment fit']),
+    matchProof: challengePacketSectionItems(challenge.exactText, ['Match proof']),
+    successCriteria: [
+      ...challengePacketSectionItems(challenge.exactText, ['Success criteria']),
+      ...(challengePacketLineValue(challenge.exactText, ['Success'])
+        ? [challengePacketLineValue(challenge.exactText, ['Success']) as string]
+        : []),
+    ],
+    expectedEvidence: challengePacketSectionItems(challenge.exactText, ['Expected evidence']),
+    verificationCommand: challengePacketLineValue(challenge.exactText, ['Verification command']),
+  };
+}
+
 function commitChallengeBinding(input: {
   commitRepositoryUrl: string | null;
   commitBaseCommitSha: string | null;
@@ -1318,7 +1741,7 @@ function progressAssignmentTrust(input: {
     return {
       state: 'matched_challenge',
       label: 'PIPE-matched challenge',
-      detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+      detail: MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL,
       tone: 'matched',
     };
   }
@@ -1367,6 +1790,8 @@ function progressNextActionLabel(action: AssessmentProgressNextAction): string {
       return 'Submit a source-backed assessment commit.';
     case 'START_EVALUATION':
       return 'Start source-backed AI or human evaluation.';
+    case 'WAIT_FOR_EVALUATION':
+      return 'Source-backed evaluation is running.';
     case 'REVIEW_EVALUATION':
       return 'Review the assessment report and evidence.';
     case 'RESOLVE_DIAGNOSTIC':
@@ -1381,7 +1806,7 @@ function progressStageAndAction(input: {
   hasCompleteChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasCommitSubmission: boolean;
-  hasBoundCommitSubmission: boolean;
+  hasReviewableCommitSubmission: boolean;
   hasFinalSubmission: boolean;
   evaluation: AssessmentProgressEvaluation | null;
   humanDecision: AssessmentProgressHumanDecision | null;
@@ -1392,19 +1817,22 @@ function progressStageAndAction(input: {
   if (input.humanDecision) {
     return { stage: 'EVALUATED', nextAction: 'NONE' };
   }
+  if (input.evaluation?.status === 'EVALUATED') {
+    return { stage: 'EVALUATED', nextAction: 'REVIEW_EVALUATION' };
+  }
   if (input.session.state === 'DIAGNOSTIC') {
     return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
   }
   if (input.evaluation) {
-    if (input.evaluation.status === 'EVALUATED') {
-      return { stage: 'EVALUATED', nextAction: 'REVIEW_EVALUATION' };
-    }
     return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
+  }
+  if (input.session.state === 'EVALUATING') {
+    return { stage: 'EVALUATING', nextAction: 'WAIT_FOR_EVALUATION' };
   }
   if (!input.hasCompleteChallengePacket) {
     return { stage: 'WAITING_FOR_CHALLENGE', nextAction: 'ASSIGN_CHALLENGE' };
   }
-  if (modeRequiresCommit(input.session.mode) && !input.hasBoundCommitSubmission) {
+  if (modeRequiresCommit(input.session.mode) && !input.hasReviewableCommitSubmission) {
     if (input.hasWorkEvidence || input.hasFinalSubmission) {
       return { stage: 'WORK_IN_PROGRESS', nextAction: 'SUBMIT_COMMIT' };
     }
@@ -1429,6 +1857,8 @@ function assessmentReadinessStatusLabel(status: AssessmentProgressReadinessStatu
       return 'Work evidence in progress';
     case 'READY_FOR_EVALUATION':
       return 'Ready for evaluation';
+    case 'EVALUATING':
+      return 'Evaluation running';
     case 'EVALUATED':
       return 'Evaluated';
     case 'NEEDS_ATTENTION':
@@ -1443,11 +1873,14 @@ function assessmentReadinessStatusDetail(input: {
   missingRequiredCount: number;
   requiresCommit: boolean;
   commit: AssessmentProgressCommit | null;
+  hasTestEvidence: boolean;
+  hasVerificationGap: boolean;
   evaluation: AssessmentProgressEvaluation | null;
   humanDecision: AssessmentProgressHumanDecision | null;
 }): string {
   if (input.status === 'CANCELLED') return 'This assessment session was cancelled.';
   if (input.status === 'NEEDS_ATTENTION') return 'Resolve the diagnostic before relying on this assessment.';
+  if (input.status === 'EVALUATING') return 'PIPE is evaluating the source-backed commit, diff, tests, transcript, chat, terminal, and AI-use evidence.';
   if (input.status === 'EVALUATED') {
     if (input.humanDecision) return 'A human decision is recorded with source-backed evidence.';
     if (input.evaluation?.status === 'EVALUATED') return 'A source-backed evaluation report is available for review.';
@@ -1459,10 +1892,26 @@ function assessmentReadinessStatusDetail(input: {
   if (input.missingRequiredCount > 0) {
     return `${input.missingRequiredCount} required proof ${input.missingRequiredCount === 1 ? 'item is' : 'items are'} still missing before evaluation.`;
   }
+  const confidenceLimitations: string[] = [];
   if (input.requiresCommit && input.commit?.integrity.status !== 'workspace_captured') {
-    return 'Required evidence is captured, but commit provenance needs repository or workspace verification before final reliance.';
+    confidenceLimitations.push('commit provenance still needs repository or workspace verification');
   }
-  return 'Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.';
+  if (!input.hasTestEvidence) {
+    confidenceLimitations.push(
+      input.hasVerificationGap
+        ? 'test output is missing and only a declared verification gap is available'
+        : 'test output is missing',
+    );
+  }
+  if (confidenceLimitations.length > 0) {
+    return `Required evidence is captured, but ${formatAssessmentLimitationList(confidenceLimitations)}; start evaluation as lower-confidence and do not treat correctness as proven.`;
+  }
+  return 'Challenge, work evidence, required source refs, and test output are captured; start source-backed AI or human evaluation.';
+}
+
+function formatAssessmentLimitationList(limitations: readonly string[]): string {
+  if (limitations.length <= 1) return limitations[0] ?? '';
+  return `${limitations.slice(0, -1).join(', ')} and ${limitations[limitations.length - 1]}`;
 }
 
 function buildAssessmentReadiness(input: {
@@ -1574,26 +2023,38 @@ function buildAssessmentReadiness(input: {
     },
     {
       id: 'test_run',
-      label: 'Test or verification evidence',
+      label: 'Test output',
       required: false,
-      satisfied: input.hasTestEvidence || input.hasVerificationGap,
-      sourceRefTypes: ['test_run', 'verification_gap'],
-      missingImpact: 'Missing test evidence lowers confidence; an explicit verification gap is better than silence.',
+      satisfied: input.hasTestEvidence,
+      sourceRefTypes: ['test_run'],
+      missingImpact: input.hasVerificationGap
+        ? 'A verification gap was declared, but no test output was captured; keep correctness lower-confidence.'
+        : 'Missing test output lowers confidence; require tests or a reviewed verification explanation before trusting correctness.',
     },
+    ...input.hasVerificationGap
+      ? [{
+          id: 'verification_gap_declared',
+          label: 'Verification gap declared',
+          required: false,
+          satisfied: true,
+          sourceRefTypes: ['verification_gap'],
+          missingImpact: 'A source-backed verification gap explains missing or partial test output; it does not prove correctness.',
+        } satisfies AssessmentProgressReadinessItem]
+      : [],
     {
       id: 'ai_usage_transparency',
       label: 'AI-use transparency',
       required: false,
       satisfied: input.hasAiInteraction,
       sourceRefTypes: [...AI_INTERACTION_SOURCE_REF_TYPES],
-      missingImpact: 'If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly.',
+      missingImpact: 'If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly. Silence is not proof of no AI use.',
     },
     {
       id: 'transcript_context',
       label: 'Conversation transcript context',
       required: false,
       satisfied: input.hasTranscriptEvidence,
-      sourceRefTypes: ['meeting_transcript_segment'],
+      sourceRefTypes: [...TRANSCRIPT_SOURCE_REF_TYPES],
       missingImpact: 'Transcript context helps explain reasoning, tradeoffs, and communication quality.',
     },
     {
@@ -1623,6 +2084,7 @@ function buildAssessmentReadiness(input: {
   const isReadyForEvaluation = missingRequiredCount === 0
     && input.session.state !== 'CANCELLED'
     && input.session.state !== 'DIAGNOSTIC'
+    && input.session.state !== 'EVALUATING'
     && input.evaluation?.status !== 'PROVENANCE_INCOMPLETE'
     && input.evaluation?.status !== 'AI_DEVELOPER_UNAVAILABLE'
     && input.evaluation?.status !== 'BLOCKED';
@@ -1633,6 +2095,8 @@ function buildAssessmentReadiness(input: {
   let status: AssessmentProgressReadinessStatus;
   if (input.session.state === 'CANCELLED') {
     status = 'CANCELLED';
+  } else if (input.session.state === 'EVALUATING') {
+    status = 'EVALUATING';
   } else if (
     input.session.state === 'DIAGNOSTIC'
     || input.evaluation?.status === 'PROVENANCE_INCOMPLETE'
@@ -1663,6 +2127,8 @@ function buildAssessmentReadiness(input: {
       missingRequiredCount,
       requiresCommit,
       commit: input.commit,
+      hasTestEvidence: input.hasTestEvidence,
+      hasVerificationGap: input.hasVerificationGap,
       evaluation: input.evaluation,
       humanDecision: input.humanDecision,
     }),
@@ -2054,15 +2520,25 @@ export class RepoTaskInterviewSessionStore {
 
   async loadProgress(sessionId: string): Promise<AssessmentProgressSnapshot> {
     const session = await this.loadSession(sessionId);
-    const evidenceCounts = await this.loadEvidenceCounts(session.id);
-    const sourceRefCounts = await this.loadSourceRefCounts(session.id);
-    const evidenceSnippets = await this.loadEvidenceSnippets(session.id);
-    const challenge = await this.loadChallengeSourceRef(session.id);
+    const [
+      evidenceCounts,
+      sourceRefCounts,
+      evidenceSnippets,
+      challenge,
+      latestEvent,
+      evaluation,
+      humanDecision,
+    ] = await Promise.all([
+      this.loadEvidenceCounts(session.id),
+      this.loadSourceRefCounts(session.id),
+      this.loadEvidenceSnippets(session.id),
+      this.loadChallengeSourceRef(session.id),
+      this.loadLatestEvent(session.id),
+      this.loadLatestEvaluation(session.id),
+      this.loadLatestHumanDecision(session.id),
+    ]);
     const contract = challengePacketContract(challenge);
-    const latestEvent = await this.loadLatestEvent(session.id);
     const commit = await this.loadLatestCommitSubmission(session.id, challenge);
-    const evaluation = await this.loadLatestEvaluation(session.id);
-    const humanDecision = await this.loadLatestHumanDecision(session.id);
 
     const hasWorkEvidence = hasEventKind(evidenceCounts, [
       'terminal_output',
@@ -2074,7 +2550,7 @@ export class RepoTaskInterviewSessionStore {
       'dev_container_event',
       'message',
       'commit_submission',
-    ]);
+    ]) || hasEventKind(sourceRefCounts, TRANSCRIPT_SOURCE_REF_TYPES);
     const hasCommitSubmission = commit !== null;
     const hasFinalSubmission = hasEventKind(evidenceCounts, ['final_submission']);
     const hasAiInteraction = hasEventKind(evidenceCounts, ['ai_interaction'])
@@ -2090,14 +2566,23 @@ export class RepoTaskInterviewSessionStore {
         'code_server_editor_open',
       ]);
     const hasToolUsageEvidence = hasEventKind(evidenceCounts, ['tool_usage'])
-      || hasEventKind(sourceRefCounts, [
-        'room_media_control',
-      ]);
-    const hasTranscriptEvidence = hasEventKind(evidenceCounts, ['transcript_span']);
+      || hasEventKind(sourceRefCounts, WORKSPACE_TOOL_ACTIVITY_SOURCE_REF_TYPES);
+    const hasTranscriptEvidence = hasEventKind(evidenceCounts, ['transcript_span'])
+      || hasEventKind(sourceRefCounts, TRANSCRIPT_SOURCE_REF_TYPES);
     const hasTestEvidence = hasEventKind(evidenceCounts, ['test_run'])
       || hasEventKind(sourceRefCounts, ['test_run']);
     const hasVerificationGap = hasEventKind(sourceRefCounts, ['verification_gap']);
     const hasChallengePacket = challenge !== null;
+    const requiresCommit = modeRequiresCommit(session.mode);
+    const hasGitCommit = hasEventKind(sourceRefCounts, ['git_commit']);
+    const hasCodeDiff = hasEventKind(sourceRefCounts, ['code_diff']);
+    const hasReviewableCommitSubmission = !requiresCommit
+      || Boolean(
+        commit
+        && hasGitCommit
+        && hasCodeDiff
+        && commit.challengeBinding.status === 'bound_to_assigned_challenge',
+      );
     const readiness = buildAssessmentReadiness({
       session,
       hasChallengePacket,
@@ -2122,8 +2607,7 @@ export class RepoTaskInterviewSessionStore {
       hasCompleteChallengePacket: contract.isComplete,
       hasWorkEvidence,
       hasCommitSubmission,
-      hasBoundCommitSubmission: !modeRequiresCommit(session.mode)
-        || commit?.challengeBinding.status === 'bound_to_assigned_challenge',
+      hasReviewableCommitSubmission,
       hasFinalSubmission,
       evaluation,
       humanDecision,
@@ -2211,6 +2695,10 @@ export class RepoTaskInterviewSessionStore {
             'ai_user_prompt',
             'ai_user_prompt_blocked',
             'ai_agent_response',
+            'ai_agent_diagnostic',
+            'agent_status',
+            'agent_response',
+            'agent_diagnostic',
             'ai_usage_event',
             'room_chat_message',
             'meeting_transcript_segment'
@@ -2231,6 +2719,10 @@ export class RepoTaskInterviewSessionStore {
             WHEN 'ai_user_prompt' THEN 5
             WHEN 'ai_user_prompt_blocked' THEN 5
             WHEN 'ai_agent_response' THEN 5
+            WHEN 'ai_agent_diagnostic' THEN 5
+            WHEN 'agent_status' THEN 5
+            WHEN 'agent_response' THEN 5
+            WHEN 'agent_diagnostic' THEN 5
             WHEN 'ai_usage_event' THEN 5
             WHEN 'room_chat_message' THEN 6
             WHEN 'meeting_transcript_segment' THEN 7
@@ -2261,7 +2753,7 @@ export class RepoTaskInterviewSessionStore {
 
   private async loadChallengeSourceRef(sessionId: string): Promise<AssessmentProgressSourceRef | null> {
     const row = await this.db.prepare(
-      `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role, sr.exact_text, sr.content_hash, sr.locator_json
+      `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role, sr.exact_text, sr.content_hash, sr.locator_json, sr.metadata_json
          FROM assessment_event_source_refs sr
          JOIN assessment_evidence_events e ON e.id = sr.event_id
         WHERE e.session_id = ?1
@@ -2288,6 +2780,7 @@ export class RepoTaskInterviewSessionStore {
       exact_text: string;
       content_hash: string;
       locator_json: string | null;
+      metadata_json: string | null;
     }>();
     if (!row) return null;
     return {
@@ -2297,6 +2790,7 @@ export class RepoTaskInterviewSessionStore {
       exactText: row.exact_text,
       contentHash: row.content_hash,
       locator: parseJsonObject(row.locator_json),
+      metadata: parseJsonObject(row.metadata_json),
     };
   }
 
@@ -2558,6 +3052,7 @@ export class RepoTaskInterviewSessionStore {
       evidenceCoverage: parseEvidenceCoverage(output),
       claims,
       diagnostics,
+      reviewPacket: parseReviewPacketSummary(output),
     };
   }
 
@@ -2629,7 +3124,7 @@ export class RepoTaskInterviewSessionStore {
           END,
           d.created_at,
           d.id
-        LIMIT 4`,
+        LIMIT 6`,
     ).bind(reportId).all<{
       id: string;
       code: string;

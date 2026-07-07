@@ -22,6 +22,13 @@ import {
   GithubActivitySection,
 } from './profile-sections';
 
+interface IngestionRetryResult {
+  scanned: number;
+  queued: number;
+  skipped: number;
+  failed: number;
+}
+
 const sectionRegistry: Record<string, React.FC<{ props: unknown }>> = {
   hero: HeroSection as React.FC<{ props: unknown }>,
   narrative: NarrativeSection as React.FC<{ props: unknown }>,
@@ -39,12 +46,37 @@ const sectionRegistry: Record<string, React.FC<{ props: unknown }>> = {
 
 interface CandidateEnrichmentTabProps {
   sections: ProfileSection[];
+  onRetryFailedIngestion?: (() => Promise<void>) | undefined;
+  isRetryingIngestion?: boolean | undefined;
+  retryIngestionError?: string | null | undefined;
+  retryIngestionResult?: IngestionRetryResult | null | undefined;
 }
 
-export function CandidateEnrichmentTab({ sections }: CandidateEnrichmentTabProps): JSX.Element {
+type EnrichmentStatusProps = Parameters<typeof EnrichmentStatusSection>[0]['props'];
+
+export function CandidateEnrichmentTab({
+  sections,
+  onRetryFailedIngestion,
+  isRetryingIngestion,
+  retryIngestionError,
+  retryIngestionResult,
+}: CandidateEnrichmentTabProps): JSX.Element {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       {sections.map((section, i) => {
+        if (section.type === 'enrichment-status') {
+          return (
+            <EnrichmentStatusSection
+              key={`${section.type}-${i}`}
+              props={section.props as EnrichmentStatusProps}
+              onRetryFailedIngestion={onRetryFailedIngestion}
+              isRetryingIngestion={isRetryingIngestion}
+              retryIngestionError={retryIngestionError}
+              retryIngestionResult={retryIngestionResult}
+            />
+          );
+        }
+
         const Component = sectionRegistry[section.type];
         if (!Component) {
           console.warn(`Unknown profile section type: ${section.type}`);

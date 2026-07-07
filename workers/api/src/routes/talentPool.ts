@@ -1,9 +1,25 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import { buildRuleBasedParsedCV, parseResumeText, persistParsedCV } from '../lib/cvParser';
+import {
+  buildRuleBasedParsedCV,
+  extractTextFromResumeFile,
+  persistParsedCV,
+} from '../lib/cvParser';
 import { runCandidateIngestion } from '../lib/candidateDiscovery/orchestrate';
 import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
+import { loadMatchedOpenSourceChallengePacket } from '../lib/openSourceChallengeSessions';
+import {
+  ensureRolelessTalentPoolIdentity,
+  removeRolelessTalentPoolApplicationBridge,
+  type TalentPoolSourceArtifactInput,
+  type TalentPoolOperationalContextInput,
+} from '../lib/talentPoolIdentity';
 import type { Env, Variables } from '../types';
+
+interface RolelessTalentPoolIdentity {
+  personId: string;
+  workspacePersonId: string;
+}
 
 type TalentPoolStatus =
   | 'PROFILE_NEEDED'
@@ -86,6 +102,12 @@ interface TalentPoolDashboardResponse {
 
 const route = new Hono<{ Bindings: Env; Variables: Variables }>();
 const MAX_PROFILE_FILE_BYTES = 10 * 1024 * 1024;
+const TALENT_POOL_LIVE_MAX_NODE_EMBEDDINGS = 0;
+const TALENT_POOL_LIVE_MAX_PARSER_ONLY_NODES = 12;
+const TALENT_POOL_LIVE_DISCOVERY_TIMEOUT_MS = 8_000;
+const TALENT_POOL_LIVE_DISCOVERY_MAX_ATTEMPTS = 2;
+const TALENT_POOL_PASTED_PROFILE_SOURCE_KIND = 'pasted_profile_text';
+const TALENT_POOL_UPLOADED_PROFILE_SOURCE_KIND = 'uploaded_profile_file';
 const ALLOWED_PROFILE_MIME_TYPES = new Set([
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -183,6 +205,16 @@ async function loadIntake(db: D1Database, candidateId: string): Promise<IntakeRo
     .first<IntakeRow>();
 }
 
+function readyChallengeSummary(repositoryUrl: string, githubPrNumber: number): string {
+  let repoName = 'the assigned repository';
+  try {
+    repoName = new URL(repositoryUrl).pathname.replace(/^\//, '') || repoName;
+  } catch {
+    repoName = 'the assigned repository';
+  }
+  return `Ready for ${repoName} PR #${githubPrNumber}.`;
+}
+
 async function loadReadyChallenges(
   db: D1Database,
   candidateId: string,
@@ -202,25 +234,22 @@ async function loadReadyChallenges(
     .bind(candidateId)
     .all<ReadyChallengeRow>();
 
-  return (result.results ?? []).map((row) => {
-    let repoName = 'the assigned repository';
-    if (row.github_repo_url) {
-      try {
-        repoName = new URL(row.github_repo_url).pathname.replace(/^\//, '') || repoName;
-      } catch {
-        repoName = 'the assigned repository';
-      }
-    }
+  const readyChallenges: ReadyChallenge[] = [];
+  for (const row of result.results ?? []) {
+    const packet = await loadMatchedOpenSourceChallengePacket(db, {
+      repositoryUrl: row.github_repo_url,
+      githubPrNumber: row.github_pr_number,
+    });
+    if (!packet) continue;
 
-    return {
-      title: row.title ?? 'Code review challenge',
+    readyChallenges.push({
+      title: packet.title || row.title || 'Code review challenge',
       type: row.type ?? 'CODE_REVIEW',
       entryUrl: `/assess/${encodeURIComponent(inviteToken)}`,
-      summary: row.github_pr_number
-        ? `Ready for ${repoName} PR #${row.github_pr_number}.`
-        : 'Ready to start.',
-    };
-  });
+      summary: readyChallengeSummary(packet.repositoryUrl, packet.githubPrNumber),
+    });
+  }
+  return readyChallenges;
 }
 
 async function loadCompletedChallenges(
@@ -298,7 +327,9 @@ function excerpt(text: string): string {
   return normalized.length > 1200 ? `${normalized.slice(0, 1197)}...` : normalized;
 }
 
-function suggestedRepoFamilies(input: SubmitProfileInput): string[] {
+function suggestedRepoFamilies(input: SubmitProfileInput, sourceBackedProfileEvidence = true): string[] {
+  if (!sourceBackedProfileEvidence) return [];
+
   const haystack = [
     input.resumeText,
     input.githubUrl ?? '',
@@ -314,11 +345,17 @@ function suggestedRepoFamilies(input: SubmitProfileInput): string[] {
   return [...families];
 }
 
-function candidateSummary(candidate: CandidateRow, input: SubmitProfileInput): string {
+function candidateSummary(
+  candidate: CandidateRow,
+  input: SubmitProfileInput,
+  sourceBackedProfileEvidence = true,
+): string {
   const parts = [
     candidate.name ? `Candidate: ${candidate.name}` : null,
     candidate.email ? `Email: ${candidate.email}` : null,
-    `Profile excerpt: ${excerpt(input.resumeText)}`,
+    sourceBackedProfileEvidence
+      ? `Profile excerpt: ${excerpt(input.resumeText)}`
+      : 'Profile upload received, but no extractable source text was available.',
     input.githubUrl ? `GitHub: ${input.githubUrl}` : null,
     input.linkedinUrl ? `LinkedIn: ${input.linkedinUrl}` : null,
     input.portfolioUrl ? `Portfolio: ${input.portfolioUrl}` : null,
@@ -327,9 +364,58 @@ function candidateSummary(candidate: CandidateRow, input: SubmitProfileInput): s
   return parts.filter((part): part is string => Boolean(part)).join('\n');
 }
 
+interface ChallengeDesignQueueEvidenceOptions {
+  sourceBackedProfileEvidence?: boolean;
+}
+
+interface ChallengeDesignQueuePayload {
+  summary: string;
+  repoFamilies: string;
+  missingSignal: string;
+  inventoryFailureReason: string;
+  desiredAssessmentSignal: string;
+}
+
+function challengeDesignQueuePayload(
+  candidate: CandidateRow,
+  input: SubmitProfileInput,
+  options: ChallengeDesignQueueEvidenceOptions = {},
+): ChallengeDesignQueuePayload {
+  const sourceBackedProfileEvidence = options.sourceBackedProfileEvidence ?? true;
+  if (!sourceBackedProfileEvidence) {
+    return {
+      summary: candidateSummary(candidate, input, false),
+      repoFamilies: JSON.stringify([]),
+      missingSignal: 'Needs extractable source-backed profile evidence before challenge design.',
+      inventoryFailureReason: 'No exact profile or resume source text has been extracted from the uploaded artifact yet.',
+      desiredAssessmentSignal: 'Extract source-backed profile or resume evidence before selecting assessment inventory.',
+    };
+  }
+
+  return {
+    summary: candidateSummary(candidate, input, true),
+    repoFamilies: JSON.stringify(suggestedRepoFamilies(input, true)),
+    missingSignal: 'Needs a validated source-backed challenge assignment for the submitted candidate profile.',
+    inventoryFailureReason: 'No ready challenge assignment was available at intake completion.',
+    desiredAssessmentSignal: 'Assess code review judgment against source-backed production code once inventory is ready.',
+  };
+}
+
 function safeFileName(name: string): string {
   const normalized = name.trim().replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^_+/, '');
   return normalized.slice(0, 160) || 'profile';
+}
+
+async function sha256Hex(data: BufferSource): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function profileTextStorageKey(candidateId: string, resumeText: string): Promise<string> {
+  const textHash = await sha256Hex(new TextEncoder().encode(resumeText));
+  return `talent-intake/${candidateId}/${textHash}-profile.txt`;
 }
 
 function normalizeProfileContentType(contentType: string, fileName: string): string {
@@ -351,6 +437,18 @@ function formString(formData: FormData, field: string): string | undefined {
 function formBoolean(formData: FormData, field: string): boolean {
   const value = formString(formData, field);
   return value === 'true' || value === '1' || value === 'on';
+}
+
+function operationalContextFromInput(input: SubmitProfileInput): TalentPoolOperationalContextInput {
+  return {
+    githubUrl: input.githubUrl,
+    linkedinUrl: input.linkedinUrl,
+    portfolioUrl: input.portfolioUrl,
+    phoneScreenerConsent: input.phoneScreenerConsent,
+    phoneNumber: input.phoneNumber,
+    timezone: input.timezone,
+    availability: input.availability,
+  };
 }
 
 interface ProfileFileEntry {
@@ -391,12 +489,9 @@ async function ingestTextProfile(input: {
   env: Env;
   candidateId: string;
   resumeText: string;
+  mirrorLivingContext?: boolean;
 }): Promise<void> {
-  const parsed = await parseResumeText({
-    resumeText: input.resumeText,
-    env: input.env,
-  });
-  const parsedCV = parsed?.parsedCV ?? buildRuleBasedParsedCV(input.resumeText);
+  const parsedCV = buildRuleBasedParsedCV(input.resumeText);
   await persistParsedCV(input.env.DB, input.candidateId, parsedCV);
   await runCandidateIngestion({
     env: input.env,
@@ -404,7 +499,13 @@ async function ingestTextProfile(input: {
     candidateId: input.candidateId,
     parsed: parsedCV,
     resumeText: input.resumeText,
-    decompositionResult: parsed?.decompositionResult ?? null,
+    decompositionResult: null,
+    mirrorLivingContext: input.mirrorLivingContext ?? false,
+    maxNodeEmbeddings: TALENT_POOL_LIVE_MAX_NODE_EMBEDDINGS,
+    maxParserOnlyNodes: TALENT_POOL_LIVE_MAX_PARSER_ONLY_NODES,
+    skipPostDecompositionMaintenance: true,
+    candidateDiscoveryTimeoutMs: TALENT_POOL_LIVE_DISCOVERY_TIMEOUT_MS,
+    candidateDiscoveryMaxAttempts: TALENT_POOL_LIVE_DISCOVERY_MAX_ATTEMPTS,
   });
 }
 
@@ -414,31 +515,53 @@ function queueProfileIngestion(input: {
   profileKey: string;
   contentType: string;
   resumeText: string;
+  livingContextIdentity?: RolelessTalentPoolIdentity | null;
+  sourceTextUnavailable?: boolean;
 }): void {
   const trimmedText = input.resumeText.trim();
   if (trimmedText.length >= 20) {
     queueBackgroundTask(
       input.c,
       'text-ingestion',
-      () => ingestTextProfile({
-        env: input.c.env,
-        candidateId: input.candidateId,
-        resumeText: trimmedText,
-      }),
+      async () => {
+        await ingestTextProfile({
+          env: input.c.env,
+          candidateId: input.candidateId,
+          resumeText: trimmedText,
+          mirrorLivingContext: false,
+        });
+        await removeRolelessTalentPoolApplicationBridge({
+          db: input.c.env.DB,
+          candidateId: input.candidateId,
+        });
+      },
     );
     return;
   }
 
-  if (input.contentType === 'application/pdf') {
+  if (
+    !input.sourceTextUnavailable
+    && (
+      input.contentType === 'application/pdf'
+      || input.contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    )
+  ) {
     queueBackgroundTask(
       input.c,
-      'pdf-ingestion',
-      () => processResumeFromR2({
-        env: input.c.env,
-        db: input.c.env.DB,
-        candidateId: input.candidateId,
-        r2Key: input.profileKey,
-      }),
+      'document-ingestion',
+      async () => {
+        await processResumeFromR2({
+          env: input.c.env,
+          db: input.c.env.DB,
+          candidateId: input.candidateId,
+          r2Key: input.profileKey,
+          livingContextIdentity: input.livingContextIdentity ?? null,
+        });
+        await removeRolelessTalentPoolApplicationBridge({
+          db: input.c.env.DB,
+          candidateId: input.candidateId,
+        });
+      },
     );
   }
 }
@@ -462,11 +585,32 @@ async function ensureCandidateIngestionQueued(
          END,
          github_url = COALESCE(excluded.github_url, github_url),
          linkedin_url = COALESCE(excluded.linkedin_url, linkedin_url),
-         current_step = 'talent_pool_profile_received',
+         current_step = CASE
+           WHEN status IN ('embedded', 'enriched', 'matched') THEN COALESCE(current_step, excluded.current_step)
+           ELSE excluded.current_step
+         END,
          error_text = NULL,
          updated_at = excluded.updated_at`,
     )
     .bind(candidateId, input.githubUrl ?? null, input.linkedinUrl ?? null, now)
+    .run();
+}
+
+async function markProfileTextExtractionNeeded(
+  db: D1Database,
+  candidateId: string,
+  now: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE candidate_ingestion
+          SET status = CASE WHEN status = 'failed' THEN 'pending' ELSE status END,
+              current_step = 'profile_text_extraction_needed',
+              error_text = NULL,
+              updated_at = ?1
+        WHERE candidate_id = ?2`,
+    )
+    .bind(now, candidateId)
     .run();
 }
 
@@ -475,13 +619,23 @@ async function persistIntake(
   candidate: CandidateRow,
   input: SubmitProfileInput,
   now: string,
-  options: { profileKey?: string; profileExcerpt?: string } = {},
-): Promise<void> {
-  const profileKey = options.profileKey ?? `talent-intake/${candidate.id}/${now.replace(/[:.]/g, '-')}.txt`;
+  options: {
+    profileKey?: string;
+    profileExcerpt?: string;
+    sourceTextForPerson?: string;
+    sourceMediaTypeForPerson?: string;
+    sourceArtifactForPerson?: TalentPoolSourceArtifactInput;
+  } = {},
+): Promise<RolelessTalentPoolIdentity | null> {
+  const profileKey = options.profileKey ?? await profileTextStorageKey(candidate.id, input.resumeText);
   if (!options.profileKey) {
     await c.env.STORAGE.put(profileKey, input.resumeText, {
       httpMetadata: { contentType: 'text/plain; charset=utf-8' },
-      customMetadata: { source: 'talent_pool_intake' },
+      customMetadata: {
+        source: 'talent_pool_intake',
+        candidateId: candidate.id,
+        sourceKind: TALENT_POOL_PASTED_PROFILE_SOURCE_KIND,
+      },
     });
   }
 
@@ -536,6 +690,24 @@ async function persistIntake(
     .run();
 
   await ensureCandidateIngestionQueued(c.env.DB, candidate.id, input, now);
+
+  const candidateEmail = candidate.email?.trim() || null;
+  const sourceTextForPerson = options.sourceTextForPerson ?? (!options.profileKey ? input.resumeText : undefined);
+  return await ensureRolelessTalentPoolIdentity({
+    db: c.env.DB,
+    userId: candidate.owner_id,
+    candidateId: candidate.id,
+    name: candidate.name?.trim() || candidateEmail || 'Talent Pool Candidate',
+    email: candidateEmail,
+    message: sourceTextForPerson,
+    messageStorageKey: sourceTextForPerson ? profileKey : null,
+    messageMediaType: sourceTextForPerson
+      ? options.sourceMediaTypeForPerson ?? 'text/plain'
+      : null,
+    sourceArtifact: options.sourceArtifactForPerson,
+    operationalContext: operationalContextFromInput(input),
+    now,
+  });
 }
 
 async function ensureChallengeDesignQueueItem(
@@ -543,6 +715,7 @@ async function ensureChallengeDesignQueueItem(
   candidate: CandidateRow,
   input: SubmitProfileInput,
   now: string,
+  options: ChallengeDesignQueueEvidenceOptions = {},
 ): Promise<void> {
   const existing = await db
     .prepare(
@@ -555,19 +728,29 @@ async function ensureChallengeDesignQueueItem(
     .bind(candidate.id)
     .first<{ id: string }>();
 
-  const summary = candidateSummary(candidate, input);
-  const repoFamilies = JSON.stringify(suggestedRepoFamilies(input));
+  const payload = challengeDesignQueuePayload(candidate, input, options);
 
   if (existing) {
     await db
       .prepare(
         `UPDATE challenge_design_queue
             SET candidate_summary = ?1,
-                suggested_repo_families = ?2,
-                updated_at = ?3
-          WHERE id = ?4`,
+                missing_signal = ?2,
+                inventory_failure_reason = ?3,
+                suggested_repo_families = ?4,
+                desired_assessment_signal = ?5,
+                updated_at = ?6
+          WHERE id = ?7`,
       )
-      .bind(summary, repoFamilies, now, existing.id)
+      .bind(
+        payload.summary,
+        payload.missingSignal,
+        payload.inventoryFailureReason,
+        payload.repoFamilies,
+        payload.desiredAssessmentSignal,
+        now,
+        existing.id,
+      )
       .run();
     return;
   }
@@ -587,11 +770,11 @@ async function ensureChallengeDesignQueueItem(
       crypto.randomUUID(),
       candidate.id,
       candidate.owner_id,
-      summary,
-      'Needs a validated source-backed challenge assignment for the submitted candidate profile.',
-      'No ready challenge assignment was available at intake completion.',
-      repoFamilies,
-      'Assess code review judgment against source-backed production code once inventory is ready.',
+      payload.summary,
+      payload.missingSignal,
+      payload.inventoryFailureReason,
+      payload.repoFamilies,
+      payload.desiredAssessmentSignal,
       now,
     )
     .run();
@@ -661,12 +844,32 @@ route.post('/upload-profile', async (c) => {
 
   const now = new Date().toISOString();
   const rawFileName = safeFileName(fileEntry.name);
-  const profileKey = `talent-intake/${candidate.id}/${now.replace(/[:.]/g, '-')}-${rawFileName}`;
   const arrayBuffer = await fileEntry.arrayBuffer();
+  const fileHash = await sha256Hex(arrayBuffer);
+  const profileKey = `talent-intake/${candidate.id}/${fileHash}-${rawFileName}`;
   let resumeText = parsed.data.resumeText.trim();
+  let foregroundDocumentExtractionAttempted = false;
   if (contentType === 'text/plain' && resumeText.length === 0) {
     resumeText = new TextDecoder().decode(arrayBuffer).trim().slice(0, 50_000);
   }
+  if (
+    resumeText.length === 0
+    && (contentType === 'application/pdf'
+      || contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+  ) {
+    foregroundDocumentExtractionAttempted = true;
+    try {
+      resumeText = (await extractTextFromResumeFile(arrayBuffer, contentType)).trim().slice(0, 50_000);
+    } catch (err) {
+      console.error('[talentPool/upload-profile] profile text extraction failed:', {
+        candidateId: candidate.id,
+        fileName: rawFileName,
+        contentType,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  const sourceTextUnavailable = foregroundDocumentExtractionAttempted && resumeText.length < 20;
 
   const profileInput: SubmitProfileInput = {
     ...parsed.data,
@@ -678,25 +881,44 @@ route.post('/upload-profile', async (c) => {
     customMetadata: {
       source: 'talent_pool_intake',
       candidateId: candidate.id,
+      sourceKind: TALENT_POOL_UPLOADED_PROFILE_SOURCE_KIND,
+      originalFileName: rawFileName,
     },
   });
 
-  await persistIntake(c, candidate, profileInput, now, {
+  const livingContextIdentity = await persistIntake(c, candidate, profileInput, now, {
     profileKey,
     profileExcerpt: resumeText.length >= 20 ? excerpt(resumeText) : `Uploaded ${rawFileName}`,
+    sourceTextForPerson: resumeText.length >= 20 ? resumeText : undefined,
+    sourceMediaTypeForPerson: contentType,
+    sourceArtifactForPerson: {
+      storageKey: profileKey,
+      mediaType: contentType,
+      contentHash: fileHash,
+      byteLength: arrayBuffer.byteLength,
+      originalFileName: rawFileName,
+      extractedTextAvailable: resumeText.length >= 20,
+    },
   });
+  if (sourceTextUnavailable) {
+    await markProfileTextExtractionNeeded(c.env.DB, candidate.id, now);
+  }
+
+  const readyChallenges = await loadReadyChallenges(c.env.DB, candidate.id, candidate.invite_token);
+  if (readyChallenges.length === 0) {
+    await ensureChallengeDesignQueueItem(c.env.DB, candidate, profileInput, now, {
+      sourceBackedProfileEvidence: resumeText.length >= 20,
+    });
+  }
   queueProfileIngestion({
     c,
     candidateId: candidate.id,
     profileKey,
     contentType,
     resumeText,
+    livingContextIdentity,
+    sourceTextUnavailable,
   });
-
-  const readyChallenges = await loadReadyChallenges(c.env.DB, candidate.id, candidate.invite_token);
-  if (readyChallenges.length === 0) {
-    await ensureChallengeDesignQueueItem(c.env.DB, candidate, profileInput, now);
-  }
 
   const refreshed = await loadCandidateByInviteToken(c.env.DB, parsed.data.inviteToken);
   if (!refreshed) return errorResponse(c, 'NOT_FOUND', 'Invite not found.', 404);
@@ -720,6 +942,11 @@ route.post('/submit-profile', async (c) => {
 
   const now = new Date().toISOString();
   await persistIntake(c, candidate, parsed.data, now);
+
+  const readyChallenges = await loadReadyChallenges(c.env.DB, candidate.id, candidate.invite_token);
+  if (readyChallenges.length === 0) {
+    await ensureChallengeDesignQueueItem(c.env.DB, candidate, parsed.data, now);
+  }
   queueProfileIngestion({
     c,
     candidateId: candidate.id,
@@ -727,11 +954,6 @@ route.post('/submit-profile', async (c) => {
     contentType: 'text/plain',
     resumeText: parsed.data.resumeText,
   });
-
-  const readyChallenges = await loadReadyChallenges(c.env.DB, candidate.id, candidate.invite_token);
-  if (readyChallenges.length === 0) {
-    await ensureChallengeDesignQueueItem(c.env.DB, candidate, parsed.data, now);
-  }
 
   const refreshed = await loadCandidateByInviteToken(c.env.DB, parsed.data.inviteToken);
   if (!refreshed) return errorResponse(c, 'NOT_FOUND', 'Invite not found.', 404);

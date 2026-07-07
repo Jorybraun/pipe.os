@@ -31,6 +31,7 @@ export function prefetchDevProxyApiJson(path: string): void {
 
   const prefetch = fetch(key, {
     method: 'GET',
+    cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
     },

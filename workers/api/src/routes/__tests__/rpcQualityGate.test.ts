@@ -67,6 +67,7 @@ describe('qualityGateFor', () => {
         'assessment_quality_verified',
         'agent_validated_match',
       ],
+      diagnostics: ['CONTRAST_SEPARATION_UNVERIFIED'],
     });
   });
 
@@ -93,6 +94,7 @@ describe('qualityGateFor', () => {
         'contrast_separation_not_required_roleless',
         'agent_validated_match',
       ],
+      diagnostics: [],
     });
   });
 });
@@ -256,6 +258,40 @@ function sourceBackedMatch(): CandidateReviewChallengeMatch {
   };
 }
 
+function embeddingOnlyMatch(): CandidateReviewChallengeMatch {
+  const match = sourceBackedMatch();
+  return {
+    ...match,
+    explanation: match.explanation
+      ? {
+          ...match.explanation,
+          summary: 'Embedding recall selected a challenge without source-backed alignment.',
+          validatorAgent: {
+            ...match.explanation.validatorAgent!,
+            rationale: 'Embedding recall did not produce source-backed candidate or repository spans.',
+            sourceBridge: {
+              ...match.explanation.validatorAgent!.sourceBridge,
+              candidateSourceCount: 0,
+              repoSourceCount: 0,
+              roleSourceCount: 0,
+              alignedDemandCount: 0,
+              provenanceComplete: false,
+            },
+          },
+          evidence: match.explanation.evidence.map((entry) => ({
+            ...entry,
+            candidateSourceRefs: [],
+            challengeSourceRefs: [],
+            roleSourceRefs: [],
+          })),
+          candidateSpans: [],
+          repoSpans: [],
+          roleSources: [],
+        }
+      : undefined,
+  };
+}
+
 function buildStandaloneAssignmentDb(calls: { updates: unknown[][] }): D1Database {
   return {
     prepare(sql: string) {
@@ -327,6 +363,107 @@ describe('matchStandaloneDevContainerAssessment', () => {
       973,
     ]);
     expect(calls.updates[0]?.[4]).toBe('interview-1');
+  });
+
+  it('materializes a matched open-source bug-fix challenge session before returning ready', async () => {
+    const calls = { updates: [] as unknown[][] };
+    const db = buildStandaloneAssignmentDb(calls);
+    const materialized: unknown[] = [];
+
+    const result = await matchStandaloneDevContainerAssessment(
+      db,
+      'candidate-1',
+      {
+        id: 'interview-open-source-1',
+        status: 'INVITED',
+        created_at: '2026-06-29T11:00:00.000Z',
+        interview_type: 'OPEN_SOURCE_BUG_FIX',
+        matched_repo_id: null,
+        github_repo_url: null,
+        github_pr_number: null,
+        submission_json: null,
+      },
+      async () => sourceBackedMatch(),
+      async (_db, input) => {
+        materialized.push(input);
+        return {
+          hasChallengePacket: true,
+          challengePacketContract: { isComplete: true },
+        } as never;
+      },
+    );
+
+    expect(result).toEqual(expect.objectContaining({
+      repoId: 41,
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+    }));
+    expect(materialized).toHaveLength(1);
+    expect(materialized[0]).toMatchObject({
+      interviewId: 'interview-open-source-1',
+      candidateId: 'candidate-1',
+      matchedRepoId: 41,
+      repositoryUrl: 'https://github.com/mui/base-ui',
+      githubPrNumber: 973,
+    });
+  });
+
+  it('blocks embedding-only open-source matches before challenge-session materialization', async () => {
+    const calls = { updates: [] as unknown[][] };
+    const db = buildStandaloneAssignmentDb(calls);
+    const materialized: unknown[] = [];
+
+    const result = await matchStandaloneDevContainerAssessment(
+      db,
+      'candidate-1',
+      {
+        id: 'interview-open-source-embedding-only',
+        status: 'INVITED',
+        created_at: '2026-06-29T11:00:00.000Z',
+        interview_type: 'OPEN_SOURCE_BUG_FIX',
+        matched_repo_id: null,
+        github_repo_url: null,
+        github_pr_number: null,
+        submission_json: null,
+      },
+      async () => embeddingOnlyMatch(),
+      async (_db, input) => {
+        materialized.push(input);
+        return {
+          hasChallengePacket: true,
+          challengePacketContract: { isComplete: true },
+        } as never;
+      },
+    );
+
+    expect(result).toBeNull();
+    expect(materialized).toHaveLength(0);
+    expect(calls.updates).toHaveLength(0);
+  });
+
+  it('keeps matched open-source bug-fix assignments blocked when no source-backed session can be materialized', async () => {
+    const calls = { updates: [] as unknown[][] };
+    const db = buildStandaloneAssignmentDb(calls);
+
+    const result = await matchStandaloneDevContainerAssessment(
+      db,
+      'candidate-1',
+      {
+        id: 'interview-open-source-missing-packet',
+        status: 'INVITED',
+        created_at: '2026-06-29T11:00:00.000Z',
+        interview_type: 'OPEN_SOURCE_BUG_FIX',
+        matched_repo_id: null,
+        github_repo_url: null,
+        github_pr_number: null,
+        submission_json: null,
+      },
+      async () => sourceBackedMatch(),
+      async () => null,
+    );
+
+    expect(result).toBeNull();
+    expect(calls.updates).toHaveLength(1);
   });
 });
 
@@ -435,6 +572,7 @@ describe('repairStandaloneReviewAssignmentFromMatchRun', () => {
         'contrast_separation_not_required_roleless',
         'agent_validated_match',
       ],
+      diagnostics: [],
     });
     expect(calls.updates).toHaveLength(1);
     expect(calls.updates[0]?.slice(0, 3)).toEqual([

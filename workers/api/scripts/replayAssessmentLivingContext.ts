@@ -7,6 +7,7 @@
  *   CLOUDFLARE_D1_DATABASE_ID=<dev-db-id> npm run assessment-evidence:replay -- --remote --all-missing --limit 25
  *   CLOUDFLARE_D1_DATABASE_ID=<dev-db-id> npm run assessment-evidence:replay -- --remote --all-missing --limit 25 --summary
  *   CLOUDFLARE_D1_DATABASE_ID=<dev-db-id> npm run assessment-evidence:replay -- --remote --all-missing --limit 25 --summary --progress --exclude-state IN_PROGRESS
+ *   CLOUDFLARE_D1_DATABASE_ID=<dev-db-id> npm run assessment-evidence:replay -- --remote --all-missing --limit 25 --summary --progress --missing-events-only
  *
  * The replay uses the same production ingestion path as real-time assessment
  * evaluation and scheduled backfill. Ingestion keys make reruns idempotent.
@@ -15,7 +16,10 @@
 import dotenv from 'dotenv';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ingestAssessmentSessionRealTime } from '../src/lib/livingContext/assessmentIngestion';
+import {
+  ingestAssessmentSessionRealTime,
+  ingestMissingAssessmentEventsToLivingContext,
+} from '../src/lib/livingContext/assessmentIngestion';
 import { recordAssessmentCandidateProfileEvidence } from '../src/lib/assessmentLayer/candidateProfileEvidence';
 import { D1Client, loadD1Config } from './crawl-repos/shared/d1Client.js';
 
@@ -79,6 +83,7 @@ interface ReplayOptions {
   summary: boolean;
   progress: boolean;
   excludeStates: string[];
+  missingEventsOnly: boolean;
 }
 
 interface CountRow {
@@ -137,6 +142,7 @@ function parseArgs(argv: string[]): ReplayOptions {
   let json = false;
   let summary = false;
   let progress = false;
+  let missingEventsOnly = false;
   const excludeStates: string[] = [];
 
   for (let index = 0; index < argv.length; index++) {
@@ -155,6 +161,8 @@ function parseArgs(argv: string[]): ReplayOptions {
       summary = true;
     } else if (arg === '--progress') {
       progress = true;
+    } else if (arg === '--missing-events-only') {
+      missingEventsOnly = true;
     } else if (arg === '--exclude-state' || arg.startsWith('--exclude-state=')) {
       const inline = arg.match(/^--exclude-state=(.+)$/)?.[1];
       const value = inline ?? argv[++index];
@@ -182,7 +190,7 @@ function parseArgs(argv: string[]): ReplayOptions {
     throw new Error('--exclude-state can only be used with --all-missing.');
   }
 
-  return { target, sessionId, allMissing, limit, json, summary, progress, excludeStates };
+  return { target, sessionId, allMissing, limit, json, summary, progress, excludeStates, missingEventsOnly };
 }
 
 async function count(db: D1Database, sql: string, value: string): Promise<number> {
@@ -311,10 +319,12 @@ async function loadAnswerSummary(db: D1Database, sessionId: string): Promise<{
   };
 }
 
-async function replaySession(db: D1Database, sessionId: string): Promise<{
+async function replaySession(db: D1Database, sessionId: string, options: { missingEventsOnly?: boolean } = {}): Promise<{
   ok: boolean;
   sessionId: string;
-  replay: Awaited<ReturnType<typeof ingestAssessmentSessionRealTime>>;
+  replay: Awaited<ReturnType<typeof ingestAssessmentSessionRealTime>>
+    | Awaited<ReturnType<typeof ingestMissingAssessmentEventsToLivingContext>>;
+  replayMode: 'full-session' | 'missing-events-only';
   before: { interactions: number; contextRecords: number; sourceRefs: number };
   after: { interactions: number; contextRecords: number; sourceRefs: number };
   proof: ProofRow | null;
@@ -328,7 +338,9 @@ async function replaySession(db: D1Database, sessionId: string): Promise<{
   };
 
   await recordAssessmentCandidateProfileEvidence(db, { sessionId });
-  const replay = await ingestAssessmentSessionRealTime(db, sessionId);
+  const replay = options.missingEventsOnly
+    ? await ingestMissingAssessmentEventsToLivingContext(db, sessionId)
+    : await ingestAssessmentSessionRealTime(db, sessionId);
   const proof = await loadProof(db, sessionId);
   const candidateId = await resolveSessionCandidateId(db, sessionId);
   const answers = await loadAnswerSummary(db, sessionId);
@@ -344,6 +356,7 @@ async function replaySession(db: D1Database, sessionId: string): Promise<{
     ok: replay !== null && proof !== null && proof.source_ref_count > 0,
     sessionId,
     replay,
+    replayMode: options.missingEventsOnly ? 'missing-events-only' : 'full-session',
     before,
     after,
     proof,
@@ -381,7 +394,6 @@ async function loadMissingReplayTargets(
        LEFT JOIN scheduled_interviews si ON si.id = ass.interview_id
        JOIN candidates c ON c.id = COALESCE(ass.candidate_id, si.candidate_id)
       WHERE (ass.candidate_id IS NOT NULL OR si.candidate_id IS NOT NULL)
-        AND ass.state NOT IN ('INTAKE', 'CANCELLED')
         ${excludeStateSql}
         AND NOT EXISTS (
           SELECT 1
@@ -426,6 +438,7 @@ function summarizeReplayResults(input: {
     sessionId: string;
     state: string | null;
     selectedMissingEventCount: number | null;
+    replayMode: 'full-session' | 'missing-events-only';
     ok: boolean;
     interactionType: string | null;
     contextRecordsBefore: number;
@@ -443,6 +456,7 @@ function summarizeReplayResults(input: {
     sessionId: entry.sessionId,
     state: targetBySessionId.get(entry.sessionId)?.state ?? null,
     selectedMissingEventCount: targetBySessionId.get(entry.sessionId)?.missingEventCount ?? null,
+    replayMode: entry.replayMode,
     ok: entry.ok,
     interactionType: entry.proof?.interaction_type ?? null,
     contextRecordsBefore: entry.before.contextRecords,
@@ -500,9 +514,12 @@ async function main(): Promise<void> {
         sessionId: target.sessionId,
         state: target.state,
         missingEvents: target.missingEventCount,
+        replayMode: options.missingEventsOnly ? 'missing-events-only' : 'full-session',
       });
       const startedAt = Date.now();
-      const result = await replaySession(db, target.sessionId);
+      const result = await replaySession(db, target.sessionId, {
+        missingEventsOnly: options.missingEventsOnly,
+      });
       results.push(result);
       emitProgress(options.progress, 'done session', {
         sessionId: target.sessionId,
@@ -532,7 +549,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  const result = await replaySession(db, options.sessionId!);
+  const result = await replaySession(db, options.sessionId!, {
+    missingEventsOnly: options.missingEventsOnly,
+  });
 
   if (options.json) {
     console.log(JSON.stringify(result, null, 2));

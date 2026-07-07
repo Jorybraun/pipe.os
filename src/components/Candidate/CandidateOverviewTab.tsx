@@ -24,6 +24,15 @@ interface CandidateOverviewTabProps {
   cultureInterviewSessions: CultureInterviewSession[];
   candidateId: string;
   matchResult?: UnifiedMatchResult | null;
+  onRetryFailedIngestion?: (() => Promise<void>) | undefined;
+  isRetryingIngestion?: boolean | undefined;
+  retryIngestionError?: string | null | undefined;
+  retryIngestionResult?: {
+    scanned: number;
+    queued: number;
+    skipped: number;
+    failed: number;
+  } | null | undefined;
 }
 
 // ─── Mini components ───────────────────────────────────────────────────────
@@ -436,12 +445,22 @@ export function CandidateOverviewTab({
   cultureInterviewSessions,
   candidateId,
   matchResult,
+  onRetryFailedIngestion,
+  isRetryingIngestion,
+  retryIngestionError,
+  retryIngestionResult,
 }: CandidateOverviewTabProps): JSX.Element {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       {/* AI-enriched profile sections (hero, narrative, skills, etc.) */}
       {profileSections.length > 0 && (
-        <CandidateEnrichmentTab sections={profileSections} />
+        <CandidateEnrichmentTab
+          sections={profileSections}
+          onRetryFailedIngestion={onRetryFailedIngestion}
+          isRetryingIngestion={isRetryingIngestion}
+          retryIngestionError={retryIngestionError}
+          retryIngestionResult={retryIngestionResult}
+        />
       )}
 
       {/* Fallback background card if no enrichment sections */}

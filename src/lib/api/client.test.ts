@@ -24,6 +24,10 @@ describe('createApiClient', () => {
 
     expect(result).toEqual({ source: 'prefetch' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/demo', expect.objectContaining({
+      method: 'GET',
+      cache: 'no-store',
+    }));
     expect(getToken).not.toHaveBeenCalled();
   });
 
@@ -46,6 +50,14 @@ describe('createApiClient', () => {
 
     expect(result).toEqual({ source: 'fallback' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      method: 'GET',
+      cache: 'no-store',
+    }));
+    expect(fetchMock.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
+      method: 'GET',
+      cache: 'no-store',
+    }));
     expect(getToken).toHaveBeenCalledTimes(1);
   });
 });

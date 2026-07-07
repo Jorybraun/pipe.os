@@ -11,13 +11,37 @@ import type {
 import { useRoomStatusNotifications } from './useRoomStatusNotifications';
 
 const INTERVIEW_PAGE_LIMIT = 20;
+type ScheduledInterviewsSort = 'created_desc' | 'created_asc' | 'scheduled_asc';
+type ScheduledInterviewsTypeFilter =
+  | 'ALL'
+  | 'STANDARD_CALLS'
+  | 'CODE_REVIEW'
+  | 'DEV_CONTAINER_CHALLENGE'
+  | 'OPEN_SOURCE_BUG_FIX';
 
 interface ScheduledInterviewsPagination {
   total: number;
   limit: number;
   offset: number;
+  sort?: ScheduledInterviewsSort;
+  interviewType?: ScheduledInterviewsTypeFilter;
   nextOffset: number | null;
   hasMore: boolean;
+}
+
+interface ScheduledInterviewsFacets {
+  interviewTypes: {
+    all: number;
+    standardCalls: number;
+    codeReview: number;
+    devContainerChallenge: number;
+    openSourceBugFix: number;
+  };
+}
+
+interface UseScheduledInterviewsOptions {
+  sort?: ScheduledInterviewsSort;
+  interviewType?: ScheduledInterviewsTypeFilter;
 }
 
 interface UseScheduledInterviewsResult {
@@ -27,6 +51,7 @@ interface UseScheduledInterviewsResult {
   error: Error | null;
   total: number;
   hasMore: boolean;
+  facets: ScheduledInterviewsFacets | null;
   updateStatus: (
     id: string,
     patch: {
@@ -41,19 +66,38 @@ interface UseScheduledInterviewsResult {
   loadMore: () => Promise<void>;
 }
 
+function scheduledInterviewsPath(input: {
+  offset: number;
+  sort: ScheduledInterviewsSort;
+  interviewType: ScheduledInterviewsTypeFilter;
+}): string {
+  const params = new URLSearchParams({
+    limit: String(INTERVIEW_PAGE_LIMIT),
+    offset: String(input.offset),
+    sort: input.sort,
+  });
+  if (input.interviewType !== 'ALL') {
+    params.set('interviewType', input.interviewType);
+  }
+  return `/api/v1/scheduling/interviews?${params.toString()}`;
+}
+
 /**
  * useScheduledInterviews — fetches paged ScheduledInterviews
  * owned by the authenticated recruiter via Cloudflare Worker API.
  */
-export function useScheduledInterviews(): UseScheduledInterviewsResult {
+export function useScheduledInterviews(options: UseScheduledInterviewsOptions = {}): UseScheduledInterviewsResult {
   const api: ApiClient = useApiClient();
   const { updates: roomStatusUpdates } = useRoomStatusNotifications();
+  const sort = options.sort ?? 'created_desc';
+  const interviewType = options.interviewType ?? 'ALL';
 
   const [interviews, setInterviews] = useState<ScheduledInterview[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [pagination, setPagination] = useState<ScheduledInterviewsPagination | null>(null);
+  const [facets, setFacets] = useState<ScheduledInterviewsFacets | null>(null);
   const processedRoomStatusKeysRef = useRef<Set<string>>(new Set());
   const interviewsRef = useRef<ScheduledInterview[]>([]);
   const paginationRef = useRef<ScheduledInterviewsPagination | null>(null);
@@ -113,7 +157,8 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           workspaceSession?: WorkspaceSessionSummary | null;
         }>;
         pagination?: ScheduledInterviewsPagination;
-      }>(`/api/v1/scheduling/interviews?limit=${INTERVIEW_PAGE_LIMIT}&offset=${offset}`);
+        facets?: ScheduledInterviewsFacets;
+      }>(scheduledInterviewsPath({ offset, sort, interviewType }));
 
       const nextPage = result.interviews.map((r) => ({
           id: r.id,
@@ -165,6 +210,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
         total: merged.length,
         limit: INTERVIEW_PAGE_LIMIT,
         offset,
+        sort,
         nextOffset: null,
         hasMore: false,
       };
@@ -173,6 +219,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
       paginationRef.current = nextPagination;
       setInterviews(merged);
       setPagination(nextPagination);
+      setFacets(result.facets ?? null);
       setError(null);
     } catch (err) {
       console.error('[useScheduledInterviews] fetch error:', err);
@@ -184,7 +231,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
         setIsLoading(false);
       }
     }
-  }, [api]);
+  }, [api, interviewType, sort]);
 
   // Load interviews immediately. Calendly bookings arrive from provider webhooks;
   // live room presence/status updates arrive through useRoomStatusNotifications.
@@ -279,6 +326,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
     error,
     total: pagination?.total ?? interviews.length,
     hasMore: pagination?.hasMore ?? false,
+    facets,
     updateStatus,
     sendInvite,
     refetch: fetchInterviews,

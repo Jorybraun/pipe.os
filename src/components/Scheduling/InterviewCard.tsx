@@ -8,8 +8,8 @@ import { InviteToCallModal } from './InviteToCallModal';
 import { useApiClient } from '../../hooks/useApiClient';
 import type { InterviewStatus } from '../../lib/scheduling/types';
 import {
-  summarizeAssessmentAssignment,
   summarizeAssessmentChallenge,
+  summarizeResolvedAssessmentAssignment,
   type AssessmentAssignmentSummary,
 } from '../../lib/scheduling/assessmentChallenge';
 
@@ -36,11 +36,17 @@ interface InterviewCardProps {
 }
 
 interface AssessmentEvaluationStartResult {
+  progress?: {
+    stage: string;
+    nextAction: string;
+  };
   report?: unknown | null;
   diagnostic?: {
     code?: string;
     severity?: string;
   } | null;
+  accepted?: boolean;
+  backgrounded?: boolean;
 }
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
@@ -159,6 +165,7 @@ function assessmentEvidenceSummary(input: {
   hasToolUsageEvidence?: boolean;
   hasCommitSubmission: boolean;
   hasAiInteraction: boolean;
+  aiEvidenceLabel?: string | null;
   hasTranscriptEvidence: boolean;
   hasTestEvidence: boolean;
   hasVerificationGap?: boolean;
@@ -179,7 +186,7 @@ function assessmentEvidenceSummary(input: {
     input.hasToolUsageEvidence ? 'tool activity' : null,
     input.hasWorkEvidence && !hasGranularWorkEvidence ? 'work evidence' : null,
     input.hasCommitSubmission ? 'commit' : null,
-    input.hasAiInteraction ? 'AI use' : null,
+    input.hasAiInteraction ? input.aiEvidenceLabel ?? 'AI bridge trace captured' : null,
     input.hasTranscriptEvidence ? 'transcript' : null,
     input.hasTestEvidence ? 'tests' : null,
     input.hasVerificationGap ? 'verification gap' : null,
@@ -188,7 +195,7 @@ function assessmentEvidenceSummary(input: {
 }
 
 function assessmentAssignmentColor(
-  tone: NonNullable<ReturnType<typeof summarizeAssessmentAssignment>>['tone'],
+  tone: AssessmentAssignmentSummary['tone'],
 ): string {
   switch (tone) {
     case 'matched':
@@ -202,33 +209,6 @@ function assessmentAssignmentColor(
     default:
       return 'var(--pipe-text)';
   }
-}
-
-function assessmentAssignmentFromProgressTrust(
-  trust: NonNullable<ScheduledInterview['assessmentProgress']>['assignmentTrust'],
-): AssessmentAssignmentSummary | null {
-  if (!trust || typeof trust !== 'object') return null;
-  const candidate = trust as {
-    label?: unknown;
-    detail?: unknown;
-    tone?: unknown;
-  };
-  if (typeof candidate.label !== 'string' || typeof candidate.detail !== 'string') return null;
-  const tone = candidate.tone;
-  if (
-    tone !== 'matched'
-    && tone !== 'manual'
-    && tone !== 'waiting'
-    && tone !== 'blocked'
-    && tone !== 'neutral'
-  ) {
-    return null;
-  }
-  return {
-    label: candidate.label,
-    detail: candidate.detail,
-    tone,
-  };
 }
 
 interface AssessmentDecisionSummary {
@@ -248,10 +228,40 @@ interface AssessmentPacketContractSummary {
   tone: 'verified' | 'warning' | 'neutral';
 }
 
+interface AssessmentReviewArtifactSummary {
+  label: string;
+  detail: string;
+  tone: 'verified' | 'warning' | 'neutral';
+}
+
+interface AssessmentCollaborationSummary {
+  label: string;
+  detail: string;
+  tone: 'verified' | 'warning' | 'neutral';
+}
+
+interface AssessmentProcessTelemetrySummary {
+  label: string;
+  detail: string;
+  tone: 'verified' | 'warning' | 'neutral';
+}
+
 interface AssessmentProofChecklistSummary {
   required: string[];
   confidence: string[];
   missingRequiredCount: number;
+}
+
+interface AssessmentLimitationSummary {
+  label: string;
+  detail: string;
+  tone: 'warning' | 'neutral';
+}
+
+interface AssessmentAiUseSummary {
+  label: string;
+  detail: string;
+  tone: 'verified' | 'warning' | 'neutral';
 }
 
 type AssessmentEvaluation = NonNullable<NonNullable<ScheduledInterview['assessmentProgress']>['evaluation']>;
@@ -267,7 +277,13 @@ function assessmentSourceRefTypeLabel(sourceRefType: string): string {
     case 'ai_user_prompt_blocked':
       return 'Blocked AI prompt';
     case 'ai_agent_response':
+    case 'agent_response':
       return 'Agent response';
+    case 'ai_agent_diagnostic':
+    case 'agent_diagnostic':
+      return 'Agent diagnostic';
+    case 'agent_status':
+      return 'Agent status';
     case 'ai_usage_event':
       return 'AI evaluator trace';
     default:
@@ -341,6 +357,114 @@ function assessmentEvaluationNeedsHumanCorrectnessReview(
     || codes.has('HUMAN_CORRECTNESS_REVIEW_REQUIRED');
 }
 
+function assessmentLimitationSummary(
+  progress: ScheduledInterview['assessmentProgress'] | null | undefined,
+): AssessmentLimitationSummary[] {
+  if (!progress?.hasCommitSubmission && !progress?.evaluation) return [];
+
+  const limitations: AssessmentLimitationSummary[] = [];
+
+  if (assessmentEvaluationNeedsHumanCorrectnessReview(progress.evaluation)) {
+    limitations.push({
+      label: 'Human correctness review required',
+      detail: 'Inspect the submitted diff and verification evidence before deciding.',
+      tone: 'warning',
+    });
+  }
+
+  if (!progress.hasAiInteraction) {
+    limitations.push({
+      label: 'AI-use trail missing',
+      detail: 'No candidate prompt, blocked attempt, or agent response was captured. Do not judge AI collaboration from this session.',
+      tone: 'neutral',
+    });
+  }
+
+  if (!progress.hasTranscriptEvidence) {
+    limitations.push({
+      label: 'Transcript missing',
+      detail: 'No speaker-attributed transcript spans were captured. Reasoning and communication signals come from chat/code evidence only.',
+      tone: 'neutral',
+    });
+  }
+
+  return limitations.slice(0, 3);
+}
+
+function unitLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function assessmentAiUseSummary(
+  progress: ScheduledInterview['assessmentProgress'] | null | undefined,
+): AssessmentAiUseSummary | null {
+  if (!progress) return null;
+
+  const agentResponses = assessmentSourceRefCount(progress, 'ai_agent_response')
+    + assessmentSourceRefCount(progress, 'agent_response');
+  const sentPrompts = assessmentSourceRefCount(progress, 'ai_user_prompt');
+  const blockedPrompts = assessmentSourceRefCount(progress, 'ai_user_prompt_blocked');
+  const bridgeDiagnostics = assessmentSourceRefCount(progress, 'ai_agent_diagnostic')
+    + assessmentSourceRefCount(progress, 'agent_diagnostic');
+  const bridgeStatuses = assessmentSourceRefCount(progress, 'agent_status');
+  const usageEvents = assessmentSourceRefCount(progress, 'ai_usage_event');
+
+  if (agentResponses > 0) {
+    const promptPart = sentPrompts > 0 ? `${unitLabel(sentPrompts, 'prompt')} and ` : '';
+    return {
+      label: 'AI response captured',
+      detail: `${promptPart}${unitLabel(agentResponses, 'agent response')} captured from the real agent bridge.`,
+      tone: 'verified',
+    };
+  }
+
+  if (blockedPrompts > 0) {
+    return {
+      label: 'AI prompt blocked',
+      detail: `${unitLabel(blockedPrompts, 'blocked prompt')} captured. The bridge was unavailable or blocked the prompt; no agent response is counted as assistance.`,
+      tone: 'warning',
+    };
+  }
+
+  if (sentPrompts > 0) {
+    return {
+      label: 'AI prompt captured',
+      detail: `${unitLabel(sentPrompts, 'prompt')} sent to the real agent bridge; no agent response is captured yet.`,
+      tone: 'verified',
+    };
+  }
+
+  if (bridgeDiagnostics > 0) {
+    return {
+      label: 'AI bridge diagnostic',
+      detail: `${unitLabel(bridgeDiagnostics, 'bridge diagnostic')} captured; no agent response is counted as assistance.`,
+      tone: 'warning',
+    };
+  }
+
+  if (bridgeStatuses > 0) {
+    return {
+      label: 'AI bridge status',
+      detail: `${unitLabel(bridgeStatuses, 'bridge status', 'bridge statuses')} captured; no agent response is counted as assistance.`,
+      tone: 'neutral',
+    };
+  }
+
+  if (usageEvents > 0 || progress.hasAiInteraction) {
+    return {
+      label: 'AI bridge trace captured',
+      detail: 'AI prompts, responses, or bridge traces are part of the source-backed evidence trail.',
+      tone: 'verified',
+    };
+  }
+
+  return {
+    label: 'No AI use captured',
+    detail: 'No candidate AI-assistance evidence is attached; treat AI use as unobserved, not absent.',
+    tone: 'neutral',
+  };
+}
+
 function assessmentCoverageGaps(
   coverage: AssessmentEvidenceCoverage | null | undefined,
 ): AssessmentEvidenceCoverageItem[] {
@@ -400,8 +524,9 @@ function assessmentDecisionSummary(input: {
       };
     }
     if (progress.readiness.isReadyForEvaluation) {
+      const hasConfidenceLimitations = progress.readiness.confidence.some((item) => !item.satisfied);
       return {
-        value: progress.readiness.label,
+        value: hasConfidenceLimitations ? 'Ready with limitations' : progress.readiness.label,
         detail: compactText(progress.readiness.detail, 150),
       };
     }
@@ -485,6 +610,121 @@ function assessmentCommitTrustColor(tone: AssessmentCommitTrustSummary['tone']):
   }
 }
 
+function assessmentSourceRefCount(
+  progress: ScheduledInterview['assessmentProgress'] | null | undefined,
+  kind: string,
+): number {
+  return progress?.sourceRefCounts?.find((row) => row.kind === kind)?.count ?? 0;
+}
+
+function sourceRefCountLabel(count: number, singular: string, plural = `${singular}s`): string | null {
+  if (count <= 0) return null;
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function readableList(parts: string[]): string {
+  if (parts.length <= 1) return parts[0] ?? '';
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+}
+
+function assessmentCollaborationSummary(
+  progress: ScheduledInterview['assessmentProgress'] | null | undefined,
+  options: { includeMissing?: boolean } = {},
+): AssessmentCollaborationSummary | null {
+  if (!progress) return null;
+
+  const chatMessageCount = assessmentSourceRefCount(progress, 'room_chat_message');
+  const sessionEventCount = assessmentSourceRefCount(progress, 'meeting_session_event');
+  const collaborationParts = [
+    sourceRefCountLabel(chatMessageCount, 'room chat message'),
+    sourceRefCountLabel(sessionEventCount, 'room session event'),
+  ].filter((item): item is string => Boolean(item));
+
+  if (progress.hasMessageEvidence || collaborationParts.length > 0) {
+    return {
+      label: 'Room chat captured',
+      detail: collaborationParts.length > 0
+        ? `${readableList(collaborationParts)} tied to the assessment evidence trail.`
+        : 'Candidate and recruiter messages are present as source-backed assessment evidence.',
+      tone: 'verified',
+    };
+  }
+
+  if (!options.includeMissing) return null;
+
+  return {
+    label: 'No chat evidence captured',
+    detail: 'Candidate collaboration is unobserved for this assessment session.',
+    tone: 'warning',
+  };
+}
+
+function assessmentProcessTelemetrySummary(
+  progress: ScheduledInterview['assessmentProgress'] | null | undefined,
+): AssessmentProcessTelemetrySummary | null {
+  if (!progress) return null;
+
+  const workspaceLaunchCount = assessmentSourceRefCount(progress, 'dev_container_workspace_launch');
+  const terminalCommandCount = assessmentSourceRefCount(progress, 'terminal_command');
+  const terminalOutputCount = assessmentSourceRefCount(progress, 'terminal_output');
+  const fileObservationCount = assessmentSourceRefCount(progress, 'code_server_file_observation');
+  const editorSaveCount = assessmentSourceRefCount(progress, 'code_editor_save');
+  const telemetryParts = [
+    sourceRefCountLabel(workspaceLaunchCount, 'workspace launch'),
+    sourceRefCountLabel(terminalCommandCount, 'terminal command'),
+    sourceRefCountLabel(terminalOutputCount, 'terminal output'),
+    sourceRefCountLabel(fileObservationCount, 'file observation'),
+    sourceRefCountLabel(editorSaveCount, 'editor save'),
+  ].filter((item): item is string => Boolean(item));
+
+  if (telemetryParts.length > 0) {
+    return {
+      label: 'Workspace telemetry captured',
+      detail: `${readableList(telemetryParts)} tied to the assessment evidence trail.`,
+      tone: 'verified',
+    };
+  }
+
+  if (progress.hasDevContainerEvidence || progress.hasToolUsageEvidence) {
+    return {
+      label: 'Workspace telemetry captured',
+      detail: 'Workspace or tool activity is present as source-backed assessment evidence.',
+      tone: 'verified',
+    };
+  }
+
+  return null;
+}
+
+function assessmentReviewArtifactSummary(
+  progress: ScheduledInterview['assessmentProgress'] | null | undefined,
+): AssessmentReviewArtifactSummary | null {
+  const commit = progress?.commit ?? null;
+  if (!commit) return null;
+  if (commit.commitUrl) {
+    return {
+      label: 'GitHub commit available',
+      detail: 'External commit URL is captured; open detail to compare base to submitted work.',
+      tone: 'verified',
+    };
+  }
+
+  if (assessmentSourceRefCount(progress, 'code_diff') > 0) {
+    return {
+      label: 'Captured diff available',
+      detail: 'Workspace-only commit has exact code_diff source evidence ready for review.',
+      tone: 'verified',
+    };
+  }
+
+  return {
+    label: 'Review artifact missing',
+    detail: 'Commit exists, but PIPE has no remote commit URL or captured code_diff source evidence.',
+    tone: 'warning',
+  };
+}
+
 function assessmentPacketContractSummary(
   contract: NonNullable<ScheduledInterview['assessmentProgress']>['challengePacketContract'] | null | undefined,
 ): AssessmentPacketContractSummary | null {
@@ -551,6 +791,9 @@ function assessmentEvaluationStartNotice(result: AssessmentEvaluationStartResult
       .replace(/\bapi\b/g, 'API')
       .replace(/\bApi\b/g, 'API');
     return `Evaluation needs attention: ${diagnosticLabel}.`;
+  }
+  if (result?.progress?.stage === 'EVALUATING' || result?.progress?.nextAction === 'WAIT_FOR_EVALUATION') {
+    return 'Source-backed assessment evaluation is running.';
   }
   return 'Source-backed assessment evaluation requested.';
 }
@@ -639,6 +882,10 @@ export function InterviewCard({
   const modeLabel = interview.interviewType
     ? INTERVIEW_TYPE_LABELS[interview.interviewType] ?? interview.interviewType
     : 'Interview';
+  const interviewTitle = interview.title?.trim() || null;
+  const interviewDescription = interview.description?.trim() || null;
+  const primaryLabel = interviewTitle ?? candidateName;
+  const secondaryIdentity = interviewTitle ? candidateName : null;
   const provider = interview.meetingSchedulingProvider ?? interview.schedulingProvider ?? null;
   const providerEventId = providerEventLabel(interview.meetingExternalEventId ?? interview.externalEventId);
   const roleContext = pipelineTitle && pipelineTitle !== 'Talent Pool'
@@ -653,8 +900,10 @@ export function InterviewCard({
     interview.status === 'INVITED' && !hasInviteDelivery ? 'Ready' : undefined;
   const assessmentProgress = interview.assessmentProgress ?? null;
   const assessmentSetup = interview.assessmentSetup ?? null;
-  const assessmentAssignment = summarizeAssessmentAssignment(assessmentSetup)
-    ?? assessmentAssignmentFromProgressTrust(assessmentProgress?.assignmentTrust);
+  const assessmentAssignment = summarizeResolvedAssessmentAssignment({
+    setup: assessmentSetup,
+    assignmentTrust: assessmentProgress?.assignmentTrust,
+  });
   const showsAssessmentSnapshot = isAssessmentInterviewType(interview.interviewType)
     || Boolean(assessmentProgress);
   const assessmentStageLabel = assessmentProgress
@@ -662,13 +911,17 @@ export function InterviewCard({
     : assessmentSetup?.blocksPositiveAssessment
       ? 'Setup gap'
       : 'Assessment ready';
+  const assessmentAiUse = assessmentAiUseSummary(assessmentProgress);
   const assessmentNextAction = assessmentProgress?.nextActionLabel
     ?? assessmentProgress?.readiness?.detail
     ?? assessmentSetup?.nextActionLabel
     ?? assessmentSetup?.message
     ?? 'Assessment evidence will appear after the session starts.';
   const assessmentEvidence = assessmentProgress
-    ? assessmentEvidenceSummary(assessmentProgress)
+    ? assessmentEvidenceSummary({
+        ...assessmentProgress,
+        aiEvidenceLabel: assessmentAiUse?.label ?? null,
+      })
     : assessmentSetup?.status === 'reviewable_task_assigned'
       ? 'challenge assigned'
       : 'no assessment session yet';
@@ -695,12 +948,24 @@ export function InterviewCard({
     ?? null;
   const assessmentChallengeBindingLabel = assessmentProgress?.commit?.challengeBinding?.label ?? null;
   const assessmentCommitTrust = assessmentCommitTrustSummary(assessmentProgress?.commit);
+  const assessmentReviewArtifact = assessmentReviewArtifactSummary(assessmentProgress);
+  const assessmentCollaboration = assessmentCollaborationSummary(assessmentProgress);
+  const assessmentProcessTelemetry = assessmentProcessTelemetrySummary(assessmentProgress);
   const assessmentPacketContract = assessmentPacketContractSummary(assessmentProgress?.challengePacketContract);
   const assessmentCriteriaLabel = assessmentChallenge?.successCriteria.length
     ? compactText(assessmentChallenge.successCriteria.join(' · '), 150)
     : null;
+  const assessmentVerificationCommandLabel = assessmentChallenge?.verificationCommand
+    ? compactText(assessmentChallenge.verificationCommand, 150)
+    : null;
   const assessmentExpectedEvidenceLabel = assessmentChallenge?.expectedEvidence.length
     ? compactText(assessmentChallenge.expectedEvidence.join(' · '), 150)
+    : null;
+  const assessmentMatchProofLabel = assessmentChallenge?.matchProof.length
+    ? compactText(assessmentChallenge.matchProof.join(' · '), 180)
+    : null;
+  const assessmentFitLabel = assessmentChallenge?.assessmentFit.length
+    ? compactText(assessmentChallenge.assessmentFit.join(' · '), 180)
     : null;
   const assessmentEvaluationLabel = assessmentProgress?.evaluation?.status
     ? sentenceCaseToken(assessmentProgress.evaluation.status)
@@ -709,6 +974,7 @@ export function InterviewCard({
   const visibleAssessmentEvaluationClaims = assessmentEvaluationClaims(assessmentProgress?.evaluation);
   const visibleAssessmentEvaluationDiagnostics = assessmentEvaluationDiagnostics(assessmentProgress?.evaluation);
   const visibleAssessmentEvaluationGaps = assessmentCoverageGaps(assessmentProgress?.evaluation?.evidenceCoverage);
+  const visibleAssessmentLimitations = assessmentLimitationSummary(assessmentProgress);
   const assessmentDecision = assessmentDecisionSummary({
     setup: assessmentSetup,
     progress: assessmentProgress,
@@ -728,7 +994,7 @@ export function InterviewCard({
         data-interview-id={interview.id}
         data-interview-type={interview.interviewType ?? ''}
         data-candidate-email={candidateEmail ?? ''}
-        aria-label={`Open ${candidateName} interview details`}
+        aria-label={`Open ${primaryLabel} interview details`}
         tabIndex={0}
         onClick={() => navigate(`/interviews/${interview.id}`)}
         onKeyDown={(event) => {
@@ -766,10 +1032,10 @@ export function InterviewCard({
           </div>
         </div>
 
-        {/* Center: person + interview mode + optional role context */}
+        {/* Center: assessment title/person + interview mode + optional role context */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-            {candidateName}
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{primaryLabel}</span>
             {guestWaiting && (
               <span
                 style={{
@@ -793,12 +1059,22 @@ export function InterviewCard({
               </span>
             )}
           </div>
+          {secondaryIdentity && (
+            <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 4, overflowWrap: 'anywhere' }}>
+              {secondaryIdentity}
+            </div>
+          )}
           <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', letterSpacing: '0.05em', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>
             {roleContext ? `${modeLabel} · ${roleContext}` : modeLabel}
           </div>
           {candidateEmail && (
             <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
               {candidateEmail}
+            </div>
+          )}
+          {interviewDescription && (
+            <div style={{ marginTop: 5, fontSize: 10, lineHeight: 1.45, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', overflowWrap: 'anywhere' }}>
+              {compactText(interviewDescription, 180)}
             </div>
           )}
           {provider && providerEventId && (
@@ -858,6 +1134,26 @@ export function InterviewCard({
                   </div>
                 </>
               )}
+              {assessmentMatchProofLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: '#93c5fd', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    MATCH PROOF
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentMatchProofLabel}
+                  </div>
+                </>
+              )}
+              {assessmentFitLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: '#93c5fd', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    FIT
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentFitLabel}
+                  </div>
+                </>
+              )}
               <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
                 NEXT
               </div>
@@ -870,6 +1166,44 @@ export function InterviewCard({
               <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                 {assessmentEvidence}
               </div>
+              {assessmentAiUse && (
+                <>
+                  <div style={{ fontSize: 9, color: assessmentCommitTrustColor(assessmentAiUse.tone), letterSpacing: '0.12em', fontWeight: 700 }}>
+                    AI USE
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: assessmentCommitTrustColor(assessmentAiUse.tone), fontWeight: 700 }}>
+                      {assessmentAiUse.label}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                      {assessmentAiUse.detail}
+                    </div>
+                  </div>
+                </>
+              )}
+              {visibleAssessmentLimitations.length > 0 && (
+                <>
+                  <div style={{ fontSize: 9, color: '#fbbf24', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    LIMITATIONS
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    {visibleAssessmentLimitations.map((limitation) => (
+                      <div key={limitation.label} style={{ marginBottom: 4 }}>
+                        <div style={{
+                          fontSize: 10,
+                          color: limitation.tone === 'warning' ? '#fde68a' : 'var(--pipe-text)',
+                          fontWeight: 700,
+                        }}>
+                          {limitation.label}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                          {limitation.detail}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
               {assessmentProofChecklist && (
                 <>
                   <div style={{
@@ -932,6 +1266,36 @@ export function InterviewCard({
                   </div>
                 </>
               )}
+              {assessmentCollaboration && (
+                <>
+                  <div style={{ fontSize: 9, color: assessmentCommitTrustColor(assessmentCollaboration.tone), letterSpacing: '0.12em', fontWeight: 700 }}>
+                    CHAT
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: assessmentCommitTrustColor(assessmentCollaboration.tone), fontWeight: 700 }}>
+                      {assessmentCollaboration.label}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                      {assessmentCollaboration.detail}
+                    </div>
+                  </div>
+                </>
+              )}
+              {assessmentProcessTelemetry && (
+                <>
+                  <div style={{ fontSize: 9, color: assessmentCommitTrustColor(assessmentProcessTelemetry.tone), letterSpacing: '0.12em', fontWeight: 700 }}>
+                    PROCESS
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: assessmentCommitTrustColor(assessmentProcessTelemetry.tone), fontWeight: 700 }}>
+                      {assessmentProcessTelemetry.label}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                      {assessmentProcessTelemetry.detail}
+                    </div>
+                  </div>
+                </>
+              )}
               {assessmentRepoLabel && (
                 <>
                   <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
@@ -972,6 +1336,16 @@ export function InterviewCard({
                   </div>
                 </>
               )}
+              {assessmentVerificationCommandLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    VERIFY
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentVerificationCommandLabel}
+                  </div>
+                </>
+              )}
               {assessmentExpectedEvidenceLabel && (
                 <>
                   <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
@@ -999,6 +1373,21 @@ export function InterviewCard({
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: '#bfdbfe', overflowWrap: 'anywhere' }}>
                     {assessmentUpstreamPullRequestLabel} · candidate-approved tracking
+                  </div>
+                </>
+              )}
+              {assessmentReviewArtifact && (
+                <>
+                  <div style={{ fontSize: 9, color: assessmentCommitTrustColor(assessmentReviewArtifact.tone), letterSpacing: '0.12em', fontWeight: 700 }}>
+                    REVIEW ARTIFACT
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: assessmentCommitTrustColor(assessmentReviewArtifact.tone), fontWeight: 700 }}>
+                      {assessmentReviewArtifact.label}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                      {assessmentReviewArtifact.detail}
+                    </div>
                   </div>
                 </>
               )}

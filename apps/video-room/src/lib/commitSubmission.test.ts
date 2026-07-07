@@ -133,6 +133,11 @@ describe('commit submission payloads', () => {
         sourceRefType: 'test_run',
         sourceRefId: `${normalizedCommitSha}:test-run`,
         evidenceRole: 'verification_test_output',
+        locator: expect.objectContaining({
+          baseCommitSha,
+          commitSha: normalizedCommitSha,
+          command: 'npm test -- retry',
+        }),
         exactText: testEvidenceText,
         contentHash: await sha256ContentHash(testEvidenceText),
       }),
@@ -230,6 +235,11 @@ describe('commit submission payloads', () => {
         sourceRefType: 'verification_gap',
         sourceRefId: `${commitSha}:test-evidence-missing`,
         evidenceRole: 'missing_test_evidence_note',
+        locator: expect.objectContaining({
+          baseCommitSha: 'a'.repeat(40),
+          commitSha,
+          expectedSourceRefType: 'test_run',
+        }),
         exactText: verificationNotesText,
         contentHash: await sha256ContentHash(verificationNotesText),
         metadata: expect.objectContaining({

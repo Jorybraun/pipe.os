@@ -9,6 +9,8 @@ import { useEffect, useRef, useState } from 'react';
 import { isDevProxyRecruiterAuthBypassEnabled } from '../lib/auth/devProxyAuth';
 import { useAuth } from '../providers/DataContext';
 
+const MAX_RETAINED_ROOM_STATUS_UPDATES = 100;
+
 export interface RoomStatusNotification {
   interviewId: string;
   meetingId: string | null;
@@ -108,7 +110,7 @@ export function useRoomStatusNotifications(): UseRoomStatusNotificationsResult {
             try {
               const update = JSON.parse(data) as RoomStatusNotification;
               if (!cancelled) {
-                setUpdates((prev) => [...prev, update]);
+                setUpdates((prev) => [...prev, update].slice(-MAX_RETAINED_ROOM_STATUS_UPDATES));
               }
             } catch {
               // Ignore malformed SSE payloads.

@@ -8,13 +8,20 @@
 
 import { useState, useMemo } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
-import { CheckCircle, Clock, Copy, Plus, Trash2, Users } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, Copy, Plus, RefreshCw, Trash2, Users } from 'lucide-react';
 import { SectionCard } from '../../components';
 import { CandidateIntakeModal } from '../../components/Candidate/CandidateIntakeModal';
 import { useCandidateMutations } from '../../hooks/useCandidateMutations';
 import { usePipelineIngestion, type PipelineIngestionItem } from '../../hooks/usePipelineIngestion';
 import type { OverviewCandidate } from '../../lib/api/types';
 import type { StagePanelContext } from '../StagePanel';
+
+function ingestionColor(status: PipelineIngestionItem['status']): string {
+  if (status === 'matched') return '#10b981';
+  if (status === 'failed') return '#f87171';
+  if (status === 'embedded' || status === 'profile_generated') return '#60a5fa';
+  return '#9ca3af';
+}
 
 function CandidateRow({
   candidate,
@@ -41,6 +48,11 @@ function CandidateRow({
       ? '1px solid rgba(74, 222, 128, 0.12)'
       : '1px solid var(--pipe-border-light)';
   const Icon = variant === 'completed' ? CheckCircle : Clock;
+  const ingestionTitle = ingestion?.status === 'failed'
+    ? ingestion.errorText ?? 'Candidate AI ingestion failed.'
+    : ingestion?.status
+      ? `Candidate AI ingestion ${ingestion.status}.`
+      : undefined;
 
   return (
     <div
@@ -82,20 +94,36 @@ function CandidateRow({
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         {/* Enrichment indicator */}
         {ingestion && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div
+            aria-label={`Candidate AI ingestion ${ingestion.status}`}
+            title={ingestionTitle}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
             <div
               style={{
                 width: 6,
                 height: 6,
                 borderRadius: '50%',
-                background:
-                  ingestion.status === 'matched'
-                    ? '#10b981'
-                    : ingestion.status === 'failed'
-                      ? '#f87171'
-                      : '#9ca3af',
+                background: ingestionColor(ingestion.status),
               }}
             />
+            {ingestion.status === 'failed' && (
+              <span
+                style={{
+                  fontSize: 8,
+                  fontWeight: 800,
+                  color: '#fca5a5',
+                  fontFamily: '"Space Mono", monospace',
+                  letterSpacing: '0.06em',
+                  padding: '1px 5px',
+                  background: 'rgba(248,113,113,0.08)',
+                  border: '1px solid rgba(248,113,113,0.18)',
+                  borderRadius: 3,
+                }}
+              >
+                AI_FAILED
+              </span>
+            )}
             {ingestion.status === 'matched' && ingestion.triangulatedScore !== null && (
               <span
                 style={{
@@ -196,7 +224,13 @@ export default function CandidatesTab(): JSX.Element {
   const { shell, stageId } = useOutletContext<StagePanelContext>();
   const navigate = useNavigate();
   const { deleteCandidate } = useCandidateMutations();
-  const { items: ingestionItems } = usePipelineIngestion(shell.pipelineId);
+  const {
+    items: ingestionItems,
+    retryFailed,
+    isRetrying,
+    retryError,
+    lastRetryResult,
+  } = usePipelineIngestion(shell.pipelineId);
 
   const ingestionByCandidate = useMemo(() => {
     const map = new Map<string, PipelineIngestionItem>();
@@ -205,6 +239,11 @@ export default function CandidatesTab(): JSX.Element {
     }
     return map;
   }, [ingestionItems]);
+
+  const failedIngestionCount = useMemo(
+    () => ingestionItems.filter((item) => item.status === 'failed').length,
+    [ingestionItems],
+  );
 
   const [showAdd, setShowAdd] = useState(false);
 
@@ -223,6 +262,10 @@ export default function CandidatesTab(): JSX.Element {
       return;
     await deleteCandidate(candidate.id);
     await shell.refetch();
+  };
+
+  const handleRetryFailedIngestion = async (): Promise<void> => {
+    await retryFailed(10);
   };
 
   return (
@@ -254,6 +297,90 @@ export default function CandidatesTab(): JSX.Element {
           </button>
         }
       >
+        {(failedIngestionCount > 0 || retryError || lastRetryResult) && (
+          <div
+            data-testid="candidate-ingestion-repair-banner"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '10px 12px',
+              marginBottom: 14,
+              borderRadius: 6,
+              border: retryError
+                ? '1px solid rgba(248,113,113,0.22)'
+                : '1px solid rgba(251,191,36,0.18)',
+              background: retryError
+                ? 'rgba(248,113,113,0.06)'
+                : 'rgba(251,191,36,0.05)',
+            }}
+          >
+            <AlertTriangle size={14} color={retryError ? '#f87171' : '#fbbf24'} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 9,
+                  fontWeight: 800,
+                  letterSpacing: '0.12em',
+                  color: retryError ? '#fca5a5' : '#fbbf24',
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                {retryError
+                  ? 'AI_INGESTION_RETRY_FAILED'
+                  : failedIngestionCount > 0
+                    ? `AI_INGESTION_FAILED_${failedIngestionCount}`
+                    : `AI_INGESTION_QUEUED_${lastRetryResult?.queued ?? 0}`}
+              </div>
+              <div
+                style={{
+                  marginTop: 3,
+                  fontSize: 10,
+                  color: 'var(--pipe-text-dim)',
+                  fontFamily: '"Space Mono", monospace',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {retryError?.message
+                  ?? (lastRetryResult
+                    ? `Scanned ${lastRetryResult.scanned}; queued ${lastRetryResult.queued}; skipped ${lastRetryResult.skipped}; failed ${lastRetryResult.failed}.`
+                    : 'Retry source-backed candidate ingestion from stored resume evidence.')}
+              </div>
+            </div>
+            {failedIngestionCount > 0 && (
+              <button
+                type="button"
+                onClick={() => void handleRetryFailedIngestion()}
+                disabled={isRetrying}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  padding: '7px 10px',
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.14)',
+                  borderRadius: 4,
+                  color: 'var(--pipe-text)',
+                  fontSize: 8,
+                  fontWeight: 800,
+                  letterSpacing: '0.12em',
+                  fontFamily: '"Space Mono", monospace',
+                  cursor: isRetrying ? 'wait' : 'pointer',
+                  opacity: isRetrying ? 0.62 : 1,
+                }}
+              >
+                <RefreshCw
+                  size={11}
+                  style={{ animation: isRetrying ? 'spin 1s linear infinite' : undefined }}
+                />
+                RETRY_FAILED
+              </button>
+            )}
+          </div>
+        )}
+
         {stageCandidates.length === 0 ? (
           <div
             style={{

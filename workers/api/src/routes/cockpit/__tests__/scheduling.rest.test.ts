@@ -425,6 +425,8 @@ describe('GET /interviews/:id detail', () => {
         pipeline_id TEXT,
         stage_id TEXT,
         owner_id TEXT NOT NULL,
+        title TEXT,
+        description TEXT,
         interview_type TEXT,
         meeting_type TEXT,
         status TEXT,
@@ -994,6 +996,15 @@ describe('GET /interviews/:id detail', () => {
         '2026-06-22T18:05:00.000Z', '2026-06-22T18:06:00.000Z'
       )
     `).run();
+    sqlite!.prepare(`
+      INSERT INTO meeting_participants (
+        id, meeting_id, contact_id, role, joined_at, left_at, created_at, updated_at
+      ) VALUES (
+        'guest-participant-ready', 'meeting-1', 'contact-guest', 'ATTENDEE',
+        '2026-06-22T18:07:00.000Z', NULL,
+        '2026-06-22T18:07:00.000Z', '2026-06-22T18:07:00.000Z'
+      )
+    `).run();
     const app = mountSchedulingApp();
 
     const listResponse = await app.request('/interviews');
@@ -1001,6 +1012,8 @@ describe('GET /interviews/:id detail', () => {
     const listBody = await listResponse.json() as {
       interviews: Array<{
         id: string;
+        roomStatus: string | null;
+        guestWaiting: boolean;
         workspaceSession: {
           status: string;
           repoGitUrl: string | null;
@@ -1010,6 +1023,10 @@ describe('GET /interviews/:id detail', () => {
       }>;
     };
     const listedInterview = listBody.interviews.find((item) => item.id === 'interview-1');
+    expect(listedInterview).toMatchObject({
+      roomStatus: 'ACTIVE',
+      guestWaiting: true,
+    });
     expect(listedInterview?.workspaceSession).toMatchObject({
       status: 'READY',
       repoGitUrl: 'https://github.com/open-source/widgets',
@@ -1022,6 +1039,14 @@ describe('GET /interviews/:id detail', () => {
     expect(detailResponse.status).toBe(200);
     const detailBody = await detailResponse.json() as {
       interview: {
+        roomStatus: string | null;
+        guestWaiting: boolean;
+        linkedMeeting: {
+          room: {
+            status: string | null;
+            guestWaiting: boolean;
+          } | null;
+        } | null;
         workspaceSession: {
           status: string;
           repoGitUrl: string | null;
@@ -1030,6 +1055,16 @@ describe('GET /interviews/:id detail', () => {
         } | null;
       };
     };
+    expect(detailBody.interview).toMatchObject({
+      roomStatus: 'ACTIVE',
+      guestWaiting: true,
+      linkedMeeting: {
+        room: {
+          status: 'ACTIVE',
+          guestWaiting: true,
+        },
+      },
+    });
     expect(detailBody.interview.workspaceSession).toMatchObject({
       status: 'READY',
       repoGitUrl: 'https://github.com/open-source/widgets',
@@ -1087,6 +1122,148 @@ describe('GET /interviews/:id detail', () => {
       status: 'waiting_for_source_backed_match',
       lastDeliveredUrl: deliveredUrl,
       lastDeliveredUrlState: 'active',
+    });
+  });
+
+  it('explains quality-gated role-backed CODE_REVIEW matches before assignment', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      UPDATE scheduled_interviews
+         SET interview_type = 'CODE_REVIEW',
+             stage_id = 'stage-1',
+             matched_repo_id = NULL,
+             github_repo_url = NULL,
+             github_pr_number = NULL
+       WHERE id = 'interview-1'
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO qualified_repos (id, github_url)
+      VALUES (973, 'https://github.com/mui/base-ui')
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO review_challenge_packets (
+        id, repo_snapshot_id, repo_id, pr_number, production_ready,
+        quality_score, packet_json, updated_at
+      ) VALUES (
+        'packet-near-tie-973', 'snapshot-base-ui', 973, 973, 1,
+        0.91, '{}', 1
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-near-tie-973', 'candidate-1', 'role-context:role-1:source-backed:simple-jd-v1',
+        'MATCHED', ?, 'packet-near-tie-973', '{}', '2026-06-22T17:46:01.000Z'
+      )
+    `).run(JSON.stringify([{
+      rank: 1,
+      challengeId: 'packet-near-tie-973',
+      repoId: '973',
+      prNumber: 973,
+      score: 0.537,
+      alignedDemandCount: 6,
+      stretchCount: 0,
+      provenanceComplete: true,
+      eligible: true,
+      assessmentQuality: {
+        verdict: 'USABLE',
+        score: 9,
+        maxScore: 12,
+        metrics: [{
+          id: 'contrast_separation',
+          label: 'Contrast separation',
+          score: 0,
+          maxScore: 2,
+          reason: 'The selected challenge leads the next comparable challenge by 2%.',
+        }],
+      },
+      validatorAgent: {
+        agentName: 'source_backed_match_validator',
+        agentVersion: 'v1',
+        mode: 'deterministic',
+        verdict: 'PASSED',
+        rationale: 'Selected PR #973 from source-backed candidate, role, and repo evidence.',
+        checks: [],
+        sourceBridge: {
+          prNumber: 973,
+          candidateSourceCount: 6,
+          repoSourceCount: 28,
+          roleSourceCount: 1,
+          alignedDemandCount: 6,
+          stretchCount: 0,
+          provenanceComplete: true,
+        },
+      },
+      alignments: [],
+      rejectionReasons: [],
+    }]));
+
+    const app = mountSchedulingApp();
+    const detailResponse = await app.request('/interviews/interview-1');
+    expect(detailResponse.status).toBe(200);
+    const detail = await detailResponse.json() as {
+      interview: {
+        assessmentSetup: {
+          status: string;
+          kind: string;
+          source: string;
+          blocksPositiveAssessment: boolean;
+          message: string | null;
+          nextActionLabel: string | null;
+          selectionRationale: {
+            summary: string;
+            whyThisChallenge: string;
+            whyNotAlternatives: string;
+            residualRisk: string;
+            nextAction: string;
+          } | null;
+        };
+      };
+    };
+
+    expect(detail.interview.assessmentSetup).toMatchObject({
+      status: 'waiting_for_source_backed_match',
+      kind: 'auto_match',
+      source: 'candidate_id',
+      blocksPositiveAssessment: true,
+    });
+    expect(detail.interview.assessmentSetup.message).toContain('PIPE found a source-backed candidate challenge');
+    expect(detail.interview.assessmentSetup.message).toContain('https://github.com/mui/base-ui #973');
+    expect(detail.interview.assessmentSetup.message).toContain('auto-assignment quality gate');
+    expect(detail.interview.assessmentSetup.message).toContain('Assessment quality: USABLE 9/12.');
+    expect(detail.interview.assessmentSetup.message).toContain('leads the next comparable challenge by 2%');
+    expect(detail.interview.assessmentSetup.nextActionLabel).toContain('Review the latest match run');
+    expect(detail.interview.assessmentSetup.selectionRationale).toMatchObject({
+      summary: 'Candidate challenge held back',
+      whyThisChallenge: expect.stringContaining('https://github.com/mui/base-ui #973'),
+      whyNotAlternatives: expect.stringContaining('leads the next comparable challenge by 2%'),
+      residualRisk: expect.stringContaining('overstate match confidence'),
+      nextAction: expect.stringContaining('Add differentiating candidate or role evidence'),
+    });
+
+    const listResponse = await app.request('/interviews');
+    expect(listResponse.status).toBe(200);
+    const list = await listResponse.json() as {
+      interviews: Array<{
+        id: string;
+        assessmentSetup: {
+          message: string | null;
+          nextActionLabel: string | null;
+          selectionRationale: {
+            summary: string;
+            whyNotAlternatives: string;
+          } | null;
+        };
+      }>;
+    };
+    const listed = list.interviews.find((item) => item.id === 'interview-1');
+    expect(listed?.assessmentSetup.message).toContain('https://github.com/mui/base-ui #973');
+    expect(listed?.assessmentSetup.nextActionLabel).toContain('Review the latest match run');
+    expect(listed?.assessmentSetup.selectionRationale).toMatchObject({
+      summary: 'Candidate challenge held back',
+      whyNotAlternatives: expect.stringContaining('leads the next comparable challenge by 2%'),
     });
   });
 
@@ -1374,10 +1551,28 @@ describe('GET /interviews/:id detail', () => {
         narrative, payload_json, context_record_id, occurred_at, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
     `).run(
+      'assessment-event-progress-transcript',
+      'assessment-event:progress-detail-transcript',
+      'assessment-session-progress-detail',
+      3,
+      'dev_container_event',
+      'candidate',
+      'candidate-1',
+      'Candidate reasoning transcript was captured from the assessment room.',
+      JSON.stringify({ source: 'video_room_transcript' }),
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+        narrative, payload_json, context_record_id, occurred_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+    `).run(
       'assessment-event-progress-commit',
       'assessment-event:progress-detail-commit',
       'assessment-session-progress-detail',
-      2,
+      4,
       'commit_submission',
       'candidate',
       'candidate-1',
@@ -1444,6 +1639,42 @@ describe('GET /interviews/:id detail', () => {
       JSON.stringify({ source: 'agent_bridge_workspace_finalize' }),
       now,
     );
+    const terminalCommandText = 'git diff --check HEAD~1 HEAD && npm test -- popover';
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+        locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-source-progress-terminal-command',
+      'assessment-event-progress-commit',
+      'terminal_command',
+      `${commitSha}:terminal-command:finalizer`,
+      'workspace_terminal_command',
+      JSON.stringify({ command: terminalCommandText, commitSha }),
+      terminalCommandText,
+      sha256Hex(terminalCommandText),
+      JSON.stringify({ source: 'agent_bridge_workspace_finalize' }),
+      now,
+    );
+    const transcriptText = 'Speaker candidate: I picked the focused cleanup patch because it keeps the public API stable.';
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+        locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-source-progress-transcript',
+      'assessment-event-progress-transcript',
+      'meeting_transcript_segment',
+      'meeting-transcript-progress-detail',
+      'candidate_reasoning',
+      JSON.stringify({ speaker: 'candidate', startMs: 12000, endMs: 18000 }),
+      transcriptText,
+      sha256Hex(transcriptText),
+      JSON.stringify({ source: 'video_room_transcript' }),
+      now,
+    );
 
     const app = mountSchedulingApp();
     const response = await app.request('/interviews/interview-1');
@@ -1462,6 +1693,9 @@ describe('GET /interviews/:id detail', () => {
           };
           hasChallengePacket: boolean;
           hasCommitSubmission: boolean;
+          hasToolUsageEvidence: boolean;
+          hasTranscriptEvidence: boolean;
+          sourceRefCounts: Array<{ kind: string; count: number }>;
           challenge: { sourceRefId: string } | null;
           commit: {
             commitSha: string | null;
@@ -1495,6 +1729,8 @@ describe('GET /interviews/:id detail', () => {
       },
       hasChallengePacket: true,
       hasCommitSubmission: true,
+      hasToolUsageEvidence: true,
+      hasTranscriptEvidence: true,
       challenge: { sourceRefId: 'challenge-packet-progress-detail' },
       commit: {
         commitSha,
@@ -1512,6 +1748,11 @@ describe('GET /interviews/:id detail', () => {
     expect(body.interview.assessmentProgress?.readiness.confidence).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'workspace_captured_commit', satisfied: true }),
       expect.objectContaining({ id: 'test_run', satisfied: false }),
+      expect.objectContaining({ id: 'transcript_context', satisfied: true }),
+    ]));
+    expect(body.interview.assessmentProgress?.sourceRefCounts).toEqual(expect.arrayContaining([
+      { kind: 'meeting_transcript_segment', count: 1 },
+      { kind: 'terminal_command', count: 1 },
     ]));
     expect(body.interview.assessmentProgress?.evidenceSnippets).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -1528,6 +1769,150 @@ describe('GET /interviews/:id detail', () => {
         exactText: expect.stringContaining('+cleanupStaleHandler();'),
       }),
     ]));
+  });
+
+  it('rejects starting assessment evaluation when commit diff proof is missing', async () => {
+    seedInterviewDetailFixture();
+    const now = '2026-06-22T18:43:00.000Z';
+    const baseCommitSha = '6666666666666666666666666666666666666666';
+    const commitSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const challengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      `Base commit: ${baseCommitSha}`,
+      'Task: fix the start-evaluation missing-diff regression.',
+      'Success: commit a focused patch with a reviewable diff.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the candidate patch',
+    ].join('\n');
+    const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nFix without captured diff.`;
+
+    sqlite!.prepare(`
+      UPDATE scheduled_interviews
+         SET interview_type = 'OPEN_SOURCE_BUG_FIX',
+             github_repo_url = 'https://github.com/open-source/widgets'
+       WHERE id = 'interview-1'
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+        metadata_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-session-start-evaluation-missing-diff',
+      'assessment-session:start-evaluation-missing-diff',
+      'interview-1',
+      'OPEN_SOURCE_BUG_FIX',
+      'FINAL_SUBMITTED',
+      'candidate-1',
+      'workspace-1',
+      '{}',
+      now,
+      now,
+    );
+    for (const event of [
+      {
+        id: 'assessment-event-start-evaluation-missing-diff-challenge',
+        ingestionKey: 'assessment-event:start-evaluation-missing-diff-challenge',
+        sequence: 1,
+        kind: 'recruiter_note',
+        actorType: 'recruiter',
+        actorId: 'owner-1',
+        narrative: 'Recruiter assigned a complete open-source challenge packet.',
+        payload: { repositoryUrl: 'https://github.com/open-source/widgets' },
+      },
+      {
+        id: 'assessment-event-start-evaluation-missing-diff-commit',
+        ingestionKey: 'assessment-event:start-evaluation-missing-diff-commit',
+        sequence: 2,
+        kind: 'commit_submission',
+        actorType: 'candidate',
+        actorId: 'candidate-1',
+        narrative: 'Candidate submitted a commit without the exact diff source ref.',
+        payload: {
+          repositoryUrl: 'https://github.com/open-source/widgets',
+          forkRepositoryUrl: 'https://github.com/candidate/widgets',
+          branchName: 'pipe-assessment/missing-diff',
+          baseCommitSha,
+          commitSha,
+          commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+          changedFiles: [{ path: 'src/evaluation.ts', status: 'modified' }],
+        },
+      },
+    ]) {
+      sqlite!.prepare(`
+        INSERT INTO assessment_evidence_events (
+          id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+          narrative, payload_json, context_record_id, occurred_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+      `).run(
+        event.id,
+        event.ingestionKey,
+        'assessment-session-start-evaluation-missing-diff',
+        event.sequence,
+        event.kind,
+        event.actorType,
+        event.actorId,
+        event.narrative,
+        JSON.stringify(event.payload),
+        now,
+        now,
+      );
+    }
+    for (const sourceRef of [
+      {
+        id: 'assessment-source-start-evaluation-missing-diff-challenge',
+        eventId: 'assessment-event-start-evaluation-missing-diff-challenge',
+        type: 'review_challenge_packet',
+        refId: 'challenge-packet-start-evaluation-missing-diff',
+        role: 'assigned_challenge',
+        locator: { repositoryUrl: 'https://github.com/open-source/widgets', baseCommitSha },
+        text: challengeText,
+      },
+      {
+        id: 'assessment-source-start-evaluation-missing-diff-commit',
+        eventId: 'assessment-event-start-evaluation-missing-diff-commit',
+        type: 'git_commit',
+        refId: commitSha,
+        role: 'submitted_commit',
+        locator: { commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}` },
+        text: commitText,
+      },
+    ]) {
+      sqlite!.prepare(`
+        INSERT INTO assessment_event_source_refs (
+          id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+          locator_json, exact_text, content_hash, metadata_json, created_at
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+      `).run(
+        sourceRef.id,
+        sourceRef.eventId,
+        sourceRef.type,
+        sourceRef.refId,
+        sourceRef.role,
+        JSON.stringify(sourceRef.locator),
+        sourceRef.text,
+        sha256Hex(sourceRef.text),
+        now,
+      );
+    }
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-1/assessment/start-evaluation', {
+      method: 'POST',
+    });
+    expect(response.status).toBe(409);
+    const body = await response.json() as { error: { message: string } };
+    expect(body.error.message).toContain('next action is SUBMIT_COMMIT');
+    expect(sqlite!.prepare(
+      `SELECT state FROM assessment_sessions WHERE id = ?`,
+    ).get('assessment-session-start-evaluation-missing-diff')).toEqual({ state: 'FINAL_SUBMITTED' });
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND narrative = 'Recruiter requested source-backed assessment evaluation.'`,
+    ).get('assessment-session-start-evaluation-missing-diff')).toEqual({ count: 0 });
   });
 
   it('starts assessment evaluation through the interview route and records a source-backed AI-unavailable diagnostic when no AI binding exists', async () => {
@@ -1669,10 +2054,11 @@ describe('GET /interviews/:id detail', () => {
     );
 
     const app = mountSchedulingApp();
+    const { ctx, waitUntilAll } = buildCtx();
     const response = await app.request('/interviews/interview-1/assessment/start-evaluation', {
       method: 'POST',
-    });
-    expect(response.status).toBe(200);
+    }, undefined, ctx);
+    expect(response.status).toBe(202);
     const body = await response.json() as {
       progress: {
         stage: string;
@@ -1680,16 +2066,37 @@ describe('GET /interviews/:id detail', () => {
         evaluation: { status: string; summary: string } | null;
         evidenceCounts: Array<{ kind: string; count: number }>;
       };
-      diagnostic: { code: string; severity: string };
+      diagnostic: null;
       report: null;
+      accepted: boolean;
+      backgrounded: boolean;
     };
 
-    expect(body.diagnostic).toMatchObject({
-      code: 'AI_DEVELOPER_UNAVAILABLE',
-      severity: 'blocking',
-    });
+    expect(body.accepted).toBe(true);
+    expect(body.backgrounded).toBe(true);
     expect(body.report).toBeNull();
+    expect(body.diagnostic).toBeNull();
     expect(body.progress).toMatchObject({
+      stage: 'EVALUATING',
+      nextAction: 'WAIT_FOR_EVALUATION',
+      evaluation: null,
+    });
+
+    await waitUntilAll();
+    const detailResponse = await app.request('/interviews/interview-1');
+    expect(detailResponse.status).toBe(200);
+    const detailBody = await detailResponse.json() as {
+      interview: {
+        assessmentProgress: {
+          stage: string;
+          nextAction: string;
+          evaluation: { status: string; summary: string } | null;
+          evidenceCounts: Array<{ kind: string; count: number }>;
+        } | null;
+      };
+    };
+    const finalProgress = detailBody.interview.assessmentProgress;
+    expect(finalProgress).toMatchObject({
       stage: 'NEEDS_ATTENTION',
       nextAction: 'RESOLVE_DIAGNOSTIC',
       evaluation: {
@@ -1697,7 +2104,7 @@ describe('GET /interviews/:id detail', () => {
         summary: 'Workers AI is not configured for source-backed repo-task evaluation.',
       },
     });
-    expect(body.progress.evidenceCounts).toEqual(expect.arrayContaining([
+    expect(finalProgress?.evidenceCounts).toEqual(expect.arrayContaining([
       { kind: 'commit_submission', count: 1 },
       { kind: 'recruiter_note', count: 2 },
     ]));
@@ -1954,10 +2361,11 @@ describe('GET /interviews/:id detail', () => {
       AI: { run: aiRun } as unknown as Ai,
       CLOUDFLARE_AI_MODEL: '@cf/google/gemma-4-26b-a4b-it',
     });
+    const { ctx, waitUntilAll } = buildCtx();
     const response = await app.request('/interviews/interview-1/assessment/start-evaluation', {
       method: 'POST',
-    });
-    expect(response.status).toBe(200);
+    }, undefined, ctx);
+    expect(response.status).toBe(202);
     const body = await response.json() as {
       progress: {
         stage: string;
@@ -1981,10 +2389,24 @@ describe('GET /interviews/:id detail', () => {
         } | null;
         evidenceCounts: Array<{ kind: string; count: number }>;
       };
-      report: { id: string; sessionId: string; status: string; contextRecordId: string | null } | null;
+      report: null;
       diagnostic: null;
+      accepted: boolean;
+      backgrounded: boolean;
     };
 
+    expect(body.accepted).toBe(true);
+    expect(body.backgrounded).toBe(true);
+    expect(body.report).toBeNull();
+    expect(body.diagnostic).toBeNull();
+    expect(body.progress).toMatchObject({
+      stage: 'EVALUATING',
+      nextAction: 'WAIT_FOR_EVALUATION',
+      hasAiInteraction: false,
+      evaluation: null,
+    });
+
+    await waitUntilAll();
     expect(aiRun).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(aiRun.mock.calls[0])).toContain(diffSourceRefKey);
     const aiInput = aiRun.mock.calls[0]?.[1] as {
@@ -2030,7 +2452,7 @@ describe('GET /interviews/:id detail', () => {
     expect(testRunCoverage).toMatchObject({
       satisfied: false,
       sourceRefKeys: [],
-      missingImpact: 'Do not make positive test_strategy or verification claims without test_run evidence.',
+      missingImpact: 'Do not make positive test_strategy, verification, or correctness claims without test_run evidence bound to the submitted commit.',
     });
     const editorCoverage = userPromptPayload.evidenceCoverage?.expectedForHighConfidence
       ?.find((item) => item.label === 'code_editor_activity');
@@ -2047,18 +2469,42 @@ describe('GET /interviews/:id detail', () => {
     const promptedDiffRef = userPromptPayload.sourceRefs?.find((sourceRef) => sourceRef.key === diffSourceRefKey);
     expect(promptedDiffRef?.exactText?.length).toBeLessThanOrEqual(800);
     expect(promptedDiffRef?.exactText).toContain('[truncated]');
-    expect(body.diagnostic).toBeNull();
-    expect(body.report).toMatchObject({
-      sessionId: 'assessment-session-ai-evaluation',
-      status: 'EVALUATED',
-    });
-    expect(body.progress).toMatchObject({
+
+    const detailResponse = await app.request('/interviews/interview-1');
+    expect(detailResponse.status).toBe(200);
+    const detailBody = await detailResponse.json() as {
+      interview: {
+        assessmentProgress: {
+          stage: string;
+          nextAction: string;
+          hasAiInteraction: boolean;
+          evaluation: {
+            status: string;
+            summary: string;
+            recommendation?: string | null;
+            evidenceCoverage?: {
+              schemaVersion?: string;
+              expectedForHighConfidence?: Array<{ label?: string; satisfied?: boolean }>;
+            } | null;
+            diagnostics?: Array<{
+              code: string;
+              severity: string;
+              message: string;
+              sourceRefCount: number;
+              sourceRefTypes: string[];
+            }>;
+          } | null;
+          evidenceCounts: Array<{ kind: string; count: number }>;
+        } | null;
+      };
+    };
+    const finalProgress = detailBody.interview.assessmentProgress;
+    expect(finalProgress).toMatchObject({
       stage: 'EVALUATED',
       nextAction: 'REVIEW_EVALUATION',
       hasAiInteraction: true,
       evaluation: {
         status: 'EVALUATED',
-        summary: 'Fix the start-evaluation regression with a real patch: Candidate made a focused source-backed change and cited the submitted diff evidence.',
         recommendation: 'mixed_evidence_human_review',
         evidenceCoverage: {
           schemaVersion: 'assessment-evidence-coverage-v1',
@@ -2067,33 +2513,210 @@ describe('GET /interviews/:id detail', () => {
             expect.objectContaining({ label: 'code_editor_activity', satisfied: true }),
           ]),
         },
-        diagnostics: [
-          expect.objectContaining({
-            code: 'MISSING_TEST_EVIDENCE',
-            severity: 'warning',
-            message: 'No test_run source ref was attached to the session.',
-            sourceRefCount: 1,
-            sourceRefTypes: ['code_diff'],
-          }),
-          expect.objectContaining({
-            code: 'MODEL_RECOMMENDATION_UNSUPPORTED',
-            severity: 'warning',
-            message: 'AI evaluator returned unsupported recommendation "hire_now"; PIPE defaulted to human review.',
-            sourceRefCount: 0,
-            sourceRefTypes: [],
-          }),
-        ],
       },
     });
-    expect(body.progress.evidenceCounts).toEqual(expect.arrayContaining([
+    expect(finalProgress?.evaluation?.summary).toContain('test evidence missing');
+    expect(finalProgress?.evaluation?.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE',
+        severity: 'warning',
+        message: 'Dropped unsupported positive implementation_correctness claim from the AI evaluator: Positive implementation correctness, quality, security, reliability, or performance claims require a successful test_run source ref bound to the submitted commit; use implementation_evidence for diff-only claims.',
+        sourceRefCount: 1,
+        sourceRefTypes: ['code_diff'],
+      }),
+      expect.objectContaining({
+        code: 'MODEL_CLAIMS_UNUSABLE',
+        severity: 'warning',
+        sourceRefCount: 1,
+        sourceRefTypes: ['assessment_evaluation_request'],
+      }),
+      expect.objectContaining({
+        code: 'MISSING_TEST_EVIDENCE',
+        severity: 'warning',
+        message: 'No test_run source ref was attached to the session.',
+        sourceRefCount: 1,
+        sourceRefTypes: ['code_diff'],
+      }),
+      expect.objectContaining({
+        code: 'MODEL_RECOMMENDATION_UNSUPPORTED',
+        severity: 'warning',
+        message: 'AI evaluator returned unsupported recommendation "hire_now"; PIPE defaulted to human review.',
+        sourceRefCount: 0,
+        sourceRefTypes: [],
+      }),
+    ]));
+    expect(finalProgress?.evidenceCounts).toEqual(expect.arrayContaining([
       { kind: 'ai_interaction', count: 1 },
       { kind: 'commit_submission', count: 1 },
       { kind: 'recruiter_note', count: 2 },
     ]));
 
+    const idempotentStartResponse = await app.request('/interviews/interview-1/assessment/start-evaluation', {
+      method: 'POST',
+    });
+    expect(idempotentStartResponse.status).toBe(200);
+    const idempotentStartBody = await idempotentStartResponse.json() as {
+      accepted: boolean;
+      alreadyEvaluated: boolean;
+      report: { status: string; recommendation: string | null } | null;
+      progress: { stage: string; nextAction: string };
+    };
+    expect(idempotentStartBody).toMatchObject({
+      accepted: true,
+      alreadyEvaluated: true,
+      report: {
+        status: 'EVALUATED',
+        recommendation: 'mixed_evidence_human_review',
+      },
+      progress: {
+        stage: 'EVALUATED',
+        nextAction: 'REVIEW_EVALUATION',
+      },
+    });
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'recruiter_note'
+          AND narrative = 'Recruiter requested source-backed assessment evaluation.'`,
+    ).get('assessment-session-ai-evaluation')).toEqual({ count: 1 });
+
+    const bundleResponse = await app.request('/interviews/interview-1/assessment/evidence-bundle');
+    expect(bundleResponse.status).toBe(200);
+    const bundleBody = await bundleResponse.json() as {
+      bundle: {
+        schemaVersion: string;
+        interview: { id: string; interviewType: string };
+        assessment: {
+          stage: string;
+          nextAction: string;
+          sourceRefCounts: Array<{ kind: string; count: number }>;
+        };
+        completeness: {
+          hasChallengePacket: boolean;
+          hasCommitSubmission: boolean;
+          hasEvaluationReport: boolean;
+          hasHumanDecision: boolean;
+          isReviewable: boolean;
+        };
+        submission: { commitSha: string; branchName: string } | null;
+        timeline: Array<{
+          kind: string;
+          sourceRefs: Array<{ sourceRefType: string; sourceRefId: string; exactText: string }>;
+        }>;
+        evaluation: {
+          status: string;
+          output: { recommendation?: string | null };
+          claims: Array<{
+            dimension: string;
+            sourceRefs: Array<{ sourceRefType: string; sourceRefId: string; exactText: string }>;
+          }>;
+          diagnostics: Array<{
+            code: string;
+            sourceRefs: Array<{ sourceRefType: string; sourceRefId: string; exactText: string }>;
+          }>;
+        } | null;
+        humanDecision: null;
+      };
+    };
+    expect(bundleBody.bundle.schemaVersion).toBe('repo-task-final-evidence-bundle-v1');
+    expect(bundleBody.bundle.interview).toMatchObject({
+      id: 'interview-1',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+    });
+    expect(bundleBody.bundle.assessment).toMatchObject({
+      stage: 'EVALUATED',
+      nextAction: 'REVIEW_EVALUATION',
+    });
+    expect(bundleBody.bundle.completeness).toEqual({
+      hasChallengePacket: true,
+      hasCommitSubmission: true,
+      hasEvaluationReport: true,
+      hasHumanDecision: false,
+      isReviewable: true,
+    });
+    expect(bundleBody.bundle.submission).toMatchObject({
+      commitSha,
+      branchName: 'pipe-assessment/ai-evaluation',
+    });
+    expect(bundleBody.bundle.assessment.sourceRefCounts).toEqual(expect.arrayContaining([
+      { kind: 'code_diff', count: 1 },
+      { kind: 'git_commit', count: 1 },
+      { kind: 'review_challenge_packet', count: 1 },
+    ]));
+    const commitEvent = bundleBody.bundle.timeline.find((event) => event.kind === 'commit_submission');
+    expect(commitEvent?.sourceRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceRefType: 'code_diff',
+        sourceRefId: diffSourceRefId,
+        exactText: diffText,
+      }),
+      expect.objectContaining({
+        sourceRefType: 'git_commit',
+        sourceRefId: commitSha,
+        exactText: commitText,
+      }),
+    ]));
+    expect(bundleBody.bundle.evaluation).toMatchObject({
+      status: 'EVALUATED',
+      output: {
+        recommendation: 'mixed_evidence_human_review',
+      },
+    });
+    const diffClaim = bundleBody.bundle.evaluation?.claims.find((claim) =>
+      claim.dimension === 'implementation_evidence'
+    );
+    expect(diffClaim?.sourceRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceRefType: 'code_diff',
+        sourceRefId: diffSourceRefId,
+        exactText: diffText,
+      }),
+    ]));
+    const missingTestDiagnostic = bundleBody.bundle.evaluation?.diagnostics.find((diagnostic) =>
+      diagnostic.code === 'MISSING_TEST_EVIDENCE'
+    );
+    expect(missingTestDiagnostic?.sourceRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceRefType: 'code_diff',
+        sourceRefId: diffSourceRefId,
+        exactText: diffText,
+      }),
+    ]));
+    expect(bundleBody.bundle.humanDecision).toBeNull();
+
     expect(sqlite!.prepare(
       `SELECT state FROM assessment_sessions WHERE id = ?`,
     ).get('assessment-session-ai-evaluation')).toEqual({ state: 'EVALUATED' });
+    sqlite!.prepare(
+      `UPDATE assessment_sessions
+          SET state = 'EVALUATING'
+        WHERE id = ?`,
+    ).run('assessment-session-ai-evaluation');
+    const staleStateDetailResponse = await app.request('/interviews/interview-1');
+    expect(staleStateDetailResponse.status).toBe(200);
+    const staleStateDetailBody = await staleStateDetailResponse.json() as {
+      interview: {
+        assessmentProgress: {
+          stage: string;
+          nextAction: string;
+          evaluation: { status: string } | null;
+        } | null;
+      };
+    };
+    expect(staleStateDetailBody.interview.assessmentProgress).toMatchObject({
+      stage: 'EVALUATED',
+      nextAction: 'REVIEW_EVALUATION',
+      evaluation: {
+        status: 'EVALUATED',
+      },
+    });
+    sqlite!.prepare(
+      `UPDATE assessment_sessions
+          SET state = 'EVALUATED'
+        WHERE id = ?`,
+    ).run('assessment-session-ai-evaluation');
     expect(sqlite!.prepare(
       `SELECT COUNT(*) AS count
          FROM assessment_evidence_events
@@ -2110,9 +2733,8 @@ describe('GET /interviews/:id detail', () => {
          FROM assessment_evaluation_reports
         WHERE session_id = ?`,
     ).get('assessment-session-ai-evaluation') as { summary: string; output_json: string } | undefined;
-    expect(evaluationReport?.summary).toBe(
-      'Fix the start-evaluation regression with a real patch: Candidate made a focused source-backed change and cited the submitted diff evidence.',
-    );
+    expect(evaluationReport?.summary).toContain('Fix the start-evaluation regression with a real patch');
+    expect(evaluationReport?.summary).toContain('test evidence missing');
     const reportOutput = JSON.parse(evaluationReport?.output_json ?? '{}') as {
       challengeFocus?: string | null;
       evidenceCoverage?: {
@@ -2130,26 +2752,236 @@ describe('GET /interviews/:id detail', () => {
       expect.objectContaining({ label: 'test_run', satisfied: false }),
       expect.objectContaining({ label: 'code_editor_activity', satisfied: true }),
     ]));
-    const citedClaim = sqlite!.prepare(
-      `SELECT c.dimension, c.polarity, csr.source_ref_type, csr.source_ref_id, csr.exact_text
-         FROM assessment_evaluation_claims c
-         JOIN assessment_claim_source_refs csr ON csr.claim_id = c.id
-        WHERE c.dimension = 'implementation_correctness'
+    const unsupportedCorrectnessClaim = sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evaluation_claims
+        WHERE dimension = 'implementation_correctness'
+          AND polarity = 'positive'`,
+    ).get() as { count: number };
+    expect(unsupportedCorrectnessClaim).toEqual({ count: 0 });
+    const unsupportedCorrectnessDiagnostic = sqlite!.prepare(
+      `SELECT d.code, d.severity, csr.source_ref_type, csr.source_ref_id, csr.exact_text
+         FROM assessment_diagnostics d
+         JOIN assessment_diagnostic_source_refs csr ON csr.diagnostic_id = d.id
+        WHERE d.code = 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE'
+          AND d.message LIKE '%implementation_correctness%'
         LIMIT 1`,
     ).get() as {
-      dimension: string;
-      polarity: string;
+      code: string;
+      severity: string;
       source_ref_type: string;
       source_ref_id: string;
       exact_text: string;
     } | undefined;
-    expect(citedClaim).toMatchObject({
-      dimension: 'implementation_correctness',
-      polarity: 'positive',
+    expect(unsupportedCorrectnessDiagnostic).toMatchObject({
+      code: 'MODEL_POSITIVE_CLAIM_UNSUPPORTED_BY_EVIDENCE',
+      severity: 'warning',
       source_ref_type: 'code_diff',
       source_ref_id: diffSourceRefId,
       exact_text: diffText,
     });
+  });
+
+  it('skips repo-match diagnostic enrichment for standard interview list rows', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-standard-video-ignored', 'candidate-1', 'role-context:ignored',
+        'MATCHED', '[]', NULL, '{}', '2026-06-22T17:46:01.000Z'
+      )
+    `).run();
+
+    const observedQueries: string[] = [];
+    const app = mountSchedulingApp({
+      DB: observeD1Queries(createMockD1(sqlite!), observedQueries),
+    });
+    const response = await app.request('/interviews');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interviews: Array<{ id: string; assessmentSetup: { status: string } }>;
+    };
+
+    expect(body.interviews.find((item) => item.id === 'interview-1')?.assessmentSetup.status)
+      .toBe('not_applicable');
+    expect(observedQueries.some((query) => query.includes('FROM match_runs'))).toBe(false);
+  });
+
+  it('keeps list assessment progress in work-in-progress when commit diff proof is missing', async () => {
+    seedInterviewDetailFixture();
+    const now = '2026-06-22T18:42:00.000Z';
+    const baseCommitSha = '5555555555555555555555555555555555555555';
+    const commitSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const challengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      `Base commit: ${baseCommitSha}`,
+      'Task: fix missing-diff readiness.',
+      'Success: commit a focused patch with a reviewable diff.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the candidate patch',
+    ].join('\n');
+    const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nFix missing-diff readiness.`;
+
+    sqlite!.prepare(`
+      UPDATE scheduled_interviews
+         SET interview_type = 'OPEN_SOURCE_BUG_FIX',
+             github_repo_url = 'https://github.com/open-source/widgets',
+             github_pr_number = NULL,
+             created_at = '2026-06-22T20:00:00.000Z',
+             updated_at = '2026-06-22T20:00:00.000Z'
+       WHERE id = 'interview-1'
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+        metadata_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-session-list-missing-diff',
+      'assessment-session:list-missing-diff',
+      'interview-1',
+      'OPEN_SOURCE_BUG_FIX',
+      'FINAL_SUBMITTED',
+      'candidate-1',
+      'workspace-1',
+      '{}',
+      now,
+      now,
+    );
+    for (const event of [
+      {
+        id: 'assessment-event-list-missing-diff-challenge',
+        ingestionKey: 'assessment-event:list-missing-diff-challenge',
+        sequence: 1,
+        kind: 'recruiter_note',
+        actorType: 'recruiter',
+        actorId: 'owner-1',
+        narrative: 'Recruiter assigned a complete open-source challenge packet.',
+        payload: { repositoryUrl: 'https://github.com/open-source/widgets' },
+      },
+      {
+        id: 'assessment-event-list-missing-diff-commit',
+        ingestionKey: 'assessment-event:list-missing-diff-commit',
+        sequence: 2,
+        kind: 'commit_submission',
+        actorType: 'candidate',
+        actorId: 'candidate-1',
+        narrative: 'Candidate submitted a commit without the exact diff source ref.',
+        payload: {
+          repositoryUrl: 'https://github.com/open-source/widgets',
+          forkRepositoryUrl: 'https://github.com/candidate/widgets',
+          branchName: 'pipe-assessment/missing-diff',
+          baseCommitSha,
+          commitSha,
+          commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+          changedFiles: [{ path: 'src/list.ts', status: 'modified' }],
+        },
+      },
+    ]) {
+      sqlite!.prepare(`
+        INSERT INTO assessment_evidence_events (
+          id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+          narrative, payload_json, context_record_id, occurred_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+      `).run(
+        event.id,
+        event.ingestionKey,
+        'assessment-session-list-missing-diff',
+        event.sequence,
+        event.kind,
+        event.actorType,
+        event.actorId,
+        event.narrative,
+        JSON.stringify(event.payload),
+        now,
+        now,
+      );
+    }
+    for (const sourceRef of [
+      {
+        id: 'assessment-source-list-missing-diff-challenge',
+        eventId: 'assessment-event-list-missing-diff-challenge',
+        type: 'review_challenge_packet',
+        refId: 'challenge-packet-missing-diff',
+        role: 'assigned_challenge',
+        locator: { repositoryUrl: 'https://github.com/open-source/widgets', baseCommitSha },
+        text: challengeText,
+      },
+      {
+        id: 'assessment-source-list-missing-diff-commit',
+        eventId: 'assessment-event-list-missing-diff-commit',
+        type: 'git_commit',
+        refId: commitSha,
+        role: 'submitted_commit',
+        locator: { repositoryUrl: 'https://github.com/candidate/widgets', commitSha },
+        text: commitText,
+      },
+    ]) {
+      sqlite!.prepare(`
+        INSERT INTO assessment_event_source_refs (
+          id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+          locator_json, exact_text, content_hash, metadata_json, created_at
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+      `).run(
+        sourceRef.id,
+        sourceRef.eventId,
+        sourceRef.type,
+        sourceRef.refId,
+        sourceRef.role,
+        JSON.stringify(sourceRef.locator),
+        sourceRef.text,
+        sha256Hex(sourceRef.text),
+        now,
+      );
+    }
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews?limit=5&offset=0&sort=created_desc');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interviews: Array<{
+        id: string;
+        assessmentProgress: {
+          stage: string;
+          nextAction: string;
+          readiness: {
+            status: string;
+            isReadyForEvaluation: boolean;
+            missingRequiredCount: number;
+            required: Array<{ id: string; satisfied: boolean; missingImpact: string }>;
+          };
+          sourceRefCounts: Array<{ kind: string; count: number }>;
+        } | null;
+      }>;
+    };
+    const interview = body.interviews.find((item) => item.id === 'interview-1');
+
+    expect(interview?.assessmentProgress).toMatchObject({
+      stage: 'WORK_IN_PROGRESS',
+      nextAction: 'SUBMIT_COMMIT',
+      readiness: {
+        status: 'WORK_IN_PROGRESS',
+        isReadyForEvaluation: false,
+        missingRequiredCount: 1,
+      },
+    });
+    expect(interview?.assessmentProgress?.readiness.required).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'code_diff',
+        satisfied: false,
+        missingImpact: 'The evaluator must inspect the exact diff from base commit to submitted commit.',
+      }),
+    ]));
+    expect(interview?.assessmentProgress?.sourceRefCounts).toEqual(expect.arrayContaining([
+      { kind: 'git_commit', count: 1 },
+      { kind: 'review_challenge_packet', count: 1 },
+    ]));
+    expect(interview?.assessmentProgress?.sourceRefCounts).not.toEqual(expect.arrayContaining([
+      { kind: 'code_diff', count: 1 },
+    ]));
   });
 
   it('returns source-backed assessment progress on the interview list', async () => {
@@ -2169,6 +3001,7 @@ describe('GET /interviews/:id detail', () => {
     ].join('\n');
     const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nShow list progress.`;
     const diffText = 'diff --git a/src/list.ts b/src/list.ts\n+showAssessmentProgress();';
+    const verificationGapText = 'Candidate could not run the browser regression suite because Playwright browsers were not installed in the assessment container.';
 
     sqlite!.prepare(`
       UPDATE scheduled_interviews
@@ -2240,6 +3073,24 @@ describe('GET /interviews/:id detail', () => {
       now,
       now,
     );
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+        narrative, payload_json, context_record_id, occurred_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+    `).run(
+      'assessment-event-list-agent-status',
+      'assessment-event:progress-list-agent-status',
+      'assessment-session-progress-list',
+      3,
+      'dev_container_event',
+      'system',
+      'devin-bridge',
+      'The real Devin bridge reported auth_needed before answering.',
+      JSON.stringify({ agentType: 'devin', status: 'auth_needed' }),
+      now,
+      now,
+    );
     for (const sourceRef of [
       {
         id: 'assessment-source-list-challenge',
@@ -2265,6 +3116,27 @@ describe('GET /interviews/:id detail', () => {
         locator: { path: 'src/list.ts', baseCommitSha, commitSha },
         text: diffText,
       },
+      {
+        id: 'assessment-source-list-agent-status',
+        eventId: 'assessment-event-list-agent-status',
+        type: 'agent_status',
+        refId: 'devin:auth-needed',
+        locator: { agentType: 'devin', status: 'auth_needed' },
+        text: 'Devin bridge reported auth_needed before answering. No agent response was counted.',
+      },
+      {
+        id: 'assessment-source-list-verification-gap',
+        eventId: 'assessment-event-list-commit',
+        type: 'verification_gap',
+        refId: `${commitSha}:test-evidence-missing`,
+        locator: {
+          repositoryUrl: 'https://github.com/open-source/widgets',
+          baseCommitSha,
+          commitSha,
+          expectedSourceRefType: 'test_run',
+        },
+        text: verificationGapText,
+      },
     ]) {
       sqlite!.prepare(`
         INSERT INTO assessment_event_source_refs (
@@ -2282,6 +3154,113 @@ describe('GET /interviews/:id detail', () => {
         now,
       );
     }
+    sqlite!.prepare(`
+      INSERT INTO assessment_evaluation_reports (
+        id, ingestion_key, session_id, status, summary, output_json,
+        diagnostics_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-report-list-evaluated',
+      'assessment-report:progress-list-evaluated',
+      'assessment-session-progress-list',
+      'EVALUATED',
+      'PIPE produced a source-backed assessment report with a cited implementation claim and a declared verification limitation.',
+      JSON.stringify({
+        recommendation: 'mixed_evidence_human_review',
+        evidenceCoverage: {
+          schemaVersion: 'assessment-evidence-coverage-v1',
+          sourceRefCount: 4,
+          sourceRefTypeCounts: {
+            review_challenge_packet: 1,
+            git_commit: 1,
+            code_diff: 1,
+            verification_gap: 1,
+          },
+          requiredForEvaluation: [
+            {
+              label: 'Submitted commit',
+              required: true,
+              sourceRefTypes: ['git_commit'],
+              satisfied: true,
+              sourceRefKeys: ['git_commit:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:support:'],
+              missingImpact: 'A real commit is required before assessment.',
+            },
+          ],
+          expectedForHighConfidence: [
+            {
+              label: 'Test output',
+              required: false,
+              sourceRefTypes: ['test_run'],
+              satisfied: false,
+              sourceRefKeys: [],
+              missingImpact: 'A verification gap was declared, so correctness needs human review.',
+            },
+          ],
+        },
+      }),
+      '[]',
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_evaluation_claims (
+        id, report_id, polarity, dimension, narrative, confidence, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-claim-list-focused-diff',
+      'assessment-report-list-evaluated',
+      'positive',
+      'implementation_evidence',
+      'The submitted diff touches the list progress path with a focused implementation change.',
+      0.82,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_claim_source_refs (
+        id, claim_id, source_ref_type, source_ref_id, source_span_id,
+        evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+    `).run(
+      'assessment-claim-source-list-diff',
+      'assessment-claim-list-focused-diff',
+      'code_diff',
+      `${baseCommitSha}..${commitSha}`,
+      'support',
+      JSON.stringify({ path: 'src/list.ts', baseCommitSha, commitSha }),
+      diffText,
+      sha256Hex(diffText),
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_diagnostics (
+        id, session_id, report_id, event_id, code, severity, message,
+        provider, retryable, details_json, metadata_json, created_at
+      ) VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, 0, '{}', '{}', ?)
+    `).run(
+      'assessment-diagnostic-list-verification-gap',
+      'assessment-session-progress-list',
+      'assessment-report-list-evaluated',
+      'MISSING_TEST_EVIDENCE',
+      'warning',
+      'No test_run source ref was attached; use the declared verification gap as a limitation, not proof of correctness.',
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_diagnostic_source_refs (
+        id, diagnostic_id, source_ref_type, source_ref_id, source_span_id,
+        evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+    `).run(
+      'assessment-diagnostic-source-list-gap',
+      'assessment-diagnostic-list-verification-gap',
+      'verification_gap',
+      `${commitSha}:test-evidence-missing`,
+      'support',
+      JSON.stringify({ repositoryUrl: 'https://github.com/open-source/widgets', baseCommitSha, commitSha }),
+      verificationGapText,
+      sha256Hex(verificationGapText),
+      now,
+    );
     for (let index = 0; index < 105; index += 1) {
       sqlite!.prepare(`
         INSERT INTO scheduled_interviews (
@@ -2392,6 +3371,54 @@ describe('GET /interviews/:id detail', () => {
             nextAction: string;
             hasChallengePacket: boolean;
             hasCommitSubmission: boolean;
+            hasAiInteraction: boolean;
+            readiness: {
+              confidence: Array<{
+                id: string;
+                label: string;
+                satisfied: boolean;
+                sourceRefTypes: string[];
+                missingImpact: string;
+              }>;
+            };
+            sourceRefCounts: Array<{ kind: string; count: number }>;
+            evaluation: {
+              status: string;
+              recommendation: string | null;
+              evidenceCoverage: {
+                schemaVersion: string;
+                requiredForEvaluation: Array<{ label: string; satisfied: boolean }>;
+                expectedForHighConfidence: Array<{ label: string; satisfied: boolean }>;
+              } | null;
+              claims: Array<{
+                id: string;
+                polarity: string;
+                dimension: string;
+                narrative: string;
+                sourceRefCount: number;
+                sourceRefTypes: string[];
+              }>;
+              diagnostics: Array<{
+                code: string;
+                severity: string;
+                message: string;
+                sourceRefCount: number;
+                sourceRefTypes: string[];
+              }>;
+            } | null;
+            challenge: {
+              exactText: string | null;
+              summary: {
+                repositoryUrl: string | null;
+                githubPrNumber: number | null;
+                baseCommitSha: string | null;
+                task: string | null;
+                assessmentFit: string[];
+                matchProof: string[];
+                successCriteria: string[];
+                expectedEvidence: string[];
+              };
+            } | null;
             commit: { commitSha: string | null; branchName: string | null } | null;
           } | null;
         }>;
@@ -2399,6 +3426,7 @@ describe('GET /interviews/:id detail', () => {
           total: number;
           limit: number;
           offset: number;
+          sort?: string;
           nextOffset: number | null;
           hasMore: boolean;
         };
@@ -2408,6 +3436,7 @@ describe('GET /interviews/:id detail', () => {
         total: expect.any(Number),
         limit: 20,
         offset: 0,
+        sort: 'created_desc',
         nextOffset: 20,
         hasMore: true,
       });
@@ -2417,15 +3446,102 @@ describe('GET /interviews/:id detail', () => {
       expect(body.interviews[1]?.id).toBe('interview-1');
       const interview = body.interviews.find((item) => item.id === 'interview-1');
       expect(interview?.assessmentProgress).toMatchObject({
-        stage: 'READY_FOR_EVALUATION',
-        nextAction: 'START_EVALUATION',
+        stage: 'EVALUATED',
+        nextAction: 'REVIEW_EVALUATION',
+        readiness: {
+          detail: 'A source-backed evaluation report is available for review.',
+        },
         hasChallengePacket: true,
         hasCommitSubmission: true,
+        hasAiInteraction: true,
         commit: {
           commitSha,
           branchName: 'pipe-assessment/list-progress',
         },
       });
+      expect(interview?.assessmentProgress?.evaluation).toMatchObject({
+        status: 'EVALUATED',
+        recommendation: 'mixed_evidence_human_review',
+        evidenceCoverage: {
+          schemaVersion: 'assessment-evidence-coverage-v1',
+          expectedForHighConfidence: expect.arrayContaining([
+            expect.objectContaining({ label: 'Test output', satisfied: false }),
+          ]),
+        },
+        claims: [expect.objectContaining({
+          id: 'assessment-claim-list-focused-diff',
+          polarity: 'positive',
+          dimension: 'implementation_evidence',
+          sourceRefCount: 1,
+          sourceRefTypes: ['code_diff'],
+        })],
+        diagnostics: [expect.objectContaining({
+          code: 'MISSING_TEST_EVIDENCE',
+          severity: 'warning',
+          sourceRefCount: 1,
+          sourceRefTypes: ['verification_gap'],
+        })],
+      });
+      expect(interview?.assessmentProgress?.readiness.confidence).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: 'test_run',
+          label: 'Test output',
+          satisfied: false,
+          sourceRefTypes: ['test_run'],
+          missingImpact: 'A verification gap was declared, but no test output was captured; keep correctness lower-confidence.',
+        }),
+        expect.objectContaining({
+          id: 'ai_interaction',
+          label: 'AI-use trail',
+          satisfied: true,
+          sourceRefTypes: expect.arrayContaining([
+            'ai_user_prompt',
+            'ai_user_prompt_blocked',
+            'ai_agent_response',
+            'ai_agent_diagnostic',
+            'agent_status',
+            'agent_response',
+            'agent_diagnostic',
+            'ai_usage_event',
+          ]),
+          missingImpact: 'Real prompts, blocked attempts, bridge statuses, diagnostics, and agent responses explain how the candidate used assistance.',
+        }),
+        expect.objectContaining({
+          id: 'verification_gap_declared',
+          label: 'Verification gap declared',
+          satisfied: true,
+          sourceRefTypes: ['verification_gap'],
+          missingImpact: 'A source-backed verification gap explains missing or partial test output; it does not prove correctness.',
+        }),
+      ]));
+      expect(interview?.assessmentProgress?.sourceRefCounts).toEqual(expect.arrayContaining([
+        { kind: 'agent_status', count: 1 },
+        { kind: 'code_diff', count: 1 },
+        { kind: 'git_commit', count: 1 },
+        { kind: 'review_challenge_packet', count: 1 },
+        { kind: 'verification_gap', count: 1 },
+      ]));
+      expect(interview?.assessmentProgress?.sourceRefCounts).not.toEqual(expect.arrayContaining([
+        { kind: 'test_run', count: 1 },
+      ]));
+      expect(interview?.assessmentProgress?.challenge).toMatchObject({
+        exactText: null,
+        summary: {
+          repositoryUrl: 'https://github.com/open-source/widgets',
+          githubPrNumber: null,
+          baseCommitSha,
+          task: 'fix the assessment list progress regression.',
+          assessmentFit: [],
+          matchProof: [],
+          successCriteria: ['commit a focused patch with tests.'],
+          expectedEvidence: [
+            'git commit SHA on a pipe-assessment branch',
+            'code diff for the list progress fix',
+            'test output or verification note',
+          ],
+        },
+      });
+      expect(JSON.stringify(interview?.assessmentProgress)).not.toContain('Expected evidence:');
       const corruptInterview = body.interviews.find((item) => item.id === 'interview-list-corrupt-progress');
       expect(corruptInterview?.assessmentProgress).toBeNull();
       expect(errorSpy).toHaveBeenCalledWith(
@@ -2439,6 +3555,74 @@ describe('GET /interviews/:id detail', () => {
         query.includes('GROUP BY e.session_id, sr.source_ref_type'))).toBe(true);
       expect(observedQueries.some((query) =>
         query.includes('sr.exact_text IS NOT NULL'))).toBe(false);
+      const sessionLookupQuery = observedQueries.find((query) =>
+        query.includes('FROM assessment_sessions')
+        && query.includes('WHERE interview_id IN'));
+      expect(sessionLookupQuery).toBeTruthy();
+      expect(sessionLookupQuery).toContain('WHERE interview_id IN (?1, ?2)');
+      expect(sessionLookupQuery).not.toContain('?3');
+
+      const oldestResponse = await app.request('/interviews?limit=20&offset=0&sort=created_asc');
+      expect(oldestResponse.status).toBe(200);
+      const oldestBody = await oldestResponse.json() as {
+        interviews: Array<{ id: string; createdAt: string }>;
+        pagination: { limit: number; offset: number; sort?: string; nextOffset: number | null; hasMore: boolean };
+      };
+      expect(oldestBody.pagination).toMatchObject({
+        limit: 20,
+        offset: 0,
+        sort: 'created_asc',
+        nextOffset: 20,
+        hasMore: true,
+      });
+      const createdTimes = oldestBody.interviews.map((item) => new Date(item.createdAt).getTime());
+      expect(createdTimes).toEqual([...createdTimes].sort((a, b) => a - b));
+      const oldestIds = oldestBody.interviews.map((item) => item.id);
+      expect(oldestIds.indexOf('interview-1')).toBeLessThan(oldestIds.indexOf('interview-list-filler-000'));
+      expect(oldestIds).not.toContain('interview-list-corrupt-progress');
+
+      const openSourceResponse = await app.request('/interviews?limit=5&offset=0&sort=created_desc&interviewType=OPEN_SOURCE_BUG_FIX');
+      expect(openSourceResponse.status).toBe(200);
+      const openSourceBody = await openSourceResponse.json() as {
+        interviews: Array<{ id: string; interviewType: string | null }>;
+        pagination: {
+          total: number;
+          limit: number;
+          offset: number;
+          sort?: string;
+          interviewType?: string;
+          nextOffset: number | null;
+          hasMore: boolean;
+        };
+        facets: {
+          interviewTypes: {
+            all: number;
+            standardCalls: number;
+            codeReview: number;
+            devContainerChallenge: number;
+            openSourceBugFix: number;
+          };
+        };
+      };
+      expect(openSourceBody.pagination).toMatchObject({
+        total: 1,
+        limit: 5,
+        offset: 0,
+        sort: 'created_desc',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        nextOffset: null,
+        hasMore: false,
+      });
+      expect(openSourceBody.interviews.map((item) => item.id)).toEqual(['interview-1']);
+      expect(openSourceBody.interviews.every((item) => item.interviewType === 'OPEN_SOURCE_BUG_FIX')).toBe(true);
+      expect(openSourceBody.facets.interviewTypes).toMatchObject({
+        all: expect.any(Number),
+        standardCalls: expect.any(Number),
+        codeReview: 1,
+        openSourceBugFix: 1,
+      });
+      expect(openSourceBody.facets.interviewTypes.all).toBeGreaterThan(100);
+      expect(openSourceBody.facets.interviewTypes.standardCalls).toBeGreaterThan(100);
     } finally {
       errorSpy.mockRestore();
     }
@@ -2691,6 +3875,10 @@ describe('GET /interviews/:id detail', () => {
       packetId: 'packet-code-review-314',
       summary: 'Matched 2 source-backed demands (0 stretch).',
       score: 0.88,
+      qualityGate: {
+        verdict: 'PASSED',
+        diagnostics: [],
+      },
       reviewProfile: {
         difficultyBand: 'advanced',
         expectedSeniority: 'staff',
@@ -2747,6 +3935,123 @@ describe('GET /interviews/:id detail', () => {
         metricCount: 3,
       },
     });
+  });
+
+  it('returns quality-gate diagnostics when a matched CODE_REVIEW run lacks source-backed alignment', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-embedding-only', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, 77, 'https://github.com/pipe-labs/orders', 314,
+        NULL, NULL, '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO review_challenge_packets (
+        id, repo_snapshot_id, repo_id, pr_number, production_ready,
+        quality_score, packet_json, updated_at
+      ) VALUES (
+        'packet-code-review-embedding-only', 'snapshot-orders', 77, 314, 1,
+        0.91, '{}', 1
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-code-review-embedding-only', 'candidate-1', 'standalone-code-review-v1',
+        'MATCHED', ?, 'packet-code-review-embedding-only', '{}', '2026-06-22T17:46:00.000Z'
+      )
+    `).run(JSON.stringify([{
+      rank: 1,
+      challengeId: 'packet-code-review-embedding-only',
+      repoId: '77',
+      prNumber: 314,
+      score: 0.88,
+      alignedDemandCount: 1,
+      stretchCount: 0,
+      provenanceComplete: false,
+      eligible: true,
+      assessmentQuality: {
+        verdict: 'USABLE',
+        score: 9,
+        maxScore: 12,
+        metrics: [
+          {
+            id: 'contrast_separation',
+            label: 'Contrast separation',
+            score: 0,
+            maxScore: 2,
+            reason: 'Roleless recall did not measure a candidate-specific contrast.',
+          },
+        ],
+      },
+      validatorAgent: {
+        agentName: 'deterministic-code-review-match-gate',
+        agentVersion: 'test-v1',
+        mode: 'deterministic',
+        verdict: 'passed',
+        rationale: 'Embedding recall selected a challenge without source-backed spans.',
+        checks: [],
+        sourceBridge: {
+          prNumber: 314,
+          candidateSourceCount: 0,
+          repoSourceCount: 0,
+          roleSourceCount: 0,
+          alignedDemandCount: 0,
+          stretchCount: 0,
+          provenanceComplete: false,
+        },
+      },
+      alignments: [],
+      rejectionReasons: [],
+    }]));
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-embedding-only');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        codeReviewMatch: {
+          qualityGate: {
+            verdict: string;
+            checks: string[];
+            diagnostics: string[];
+          } | null;
+          gaps: string[];
+        } | null;
+      };
+    };
+
+    expect(body.interview.codeReviewMatch?.qualityGate).toEqual({
+      verdict: 'NEEDS_REVIEW',
+      checks: [
+        'assessment_quality_verified',
+        'contrast_separation_not_required_roleless',
+        'agent_validated_match',
+      ],
+      diagnostics: [
+        'MISSING_CANDIDATE_SOURCE_EVIDENCE',
+        'MISSING_REPO_SOURCE_EVIDENCE',
+        'EMBEDDING_ONLY_MATCH_REJECTED',
+      ],
+    });
+    expect(body.interview.codeReviewMatch?.gaps).toEqual(expect.arrayContaining([
+      'MISSING_CANDIDATE_SOURCE_EVIDENCE',
+      'MISSING_REPO_SOURCE_EVIDENCE',
+      'EMBEDDING_ONLY_MATCH_REJECTED',
+    ]));
   });
 
   it('projects role-backed CODE_REVIEW assignment repo fields on recruiter list and detail', async () => {
@@ -2864,6 +4169,12 @@ describe('GET /interviews/:id detail', () => {
           kind: string;
           source: string;
           blocksPositiveAssessment: boolean;
+          message: string | null;
+          selectionRationale: {
+            whyThisChallenge: string;
+            whyNotAlternatives: string;
+            residualRisk: string;
+          } | null;
         };
         codeReviewMatch: {
           status: string;
@@ -2881,6 +4192,13 @@ describe('GET /interviews/:id detail', () => {
       kind: 'auto_match',
       source: 'candidate_challenge_assignment',
       blocksPositiveAssessment: false,
+    });
+    expect(detail.interview.assessmentSetup.message).toContain('Assessment quality: USABLE 9/12.');
+    expect(detail.interview.assessmentSetup.message).toContain('The selected PR separated from the nearest eligible comparator.');
+    expect(detail.interview.assessmentSetup.selectionRationale).toMatchObject({
+      whyThisChallenge: expect.stringContaining('USABLE 9/12'),
+      whyNotAlternatives: expect.stringContaining('nearest eligible comparator'),
+      residualRisk: expect.stringContaining('captured branch commit'),
     });
     expect(detail.interview.codeReviewMatch).toMatchObject({
       status: 'MATCHED',
@@ -2900,6 +4218,11 @@ describe('GET /interviews/:id detail', () => {
           status: string;
           kind: string;
           source: string;
+          message: string | null;
+          selectionRationale: {
+            whyThisChallenge: string;
+            whyNotAlternatives: string;
+          } | null;
         };
       }>;
     };
@@ -2914,6 +4237,9 @@ describe('GET /interviews/:id detail', () => {
         source: 'candidate_challenge_assignment',
       },
     });
+    expect(listed?.assessmentSetup.message).toContain('Assessment quality: USABLE 9/12.');
+    expect(listed?.assessmentSetup.selectionRationale?.whyThisChallenge).toContain('USABLE 9/12');
+    expect(listed?.assessmentSetup.selectionRationale?.whyNotAlternatives).toContain('nearest eligible comparator');
   });
 
   it('keeps CODE_REVIEW recruiter detail available when optional assessment session tables are absent', async () => {
@@ -5830,6 +7156,7 @@ describe('GET /interviews/:id detail', () => {
 
   it('sends scheduled interview invites through the Cloudflare email binding when configured', async () => {
     seedInterviewDetailFixture();
+    let releaseEmail: (value: { messageId: string }) => void = () => {};
     const sentMessages: Array<{
       to: unknown;
       from: unknown;
@@ -5841,7 +7168,9 @@ describe('GET /interviews/:id detail', () => {
       EMAIL: {
         send: async (message) => {
           sentMessages.push(message);
-          return { messageId: 'cf-message-1' };
+          return new Promise((resolve) => {
+            releaseEmail = resolve;
+          });
         },
       },
       OUTBOUND_EMAIL_FROM: 'no-reply@hire-pipe.com',
@@ -5865,15 +7194,17 @@ describe('GET /interviews/:id detail', () => {
       interview: { id: string };
     };
 
+    const { ctx, waitUntilAll } = buildCtx();
     const inviteResponse = await app.request(`/interviews/${created.interview.id}/invite`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'margaret@example.com' }),
-    });
+    }, undefined, ctx);
     expect(inviteResponse.status).toBe(200);
     const inviteBody = await inviteResponse.json() as {
       success: boolean;
       emailSent: boolean;
+      emailQueued: boolean;
       provider: string;
       meetingUrl: string;
       deliveredUrl: string;
@@ -5882,8 +7213,8 @@ describe('GET /interviews/:id detail', () => {
 
     expect(inviteBody).toMatchObject({
       success: true,
-      emailSent: true,
-      provider: 'cloudflare',
+      emailSent: false,
+      emailQueued: true,
     });
     expect(inviteBody.room.guestUrl).toBe(inviteBody.meetingUrl);
     expect(inviteBody.deliveredUrl).toBe(inviteBody.meetingUrl);
@@ -5898,7 +7229,23 @@ describe('GET /interviews/:id detail', () => {
     expect(sentMessages[0]?.html).toContain('/assets/email/pipe-logo.png');
     expect(sentMessages[0]?.html).not.toContain('data:image');
 
-    const scheduledRow = sqlite!.prepare(
+    let scheduledRow = sqlite!.prepare(
+      `SELECT meeting_url, invite_link_sent_at, email_sent_at
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(created.interview.id) as {
+      meeting_url: string | null;
+      invite_link_sent_at: string | null;
+      email_sent_at: string | null;
+    };
+    expect(scheduledRow.meeting_url).toBe(inviteBody.meetingUrl);
+    expect(scheduledRow.invite_link_sent_at).toEqual(expect.any(String));
+    expect(scheduledRow.email_sent_at).toBeNull();
+
+    releaseEmail({ messageId: 'cf-message-1' });
+    await waitUntilAll();
+
+    scheduledRow = sqlite!.prepare(
       `SELECT meeting_url, invite_link_sent_at, email_sent_at
          FROM scheduled_interviews
         WHERE id = ?`,
@@ -5967,15 +7314,17 @@ describe('GET /interviews/:id detail', () => {
       interview: { id: string };
     };
 
+    const { ctx, waitUntilAll } = buildCtx();
     const inviteResponse = await app.request(`/interviews/${created.interview.id}/invite`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'grace@example.com' }),
-    });
+    }, undefined, ctx);
     expect(inviteResponse.status).toBe(200);
     const inviteBody = await inviteResponse.json() as {
       success: boolean;
       emailSent: boolean;
+      emailQueued: boolean;
       provider: string;
       meetingUrl: string;
       schedulingUrl: string;
@@ -5985,8 +7334,8 @@ describe('GET /interviews/:id detail', () => {
 
     expect(inviteBody).toMatchObject({
       success: true,
-      emailSent: true,
-      provider: 'cloudflare',
+      emailSent: false,
+      emailQueued: true,
     });
     expect(inviteBody.schedulingUrl).toBe(inviteBody.deliveredUrl);
     const deliveredSchedulingUrl = new URL(inviteBody.deliveredUrl);
@@ -6012,6 +7361,8 @@ describe('GET /interviews/:id detail', () => {
     expect(sentMessages[0]?.html).not.toContain(inviteBody.meetingUrl);
     expect(sentMessages[0]?.html).toContain('/assets/email/pipe-logo.png');
     expect(sentMessages[0]?.html).not.toContain('data:image');
+
+    await waitUntilAll();
 
     const scheduledRow = sqlite!.prepare(
       `SELECT meeting_url, scheduling_provider, scheduling_url
@@ -6959,6 +8310,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         pipeline_id TEXT,
         stage_id TEXT,
         owner_id TEXT NOT NULL,
+        title TEXT,
+        description TEXT,
         interview_type TEXT,
         meeting_type TEXT,
         status TEXT,
@@ -7149,6 +8502,21 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         score: input.qualityScore ?? 0.92,
         metrics: { demandDiversity: 1 },
         gates: [],
+      },
+      reviewProfile: {
+        source: 'deterministic_engineering_prior',
+        difficultyBand: 'focused',
+        expectedSeniority: 'senior',
+        expectedTimeMinutes: 45,
+        basis: {
+          changedFileCount: 2,
+          changedLineCount: 128,
+          sourceHunkCount: 9,
+          testChangeCount: 1,
+          demandFamilyCount: 1,
+          hasIssueContext: true,
+        },
+        rationale: 'focused review calibrated for senior candidates; 45 minute target; 2 files; 128 changed lines; 9 source hunks; 1 demand family; 1 test change; issue context.',
       },
       contentHash: sourceHash,
     };
@@ -7648,6 +9016,11 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         assessmentProgress: {
           stage: string;
           hasChallengePacket: boolean;
+          assignmentTrust?: {
+            state: string;
+            label: string;
+            detail: string;
+          };
           challenge: {
             sourceRefType: string;
             sourceRefId: string;
@@ -7674,6 +9047,11 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(body.interview.assessmentProgress).toMatchObject({
       stage: 'CHALLENGE_READY',
       hasChallengePacket: true,
+      assignmentTrust: {
+        state: 'matched_challenge',
+        label: 'PIPE-matched challenge',
+        detail: expect.stringContaining('PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands.'),
+      },
       challenge: {
         sourceRefType: 'review_challenge_packet',
         sourceRefId: packet.packetId,
@@ -7687,6 +9065,14 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     });
     expect(body.interview.assessmentProgress?.challenge?.exactText).toContain(`Pull request: #${packet.githubPrNumber}`);
     expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Verification command: git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Match proof:');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Review packet quality 92% from source-backed repo analysis.');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('1 source-backed repo demand in the selected PR packet.');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Demand families: retry logic.');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Assessment fit:');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('focused review calibrated for senior candidates.');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('45 minute target from deterministic engineering prior.');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Sizing: 2 changed files, 128 changed lines, 9 source hunks, 1 demand family.');
     expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Repair retry scheduling so terminal events are emitted exactly once.');
 
     const row = sqlite!.prepare(
@@ -7727,6 +9113,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       content_hash: packet.sourceHash,
     });
     expect(sourceRef?.exact_text).toContain(packet.repositoryUrl);
+    expect(sourceRef?.exact_text).toContain('Match proof:');
+    expect(sourceRef?.exact_text).toContain('Review packet quality 92% from source-backed repo analysis.');
   });
 
   it('creates a source-backed open-source challenge packet without requiring a PR number', async () => {
@@ -7778,6 +9166,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     const body = await response.json() as {
       interview: {
         id: string;
+        title: string | null;
+        description: string | null;
         assessmentProgress: {
           stage: string;
           nextAction: string;
@@ -7805,6 +9195,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       };
     };
 
+    expect(body.interview.title).toBe('Fix the failing assessment evaluator start state');
+    expect(body.interview.description).toBe('Reproduce the failing start-evaluation path, make the smallest production-ready fix, and preserve source-backed assessment evidence.');
     expect(body.interview.githubPrNumber).toBeNull();
     expect(body.interview.assessmentSetup).toMatchObject({
       status: 'reviewable_task_assigned',
@@ -7863,6 +9255,34 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     });
     expect(JSON.parse(session?.metadata_json ?? '{}')).not.toHaveProperty('githubPrNumber');
 
+    const interviewRow = sqlite!.prepare(
+      `SELECT title, description
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(body.interview.id) as {
+      title: string | null;
+      description: string | null;
+    } | undefined;
+    expect(interviewRow).toMatchObject({
+      title: 'Fix the failing assessment evaluator start state',
+      description: 'Reproduce the failing start-evaluation path, make the smallest production-ready fix, and preserve source-backed assessment evidence.',
+    });
+
+    const detailResponse = await app.request(`/interviews/${body.interview.id}`);
+    expect(detailResponse.status).toBe(200);
+    const detailBody = await detailResponse.json() as {
+      interview: {
+        title: string | null;
+        description: string | null;
+        assessmentProgress: {
+          hasChallengePacket: boolean;
+        } | null;
+      };
+    };
+    expect(detailBody.interview.title).toBe('Fix the failing assessment evaluator start state');
+    expect(detailBody.interview.description).toBe('Reproduce the failing start-evaluation path, make the smallest production-ready fix, and preserve source-backed assessment evidence.');
+    expect(detailBody.interview.assessmentProgress?.hasChallengePacket).toBe(true);
+
     const sourceRef = sqlite!.prepare(
       `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role,
               sr.exact_text, sr.content_hash
@@ -7906,6 +9326,142 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     });
     expect(candidateProfileRef?.exact_text).toContain('Name: Ada Lovelace');
     expect(candidateProfileRef?.exact_text).toContain('Email: ada@example.com');
+  });
+
+  it('retries transient GitHub base-commit verification before creating an open-source challenge packet', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+    const baseCommitSha = '1234567890abcdef1234567890abcdef12345678';
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'Service unavailable' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sha: baseCommitSha }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Grace Hopper',
+        recipientEmail: 'grace.retry@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/hash-pipe/open-source-task',
+        challengeBaseCommitSha: baseCommitSha,
+        challengeTitle: 'Fix transient assessment setup verification',
+        challengeInstructions: 'Keep the challenge source-backed while tolerating temporary GitHub API failure.',
+        challengeSuccessCriteria: [
+          'A transient GitHub 503 does not prevent a valid source-backed challenge from being created.',
+        ],
+        challengeExpectedEvidence: [
+          'git_commit source ref for the submitted commit',
+          'code_diff source ref for the candidate patch',
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const body = await response.json() as {
+      interview: {
+        assessmentSetup: {
+          status: string;
+          kind: string;
+        };
+        assessmentProgress: {
+          challenge: {
+            sourceRefType: string;
+            locator: { baseCommitSha?: string };
+          } | null;
+        } | null;
+      };
+    };
+    expect(body.interview.assessmentSetup).toMatchObject({
+      status: 'reviewable_task_assigned',
+      kind: 'manual_open_source_task',
+    });
+    expect(body.interview.assessmentProgress?.challenge).toMatchObject({
+      sourceRefType: 'open_source_challenge_packet',
+      locator: { baseCommitSha },
+    });
+  });
+
+  it('falls back to GitHub commit pages when API verification is temporarily unavailable', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+    const baseCommitSha = '1234567890abcdef1234567890abcdef12345678';
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'Service unavailable' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'Gateway timeout' }), {
+        status: 504,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'Rate limited' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Grace Hopper',
+        recipientEmail: 'grace.page-fallback@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/hash-pipe/open-source-task',
+        challengeBaseCommitSha: baseCommitSha,
+        challengeTitle: 'Fix public commit-page assessment setup verification',
+        challengeInstructions: 'Keep the challenge source-backed when GitHub API verification has a temporary outage.',
+        challengeSuccessCriteria: [
+          'A public commit page can verify a valid source-backed challenge when the GitHub API is temporarily unavailable.',
+        ],
+        challengeExpectedEvidence: [
+          'git_commit source ref for the submitted commit',
+          'code_diff source ref for the candidate patch',
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      `https://github.com/hash-pipe/open-source-task/commit/${baseCommitSha}`,
+      expect.objectContaining({ method: 'HEAD' }),
+    );
+    const body = await response.json() as {
+      interview: {
+        assessmentSetup: {
+          status: string;
+          kind: string;
+        };
+        assessmentProgress: {
+          challenge: {
+            sourceRefType: string;
+            locator: { baseCommitSha?: string };
+          } | null;
+        } | null;
+      };
+    };
+    expect(body.interview.assessmentSetup).toMatchObject({
+      status: 'reviewable_task_assigned',
+      kind: 'manual_open_source_task',
+    });
+    expect(body.interview.assessmentProgress?.challenge).toMatchObject({
+      sourceRefType: 'open_source_challenge_packet',
+      locator: { baseCommitSha },
+    });
   });
 
   it('rejects manual open-source challenge packets when the base commit is not reachable in the repo', async () => {
@@ -8047,6 +9603,10 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       'Verification command: git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD',
       'Source-backed demands:',
       '- Repair retry scheduling so terminal events are emitted exactly once.',
+      'Assessment fit:',
+      '- focused review calibrated for senior candidates.',
+      '- 45 minute target from deterministic engineering prior.',
+      '- Sizing: 2 changed files, 128 changed lines, 9 source hunks, 1 demand family.',
       'Expected evidence:',
       '- git_commit source ref for the submitted assessment commit',
       '- code_diff source ref for the exact baseCommitSha..commitSha candidate patch',
@@ -8653,6 +10213,11 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
           source: string;
           blocksPositiveAssessment: boolean;
           message: string | null;
+          selectionRationale: {
+            summary: string;
+            whyThisChallenge: string;
+            residualRisk: string;
+          } | null;
         };
       }>;
     };
@@ -8668,6 +10233,11 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       blocksPositiveAssessment: false,
     });
     expect(interview?.assessmentSetup.message).toContain('PIPE selected a concrete GitHub PR');
+    expect(interview?.assessmentSetup.selectionRationale).toMatchObject({
+      summary: 'PIPE-selected repo task',
+      whyThisChallenge: expect.stringContaining('source-backed candidate evidence'),
+      residualRisk: expect.stringContaining('captured branch commit'),
+    });
   });
 });
 

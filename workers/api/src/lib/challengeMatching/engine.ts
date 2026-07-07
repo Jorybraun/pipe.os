@@ -904,7 +904,11 @@ export function rankReviewChallenges(
 }
 
 function percent(value: number): string {
-  return `${Math.round(clamp01(value) * 100)}%`;
+  return `${roundedPercent(value)}%`;
+}
+
+function roundedPercent(value: number): number {
+  return Math.round(clamp01(value) * 100);
 }
 
 function scoreBand(value: number, strongThreshold: number, usableThreshold: number): 0 | 1 | 2 {
@@ -958,6 +962,7 @@ function buildAssessmentQuality(
   const separation = typeof scoreSeparation === 'number' && Number.isFinite(scoreSeparation)
     ? Math.max(0, scoreSeparation)
     : null;
+  const roundedSeparationPercent = separation === null ? null : roundedPercent(separation);
   const candidateStrongThreshold = hasRoleRequirements ? 0.75 : 0.60;
   const candidateUsableThreshold = hasRoleRequirements ? 0.50 : 0.45;
   const exactSourceBackedSparse = sourceBackedSparseAlignment({
@@ -1036,11 +1041,11 @@ function buildAssessmentQuality(
     {
       id: 'contrast_separation',
       label: 'Contrast separation',
-      score: separation === null
+      score: roundedSeparationPercent === null
         ? 0
-        : separation >= 0.08
+        : roundedSeparationPercent >= 8
           ? 2
-          : separation >= 0.02
+          : roundedSeparationPercent >= 2
             ? 1
             : 0,
       maxScore: 2,

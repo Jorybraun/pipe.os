@@ -166,7 +166,9 @@ Logic:
 
 **Candidate assessment page (`/assess/:token`)**:
 - Reserved for real ready assessment work
-- Opened from the Talent Pool dashboard only when a source-backed assignment exists
+- Opened from the Talent Pool dashboard only when a source-backed assignment has
+  a production-ready review challenge packet with repo source refs and concept
+  links
 
 ### Phase 4: Profile Capture for Pipeline-Free Candidates
 
@@ -176,6 +178,86 @@ The `/talent/:token` route for pipeline-free candidates needs a simple flow:
 3. On submit → persist profile evidence, phone screener intent, and candidate ingestion state
 4. If no real challenge is ready → create an internal challenge-design queue item
 5. Candidate sees profile received / challenge preparing, not internal matching state
+
+### Current Ingestion / Person Contract
+
+As of 2026-07-02, a Talent Pool invite is still a real `candidates` row for
+token security, assessment readiness, and ingestion state, but it is not a
+separate person list. Profile submit/upload through `/rpc/talent/*` repairs the
+roleless person projection by upserting one `people` row and one
+`workspace_people` row keyed by owner plus normalized email. The projection
+marks `workspace_people.context_json.talentPool.status = "active"` and records
+the legacy candidate id without creating an `applications` row or `person_roles`
+row until there is a real role-backed process.
+
+`GET /api/v1/contacts` now lists explicit `contacts` plus canonical
+`workspace_people` records, suppressing duplicates by linked `contactId` or
+same owner/email. A Talent Pool person therefore appears in the People list as a
+candidate even when no legacy `contacts` row exists, and an existing contact is
+shown once if that same person later joins the Talent Pool.
+
+Pasted profile text and decoded text uploads also create one
+`talent_pool_profile_intake` person context record, backed by the exact
+submitted text source span when the context-record schema is present. That
+record proves intake evidence was submitted; it does not derive skills,
+seniority, match readiness, or challenge readiness.
+
+Uploaded profile files are stored under content-hash keys so a retry of the
+same file reuses the same source artifact path. PDF/DOCX background resume
+projection uses the roleless Talent Pool `workspace_people` identity and leaves
+`applications` / `person_roles` empty until a real role-backed process exists.
+The original uploaded blob is projected as a `profile_upload` source artifact
+receipt with exact storage key/hash/media metadata. Scheduled Talent Pool repair
+can backfill that receipt from existing content-hash R2 objects and skips
+already-receipted uploads. Raw R2 objects carry private source-kind metadata so
+pasted profile text remains text-source evidence rather than a file-upload
+receipt during replay or repair.
+
+GitHub, LinkedIn, portfolio, and phone-screener intent fields are projected as
+source-backed operational context records with exact submitted field spans.
+Those records prove what the candidate submitted and consented to; they do not
+validate external profile content, derive skills, or imply assessment readiness.
+
+Talent Pool `CHALLENGE_READY` requires more than a
+`candidate_challenge_assignment` row. The dashboard only exposes `/assess/:token`
+when the assigned repo/PR materializes through a production-ready
+`review_challenge_packets` row whose repo packet context has immutable source refs
+and concept links.
+
+Proof command:
+
+```bash
+npm --prefix workers/api test -- \
+  src/routes/__tests__/talentPool.test.ts \
+  src/routes/cockpit/__tests__/contacts.rest.test.ts \
+  src/routes/cockpit/__tests__/candidates.rest.test.ts
+npx playwright test e2e/talent-pool-intake.unauth.spec.ts --project=unauthenticated --reporter=line
+npm run smoke:talent-pool-browser-dev
+npm run smoke:talent-pool-browser-upload-dev
+npm run smoke:talent-pool-browser-docx-dev
+npm run smoke:talent-pool-browser-pdf-gap-dev
+npm run smoke:talent-pool-ingestion-dev
+
+cd workers/api
+npm run candidate-ingestion:audit -- --local --invite-token <token>
+npm run candidate-ingestion:audit -- --remote --invite-token <token>
+```
+
+The packaged dev smokes create a real candidate, submit through the public
+Talent Pool path, run the remote audit, fetch the exact current R2 profile
+object, and require the object bytes/hash to match the submitted source and
+content-addressed storage key before recruiter/person read proofs pass.
+
+DOCX uploads are parsed from OOXML body text and use the same profile-ingestion
+and living-context projection path as PDF uploads. Legacy binary `.doc` files
+remain unsupported and should not be advertised as source-projectable evidence.
+
+The candidate-ingestion audit contract lives in
+`docs/ops/talent-pool-candidate-ingestion-audit.md`. It fails on submitted
+intakes without storage or ingestion state, missing active Talent Pool person
+projection, missing exact source proof, duplicate projected context edges,
+source-less positive claims, candidate nodes without validated source quotes,
+or accidental roleless `applications` / `person_roles` rows.
 
 ---
 

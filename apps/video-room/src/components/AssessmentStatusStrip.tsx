@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Bot,
   ClipboardCheck,
   CheckCircle2,
   GitPullRequest,
@@ -10,7 +11,9 @@ import {
   Video,
 } from 'lucide-react';
 import type { RoomAssessmentProgressSnapshot, RoomWorkspace } from '../types';
-import { summarizeChallengePacket } from '../lib/challengePacketSummary';
+import { hidesCandidateSolutionPullRequest, summarizeChallengePacket } from '../lib/challengePacketSummary';
+import { summarizeAssessmentAiUse } from '../lib/aiUseSummary';
+import { assessmentSubmissionActionLabel } from '../lib/assessmentSubmissionState';
 
 export type AssessmentRoomMode = 'standard_call' | 'code_review' | 'dev_container_assessment';
 
@@ -105,12 +108,17 @@ function formatProgressToken(value: string | null | undefined): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function formatDiagnosticCode(value: string): string {
+  return formatProgressToken(value).replace(/\bAi\b/g, 'AI');
+}
+
 function shortSha(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed.slice(0, 8) : null;
 }
 
 function assessmentProgressEvidenceLabels(progress: RoomAssessmentProgressSnapshot): string {
+  const aiUse = summarizeAssessmentAiUse(progress);
   const hasGranularWorkEvidence = Boolean(
     progress.hasMessageEvidence
     || progress.hasDevContainerEvidence
@@ -127,11 +135,20 @@ function assessmentProgressEvidenceLabels(progress: RoomAssessmentProgressSnapsh
     progress.hasToolUsageEvidence ? 'tool activity' : null,
     progress.hasWorkEvidence && !hasGranularWorkEvidence ? 'work' : null,
     progress.hasCommitSubmission ? 'commit' : null,
-    progress.hasAiInteraction ? 'AI use' : null,
+    aiUse.coverageLabel,
     progress.hasTranscriptEvidence ? 'transcript' : null,
     progress.hasTestEvidence ? 'tests' : null,
     progress.hasVerificationGap ? 'verification gap' : null,
   ].filter(Boolean).join(', ') || 'no evidence yet';
+}
+
+function evaluationDiagnosticTone(
+  diagnostic: NonNullable<NonNullable<RoomAssessmentProgressSnapshot['evaluation']>['diagnostics']>[number],
+): 'blocked' | 'waiting' | 'progress' {
+  const severity = diagnostic.severity.toLowerCase();
+  if (severity === 'blocking' || severity === 'error') return 'blocked';
+  if (severity === 'warning') return 'waiting';
+  return 'progress';
 }
 
 export function AssessmentStatusStrip({
@@ -150,9 +167,14 @@ export function AssessmentStatusStrip({
     workspaceEnabled: Boolean(workspace?.enabled),
   });
   const ModeIcon = modeIcon(mode);
-  const summary = summarizeChallengePacket(workspace?.challenge.packet ?? null);
+  const challengePacket = workspace?.challenge.packet ?? null;
+  const summary = summarizeChallengePacket(challengePacket);
   const repositoryUrl = summary.repositoryUrl ?? workspace?.repoUrl ?? null;
-  const githubPrNumber = summary.githubPrNumber ?? workspace?.githubPrNumber ?? null;
+  const hideSolutionPullRequest = hidesCandidateSolutionPullRequest({
+    sourceRefType: challengePacket?.sourceRefType,
+    assignmentTrustState: assessmentProgress?.assignmentTrust?.state,
+  });
+  const githubPrNumber = hideSolutionPullRequest ? null : summary.githubPrNumber ?? workspace?.githubPrNumber ?? null;
   const baseCommit = summary.baseCommitSha;
   const statusInfo = workspaceStatusInfo(workspace, workspaceError);
   const workspaceReady = statusInfo.state === 'ready';
@@ -180,6 +202,9 @@ export function AssessmentStatusStrip({
       ? 'Review the assigned code with source-backed notes'
       : 'Use video, chat, and recording');
   const progressCommitSha = shortSha(assessmentProgress?.commit?.commitSha ?? null);
+  const aiUse = assessmentProgress ? summarizeAssessmentAiUse(assessmentProgress) : null;
+  const primaryEvaluationDiagnostic = assessmentProgress?.evaluation?.diagnostics?.[0] ?? null;
+  const submissionActionLabel = assessmentSubmissionActionLabel(assessmentProgress);
 
   return (
     <section
@@ -202,6 +227,11 @@ export function AssessmentStatusStrip({
             {compactRepoLabel(repositoryUrl)}
           </span>
         )}
+        {hideSolutionPullRequest && (
+          <span className="assessment-status-pill is-progress" data-testid="assessment-source-context">
+            Source-backed replay
+          </span>
+        )}
         {githubPrNumber && (
           <span className="assessment-status-pill" data-testid="assessment-pr">
             PR #{githubPrNumber}
@@ -218,6 +248,16 @@ export function AssessmentStatusStrip({
             {formatProgressToken(assessmentProgress.stage)}
           </span>
         )}
+        {mode !== 'standard_call' && assessmentProgress && (
+          <span
+            className={`assessment-status-pill is-${aiUse?.tone === 'captured' ? 'progress' : aiUse?.tone ?? 'waiting'}`}
+            data-testid="assessment-ai-usage-state"
+            title={aiUse?.detail}
+          >
+            <Bot size={12} />
+            {aiUse?.label}
+          </span>
+        )}
         {assessmentProgress?.readiness && (
           <span className="assessment-status-pill is-progress" data-testid="assessment-readiness">
             {assessmentProgress.readiness.isReadyForEvaluation
@@ -230,6 +270,16 @@ export function AssessmentStatusStrip({
             Commit {progressCommitSha}
           </span>
         )}
+        {primaryEvaluationDiagnostic && (
+          <span
+            className={`assessment-status-pill is-${evaluationDiagnosticTone(primaryEvaluationDiagnostic)}`}
+            data-testid="assessment-evaluation-diagnostic"
+            title={primaryEvaluationDiagnostic.message}
+          >
+            <AlertTriangle size={12} />
+            {formatDiagnosticCode(primaryEvaluationDiagnostic.code)}
+          </span>
+        )}
       </div>
 
       {(summary.task || challengeNeedsAttention) && (
@@ -238,6 +288,12 @@ export function AssessmentStatusStrip({
           <span data-testid="assessment-next-action">
             {summary.task ?? workspace?.challenge.message ?? 'Challenge needs attention'}
           </span>
+        </div>
+      )}
+      {primaryEvaluationDiagnostic && (
+        <div className="assessment-status-detail is-diagnostic" data-testid="assessment-evaluation-diagnostic-detail">
+          <AlertTriangle size={13} />
+          <span>{primaryEvaluationDiagnostic.message}</span>
         </div>
       )}
 
@@ -273,8 +329,8 @@ export function AssessmentStatusStrip({
             onClick={onOpenSubmission}
             data-testid="assessment-open-submission"
           >
-            <Upload size={13} />
-            Submit
+            {submissionActionLabel === 'Submit Work' ? <Upload size={13} /> : <CheckCircle2 size={13} />}
+            {submissionActionLabel}
           </button>
         )}
         {mode !== 'standard_call' && summary.expectedEvidence.length > 0 && (

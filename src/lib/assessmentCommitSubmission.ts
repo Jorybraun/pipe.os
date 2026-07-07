@@ -101,6 +101,18 @@ export interface CandidateAssessmentProgress {
     exactText: string;
     contentHash: string;
     locator: JsonObject;
+    summary?: {
+      repositoryUrl: string | null;
+      githubPrNumber: number | null;
+      pullRequestUrl: string | null;
+      baseCommitSha: string | null;
+      task: string | null;
+      assessmentFit: string[];
+      matchProof: string[];
+      successCriteria: string[];
+      expectedEvidence: string[];
+      verificationCommand: string | null;
+    };
   } | null;
   latestEvent?: JsonObject | null;
   commit: {
@@ -172,6 +184,14 @@ const CHANGED_FILE_STATUSES: ReadonlySet<CandidateCommitChangedFileStatus> = new
 const DEFAULT_ASSESSMENT_BRANCH = 'pipe-assessment';
 const GIT_COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/i;
 const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '';
+
+function firstNonBlankLine(value: string): string | null {
+  const line = value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .find((item) => item.length > 0);
+  return line ?? null;
+}
 
 function normalizeOptionalText(value: string): string | null {
   const trimmed = value.trim();
@@ -383,6 +403,7 @@ export async function buildCandidateCommitSubmissionPayload(
   const diffText = fields.diffText.trim();
   const testEvidenceText = fields.testEvidenceText.trim();
   const verificationNotesText = fields.verificationNotesText.trim();
+  const testEvidenceCommand = firstNonBlankLine(testEvidenceText);
   const narrative = fields.narrative.trim();
 
   if (!narrative) throw new Error('Submission note is required.');
@@ -475,12 +496,15 @@ export async function buildCandidateCommitSubmissionPayload(
             locator: {
               repositoryUrl: sourceRepositoryUrl,
               commitSha,
+              command: testEvidenceCommand,
             },
             exactText: testEvidenceText,
             contentHash: await sha256ContentHash(testEvidenceText),
             metadata: sourceMetadata,
           }]
-        : [{
+        : []),
+      ...(verificationNotesText
+        ? [{
             sourceRefType: 'verification_gap',
             sourceRefId: `${commitSha}:test-evidence-missing`,
             evidenceRole: 'missing_test_evidence_note',
@@ -495,7 +519,8 @@ export async function buildCandidateCommitSubmissionPayload(
               source: 'assessment_commit_submission_panel',
               missingEvidence: 'test_run',
             },
-          }]),
+          }]
+        : []),
       ...(validatedUpstreamPullRequestUrl && fields.upstreamPrConsent
         ? [{
             sourceRefType: 'upstream_pull_request',

@@ -1,6 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { processResumeFromR2 } from '../resumeIngestion';
+import { runCandidateIngestion } from '../../candidateDiscovery/orchestrate';
 import type { Env } from '../../../types';
+
+const talentPoolIdentityMock = vi.hoisted(() => ({
+  ensureRolelessTalentPoolIdentity: vi.fn(async () => ({
+    personId: 'person-auto-roleless',
+    workspacePersonId: 'wp-auto-roleless',
+  })),
+}));
+
+const candidateDiscoveryPersistMock = vi.hoisted(() => ({
+  markIngestionFailed: vi.fn(async () => undefined),
+}));
 
 vi.mock('../../cvParser', () => ({
   parseResume: vi.fn(async () => ({
@@ -8,13 +20,17 @@ vi.mock('../../cvParser', () => ({
     decompositionResult: null,
   })),
   persistParsedCV: vi.fn(async () => undefined),
-  extractTextFromPDF: vi.fn(async () =>
+  extractTextFromResumeFile: vi.fn(async () =>
     'Jane Doe\nSenior Software Engineer with 8 years of experience building distributed systems.\n\nExperience\nLed migration from monolith to microservices at Acme Corp.',
   ),
 }));
 
 vi.mock('../../candidateDiscovery/orchestrate', () => ({
   runCandidateIngestion: vi.fn(async () => undefined),
+}));
+
+vi.mock('../../candidateDiscovery/persist', () => ({
+  markIngestionFailed: candidateDiscoveryPersistMock.markIngestionFailed,
 }));
 
 const mockIngestResume = vi.fn(async () => ({
@@ -34,17 +50,83 @@ vi.mock('../../livingContext/resumeIngestion', () => ({
   ingestResumeToLivingContext: (...args: unknown[]) => mockIngestResume(...args),
 }));
 
-function buildMockEnv(db: D1Database): Env {
+vi.mock('../../talentPoolIdentity', () => ({
+  ensureRolelessTalentPoolIdentity: talentPoolIdentityMock.ensureRolelessTalentPoolIdentity,
+}));
+
+function buildMockEnv(
+  db: D1Database,
+  contentType = 'application/pdf',
+): Env {
   return {
     DB: db,
     STORAGE: {
       get: vi.fn(async () => ({
         arrayBuffer: async () => new ArrayBuffer(10),
-        httpMetadata: { contentType: 'application/pdf' },
+        httpMetadata: { contentType },
       })),
     },
     MOCK_AI: 'true',
   } as unknown as Env;
+}
+
+interface RolelessTalentPoolDbRow {
+  candidate_id: string;
+  owner_id: string;
+  name: string;
+  email: string;
+  profile_r2_key: string;
+  profile_text_excerpt: string;
+  github_url: string;
+  linkedin_url: string | null;
+  portfolio_url: string;
+  phone_screener_consent: number;
+  phone_number: string;
+  timezone: string;
+  availability: string;
+}
+
+interface MockRunCall {
+  sql: string;
+  args: unknown[];
+}
+
+function buildRolelessTalentPoolDb(
+  overrides: Partial<RolelessTalentPoolDbRow> = {},
+  runCalls: MockRunCall[] = [],
+): D1Database {
+  const row: RolelessTalentPoolDbRow = {
+    candidate_id: 'cand-roleless-auto',
+    owner_id: 'dev-user',
+    name: 'Jane Roleless',
+    email: 'jane@example.com',
+    profile_r2_key: 'talent-intake/cand-roleless-auto/profile.pdf',
+    profile_text_excerpt: 'Jane Roleless submitted a profile for Talent Pool matching.',
+    github_url: 'https://github.com/jane',
+    linkedin_url: null,
+    portfolio_url: 'https://jane.example.com',
+    phone_screener_consent: 1,
+    phone_number: '+15555550123',
+    timezone: 'America/Vancouver',
+    availability: 'Weekday mornings',
+    ...overrides,
+  };
+
+  return {
+    prepare: vi.fn((sql: string) => ({
+      bind: vi.fn((...args: unknown[]) => ({
+        run: vi.fn(async () => {
+          runCalls.push({ sql, args });
+          return { success: true };
+        }),
+        first: vi.fn(async () => (
+          sql.includes('FROM candidates c') && sql.includes('JOIN talent_pool_intakes t')
+            ? row
+            : null
+        )),
+      })),
+    })),
+  } as unknown as D1Database;
 }
 
 describe('processResumeFromR2 — living context integration', () => {
@@ -52,6 +134,10 @@ describe('processResumeFromR2 — living context integration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    talentPoolIdentityMock.ensureRolelessTalentPoolIdentity.mockResolvedValue({
+      personId: 'person-auto-roleless',
+      workspacePersonId: 'wp-auto-roleless',
+    });
     db = {} as D1Database;
   });
 
@@ -66,6 +152,10 @@ describe('processResumeFromR2 — living context integration', () => {
 
     expect(result.success).toBe(true);
     expect(mockIngestResume).toHaveBeenCalledOnce();
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand-123',
+      mirrorLivingContext: true,
+    }));
     expect(mockIngestResume).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
@@ -78,8 +168,8 @@ describe('processResumeFromR2 — living context integration', () => {
   });
 
   it('skips living context ingestion when resume text is too short', async () => {
-    const { extractTextFromPDF } = await import('../../cvParser');
-    vi.mocked(extractTextFromPDF).mockResolvedValueOnce('short');
+    const { extractTextFromResumeFile } = await import('../../cvParser');
+    vi.mocked(extractTextFromResumeFile).mockResolvedValueOnce('short');
 
     const env = buildMockEnv(db);
     const result = await processResumeFromR2({
@@ -121,5 +211,203 @@ describe('processResumeFromR2 — living context integration', () => {
     expect(call).toBeDefined();
     const input = call[1] as { resumeText: string };
     expect(input.resumeText.length).toBeGreaterThanOrEqual(20);
+  });
+
+  it('processes DOCX uploads into living context with source media type', async () => {
+    const env = buildMockEnv(
+      db,
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    const result = await processResumeFromR2({
+      env,
+      db,
+      candidateId: 'cand-docx',
+      r2Key: 'candidate-documents/cand-docx/profile.docx',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockIngestResume).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        candidateId: 'cand-docx',
+        storageKey: 'candidate-documents/cand-docx/profile.docx',
+        mediaType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+    );
+  });
+
+  it('passes supplied roleless Talent Pool identity into living context ingestion', async () => {
+    const env = buildMockEnv(db);
+    const result = await processResumeFromR2({
+      env,
+      db,
+      candidateId: 'cand-roleless',
+      r2Key: 'talent-intake/cand-roleless/profile.pdf',
+      livingContextIdentity: {
+        personId: 'person-roleless',
+        workspacePersonId: 'wp-roleless',
+        applicationId: null,
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand-roleless',
+      mirrorLivingContext: false,
+    }));
+    expect(mockIngestResume).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        candidateId: 'cand-roleless',
+        storageKey: 'talent-intake/cand-roleless/profile.pdf',
+        identity: {
+          personId: 'person-roleless',
+          workspacePersonId: 'wp-roleless',
+          applicationId: null,
+        },
+      }),
+    );
+  });
+
+  it('passes candidate discovery bounds into the ingestion orchestrator', async () => {
+    const env = buildMockEnv(db);
+    const result = await processResumeFromR2({
+      env,
+      db,
+      candidateId: 'cand-bounded',
+      r2Key: 'candidate-documents/cand-bounded/resume.pdf',
+      preExtractedResumeText: 'Pre-extracted resume text with enough source evidence for bounded ingestion.',
+      candidateDiscoveryTimeoutMs: 7000,
+      candidateDiscoveryMaxAttempts: 1,
+      maxNodeEmbeddings: 0,
+      maxParserOnlyNodes: 12,
+      skipPostDecompositionMaintenance: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand-bounded',
+      resumeText: 'Pre-extracted resume text with enough source evidence for bounded ingestion.',
+      candidateDiscoveryTimeoutMs: 7000,
+      candidateDiscoveryMaxAttempts: 1,
+      maxNodeEmbeddings: 0,
+      maxParserOnlyNodes: 12,
+      skipPostDecompositionMaintenance: true,
+    }));
+  });
+
+  it('auto-resolves roleless Talent Pool identity before document ingestion can mirror legacy applications', async () => {
+    db = buildRolelessTalentPoolDb();
+    const env = buildMockEnv(db);
+
+    const result = await processResumeFromR2({
+      env,
+      db,
+      candidateId: 'cand-roleless-auto',
+      r2Key: 'talent-intake/cand-roleless-auto/profile.pdf',
+    });
+
+    expect(result.success).toBe(true);
+    expect(talentPoolIdentityMock.ensureRolelessTalentPoolIdentity).toHaveBeenCalledWith(expect.objectContaining({
+      db,
+      userId: 'dev-user',
+      candidateId: 'cand-roleless-auto',
+      name: 'Jane Roleless',
+      email: 'jane@example.com',
+      messageStorageKey: 'talent-intake/cand-roleless-auto/profile.pdf',
+      messageMediaType: 'application/pdf',
+      operationalContext: expect.objectContaining({
+        githubUrl: 'https://github.com/jane',
+        portfolioUrl: 'https://jane.example.com',
+        phoneScreenerConsent: true,
+        phoneNumber: '+15555550123',
+        timezone: 'America/Vancouver',
+        availability: 'Weekday mornings',
+      }),
+    }));
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand-roleless-auto',
+      mirrorLivingContext: false,
+    }));
+    expect(mockIngestResume).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        candidateId: 'cand-roleless-auto',
+        storageKey: 'talent-intake/cand-roleless-auto/profile.pdf',
+        identity: {
+          personId: 'person-auto-roleless',
+          workspacePersonId: 'wp-auto-roleless',
+          applicationId: null,
+        },
+      }),
+    );
+  });
+
+  it('keeps unextractable Talent Pool documents as evidence gaps without placeholder profile projection', async () => {
+    const { parseResume } = await import('../../cvParser');
+    vi.mocked(parseResume).mockRejectedValueOnce(new Error('Invalid PDF structure.'));
+    const runCalls: MockRunCall[] = [];
+    const storageKey = `talent-intake/cand-roleless-auto/${'a'.repeat(64)}-empty-profile.pdf`;
+    db = buildRolelessTalentPoolDb({
+      profile_r2_key: storageKey,
+      profile_text_excerpt: 'Uploaded empty-profile.pdf',
+    }, runCalls);
+    const env = buildMockEnv(db);
+
+    const result = await processResumeFromR2({
+      env,
+      db,
+      candidateId: 'cand-roleless-auto',
+      r2Key: storageKey,
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      parsed: null,
+      error: expect.stringContaining('Resume parsing failed or produced no text'),
+    });
+    expect(candidateDiscoveryPersistMock.markIngestionFailed).not.toHaveBeenCalled();
+    expect(runCandidateIngestion).not.toHaveBeenCalled();
+    expect(mockIngestResume).not.toHaveBeenCalled();
+
+    const identityInput = talentPoolIdentityMock.ensureRolelessTalentPoolIdentity.mock.calls[0]?.[0] as {
+      message?: string;
+      messageStorageKey?: string | null;
+      messageMediaType?: string | null;
+    };
+    expect(identityInput.message).toBeUndefined();
+    expect(identityInput.messageStorageKey).toBeNull();
+    expect(identityInput.messageMediaType).toBeNull();
+    expect(runCalls.some((call) => (
+      call.sql.includes('candidate_ingestion')
+      && call.args[0] === 'cand-roleless-auto'
+      && call.args[1] === 'profile_text_extraction_needed'
+    ))).toBe(true);
+  });
+
+  it('fails closed when roleless Talent Pool identity repair throws', async () => {
+    talentPoolIdentityMock.ensureRolelessTalentPoolIdentity.mockRejectedValueOnce(new Error('identity repair failed'));
+    db = buildRolelessTalentPoolDb();
+    const env = buildMockEnv(db);
+
+    const result = await processResumeFromR2({
+      env,
+      db,
+      candidateId: 'cand-roleless-auto',
+      r2Key: 'talent-intake/cand-roleless-auto/profile.pdf',
+    });
+
+    expect(result.success).toBe(true);
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand-roleless-auto',
+      mirrorLivingContext: false,
+    }));
+    expect(mockIngestResume).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        candidateId: 'cand-roleless-auto',
+        identity: null,
+      }),
+    );
   });
 });

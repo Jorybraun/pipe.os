@@ -11,6 +11,7 @@
  */
 
 import type { D1Database } from '@cloudflare/workers-types';
+import { resolveCandidateWorkspacePersonId } from './compatibility';
 import { LivingContextStore, deterministicEntityId } from './persistence';
 import type { ContextRecordInput, ContextRecordSourceInput, JsonObject } from './types';
 
@@ -81,16 +82,7 @@ export async function recordMatchDecision(
     `${input.candidateId}:${input.matchRunId}:${input.challengeId}:${input.verdict}`,
   );
 
-  // Resolve workspace person for the candidate
-  const wp = await db.prepare(
-    `SELECT wp.id
-       FROM applications app
-       JOIN workspace_people wp ON wp.id = app.workspace_person_id
-      WHERE app.legacy_candidate_id = ?1
-      LIMIT 1`,
-  ).bind(input.candidateId).first<{ id: string }>();
-
-  const workspacePersonId = wp?.id ?? null;
+  const workspacePersonId = await resolveCandidateWorkspacePersonId(db, input.candidateId);
 
   // Build source refs linking to the match run and challenge
   const sources: ContextRecordSourceInput[] = [

@@ -41,6 +41,7 @@ describe('GET / contacts list', () => {
         updated_at TEXT NOT NULL
       );
     `);
+    sqlite.exec(livingContextGraphMigration);
 
     const insert = sqlite.prepare(`
       INSERT INTO contacts (
@@ -116,6 +117,108 @@ describe('GET / contacts list', () => {
     expect(body.page).toBe(3);
     expect(body.limit).toBe(40);
     expect(body.hasMore).toBe(false);
+  });
+
+  it('includes roleless talent-pool people from the canonical person graph without duplicating contacts', async () => {
+    const createdAt = '2026-06-22T00:05:00.000Z';
+    sqlite.prepare(
+      `INSERT INTO people (
+         id, ingestion_key, display_name, primary_email, external_ids_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, '{}', ?, ?)`,
+    ).run(
+      'person-talent-1',
+      'email:talent@example.com',
+      'Talent Pool Person',
+      'talent@example.com',
+      createdAt,
+      createdAt,
+    );
+    sqlite.prepare(
+      `INSERT INTO workspace_people (
+         id, ingestion_key, workspace_id, person_id, relationship_summary,
+         context_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'workspace-person-talent-1',
+      'workspace:test-user:person:person-talent-1',
+      'test-user',
+      'person-talent-1',
+      'Joined the roleless Talent Pool.',
+      JSON.stringify({
+        source: 'roleless_candidate_intake',
+        sources: ['roleless_candidate_intake'],
+        legacyCandidateIds: ['candidate-talent-1'],
+        talentPool: { status: 'active', roleless: true, candidateId: 'candidate-talent-1' },
+      }),
+      createdAt,
+      createdAt,
+    );
+
+    const duplicateCreatedAt = '2026-06-22T00:06:00.000Z';
+    sqlite.prepare(
+      `INSERT INTO people (
+         id, ingestion_key, display_name, primary_email, external_ids_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, '{}', ?, ?)`,
+    ).run(
+      'person-contact-104',
+      'email:person-104@example.com',
+      'Existing Contact Candidate',
+      'person-104@example.com',
+      duplicateCreatedAt,
+      duplicateCreatedAt,
+    );
+    sqlite.prepare(
+      `INSERT INTO workspace_people (
+         id, ingestion_key, workspace_id, person_id, context_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'workspace-person-contact-104',
+      'workspace:test-user:person:person-contact-104',
+      'test-user',
+      'person-contact-104',
+      JSON.stringify({
+        contactId: 'contact-104',
+        legacyCandidateIds: ['candidate-contact-104'],
+        talentPool: { status: 'active', roleless: true, candidateId: 'candidate-contact-104' },
+      }),
+      duplicateCreatedAt,
+      duplicateCreatedAt,
+    );
+
+    const app = createApp();
+    const response = await app.request('/?limit=110');
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      contacts: Array<{ id: string; email: string; type: string; notes: string | null }>;
+      total: number;
+      hasMore: boolean;
+    };
+    expect(body.total).toBe(106);
+    expect(body.hasMore).toBe(false);
+    expect(body.contacts[0]).toMatchObject({
+      id: 'person-talent-1',
+      email: 'talent@example.com',
+      type: 'candidate',
+      notes: 'Joined the roleless Talent Pool.',
+    });
+    expect(body.contacts.filter((contact) => contact.email === 'person-104@example.com')).toHaveLength(1);
+    expect(body.contacts.find((contact) => contact.id === 'contact-104')).toMatchObject({
+      type: 'candidate',
+    });
+
+    const profileResponse = await app.request('/person-talent-1');
+    expect(profileResponse.status).toBe(200);
+    const profileBody = await profileResponse.json() as {
+      contact: { id: string; email: string; name: string | null; type: string; notes: string | null };
+    };
+    expect(profileBody.contact).toMatchObject({
+      id: 'person-talent-1',
+      email: 'talent@example.com',
+      name: 'Talent Pool Person',
+      type: 'candidate',
+      notes: 'Joined the roleless Talent Pool.',
+    });
   });
 });
 
@@ -396,13 +499,90 @@ describe('GET /:id/living-context', () => {
     expect(candidateGraphRead.status).toBe(200);
     const candidateGraph = await candidateGraphRead.json() as {
       livingContext: {
-        person: { personId: string; workspacePersonId: string; primaryEmail: string | null };
+        person: {
+          personId: string;
+          workspacePersonId: string;
+          applicationId: string | null;
+          primaryEmail: string | null;
+        };
       };
     };
     expect(candidateGraph.livingContext.person).toMatchObject({
       personId: firstContactGraph.person?.personId,
       workspacePersonId: firstContactGraph.person?.workspacePersonId,
+      applicationId: null,
       primaryEmail: 'ada@example.com',
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM person_roles').get()).toEqual({ count: 1 });
+
+    const candidateSearch = await app.request(
+      `/candidates/${createdCandidateBody.candidate.id}/living-context/search?q=Roleless`,
+    );
+    expect(candidateSearch.status).toBe(200);
+    const searchBody = await candidateSearch.json() as {
+      personId: string;
+      hits: Array<{ exactText: string; sourceSpanId: string }>;
+    };
+    expect(searchBody.personId).toBe(firstContactGraph.person?.workspacePersonId);
+    expect(searchBody.hits.some((hit) => hit.exactText.includes('Roleless smoke evidence'))).toBe(true);
+
+    const evidenceDepth = await app.request(
+      `/candidates/${createdCandidateBody.candidate.id}/living-context/evidence-depth`,
+    );
+    expect(evidenceDepth.status).toBe(200);
+    const evidenceDepthBody = await evidenceDepth.json() as {
+      workspacePersonId: string | null;
+      totalInteractions: number;
+      totalSourceSpans: number;
+      totalContextRecords: number;
+    };
+    expect(evidenceDepthBody).toMatchObject({
+      workspacePersonId: firstContactGraph.person?.workspacePersonId,
+      totalInteractions: 1,
+      totalSourceSpans: 1,
+      totalContextRecords: 1,
+    });
+
+    const personSearch = await app.request(
+      `/${firstContactGraph.person?.personId}/living-context/search?q=Roleless`,
+    );
+    expect(personSearch.status).toBe(200);
+    const personSearchBody = await personSearch.json() as {
+      personId: string;
+      hits: Array<{ exactText: string; sourceSpanId: string }>;
+    };
+    expect(personSearchBody.personId).toBe(firstContactGraph.person?.workspacePersonId);
+    expect(personSearchBody.hits.some((hit) => hit.exactText.includes('Roleless smoke evidence'))).toBe(true);
+
+    const personTimeline = await app.request(
+      `/${firstContactGraph.person?.personId}/living-context/timeline`,
+    );
+    expect(personTimeline.status).toBe(200);
+    const personTimelineBody = await personTimeline.json() as {
+      workspacePersonId: string;
+      totalEntries: number;
+      entries: Array<{ kind: string; sourceType?: string; description?: string }>;
+    };
+    expect(personTimelineBody.workspacePersonId).toBe(firstContactGraph.person?.workspacePersonId);
+    expect(personTimelineBody.totalEntries).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(personTimelineBody.entries)).toContain('Candidate submitted Talent Pool profile evidence.');
+
+    const personEvidenceDepth = await app.request(
+      `/${firstContactGraph.person?.personId}/living-context/evidence-depth`,
+    );
+    expect(personEvidenceDepth.status).toBe(200);
+    const personEvidenceDepthBody = await personEvidenceDepth.json() as {
+      workspacePersonId: string | null;
+      totalInteractions: number;
+      totalSourceSpans: number;
+      totalContextRecords: number;
+    };
+    expect(personEvidenceDepthBody).toMatchObject({
+      workspacePersonId: firstContactGraph.person?.workspacePersonId,
+      totalInteractions: 1,
+      totalSourceSpans: 1,
+      totalContextRecords: 1,
     });
 
     const secondContactRead = await app.request('/contact-1/living-context');

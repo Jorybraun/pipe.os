@@ -2016,6 +2016,10 @@ button:focus-visible {
   color: rgba(244, 248, 255, 0.72);
 }
 
+.assessment-status-detail.is-diagnostic {
+  color: #fecaca;
+}
+
 .assessment-status-detail span {
   min-width: 0;
   overflow: hidden;
@@ -2478,6 +2482,42 @@ button:focus-visible {
   background: rgba(250, 204, 21, 0.12);
 }
 
+.commit-submission-ai-use {
+  display: grid;
+  grid-template-columns: minmax(130px, max-content) minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.commit-submission-ai-use strong {
+  color: rgba(244, 248, 255, 0.92);
+  text-transform: uppercase;
+}
+
+.commit-submission-ai-use span {
+  min-width: 0;
+  color: rgba(244, 248, 255, 0.74);
+}
+
+.commit-submission-ai-use.is-captured {
+  border-color: rgba(74, 222, 128, 0.34);
+  background: rgba(74, 222, 128, 0.10);
+}
+
+.commit-submission-ai-use.is-blocked {
+  border-color: rgba(248, 113, 113, 0.34);
+  background: rgba(248, 113, 113, 0.10);
+}
+
+.commit-submission-ai-use.is-waiting {
+  border-color: rgba(250, 204, 21, 0.34);
+  background: rgba(250, 204, 21, 0.10);
+}
+
 .commit-submission-workspace-finalize {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 0.5fr) auto;
@@ -2826,6 +2866,143 @@ button:focus-visible {
   gap: 4px;
 }
 
+.commit-submission-final-evidence {
+  display: grid;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 6px;
+  background: rgba(8, 47, 73, 0.18);
+}
+
+.commit-submission-final-evidence-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.commit-submission-final-evidence-header > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.commit-submission-final-evidence-header strong,
+.commit-submission-final-evidence-block > strong {
+  color: #cffafe;
+  font-family: 'Space Mono', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.commit-submission-final-evidence-header span {
+  color: rgba(236, 254, 255, 0.76);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.commit-submission-final-evidence-download {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid rgba(103, 232, 249, 0.36);
+  border-radius: 5px;
+  background: rgba(8, 145, 178, 0.16);
+  color: #e0faff;
+  font-family: 'Space Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.commit-submission-final-evidence-download:hover {
+  border-color: rgba(103, 232, 249, 0.62);
+  background: rgba(8, 145, 178, 0.28);
+}
+
+.commit-submission-final-evidence-download:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.commit-submission-final-evidence-warning {
+  border: 1px solid rgba(250, 204, 21, 0.28);
+  border-radius: 5px;
+  padding: 7px 8px;
+  background: rgba(113, 63, 18, 0.22);
+  color: #fef3c7;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.commit-submission-final-evidence-block {
+  display: grid;
+  gap: 7px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.commit-submission-final-evidence-block ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.commit-submission-final-evidence-block li {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 6px;
+  background: rgba(2, 6, 23, 0.32);
+}
+
+.commit-submission-final-evidence-block li span {
+  color: #f4f8ff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.commit-submission-final-evidence-block li p,
+.commit-submission-final-evidence-block li small {
+  margin: 0;
+  color: rgba(244, 248, 255, 0.72);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.commit-submission-final-evidence-block li pre {
+  max-height: 92px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: rgba(244, 248, 255, 0.80);
+  font-family: 'Space Mono', ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.commit-submission-final-evidence-block.is-diagnostic li {
+  border-color: rgba(250, 204, 21, 0.22);
+  background: rgba(113, 63, 18, 0.20);
+}
+
+.commit-submission-final-evidence-block.is-diagnostic li span {
+  color: #fde68a;
+}
+
 .commit-submission-actions {
   display: flex;
   justify-content: flex-end;
@@ -2860,6 +3037,14 @@ button:focus-visible {
 
   .commit-submission-workspace-finalize-header span {
     text-align: left;
+  }
+
+  .commit-submission-final-evidence-header {
+    display: grid;
+  }
+
+  .commit-submission-final-evidence-download {
+    justify-self: start;
   }
 }
 
@@ -3125,6 +3310,7 @@ button:focus-visible {
 
 .assessment-task-brief-step,
 .assessment-task-brief-proof,
+.assessment-task-brief-diagnostics,
 .assessment-task-brief-contract,
 .assessment-task-brief-empty {
   padding: 12px;
@@ -3135,6 +3321,7 @@ button:focus-visible {
 
 .assessment-task-brief-step strong,
 .assessment-task-brief-proof strong,
+.assessment-task-brief-diagnostics strong,
 .assessment-task-brief-contract strong {
   display: block;
   margin-bottom: 5px;
@@ -3260,6 +3447,131 @@ button:focus-visible {
   font-size: 11px;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.assessment-final-review-packet {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.32);
+  border-radius: 6px;
+  background:
+    linear-gradient(135deg, rgba(56, 189, 248, 0.14), rgba(74, 222, 128, 0.08)),
+    rgba(15, 23, 42, 0.78);
+}
+
+.assessment-final-review-packet-header {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.assessment-final-review-packet-header svg {
+  color: #67e8f9;
+}
+
+.assessment-final-review-packet-header strong {
+  display: block;
+  color: #cffafe;
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assessment-final-review-packet-header p {
+  margin: 4px 0 0;
+  color: rgba(236, 254, 255, 0.78);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.assessment-final-review-packet dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 9px;
+  margin: 0;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.assessment-final-review-packet dt {
+  color: rgba(191, 219, 254, 0.88);
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.assessment-final-review-packet dd {
+  margin: 0;
+  min-width: 0;
+  color: #f4f8ff;
+  font-size: 11px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.assessment-task-brief-diagnostics {
+  display: grid;
+  gap: 10px;
+  border-color: rgba(248, 113, 113, 0.32);
+  background: rgba(127, 29, 29, 0.18);
+}
+
+.assessment-task-brief-diagnostics-header {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.assessment-task-brief-diagnostics-header svg {
+  color: #fca5a5;
+}
+
+.assessment-task-brief-diagnostics-header strong {
+  color: #fecaca;
+  margin-bottom: 0;
+}
+
+.assessment-task-brief-diagnostics-header p {
+  margin: 4px 0 0;
+  color: rgba(254, 226, 226, 0.78);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.assessment-task-brief-diagnostics ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assessment-task-brief-diagnostics li {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.22);
+  border-radius: 6px;
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.assessment-task-brief-diagnostics li span {
+  color: #fecaca;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.assessment-task-brief-diagnostics li small {
+  color: rgba(254, 226, 226, 0.76);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .assessment-task-brief-proof {

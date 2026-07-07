@@ -179,6 +179,15 @@ export interface RoomAssessmentReadinessSnapshot {
   confidence: RoomAssessmentReadinessItem[];
 }
 
+export interface RoomAssessmentEvaluationDiagnostic {
+  id: string;
+  code: string;
+  severity: string;
+  message: string;
+  sourceRefCount: number;
+  sourceRefTypes: string[];
+}
+
 export interface RoomAssessmentChallengePacketContract {
   schemaVersion: 'challenge-packet-contract-v1';
   isComplete: boolean;
@@ -188,6 +197,58 @@ export interface RoomAssessmentChallengePacketContract {
   hasTask: boolean;
   hasSuccessCriteria: boolean;
   hasExpectedEvidence: boolean;
+}
+
+export interface RoomAssessmentReviewPacketTone {
+  state?: string;
+  status?: string;
+  label: string;
+  detail: string;
+  tone: string;
+}
+
+export interface RoomAssessmentProgressReviewPacketSummary {
+  schemaVersion: 'repo-task-review-packet-v1';
+  challenge: {
+    focus: string | null;
+    repositoryUrl: string | null;
+    baseCommitSha: string | null;
+    pullRequestUrl: string | null;
+    assignmentTrust: RoomAssessmentReviewPacketTone;
+    contract: {
+      schemaVersion: string;
+      isComplete: boolean;
+      missingFields: string[];
+    };
+  };
+  submission: {
+    repositoryUrl: string | null;
+    forkRepositoryUrl: string | null;
+    branchName: string | null;
+    commitSha: string | null;
+    commitUrl: string | null;
+    submissionSourceLabel: string | null;
+    changedFileCount: number;
+    integrity: RoomAssessmentReviewPacketTone;
+    challengeBinding: RoomAssessmentReviewPacketTone;
+  } | null;
+  evidence: {
+    sourceRefCount: number;
+    sourceRefTypeCounts: Record<string, number>;
+    readiness: {
+      status: string;
+      label: string;
+      detail: string;
+      isReadyForEvaluation: boolean;
+      isUsableHiringSignal: boolean;
+      missingRequiredCount: number;
+    };
+  };
+  evaluation: {
+    recommendation: string | null;
+    claimCount: number;
+    diagnosticCount: number;
+  };
 }
 
 export interface RoomAssessmentProgressSnapshot {
@@ -202,6 +263,19 @@ export interface RoomAssessmentProgressSnapshot {
     detail: string;
     tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
   };
+  challenge?: {
+    title?: string | null;
+    repositoryUrl: string | null;
+    githubPrNumber: number | null;
+    pullRequestUrl: string | null;
+    baseCommitSha: string | null;
+    task: string | null;
+    assessmentFit: string[];
+    matchProof: string[];
+    successCriteria: string[];
+    expectedEvidence: string[];
+    verificationCommand: string | null;
+  } | null;
   challengePacketContract?: RoomAssessmentChallengePacketContract;
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
@@ -235,6 +309,7 @@ export interface RoomAssessmentProgressSnapshot {
     recommendation?: string | null;
     createdAt: string;
     evidenceCoverage?: unknown;
+    diagnostics?: RoomAssessmentEvaluationDiagnostic[];
     claims?: Array<{
       id: string;
       polarity: string;
@@ -244,6 +319,7 @@ export interface RoomAssessmentProgressSnapshot {
       sourceRefCount: number;
       sourceRefTypes: string[];
     }>;
+    reviewPacket?: RoomAssessmentProgressReviewPacketSummary | null;
   } | null;
   readiness?: RoomAssessmentReadinessSnapshot;
 }
@@ -268,6 +344,8 @@ export interface RoomCommitSubmissionResponse {
 
 export interface RoomWorkspaceFinalizeRequest {
   narrative?: string;
+  testCommand?: string;
+  verificationNotes?: string;
 }
 
 export interface RoomWorkspaceFinalizeResponse {

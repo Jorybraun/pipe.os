@@ -13,6 +13,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { isDevProxyRecruiterAuthBypassEnabled } from '../lib/auth/devProxyAuth';
 import { useAuth } from '../providers/DataContext';
 
+const MAX_RETAINED_BOOKING_NOTIFICATIONS = 50;
+
 export interface BookingNotification {
   interviewId: string;
   status: string;
@@ -117,7 +119,7 @@ export function useBookingNotifications(): UseBookingNotificationsResult {
               try {
                 const notification = JSON.parse(data) as BookingNotification;
                 if (!cancelled) {
-                  setNotifications((prev) => [...prev, notification]);
+                  setNotifications((prev) => [...prev, notification].slice(-MAX_RETAINED_BOOKING_NOTIFICATIONS));
                 }
               } catch {
                 // Ignore parse errors

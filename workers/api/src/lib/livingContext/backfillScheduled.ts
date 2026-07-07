@@ -56,6 +56,42 @@ function sqliteDateTime(value: Date): string {
   return value.toISOString().replace('T', ' ').slice(0, 19);
 }
 
+async function tableExists(db: D1Database, tableName: string): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT name
+       FROM sqlite_master
+      WHERE type = 'table'
+        AND name = ?1
+      LIMIT 1`,
+  ).bind(tableName).first<{ name: string }>();
+  return Boolean(row);
+}
+
+function talentPoolRolelessExclusionSql(input: {
+  hasTalentPoolIntakes: boolean;
+  hasCandidateChallengeAssignments: boolean;
+}): string {
+  if (!input.hasTalentPoolIntakes) return '';
+  const readyAssignmentClause = input.hasCandidateChallengeAssignments
+    ? `AND NOT EXISTS (
+         SELECT 1
+           FROM candidate_challenge_assignment cca
+          WHERE cca.candidate_id = c.id
+            AND cca.github_repo_url IS NOT NULL
+            AND cca.github_pr_number IS NOT NULL
+       )`
+    : '';
+  return `AND NOT (
+      c.pipeline_id IS NULL
+      AND EXISTS (
+        SELECT 1
+          FROM talent_pool_intakes t
+         WHERE t.candidate_id = c.id
+      )
+      ${readyAssignmentClause}
+    )`;
+}
+
 export const BACKFILL_TASKS: BackfillTaskDefinition[] = [
   {
     taskKey: 'candidates_to_living_context',
@@ -233,12 +269,17 @@ async function backfillCandidatesBatch(
   db: D1Database,
   cursor: string | null,
 ): Promise<BackfillBatchResult> {
+  const talentPoolExclusion = talentPoolRolelessExclusionSql({
+    hasTalentPoolIntakes: await tableExists(db, 'talent_pool_intakes'),
+    hasCandidateChallengeAssignments: await tableExists(db, 'candidate_challenge_assignment'),
+  });
   const rows = await db.prepare(
     `SELECT c.id FROM candidates c
      LEFT JOIN workspace_people wp ON wp.id IN (
        SELECT a.workspace_person_id FROM applications a WHERE a.legacy_candidate_id = c.id
      )
      WHERE wp.id IS NULL
+       ${talentPoolExclusion}
        AND (?1 IS NULL OR c.id > ?1)
      ORDER BY c.id
      LIMIT ?2`,
@@ -313,6 +354,10 @@ async function backfillResumesBatch(
   db: D1Database,
   cursor: string | null,
 ): Promise<BackfillBatchResult> {
+  const talentPoolExclusion = talentPoolRolelessExclusionSql({
+    hasTalentPoolIntakes: await tableExists(db, 'talent_pool_intakes'),
+    hasCandidateChallengeAssignments: await tableExists(db, 'candidate_challenge_assignment'),
+  });
   const rows = await db.prepare(
     `SELECT c.id, c.resume_s3_key FROM candidates c
      WHERE c.resume_s3_key IS NOT NULL AND c.resume_s3_key != ''
@@ -322,6 +367,7 @@ async function backfillResumesBatch(
          JOIN applications app ON app.workspace_person_id = wp.id AND app.legacy_candidate_id = c.id
          WHERE a.artifact_type = 'resume' AND a.logical_key = c.resume_s3_key
        )
+       ${talentPoolExclusion}
        AND (?1 IS NULL OR c.id > ?1)
      ORDER BY c.id
      LIMIT ?2`,

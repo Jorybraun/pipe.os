@@ -19,6 +19,8 @@ async function sourceRef(input: {
   role?: string;
   exactText: string;
   sequence?: number;
+  locator?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }): Promise<SessionSourceRef> {
   return {
     eventId: `event-${input.sequence ?? 1}`,
@@ -28,8 +30,10 @@ async function sourceRef(input: {
     sourceRefType: input.type,
     sourceRefId: input.id,
     evidenceRole: input.role ?? 'support',
+    locator: input.locator,
     exactText: input.exactText,
     contentHash: await sha256Hex(input.exactText),
+    metadata: input.metadata,
   };
 }
 
@@ -101,7 +105,7 @@ describe('repo task assessment evaluator output parsing', () => {
         }),
         await sourceRef({
           type: 'test_run',
-          id: 'verification-1',
+          id: '81c11363a3b6e31b34b3777fd150de7fe462c64f:verification-1',
           sequence: 2,
           exactText: '$ git diff --check HEAD~1 HEAD\nexitCode: 0',
         }),
@@ -130,11 +134,20 @@ describe('repo task assessment evaluator output parsing', () => {
           sequence: 2,
           exactText: '$ git diff --check HEAD~1 HEAD',
         }),
+        await sourceRef({
+          type: 'room_chat_message',
+          id: 'chat-1',
+          sequence: 2,
+          exactText: 'Candidate: I kept the change scoped to the popover root hook because the impatient click failure is isolated there.',
+        }),
       ],
     });
 
     expect(fallback).not.toBeNull();
     expect(fallback?.summary).toContain('Fix Base UI popover impatient click handling');
+    expect(fallback?.summary).toContain('successful verification');
+    expect(fallback?.summary).toContain('AI-use trail captured');
+    expect(fallback?.summary).toContain('conversation context captured');
     expect(fallback?.recommendation).toBe('mixed_evidence_human_review');
     expect(fallback?.claims).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -155,11 +168,210 @@ describe('repo task assessment evaluator output parsing', () => {
         dimension: 'upstream_pr_tracking',
         narrative: 'Candidate-approved upstream pull request tracking is captured for reviewer inspection.',
       }),
+      expect.objectContaining({
+        polarity: 'positive',
+        dimension: 'communication_context',
+        narrative: 'Candidate explanation or room conversation context is captured as source evidence for review.',
+      }),
     ]));
     expect(fallback?.claims.every((claim) => (claim.sourceRefs?.length ?? 0) > 0)).toBe(true);
     expect(fallback?.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'MODEL_CLAIMS_UNUSABLE', severity: 'warning' }),
       expect.objectContaining({ code: 'HUMAN_CORRECTNESS_REVIEW_REQUIRED', severity: 'warning' }),
+    ]));
+  });
+
+  it('makes missing test evidence explicit in deterministic fallback reports', async () => {
+    const requestText = 'Recruiter requested source-backed evaluation.';
+    const fallback = buildDeterministicAssessmentFallback({
+      sessionId: 'assessment-session-no-tests',
+      requestSourceRef: {
+        sourceRefType: 'assessment_evaluation_request',
+        sourceRefId: 'request-no-tests',
+        exactText: requestText,
+        contentHash: await sha256Hex(requestText),
+      },
+      sourceRefs: [
+        await sourceRef({
+          type: 'open_source_challenge_packet',
+          id: 'challenge-no-tests',
+          role: 'assigned_challenge',
+          sequence: 1,
+          exactText: [
+            'Repo: https://github.com/mui/base-ui',
+            'Base commit: 58dff8444fa56e4444a3a1dd991c76b49cf4ab7e',
+            'Task: Fix Base UI popover impatient click handling',
+            'Success criteria:',
+            '- Change popover behavior.',
+            'Expected evidence:',
+            '- git_commit',
+            '- code_diff',
+            '- test_run',
+          ].join('\n'),
+        }),
+        await sourceRef({
+          type: 'git_commit',
+          id: '81c11363a3b6e31b34b3777fd150de7fe462c64f',
+          sequence: 2,
+          exactText: 'commit 81c11363a3b6e31b34b3777fd150de7fe462c64f\nfix popover impatient click handling',
+        }),
+        await sourceRef({
+          type: 'code_diff',
+          id: 'base..head',
+          sequence: 2,
+          exactText: 'diff --git a/packages/react/src/popover/root/usePopoverRoot.ts b/packages/react/src/popover/root/usePopoverRoot.ts\n+PATIENT_CLICK_THRESHOLD',
+        }),
+      ],
+    });
+
+    expect(fallback).not.toBeNull();
+    expect(fallback?.summary).toContain('test evidence missing');
+    expect(fallback?.claims).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ dimension: 'verification' }),
+    ]));
+    expect(fallback?.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'MISSING_TEST_EVIDENCE', severity: 'warning' }),
+    ]));
+  });
+
+  it('preserves declared verification gaps without creating positive verification claims', async () => {
+    const requestText = 'Recruiter requested source-backed evaluation.';
+    const fallback = buildDeterministicAssessmentFallback({
+      sessionId: 'assessment-session-verification-gap',
+      requestSourceRef: {
+        sourceRefType: 'assessment_evaluation_request',
+        sourceRefId: 'request-verification-gap',
+        exactText: requestText,
+        contentHash: await sha256Hex(requestText),
+      },
+      sourceRefs: [
+        await sourceRef({
+          type: 'open_source_challenge_packet',
+          id: 'challenge-verification-gap',
+          role: 'assigned_challenge',
+          sequence: 1,
+          exactText: [
+            'Repo: https://github.com/mui/base-ui',
+            'Base commit: 58dff8444fa56e4444a3a1dd991c76b49cf4ab7e',
+            'Task: Fix Base UI popover impatient click handling',
+            'Success criteria:',
+            '- Change popover behavior.',
+            'Expected evidence:',
+            '- git_commit',
+            '- code_diff',
+            '- test_run or verification_gap',
+          ].join('\n'),
+        }),
+        await sourceRef({
+          type: 'git_commit',
+          id: '81c11363a3b6e31b34b3777fd150de7fe462c64f',
+          sequence: 2,
+          exactText: 'commit 81c11363a3b6e31b34b3777fd150de7fe462c64f\nfix popover impatient click handling',
+        }),
+        await sourceRef({
+          type: 'code_diff',
+          id: 'base..head',
+          sequence: 2,
+          exactText: 'diff --git a/packages/react/src/popover/root/usePopoverRoot.ts b/packages/react/src/popover/root/usePopoverRoot.ts\n+PATIENT_CLICK_THRESHOLD',
+        }),
+        await sourceRef({
+          type: 'verification_gap',
+          id: 'verification-gap-1',
+          role: 'missing_test_evidence_note',
+          sequence: 2,
+          exactText: 'Browser e2e could not run because Playwright browser install is missing in this assessment container.',
+        }),
+      ],
+    });
+
+    expect(fallback).not.toBeNull();
+    expect(fallback?.summary).toContain('verification gap declared');
+    expect(fallback?.summary).toContain('test output missing');
+    expect(fallback?.claims).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ dimension: 'verification' }),
+    ]));
+    expect(fallback?.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'VERIFICATION_GAP_DECLARED',
+        severity: 'warning',
+        sourceRefs: [
+          expect.objectContaining({
+            sourceRefType: 'verification_gap',
+            sourceRefId: 'verification-gap-1',
+          }),
+        ],
+      }),
+    ]));
+    expect(fallback?.diagnostics).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ code: 'MISSING_TEST_EVIDENCE' }),
+    ]));
+  });
+
+  it('preserves PIPE-matched challenge provenance in deterministic fallback reports', async () => {
+    const requestText = 'Recruiter requested source-backed evaluation.';
+    const fallback = buildDeterministicAssessmentFallback({
+      sessionId: 'assessment-session-matched-assignment',
+      requestSourceRef: {
+        sourceRefType: 'assessment_evaluation_request',
+        sourceRefId: 'request-matched',
+        exactText: requestText,
+        contentHash: await sha256Hex(requestText),
+      },
+      sourceRefs: [
+        await sourceRef({
+          type: 'review_challenge_packet',
+          id: 'challenge-packet-973',
+          role: 'assigned_challenge',
+          sequence: 1,
+          locator: {
+            matchedRepoId: 973,
+            repositoryUrl: 'https://github.com/mui/base-ui',
+            baseCommitSha: '58dff8444fa56e4444a3a1dd991c76b49cf4ab7e',
+            githubPrNumber: 973,
+          },
+          metadata: {
+            source: 'matched_review_challenge_packet',
+            qualityScore: 0.91,
+          },
+          exactText: [
+            'Repo: https://github.com/mui/base-ui',
+            'Base commit: 58dff8444fa56e4444a3a1dd991c76b49cf4ab7e',
+            'Pull request: #973',
+            'Task: Fix Base UI popover impatient click handling',
+            'Match proof:',
+            '- Review packet quality 0.91.',
+            '- Demand families: popover, pointer interaction.',
+            'Success criteria:',
+            '- Change popover behavior.',
+            'Expected evidence:',
+            '- git_commit',
+            '- code_diff',
+            '- test_run',
+          ].join('\n'),
+        }),
+        await sourceRef({
+          type: 'git_commit',
+          id: '81c11363a3b6e31b34b3777fd150de7fe462c64f',
+          sequence: 2,
+          exactText: 'commit 81c11363a3b6e31b34b3777fd150de7fe462c64f\nfix popover impatient click handling',
+        }),
+        await sourceRef({
+          type: 'code_diff',
+          id: 'base..head',
+          sequence: 2,
+          exactText: 'diff --git a/packages/react/src/popover/root/usePopoverRoot.ts b/packages/react/src/popover/root/usePopoverRoot.ts\n+PATIENT_CLICK_THRESHOLD',
+        }),
+      ],
+    });
+
+    expect(fallback).not.toBeNull();
+    expect(fallback?.summary).toContain('PIPE-matched challenge packet');
+    expect(fallback?.claims).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        polarity: 'positive',
+        dimension: 'assignment_fit_provenance',
+        narrative: 'The assigned challenge packet preserves source-backed PIPE match proof for reviewer calibration.',
+      }),
     ]));
   });
 

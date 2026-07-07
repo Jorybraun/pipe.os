@@ -279,6 +279,76 @@ PostgreSQL, Redis, Kafka, GraphQL, AWS, Terraform, CI/CD`;
     expect(result2!.assertionCount).toBe(result1!.assertionCount);
   });
 
+  it('uses a supplied roleless Talent Pool person identity without creating applications or roles', async () => {
+    sqlite.prepare(
+      `INSERT INTO people (
+         id, ingestion_key, display_name, primary_email, external_ids_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'person-roleless',
+      'email:roleless@example.com',
+      'Roleless Resume',
+      'roleless@example.com',
+      JSON.stringify({ legacyCandidateId: 'cand-1' }),
+      '2026-06-28T12:00:00Z',
+      '2026-06-28T12:00:00Z',
+    );
+    sqlite.prepare(
+      `INSERT INTO workspace_people (
+         id, ingestion_key, workspace_id, person_id, context_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'wp-roleless',
+      'workspace:owner-1:person:person-roleless',
+      'owner-1',
+      'person-roleless',
+      JSON.stringify({
+        source: 'roleless_candidate_intake',
+        talentPool: { status: 'active', roleless: true, candidateId: 'cand-1' },
+      }),
+      '2026-06-28T12:00:00Z',
+      '2026-06-28T12:00:00Z',
+    );
+
+    const input: ResumeIngestionInput = {
+      candidateId: 'cand-1',
+      storageKey: 'talent-intake/cand-1/roleless-resume.pdf',
+      mediaType: 'application/pdf',
+      resumeText: SAMPLE_RESUME,
+      uploadedAt: '2026-06-28T12:00:00Z',
+      identity: {
+        personId: 'person-roleless',
+        workspacePersonId: 'wp-roleless',
+        applicationId: null,
+      },
+    };
+
+    const result1 = await ingestResumeToLivingContext(db, input);
+    const result2 = await ingestResumeToLivingContext(db, input);
+
+    expect(result1).toMatchObject({
+      personId: 'person-roleless',
+      workspacePersonId: 'wp-roleless',
+      applicationId: null,
+    });
+    expect(result2!.interactionId).toBe(result1!.interactionId);
+    expect(result2!.artifactId).toBe(result1!.artifactId);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM person_roles').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records
+        WHERE workspace_person_id = 'wp-roleless'
+          AND application_id IS NULL`,
+    ).get()).toEqual({ count: result1!.assertionCount });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_record_source_refs crsr
+         JOIN context_records cr ON cr.id = crsr.context_record_id
+        WHERE cr.workspace_person_id = 'wp-roleless'`,
+    ).get()).toEqual({ count: result1!.assertionCount });
+  });
+
   it('creates context records with proper source references', async () => {
     const result = await ingestResumeToLivingContext(db, {
       candidateId: 'cand-1',

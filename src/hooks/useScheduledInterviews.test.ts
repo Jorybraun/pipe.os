@@ -103,7 +103,7 @@ describe('useScheduledInterviews', () => {
 
     expect(apiMocks.get).toHaveBeenNthCalledWith(
       1,
-      '/api/v1/scheduling/interviews?limit=20&offset=0',
+      '/api/v1/scheduling/interviews?limit=20&offset=0&sort=created_desc',
     );
     expect(result.current.interviews.map((interview) => interview.id)).toEqual(['first-page-1']);
     expect(result.current.total).toBe(45);
@@ -115,11 +115,131 @@ describe('useScheduledInterviews', () => {
 
     expect(apiMocks.get).toHaveBeenNthCalledWith(
       2,
-      '/api/v1/scheduling/interviews?limit=20&offset=20',
+      '/api/v1/scheduling/interviews?limit=20&offset=20&sort=created_desc',
     );
     expect(result.current.interviews.map((interview) => interview.id)).toEqual([
       'first-page-1',
       'second-page-1',
+    ]);
+  });
+
+  it('requests the selected server sort for first page and load-more calls', async () => {
+    apiMocks.get
+      .mockResolvedValueOnce({
+        interviews: [apiInterview('oldest-page-1', '2026-06-01T10:00:00.000Z')],
+        pagination: {
+          total: 21,
+          limit: 20,
+          offset: 0,
+          sort: 'created_asc',
+          nextOffset: 20,
+          hasMore: true,
+        },
+      })
+      .mockResolvedValueOnce({
+        interviews: [apiInterview('oldest-page-2', '2026-06-02T10:00:00.000Z')],
+        pagination: {
+          total: 21,
+          limit: 20,
+          offset: 20,
+          sort: 'created_asc',
+          nextOffset: null,
+          hasMore: false,
+        },
+      });
+
+    const { result } = renderHook(() => useScheduledInterviews({ sort: 'created_asc' }));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(apiMocks.get).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/scheduling/interviews?limit=20&offset=0&sort=created_asc',
+    );
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    expect(apiMocks.get).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/scheduling/interviews?limit=20&offset=20&sort=created_asc',
+    );
+    expect(result.current.interviews.map((interview) => interview.id)).toEqual([
+      'oldest-page-1',
+      'oldest-page-2',
+    ]);
+  });
+
+  it('requests server-side interview type filtering for assessment history', async () => {
+    apiMocks.get
+      .mockResolvedValueOnce({
+        interviews: [apiInterview('open-source-page-1', '2026-07-01T10:00:00.000Z')],
+        pagination: {
+          total: 8,
+          limit: 20,
+          offset: 0,
+          sort: 'created_desc',
+          interviewType: 'OPEN_SOURCE_BUG_FIX',
+          nextOffset: 20,
+          hasMore: true,
+        },
+        facets: {
+          interviewTypes: {
+            all: 42,
+            standardCalls: 28,
+            codeReview: 4,
+            devContainerChallenge: 2,
+            openSourceBugFix: 8,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        interviews: [apiInterview('open-source-page-2', '2026-06-30T10:00:00.000Z')],
+        pagination: {
+          total: 8,
+          limit: 20,
+          offset: 20,
+          sort: 'created_desc',
+          interviewType: 'OPEN_SOURCE_BUG_FIX',
+          nextOffset: null,
+          hasMore: false,
+        },
+        facets: {
+          interviewTypes: {
+            all: 42,
+            standardCalls: 28,
+            codeReview: 4,
+            devContainerChallenge: 2,
+            openSourceBugFix: 8,
+          },
+        },
+      });
+
+    const { result } = renderHook(() => useScheduledInterviews({
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+    }));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(apiMocks.get).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/scheduling/interviews?limit=20&offset=0&sort=created_desc&interviewType=OPEN_SOURCE_BUG_FIX',
+    );
+    expect(result.current.total).toBe(8);
+    expect(result.current.facets?.interviewTypes.openSourceBugFix).toBe(8);
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    expect(apiMocks.get).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/scheduling/interviews?limit=20&offset=20&sort=created_desc&interviewType=OPEN_SOURCE_BUG_FIX',
+    );
+    expect(result.current.interviews.map((interview) => interview.id)).toEqual([
+      'open-source-page-1',
+      'open-source-page-2',
     ]);
   });
 });

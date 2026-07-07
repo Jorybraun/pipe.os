@@ -115,4 +115,44 @@ describe('discoverCandidateProfileWithProviderFallbacks', () => {
       '1:failed:slow-model/slow-model',
     ]);
   });
+
+  it('does not start another model when a failed response has already spent the shared AI budget', async () => {
+    let secondProviderCalled = false;
+    const events: CandidateDiscoveryAttemptEvent[] = [];
+    const slowBadJson: LLMProvider = {
+      name: 'slow-bad-json-model',
+      model: 'slow-bad-json-model',
+      supportsTools: false,
+      async complete() {
+        await new Promise((resolve) => setTimeout(resolve, 32));
+        return { content: 'I can describe this candidate, but not as JSON.' };
+      },
+    };
+    const secondProvider: LLMProvider = {
+      name: 'second-model',
+      model: 'second-model',
+      supportsTools: false,
+      async complete() {
+        secondProviderCalled = true;
+        return { content: '{}' };
+      },
+    };
+
+    await expect(discoverCandidateProfileWithProviderFallbacks({
+      providers: [slowBadJson, secondProvider],
+      parsed: { skills: ['TypeScript'] },
+      resumeText: 'Built TypeScript systems.',
+      timeoutMs: 40,
+      maxAttempts: 2,
+      onAttempt: (event) => {
+        events.push(event);
+      },
+    })).rejects.toThrow(/budget exhausted/i);
+
+    expect(secondProviderCalled).toBe(false);
+    expect(events.map((event) => `${event.attempt}:${event.status}:${event.model}`)).toEqual([
+      '1:started:slow-bad-json-model/slow-bad-json-model',
+      '1:failed:slow-bad-json-model/slow-bad-json-model',
+    ]);
+  });
 });

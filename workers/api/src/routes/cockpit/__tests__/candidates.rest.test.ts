@@ -152,6 +152,7 @@ describe('candidate identity normalization', () => {
       );
     `);
     sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordMigration);
     const db = createMockD1(sqlite);
     const store = new LivingContextStore(db, () => '2026-06-19T00:00:00.000Z');
     const person = await store.upsertPerson({
@@ -171,6 +172,49 @@ describe('candidate identity normalization', () => {
         relationshipSummary: 'Met through sourcing',
       },
     });
+    const workspacePersonId = sqlite.prepare(
+      `SELECT id FROM workspace_people WHERE person_id = ?`,
+    ).get(person.id) as { id: string };
+    sqlite.prepare(
+      `INSERT INTO applications (
+         id, ingestion_key, workspace_person_id, legacy_candidate_id, pipeline_id,
+         status, context_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, NULL, ?, '{}', ?, ?)`,
+    ).run(
+      'legacy-roleless-app',
+      'candidate:candidate-123',
+      workspacePersonId.id,
+      'candidate-123',
+      'INVITED',
+      '2026-06-19T00:00:00.000Z',
+      '2026-06-19T00:00:00.000Z',
+    );
+    sqlite.prepare(
+      `INSERT INTO person_roles (
+         id, ingestion_key, workspace_person_id, application_id, role_type,
+         label, attributes_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, 'candidate', 'Candidate', '{}', ?, ?)`,
+    ).run(
+      'legacy-roleless-role',
+      'candidate:candidate-123:role',
+      workspacePersonId.id,
+      'legacy-roleless-app',
+      '2026-06-19T00:00:00.000Z',
+      '2026-06-19T00:00:00.000Z',
+    );
+    sqlite.prepare(
+      `INSERT INTO interactions (
+         id, ingestion_key, workspace_person_id, application_id, interaction_type,
+         metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, 'resume', '{}', ?, ?)`,
+    ).run(
+      'legacy-roleless-interaction',
+      'candidate:candidate-123:legacy-interaction',
+      workspacePersonId.id,
+      'legacy-roleless-app',
+      '2026-06-19T00:00:00.000Z',
+      '2026-06-19T00:00:00.000Z',
+    );
 
     const originalMessage = '  I shipped the GraphQL retry fix.\nPlease keep this exact note.  ';
     const identity = await ensureRolelessTalentPoolIdentity({
@@ -180,6 +224,7 @@ describe('candidate identity normalization', () => {
       name: 'Ada Candidate',
       email: 'ada@example.com',
       message: originalMessage,
+      projectMessageAsProfileEvidence: false,
       now: '2026-06-20T00:00:00.000Z',
     });
 
@@ -188,6 +233,9 @@ describe('candidate identity normalization', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM workspace_people').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM person_roles').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare(
+      `SELECT application_id FROM interactions WHERE id = 'legacy-roleless-interaction'`,
+    ).get()).toEqual({ application_id: null });
     expect(JSON.parse(sqlite.prepare(
       `SELECT context_json FROM workspace_people WHERE id = ?`,
     ).get(identity.workspacePersonId)!.context_json as string)).toMatchObject({
@@ -203,7 +251,9 @@ describe('candidate identity normalization', () => {
     });
     expect(sqlite.prepare(
       `SELECT interaction_type, application_id, external_reference
-         FROM interactions WHERE workspace_person_id = ?`,
+         FROM interactions
+        WHERE workspace_person_id = ?
+          AND interaction_type = 'message'`,
     ).get(identity.workspacePersonId)).toEqual({
       interaction_type: 'message',
       application_id: null,
@@ -246,6 +296,7 @@ describe('candidate identity normalization', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM semantic_assertions').get()).toEqual({
       count: 0,
     });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM concepts').get()).toEqual({ count: 0 });
   });
 });

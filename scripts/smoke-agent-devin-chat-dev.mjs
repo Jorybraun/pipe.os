@@ -28,16 +28,30 @@ const ROOM_BASIC_PASSWORD = process.env.PIPE_ROOM_DEV_BASIC_AUTH_PASSWORD
   || process.env.PIPE_DEV_BASIC_AUTH_PASSWORD
   || process.env.DEV_BASIC_AUTH_PASSWORD
   || '';
+const INTERVIEW_TYPE = process.env.AGENT_SMOKE_INTERVIEW_TYPE || 'OPEN_SOURCE_BUG_FIX';
 const REPO_URL = process.env.AGENT_SMOKE_REPO_URL || 'https://github.com/octocat/Hello-World';
-const PR_NUMBER = Number(process.env.AGENT_SMOKE_PR_NUMBER || '1');
+const RAW_PR_NUMBER = process.env.AGENT_SMOKE_PR_NUMBER || '';
+const PR_NUMBER = RAW_PR_NUMBER ? Number(RAW_PR_NUMBER) : null;
+const BASE_COMMIT_SHA = process.env.AGENT_SMOKE_BASE_COMMIT_SHA || '7fd1a60b01f91b314f59955a4e4d4e80d8edf11d';
 const EXPECTED_RESPONSE = process.env.AGENT_SMOKE_EXPECTED_RESPONSE || 'PIPE_AGENT_SMOKE_OK';
 const EXPECT_AUTH_NEEDED = process.env.AGENT_SMOKE_EXPECT_AUTH_NEEDED === '1';
 const PROMPT_TEXT =
   process.env.AGENT_SMOKE_PROMPT
   || `Say exactly ${EXPECTED_RESPONSE} and no other words.`;
 const REMOTE = !ROOM_BASE.includes('localhost') && !ROOM_BASE.includes('127.0.0.1');
+const DEV_D1_DATABASE_ID = process.env.AGENT_SMOKE_D1_DATABASE_ID
+  || '0abe92df-9296-46f5-9f9d-a1fb1bcd3be1';
 
 function assertEnv() {
+  if (INTERVIEW_TYPE !== 'OPEN_SOURCE_BUG_FIX' && INTERVIEW_TYPE !== 'DEV_CONTAINER_CHALLENGE') {
+    throw new Error('AGENT_SMOKE_INTERVIEW_TYPE must be OPEN_SOURCE_BUG_FIX or DEV_CONTAINER_CHALLENGE.');
+  }
+  if (RAW_PR_NUMBER && (!Number.isInteger(PR_NUMBER) || PR_NUMBER <= 0)) {
+    throw new Error('AGENT_SMOKE_PR_NUMBER must be a positive integer when provided.');
+  }
+  if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' && !/^[a-f0-9]{40}$/i.test(BASE_COMMIT_SHA)) {
+    throw new Error('AGENT_SMOKE_BASE_COMMIT_SHA must be a real 40-character commit SHA for OPEN_SOURCE_BUG_FIX.');
+  }
   if (!REMOTE) return;
   if (!APP_BASIC_USER || !APP_BASIC_PASSWORD) {
     throw new Error(
@@ -144,6 +158,83 @@ function boundedMessage(message) {
   return next;
 }
 
+function sourceRefCount(rows, kind) {
+  return Array.isArray(rows)
+    ? rows.find((row) => row?.kind === kind)?.count ?? 0
+    : 0;
+}
+
+function assessmentSessionIdFromProgress(progress, label) {
+  const id = progress?.session?.id;
+  if (typeof id !== 'string' || id.trim().length === 0) {
+    throw new Error(`${label} did not expose recruiter-only assessment session id: ${JSON.stringify(progress)}`);
+  }
+  return id;
+}
+
+function assertSameAssessmentSessionId(expected, progress, label) {
+  const actual = assessmentSessionIdFromProgress(progress, label);
+  if (actual !== expected) {
+    throw new Error(`${label} used assessment session ${actual}, expected ${expected}`);
+  }
+  return actual;
+}
+
+function assessmentEvidenceProofCommands(assessmentSessionId) {
+  if (!REMOTE) {
+    return {
+      target: 'local-app',
+      replay: null,
+      audit: null,
+      note: 'Local agent smokes use the local dev database; run the assessment evidence replay/audit scripts against that database manually.',
+    };
+  }
+  const envPrefix = `CLOUDFLARE_D1_DATABASE_ID=${DEV_D1_DATABASE_ID}`;
+  return {
+    target: 'app-dev remote D1',
+    replay: `cd workers/api && ${envPrefix} npm run assessment-evidence:replay -- --remote --session-id ${assessmentSessionId}`,
+    audit: `cd workers/api && ${envPrefix} npm run assessment-evidence:audit -- --remote --session-id ${assessmentSessionId}`,
+  };
+}
+
+function bridgeStateSourceRefCount(rows) {
+  return sourceRefCount(rows, 'agent_status')
+    + sourceRefCount(rows, 'ai_agent_diagnostic')
+    + sourceRefCount(rows, 'agent_diagnostic');
+}
+
+async function pollAssessmentProgress(interviewId, predicate, label) {
+  const deadline = Date.now() + 30_000;
+  let lastProgress = null;
+  while (Date.now() < deadline) {
+    const detail = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}`);
+    lastProgress = detail?.interview?.assessmentProgress ?? null;
+    if (predicate(lastProgress)) return lastProgress;
+    await sleep(1_000);
+  }
+  throw new Error(`${label} did not appear in recruiter assessment progress: ${JSON.stringify(lastProgress)}`);
+}
+
+async function pollAssessmentListProgress(interviewId, predicate, label) {
+  const deadline = Date.now() + 30_000;
+  let lastProgress = null;
+  let listSeen = false;
+  while (Date.now() < deadline) {
+    const list = await requestJson(APP_BASE, '/api/v1/scheduling/interviews?limit=20&offset=0&sort=created_desc');
+    const interview = Array.isArray(list?.interviews)
+      ? list.interviews.find((candidate) => candidate?.id === interviewId)
+      : null;
+    listSeen = Boolean(interview);
+    lastProgress = interview?.assessmentProgress ?? null;
+    if (predicate(lastProgress)) return lastProgress;
+    await sleep(1_000);
+  }
+  throw new Error(`${label} did not appear in recruiter assessment list progress: ${JSON.stringify({
+    listSeen,
+    lastProgress,
+  })}`);
+}
+
 function connectAgent(wsUrl, headers) {
   return new Promise((resolve, reject) => {
     const messages = [];
@@ -197,19 +288,45 @@ async function main() {
 
   const unique = Date.now();
   const recipientEmail = `agent-devin-smoke-${unique}@pipe-test.dev`;
+  const openSourceTaskFields = INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX'
+    ? {
+        challengeBaseCommitSha: BASE_COMMIT_SHA,
+        challengeTitle: 'Verify Devin bridge status evidence',
+        challengeInstructions: 'Use the controlled workspace to inspect the repository and ask Devin for help. The smoke verifies that real bridge auth/status evidence is captured without fabricating agent help.',
+        challengeSuccessCriteria: [
+          'The candidate room launches a controlled workspace for the exact repository.',
+          'The Devin bridge status is captured as source-backed assessment evidence.',
+          'No agent response is counted when the real bridge reports auth is needed.',
+        ],
+        challengeExpectedEvidence: [
+          'dev_container_workspace_launch source ref',
+          'agent_status source ref for the real Devin bridge state',
+          'ai_agent_response source ref only when a real Devin response is returned',
+        ],
+        challengeVerificationCommand: 'git status --short',
+      }
+    : {};
   const created = await requestJson(APP_BASE, '/api/v1/scheduling/interviews', {
     method: 'POST',
     body: JSON.stringify({
       recipientName: 'Agent Devin Smoke',
       recipientEmail,
       meetingType: 'DIRECT_VIDEO_CALL',
-      interviewType: 'DEV_CONTAINER_CHALLENGE',
+      interviewType: INTERVIEW_TYPE,
       githubRepoUrl: REPO_URL,
-      githubPrNumber: PR_NUMBER,
+      ...(PR_NUMBER ? { githubPrNumber: PR_NUMBER } : {}),
+      ...openSourceTaskFields,
     }),
   });
   const interviewId = created?.interview?.id;
   if (!interviewId) throw new Error(`Create response missing interview id: ${JSON.stringify(created)}`);
+  const assessmentSessionId = assessmentSessionIdFromProgress(
+    created?.interview?.assessmentProgress,
+    'create interview assessment progress',
+  );
+  if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' && !created?.interview?.assessmentProgress?.challenge) {
+    throw new Error(`Open-source Devin smoke did not create an assessment challenge: ${JSON.stringify(created?.interview)}`);
+  }
 
   const invited = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}/invite`, {
     method: 'POST',
@@ -250,22 +367,69 @@ async function main() {
     if (chatResponse) {
       throw new Error(`Expected no Devin chat response while auth is needed, got: ${JSON.stringify(boundedMessage(chatResponse))}`);
     }
-    if (!statusMessages.some((message) => message.status === 'auth_needed')) {
-      throw new Error(`Expected auth_needed status, got: ${JSON.stringify(messages.map(boundedMessage))}`);
+    const progress = await pollAssessmentProgress(
+      interviewId,
+      (candidate) => candidate?.hasAiInteraction === true
+        && bridgeStateSourceRefCount(candidate?.sourceRefCounts) >= 1,
+      'Devin auth-needed bridge state evidence',
+    );
+    assertSameAssessmentSessionId(
+      assessmentSessionId,
+      progress,
+      'Devin auth-needed assessment progress',
+    );
+    const sourceRefCounts = progress?.sourceRefCounts ?? [];
+    const agentStatusCount = sourceRefCount(sourceRefCounts, 'agent_status');
+    if (sourceRefCount(sourceRefCounts, 'ai_agent_response') > 0) {
+      throw new Error(`Auth-needed bridge state should not count as an agent response: ${JSON.stringify(sourceRefCounts)}`);
+    }
+    if (agentStatusCount < 1) {
+      throw new Error(`Auth-needed bridge state did not expose persisted agent_status evidence: ${JSON.stringify(sourceRefCounts)}`);
+    }
+    const listProgress = await pollAssessmentListProgress(
+      interviewId,
+      (candidate) => candidate?.hasAiInteraction === true
+        && bridgeStateSourceRefCount(candidate?.sourceRefCounts) >= 1,
+      'Devin auth-needed recruiter-list bridge state evidence',
+    );
+    assertSameAssessmentSessionId(
+      assessmentSessionId,
+      listProgress,
+      'Devin auth-needed recruiter-list assessment progress',
+    );
+    const listSourceRefCounts = listProgress?.sourceRefCounts ?? [];
+    const listAgentStatusCount = sourceRefCount(listSourceRefCounts, 'agent_status');
+    if (sourceRefCount(listSourceRefCounts, 'ai_agent_response') > 0) {
+      throw new Error(`Recruiter list should not count auth-needed bridge state as an agent response: ${JSON.stringify(listSourceRefCounts)}`);
+    }
+    if (listAgentStatusCount < 1) {
+      throw new Error(`Recruiter list auth-needed bridge state did not expose persisted agent_status evidence: ${JSON.stringify(listSourceRefCounts)}`);
     }
     console.log(JSON.stringify({
       ok: true,
       expectedAuthNeeded: true,
       interviewId,
+      assessmentSessionId,
       hostUrl: cleanRoomUrl(invited.room.hostUrl),
       guestUrl: cleanRoomUrl(invited.room.guestUrl),
       repoUrl: REPO_URL,
       githubPrNumber: PR_NUMBER,
+      interviewType: INTERVIEW_TYPE,
       workspaceStatus: readySession.status,
       agentReady: false,
       authNeeded: true,
+      assessmentAiInteraction: progress.hasAiInteraction,
+      assessmentBridgeStateCount: bridgeStateSourceRefCount(sourceRefCounts),
+      assessmentAgentStatusCount: agentStatusCount,
+      assessmentAgentDiagnosticCount: sourceRefCount(sourceRefCounts, 'ai_agent_diagnostic')
+        + sourceRefCount(sourceRefCounts, 'agent_diagnostic'),
+      recruiterListAiProofVisible: true,
+      recruiterListAiInteraction: listProgress.hasAiInteraction,
+      recruiterListBridgeStateCount: bridgeStateSourceRefCount(listSourceRefCounts),
+      recruiterListAgentStatusCount: listAgentStatusCount,
       statuses: statusMessages.map((message) => message.status),
       authMessage: authNeeded.message,
+      assessmentEvidenceProofCommands: assessmentEvidenceProofCommands(assessmentSessionId),
     }, null, 2));
     return;
   }
@@ -288,20 +452,52 @@ async function main() {
   if (persistedDiagnostics.length === 0) {
     throw new Error('No persisted Devin agent bridge diagnostics were observed.');
   }
+  const progress = await pollAssessmentProgress(
+    interviewId,
+    (candidate) => candidate?.hasAiInteraction === true
+      && sourceRefCount(candidate?.sourceRefCounts, 'ai_agent_response') >= 1,
+    'Devin agent response evidence',
+  );
+  assertSameAssessmentSessionId(
+    assessmentSessionId,
+    progress,
+    'Devin response assessment progress',
+  );
+  const sourceRefCounts = progress?.sourceRefCounts ?? [];
+  const listProgress = await pollAssessmentListProgress(
+    interviewId,
+    (candidate) => candidate?.hasAiInteraction === true
+      && sourceRefCount(candidate?.sourceRefCounts, 'ai_agent_response') >= 1,
+    'Devin agent response recruiter-list evidence',
+  );
+  assertSameAssessmentSessionId(
+    assessmentSessionId,
+    listProgress,
+    'Devin response recruiter-list assessment progress',
+  );
+  const listSourceRefCounts = listProgress?.sourceRefCounts ?? [];
 
   console.log(JSON.stringify({
     ok: true,
     interviewId,
+    assessmentSessionId,
     hostUrl: cleanRoomUrl(invited.room.hostUrl),
     guestUrl: cleanRoomUrl(invited.room.guestUrl),
     repoUrl: REPO_URL,
     githubPrNumber: PR_NUMBER,
+    interviewType: INTERVIEW_TYPE,
     workspaceStatus: readySession.status,
     agentReady: true,
     chatSource: chatResponse.source,
     chatPersisted: chatResponse.persisted,
+    assessmentAiInteraction: progress.hasAiInteraction,
+    assessmentAgentResponseCount: sourceRefCount(sourceRefCounts, 'ai_agent_response'),
+    recruiterListAiProofVisible: true,
+    recruiterListAiInteraction: listProgress.hasAiInteraction,
+    recruiterListAgentResponseCount: sourceRefCount(listSourceRefCounts, 'ai_agent_response'),
     diagnosticPersistedCount: persistedDiagnostics.length,
     responseText: chatResponse.text,
+    assessmentEvidenceProofCommands: assessmentEvidenceProofCommands(assessmentSessionId),
   }, null, 2));
 }
 

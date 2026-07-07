@@ -1,0 +1,1075 @@
+#!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { chromium } from 'playwright';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const repoRoot = path.resolve(__dirname, '..');
+
+function loadDotEnv(filePath) {
+  if (!existsSync(filePath)) return;
+  const text = readFileSync(filePath, 'utf8');
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const equals = line.indexOf('=');
+    if (equals <= 0) continue;
+    const key = line.slice(0, equals).trim();
+    if (process.env[key]) continue;
+    let value = line.slice(equals + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"'))
+      || (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
+}
+
+loadDotEnv(path.join(repoRoot, '.env.local'));
+loadDotEnv(path.join(repoRoot, '.env'));
+loadDotEnv(path.join(repoRoot, 'workers/api/.dev.vars'));
+
+function argumentValue(name) {
+  const prefix = `${name}=`;
+  const match = process.argv.slice(2).find((arg) => arg.startsWith(prefix));
+  return match ? match.slice(prefix.length) : null;
+}
+
+function booleanArgument(name) {
+  return process.argv.includes(name);
+}
+
+const allowedSmokeModes = new Set([
+  'submit-text',
+  'browser-submit-text',
+  'browser-upload-text',
+  'browser-upload-docx',
+  'browser-upload-pdf',
+  'browser-upload-pdf-gap',
+  'upload-text',
+  'upload-docx',
+  'upload-pdf',
+  'upload-pdf-gap',
+]);
+const smokeMode = argumentValue('--mode') ?? process.env.TALENT_POOL_SMOKE_MODE ?? 'submit-text';
+if (!allowedSmokeModes.has(smokeMode)) {
+  throw new Error(`Unsupported --mode "${smokeMode}". Use submit-text, browser-submit-text, browser-upload-text, browser-upload-docx, browser-upload-pdf, browser-upload-pdf-gap, upload-text, upload-docx, upload-pdf, or upload-pdf-gap.`);
+}
+
+const appBase = (
+  argumentValue('--app-base')
+  ?? process.env.TALENT_POOL_SMOKE_APP_BASE
+  ?? process.env.APP_BASE
+  ?? 'https://app-dev.hire-pipe.com'
+).replace(/\/$/, '');
+
+const rpcBase = (
+  argumentValue('--rpc-base')
+  ?? process.env.TALENT_POOL_SMOKE_RPC_BASE
+  ?? process.env.API_BASE
+  ?? appBase
+).replace(/\/$/, '');
+
+const recruiterApiBase = (
+  argumentValue('--recruiter-api-base')
+  ?? process.env.RECRUITER_API_BASE
+  ?? appBase
+).replace(/\/$/, '');
+
+function hostnameForBase(baseUrl) {
+  try {
+    return new URL(baseUrl).hostname;
+  } catch {
+    return '';
+  }
+}
+
+function inferredEnvironmentName() {
+  const hostnames = [recruiterApiBase, rpcBase, appBase].map(hostnameForBase);
+  if (hostnames.some((hostname) => hostname === 'app-dev.hire-pipe.com' || hostname === 'api-dev.hire-pipe.com')) {
+    return 'dev';
+  }
+  if (hostnames.some((hostname) => hostname === 'pipe-app-test.pages.dev' || hostname === 'pipe-api-test.workers.dev')) {
+    return 'test';
+  }
+  if (hostnames.some((hostname) => hostname === 'app.hire-pipe.com' || hostname === 'api.hire-pipe.com')) {
+    return 'production';
+  }
+  return null;
+}
+
+function configValueForEnvironment(envName, sectionName, propertyName) {
+  const configPath = path.join(repoRoot, 'workers/api/wrangler.jsonc');
+  if (!envName || !existsSync(configPath)) return null;
+  const configText = readFileSync(configPath, 'utf8');
+  const match = configText.match(
+    new RegExp(`"${envName}"\\s*:\\s*\\{[\\s\\S]*?"${sectionName}"\\s*:\\s*\\[[\\s\\S]*?"${propertyName}"\\s*:\\s*"([^"]+)"`),
+  );
+  return match?.[1] ?? null;
+}
+
+const inferredEnvName = inferredEnvironmentName();
+const inferredD1DatabaseName = configValueForEnvironment(inferredEnvName, 'd1_databases', 'database_name');
+const inferredD1DatabaseId = configValueForEnvironment(inferredEnvName, 'd1_databases', 'database_id');
+const d1DatabaseName = (
+  argumentValue('--d1-database')
+  ?? process.env.TALENT_POOL_SMOKE_D1_DATABASE
+  ?? inferredD1DatabaseName
+  ?? 'pipe-db-test'
+).trim();
+const databaseId = (
+  argumentValue('--d1-database-id')
+  ?? process.env.TALENT_POOL_SMOKE_D1_DATABASE_ID
+  ?? inferredD1DatabaseId
+  ?? process.env.CLOUDFLARE_D1_DATABASE_ID
+  ?? ''
+).trim();
+const r2BucketName = (
+  argumentValue('--r2-bucket')
+  ?? process.env.TALENT_POOL_SMOKE_R2_BUCKET
+  ?? configValueForEnvironment(inferredEnvName, 'r2_buckets', 'bucket_name')
+  ?? ''
+).trim();
+
+const failOnNextActions = booleanArgument('--fail-on-next-actions');
+const browserUploadModes = new Set(['browser-upload-text', 'browser-upload-docx', 'browser-upload-pdf', 'browser-upload-pdf-gap']);
+const expectsEvidenceGap = smokeMode === 'upload-pdf-gap' || smokeMode === 'browser-upload-pdf-gap';
+const uploadEvidenceExpected = smokeMode.startsWith('upload-') || browserUploadModes.has(smokeMode);
+const verifyRecruiterReads = !expectsEvidenceGap && !booleanArgument('--skip-recruiter-reads');
+const auditStabilityWaitMs = Math.max(0, Math.min(
+  Number.parseInt(
+    argumentValue('--audit-stability-wait-ms')
+      ?? process.env.TALENT_POOL_SMOKE_AUDIT_STABILITY_WAIT_MS
+      ?? '15000',
+    10,
+  ) || 0,
+  60_000,
+));
+const slug = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+const runId = `${slug}-${randomUUID().slice(0, 8)}`;
+const candidateName = argumentValue('--name') ?? `Talent Smoke ${runId}`;
+const candidateEmail = (
+  argumentValue('--email')
+  ?? process.env.TALENT_POOL_SMOKE_EMAIL
+  ?? `talent-smoke-${smokeMode}-${runId}@example.test`
+).toLowerCase();
+
+const profileText = [
+  `Talent Pool live ${smokeMode} smoke proof ${runId}.`,
+  'Recently implemented source-backed candidate evidence ingestion for public Talent Pool profile submissions.',
+  'Built TypeScript Workers APIs, React accessibility flows, and source-provenance test harnesses.',
+  'This text is intentionally unique so exact source spans can be audited back to the submitted profile.',
+].join(' ');
+
+const DOCX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+function isExtractedDocumentUploadMode() {
+  return smokeMode === 'upload-docx'
+    || smokeMode === 'browser-upload-docx'
+    || smokeMode === 'upload-pdf'
+    || smokeMode === 'browser-upload-pdf';
+}
+
+function escapePdfText(text) {
+  return text.replace(/[\\()]/g, '\\$&');
+}
+
+function buildTextPdf(lines) {
+  const stream = [
+    'BT',
+    '/F1 12 Tf',
+    '72 720 Td',
+    ...lines.flatMap((line, index) => [
+      `(${escapePdfText(line)}) Tj`,
+      ...(index === lines.length - 1 ? [] : ['0 -18 Td']),
+    ]),
+    'ET',
+  ].join('\n');
+  const objects = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n',
+    '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+    `5 0 obj\n<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}\nendstream\nendobj\n`,
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(Buffer.byteLength(pdf, 'latin1'));
+    pdf += object;
+  }
+  const xrefOffset = Buffer.byteLength(pdf, 'latin1');
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+  for (const offset of offsets.slice(1)) {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`;
+  pdf += `startxref\n${xrefOffset}\n%%EOF\n`;
+  return new TextEncoder().encode(pdf).buffer;
+}
+
+function buildStoredDocx(documentXml) {
+  const encoder = new TextEncoder();
+  const fileName = encoder.encode('word/document.xml');
+  const content = encoder.encode(documentXml);
+  const localHeaderLength = 30 + fileName.length + content.length;
+  const centralHeaderLength = 46 + fileName.length;
+  const eocdLength = 22;
+  const bytes = new Uint8Array(localHeaderLength + centralHeaderLength + eocdLength);
+  const view = new DataView(bytes.buffer);
+  let offset = 0;
+
+  view.setUint32(offset, 0x04034b50, true);
+  view.setUint16(offset + 4, 20, true);
+  view.setUint16(offset + 8, 0, true);
+  view.setUint32(offset + 14, 0, true);
+  view.setUint32(offset + 18, content.length, true);
+  view.setUint32(offset + 22, content.length, true);
+  view.setUint16(offset + 26, fileName.length, true);
+  bytes.set(fileName, offset + 30);
+  bytes.set(content, offset + 30 + fileName.length);
+
+  const centralOffset = localHeaderLength;
+  offset = centralOffset;
+  view.setUint32(offset, 0x02014b50, true);
+  view.setUint16(offset + 4, 20, true);
+  view.setUint16(offset + 6, 20, true);
+  view.setUint16(offset + 10, 0, true);
+  view.setUint32(offset + 16, 0, true);
+  view.setUint32(offset + 20, content.length, true);
+  view.setUint32(offset + 24, content.length, true);
+  view.setUint16(offset + 28, fileName.length, true);
+  view.setUint32(offset + 42, 0, true);
+  bytes.set(fileName, offset + 46);
+
+  offset = centralOffset + centralHeaderLength;
+  view.setUint32(offset, 0x06054b50, true);
+  view.setUint16(offset + 8, 1, true);
+  view.setUint16(offset + 10, 1, true);
+  view.setUint32(offset + 12, centralHeaderLength, true);
+  view.setUint32(offset + 16, centralOffset, true);
+
+  return bytes.buffer;
+}
+
+function smokeUploadFile() {
+  if (smokeMode === 'upload-pdf-gap' || smokeMode === 'browser-upload-pdf-gap') {
+    return {
+      blob: new Blob(['not a real pdf'], { type: 'application/pdf' }),
+      fileName: `talent-smoke-${runId}.pdf`,
+    };
+  }
+
+  if (smokeMode === 'upload-docx' || smokeMode === 'browser-upload-docx') {
+    const paragraphs = [
+      `Talent Pool live ${smokeMode} smoke proof ${runId}.`,
+      'Recently implemented source-backed candidate evidence ingestion for public Talent Pool DOCX profile uploads.',
+      'Built Cloudflare Workers ingestion replay with TypeScript and exact source-span proof.',
+      'This DOCX text is intentionally unique so exact source spans can be audited back to the uploaded profile.',
+    ];
+    const documentXml = [
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>',
+      ...paragraphs.map((paragraph) => `<w:p><w:r><w:t>${paragraph}</w:t></w:r></w:p>`),
+      '</w:body></w:document>',
+    ].join('');
+    return {
+      blob: new Blob([buildStoredDocx(documentXml)], { type: DOCX_CONTENT_TYPE }),
+      fileName: `talent-smoke-${runId}.docx`,
+    };
+  }
+
+  if (smokeMode === 'upload-pdf' || smokeMode === 'browser-upload-pdf') {
+    const lines = [
+      `Talent Pool live ${smokeMode} smoke proof ${runId}.`,
+      'Recently implemented source-backed candidate evidence ingestion for public Talent Pool PDF profile uploads.',
+      'Built Cloudflare Workers ingestion replay with TypeScript and exact source-span proof.',
+      'This PDF text is intentionally unique so exact source spans can be audited back to the uploaded profile.',
+    ];
+    return {
+      blob: new Blob([buildTextPdf(lines)], { type: 'application/pdf' }),
+      fileName: `talent-smoke-${runId}.pdf`,
+    };
+  }
+
+  return {
+    blob: new Blob([profileText], { type: 'text/plain' }),
+    fileName: `talent-smoke-${runId}.txt`,
+  };
+}
+
+function isLocalBase(baseUrl) {
+  return baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
+}
+
+function shouldSendDevBasicAuth(baseUrl) {
+  const hostname = hostnameForBase(baseUrl);
+  if (hostname === 'api-dev.hire-pipe.com') return false;
+  return !isLocalBase(baseUrl);
+}
+
+function basicAuthHeader(baseUrl) {
+  const credentials = basicAuthCredentials(baseUrl);
+  if (!credentials) return {};
+  return { Authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}` };
+}
+
+function basicAuthCredentials(baseUrl) {
+  if (!shouldSendDevBasicAuth(baseUrl)) return null;
+  const user = process.env.PIPE_DEV_BASIC_AUTH_USER
+    ?? process.env.DEV_BASIC_AUTH_USER
+    ?? process.env.VIDEO_ROOM_DEV_AUTH_USER
+    ?? '';
+  const password = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD
+    ?? process.env.DEV_BASIC_AUTH_PASSWORD
+    ?? process.env.VIDEO_ROOM_DEV_AUTH_PASSWORD
+    ?? '';
+  if (!user || !password) return null;
+  return { username: user, password };
+}
+
+function assertConfigured() {
+  if (shouldSendDevBasicAuth(recruiterApiBase) && !basicAuthCredentials(recruiterApiBase)) {
+    throw new Error(
+      'Set PIPE_DEV_BASIC_AUTH_USER and PIPE_DEV_BASIC_AUTH_PASSWORD to create dev Talent Pool candidates through app-dev.',
+    );
+  }
+  if (
+    (smokeMode === 'browser-submit-text' || browserUploadModes.has(smokeMode))
+    && shouldSendDevBasicAuth(appBase)
+    && !basicAuthCredentials(appBase)
+  ) {
+    throw new Error(
+      'Set PIPE_DEV_BASIC_AUTH_USER and PIPE_DEV_BASIC_AUTH_PASSWORD to drive /talent/:token through app-dev.',
+    );
+  }
+}
+
+function isTransientResponseStatus(status) {
+  return [408, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524].includes(status);
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function fetchWithRetry(url, init, label) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(url, init);
+      if (!isTransientResponseStatus(response.status) || attempt === 3) return response;
+      const body = await response.text().catch(() => '');
+      lastError = new Error(`${label} returned transient ${response.status}: ${body.slice(0, 300)}`);
+    } catch (err) {
+      lastError = err;
+      if (attempt === 3) break;
+    }
+    console.warn('[talent-smoke] retrying transient fetch failure', {
+      label,
+      attempt,
+      error: errorMessage(lastError),
+    });
+    await sleep(750 * attempt);
+  }
+  throw new Error(`${label} fetch failed after retries: ${errorMessage(lastError)}`);
+}
+
+async function requestJson(baseUrl, pathname, options = {}) {
+  const url = `${baseUrl}${pathname}`;
+  const response = await fetchWithRetry(url, {
+    method: options.method ?? 'GET',
+    headers: {
+      ...basicAuthHeader(baseUrl),
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers ?? {}),
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  }, `${options.method ?? 'GET'} ${url}`);
+  const text = await response.text();
+  let body = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = { raw: text };
+    }
+  }
+  if (!response.ok) {
+    throw new Error(`${options.method ?? 'GET'} ${baseUrl}${pathname} failed ${response.status}: ${text}`);
+  }
+  return body;
+}
+
+async function requestMultipart(baseUrl, pathname, formData) {
+  const url = `${baseUrl}${pathname}`;
+  const response = await fetchWithRetry(url, {
+    method: 'POST',
+    headers: {
+      ...basicAuthHeader(baseUrl),
+    },
+    body: formData,
+  }, `POST ${url}`);
+  const text = await response.text();
+  let body = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = { raw: text };
+    }
+  }
+  if (!response.ok) {
+    throw new Error(`POST ${baseUrl}${pathname} failed ${response.status}: ${text}`);
+  }
+  return body;
+}
+
+function assertString(value, label) {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`Expected ${label} to be a non-empty string.`);
+  }
+  return value;
+}
+
+function assertAtLeast(value, minimum, label) {
+  if (typeof value !== 'number' || value < minimum) {
+    throw new Error(`Expected ${label} to be at least ${minimum}, got ${value}.`);
+  }
+}
+
+function assertCandidateDashboardSafe(body, candidateId, label) {
+  const encoded = JSON.stringify(body);
+  const forbiddenTerms = [
+    candidateId,
+    'workspacePersonId',
+    'workspace_person',
+    'personId',
+    'sourceSpanId',
+    'artifactVersionId',
+    'profile_r2_key',
+    'resume_s3_key',
+    'applicationId',
+    'pipelineId',
+  ].filter((term) => term.length > 0);
+  const leakedTerm = forbiddenTerms.find((term) => encoded.includes(term));
+  if (leakedTerm) {
+    throw new Error(`${label} candidate dashboard exposed recruiter/internal evidence field "${leakedTerm}".`);
+  }
+}
+
+function extractJson(text) {
+  const starts = [];
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === '{' || text[index] === '[') starts.push(index);
+  }
+  for (const start of starts) {
+    const opener = text[start];
+    const closer = opener === '[' ? ']' : '}';
+    const end = text.lastIndexOf(closer);
+    if (end <= start) continue;
+    try {
+      return JSON.parse(text.slice(start, end + 1));
+    } catch {
+      // Keep scanning; command wrappers may print bracketed logs before JSON.
+    }
+  }
+  throw new Error(`Command did not print JSON:\n${text}`);
+}
+
+function wranglerArgs(args) {
+  return [
+    '--prefix',
+    'workers/api',
+    'exec',
+    '--',
+    'wrangler',
+    ...args,
+  ];
+}
+
+function runWranglerJson(args, label) {
+  const result = spawnSync('npm', wranglerArgs(args), {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: process.env,
+  });
+  if (result.status !== 0) {
+    throw new Error(`${label} failed:\n${result.stdout}\n${result.stderr}`);
+  }
+  return extractJson(result.stdout);
+}
+
+function runWranglerBuffer(args, label) {
+  const result = spawnSync('npm', wranglerArgs(args), {
+    cwd: repoRoot,
+    env: process.env,
+  });
+  if (result.status !== 0) {
+    throw new Error(`${label} failed:\n${result.stdout?.toString('utf8') ?? ''}\n${result.stderr?.toString('utf8') ?? ''}`);
+  }
+  return result.stdout;
+}
+
+function sqlString(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function sha256Buffer(buffer) {
+  return createHash('sha256').update(buffer).digest('hex');
+}
+
+function hashPrefixFromStorageKey(storageKey) {
+  const leaf = storageKey.split('/').pop() ?? '';
+  const match = /^([a-f0-9]{64})-/i.exec(leaf);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+async function expectedSourceBytesForCurrentMode() {
+  if (uploadEvidenceExpected) {
+    const uploadFile = smokeUploadFile();
+    return Buffer.from(await uploadFile.blob.arrayBuffer());
+  }
+  return Buffer.from(profileText, 'utf8');
+}
+
+function loadProfileStorageKey(inviteToken) {
+  const rows = runWranglerJson([
+    'd1',
+    'execute',
+    d1DatabaseName,
+    '--config',
+    'workers/api/wrangler.jsonc',
+    '--env',
+    inferredEnvName ?? 'dev',
+    '--remote',
+    '--json',
+    '--command',
+    `SELECT c.id AS candidate_id, t.profile_r2_key
+       FROM candidates c
+       JOIN talent_pool_intakes t ON t.candidate_id = c.id
+      WHERE c.invite_token = ${sqlString(inviteToken)}
+      LIMIT 1`,
+  ], 'profile storage key query');
+  const first = rows?.[0]?.results?.[0];
+  const profileStorageKey = assertString(first?.profile_r2_key, 'profile_r2_key');
+  return {
+    candidateId: assertString(first?.candidate_id, 'candidate_id'),
+    profileStorageKey,
+  };
+}
+
+async function verifyRemoteSourceObject(inviteToken) {
+  if (!r2BucketName) {
+    throw new Error('Set TALENT_POOL_SMOKE_R2_BUCKET or use a known app/API environment so smoke can prove remote R2 source storage.');
+  }
+  const { profileStorageKey } = loadProfileStorageKey(inviteToken);
+  const objectBytes = runWranglerBuffer([
+    'r2',
+    'object',
+    'get',
+    `${r2BucketName}/${profileStorageKey}`,
+    '--remote',
+    '--pipe',
+  ], 'remote R2 source object fetch');
+  const expectedBytes = await expectedSourceBytesForCurrentMode();
+  const objectHash = sha256Buffer(objectBytes);
+  const expectedHash = sha256Buffer(expectedBytes);
+  const keyHash = hashPrefixFromStorageKey(profileStorageKey);
+  if (objectBytes.length !== expectedBytes.length || !objectBytes.equals(expectedBytes)) {
+    throw new Error(`Remote R2 object ${profileStorageKey} did not match the submitted source bytes.`);
+  }
+  if (keyHash !== objectHash) {
+    throw new Error(`Remote R2 object ${profileStorageKey} hash ${objectHash} does not match storage-key hash ${keyHash}.`);
+  }
+  if (objectHash !== expectedHash) {
+    throw new Error(`Remote R2 object ${profileStorageKey} hash ${objectHash} does not match expected submitted source hash ${expectedHash}.`);
+  }
+  return {
+    profileStorageKey,
+    sourceObjectBytes: objectBytes.length,
+    sourceObjectSha256: objectHash,
+    keyHashMatchesObject: true,
+    objectMatchesSubmittedSource: true,
+  };
+}
+
+function runAudit(inviteToken) {
+  if (!databaseId) {
+    throw new Error('Set CLOUDFLARE_D1_DATABASE_ID or TALENT_POOL_SMOKE_D1_DATABASE_ID for remote audit proof.');
+  }
+  const result = spawnSync(
+    'npm',
+    [
+      '--prefix',
+      'workers/api',
+      'run',
+      'candidate-ingestion:audit',
+      '--',
+      '--remote',
+      '--invite-token',
+      inviteToken,
+      '--require-context-records',
+    ],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CLOUDFLARE_D1_DATABASE_ID: databaseId,
+      },
+    },
+  );
+  if (result.status !== 0) {
+    if (result.stdout.trim()) {
+      try {
+        return extractJson(result.stdout);
+      } catch {
+        // Fall through to include stdout/stderr in the failure.
+      }
+    }
+    throw new Error(`Audit command failed:\n${result.stdout}\n${result.stderr}`);
+  }
+  return extractJson(result.stdout);
+}
+
+function auditIsReady(report) {
+  if (report.status !== 'ready') return false;
+  if (report.rawCapture?.submittedIntakeCount !== 1) return false;
+  if (report.rawCapture?.contentAddressedProfileStorageKeyCount !== 1) return false;
+  if (report.rawCapture?.nonContentAddressedProfileStorageKeyCount !== 0) return false;
+  if (report.sourceProof?.candidateNodeExactSourceQuoteCount < 1) return false;
+  if (report.sourceProof?.submittedIntakeWithoutExactCandidateNodeCount !== 0) return false;
+  if (report.sourceProof?.contextSourceRefCount < 1) return false;
+  if (uploadEvidenceExpected && report.sourceProof?.profileUploadArtifactVersionCount < 1) return false;
+  if (uploadEvidenceExpected && report.sourceProof?.profileUploadReceiptContextCount < 1) return false;
+  if (isExtractedDocumentUploadMode() && report.rawCapture?.documentProfileStorageKeyCount !== 1) return false;
+  if (isExtractedDocumentUploadMode() && report.sourceProof?.documentProfileSourceSpanCount < 1) return false;
+  if (report.personProjection?.talentPoolWorkspacePersonCount !== 1) return false;
+  if (report.sourceLessPositiveClaimCount !== 0) return false;
+  if (report.duplicateProjectedEdgeCount !== 0) return false;
+  if (report.personProjection?.unprovenChallengeAssignmentCount !== 0) return false;
+  return !failOnNextActions || (report.nextActions?.length ?? 0) === 0;
+}
+
+function listContains(list, expected) {
+  return Array.isArray(list) && list.includes(expected);
+}
+
+function countByField(list, field, expected) {
+  if (!Array.isArray(list)) return 0;
+  const match = list.find((item) => item?.[field] === expected);
+  return typeof match?.count === 'number' ? match.count : 0;
+}
+
+function auditHasExpectedEvidenceGap(report) {
+  if (report.status !== 'not_ready') return false;
+  if (report.rawCapture?.submittedIntakeCount !== 1) return false;
+  if (report.rawCapture?.contentAddressedProfileStorageKeyCount !== 1) return false;
+  if (report.rawCapture?.nonContentAddressedProfileStorageKeyCount !== 0) return false;
+  if (report.rawCapture?.documentProfileStorageKeyCount !== 1) return false;
+  if (report.ingestionState?.failedRowCount !== 0) return false;
+  if (report.ingestionState?.errorTextRowCount !== 0) return false;
+  if (countByField(report.ingestionState?.steps, 'currentStep', 'profile_text_extraction_needed') !== 1) return false;
+  if (report.sourceProof?.candidateNodeCount !== 0) return false;
+  if (report.sourceProof?.profileUploadArtifactVersionCount < 1) return false;
+  if (report.sourceProof?.documentProfileSourceSpanCount !== 0) return false;
+  if (report.sourceProof?.documentProfileExtractionGapCount !== 1) return false;
+  if (report.sourceProof?.documentProfileMissingExtractionProofCount !== 0) return false;
+  if (report.sourceProof?.candidateNodeExactSourceQuoteCount !== 0) return false;
+  if (report.sourceProof?.submittedIntakeWithoutExactCandidateNodeCount !== 0) return false;
+  if (report.sourceProof?.profileUploadReceiptContextCount !== 1) return false;
+  if (report.sourceProof?.contextSourceRefCount < 1) return false;
+  if (report.personProjection?.talentPoolWorkspacePersonCount !== 1) return false;
+  if (report.personProjection?.designQueueCount !== 1) return false;
+  if (report.sourceLessPositiveClaimCount !== 0) return false;
+  if (report.sourceLessDesignQueueSuggestionCount !== 0) return false;
+  if (report.duplicateProjectedEdgeCount !== 0) return false;
+  if (!listContains(
+    report.failures,
+    '1 PDF/DOCX Talent Pool profile upload(s) are explicit profile_text_extraction_needed evidence gaps with raw upload receipts and no extracted profile text',
+  )) {
+    return false;
+  }
+  if (Array.isArray(report.failures) && report.failures.some((failure) => failure.includes('candidate_ingestion'))) {
+    return false;
+  }
+  return listContains(
+    report.nextActions,
+    'Run document extraction/backfill before projecting profile claims from PDF/DOCX uploads; keep the raw upload receipt as the only evidence until text exists.',
+  );
+}
+
+function auditMatchesExpectedState(report) {
+  return expectsEvidenceGap ? auditHasExpectedEvidenceGap(report) : auditIsReady(report);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function pollAudit(inviteToken) {
+  let lastReport = null;
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    lastReport = runAudit(inviteToken);
+    if (auditMatchesExpectedState(lastReport)) return lastReport;
+    console.log(`[talent-smoke] audit did not match expected state on attempt ${attempt}:`, {
+      status: lastReport.status,
+      failures: lastReport.failures,
+      nextActions: lastReport.nextActions,
+    });
+    await sleep(2500);
+  }
+  throw new Error(`Audit did not reach expected state:\n${JSON.stringify(lastReport, null, 2)}`);
+}
+
+async function verifyAuditStability(inviteToken, report) {
+  if (expectsEvidenceGap || auditStabilityWaitMs === 0) return report;
+  await sleep(auditStabilityWaitMs);
+  const stableReport = runAudit(inviteToken);
+  if (!auditIsReady(stableReport)) {
+    throw new Error(
+      `Audit became unstable after ${auditStabilityWaitMs}ms:\n${JSON.stringify(stableReport, null, 2)}`,
+    );
+  }
+  return stableReport;
+}
+
+async function submitProfileThroughBrowser(inviteToken, candidateId) {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const credentials = basicAuthCredentials(appBase);
+    const context = await browser.newContext({
+      ...(credentials ? { httpCredentials: credentials } : {}),
+    });
+    const page = await context.newPage();
+    await page.goto(`${appBase}/talent/${encodeURIComponent(inviteToken)}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 45_000,
+    });
+    await page.getByRole('heading', { name: 'Talent Pool' }).waitFor({ timeout: 30_000 });
+    if (browserUploadModes.has(smokeMode)) {
+      const uploadFile = smokeUploadFile();
+      const buffer = Buffer.from(await uploadFile.blob.arrayBuffer());
+      await page.getByLabel('Resume file').setInputFiles({
+        name: uploadFile.fileName,
+        mimeType: uploadFile.blob.type || 'application/octet-stream',
+        buffer,
+      });
+    } else {
+      await page.getByLabel('Resume or profile').fill(profileText);
+    }
+    await page.getByLabel('GitHub').fill(`https://github.com/talent-smoke-${runId}`);
+    await page.getByLabel('LinkedIn').fill(`https://linkedin.com/in/talent-smoke-${runId}`);
+    await page.getByLabel('Portfolio').fill(`https://talent-smoke-${runId}.example.dev`);
+    await page.getByLabel('Open to a short phone screen').check();
+    await page.getByLabel('Phone number').fill('+15551234567');
+    await page.getByLabel('Timezone').fill('America/Vancouver');
+    await page.getByLabel('Availability').fill('Weekday afternoons after 2 PM.');
+    await page.getByRole('button', { name: /Submit profile/i }).click();
+    await page.getByRole('heading', { name: 'Profile received' }).waitFor({ timeout: 45_000 });
+    const bodyText = await page.locator('body').innerText();
+    const forbiddenTerms = [
+      candidateId,
+      'WAITING_FOR_MATCH',
+      'Repo matching',
+      'workspace-person',
+      'source_span',
+      'artifact_version',
+      'profile_r2_key',
+      'resume_s3_key',
+    ];
+    const leakedTerm = forbiddenTerms.find((term) => term && bodyText.includes(term));
+    if (leakedTerm) {
+      throw new Error(`/talent/:token browser page exposed internal or stale status text "${leakedTerm}".`);
+    }
+  } finally {
+    await browser.close();
+  }
+}
+
+function recruiterReadNeedle() {
+  if (smokeMode === 'upload-docx' || smokeMode === 'browser-upload-docx') return 'DOCX text is intentionally unique';
+  if (smokeMode === 'upload-pdf' || smokeMode === 'browser-upload-pdf') return 'PDF text is intentionally unique';
+  return 'source spans can be audited back';
+}
+
+function sourceRefProvesSubmittedText(source, needle) {
+  return source?.sourceRefType === 'source_span'
+    && typeof source.sourceSpanId === 'string'
+    && source.sourceSpanId.length > 0
+    && typeof source.sourceRefId === 'string'
+    && source.sourceRefId.length > 0
+    && typeof source.artifactVersionId === 'string'
+    && source.artifactVersionId.length > 0
+    && String(source.exactText ?? '').includes(needle);
+}
+
+function assertSourceBackedTalentPoolProfileContext(graph, needle, label) {
+  const contextRecords = Array.isArray(graph?.livingContext?.contextRecords)
+    ? graph.livingContext.contextRecords
+    : (Array.isArray(graph?.contextRecords) ? graph.contextRecords : []);
+  const profileRecord = contextRecords.find((record) =>
+    record?.recordType === 'talent_pool_profile_intake'
+    && record?.predicate === 'submitted_profile_evidence'
+    && Array.isArray(record?.sources)
+    && record.sources.some((source) => sourceRefProvesSubmittedText(source, needle)),
+  );
+  if (!profileRecord) {
+    const recordTypes = contextRecords
+      .map((record) => `${record?.recordType ?? 'unknown'}:${record?.predicate ?? 'none'}`)
+      .join(', ');
+    throw new Error(`${label} did not expose source-backed Talent Pool profile context for submitted text. Context records: ${recordTypes || 'none'}.`);
+  }
+}
+
+async function verifyRecruiterEvidenceReads(candidateId) {
+  if (!verifyRecruiterReads) return null;
+
+  const needle = recruiterReadNeedle();
+  const encodedCandidateId = encodeURIComponent(candidateId);
+  const candidateGraph = await requestJson(
+    recruiterApiBase,
+    `/api/v1/candidates/${encodedCandidateId}/living-context`,
+  );
+  const person = candidateGraph?.livingContext?.person;
+  const personId = assertString(person?.personId, 'candidate living-context personId');
+  const workspacePersonId = assertString(
+    person?.workspacePersonId,
+    'candidate living-context workspacePersonId',
+  );
+  if (person?.applicationId !== null) {
+    throw new Error(`Expected roleless Talent Pool candidate to read without applicationId, got ${person?.applicationId}.`);
+  }
+  if (!JSON.stringify(candidateGraph).includes(needle)) {
+    throw new Error(`Candidate living-context graph did not include submitted source text "${needle}".`);
+  }
+  assertSourceBackedTalentPoolProfileContext(candidateGraph, needle, 'Candidate living-context graph');
+
+  const contactsList = await requestJson(recruiterApiBase, '/api/v1/contacts?limit=200');
+  const unifiedPerson = Array.isArray(contactsList?.contacts)
+    ? contactsList.contacts.find((contact) => contact?.id === personId || contact?.email === candidateEmail)
+    : null;
+  if (!unifiedPerson) {
+    throw new Error('Unified People list did not include the ingested Talent Pool person.');
+  }
+  if (unifiedPerson.type !== 'candidate') {
+    throw new Error(`Unified People list returned type "${unifiedPerson.type}" instead of candidate.`);
+  }
+
+  const candidateSearch = await requestJson(
+    recruiterApiBase,
+    `/api/v1/candidates/${encodedCandidateId}/living-context/search?q=${encodeURIComponent(needle)}`,
+  );
+  if (candidateSearch?.personId !== workspacePersonId) {
+    throw new Error('Candidate source search did not resolve the canonical workspace person.');
+  }
+  if (!Array.isArray(candidateSearch?.hits) || !candidateSearch.hits.some((hit) => String(hit?.exactText ?? '').includes(needle))) {
+    throw new Error('Candidate source search did not return the submitted exact source text.');
+  }
+
+  const candidateEvidenceDepth = await requestJson(
+    recruiterApiBase,
+    `/api/v1/candidates/${encodedCandidateId}/living-context/evidence-depth`,
+  );
+  if (candidateEvidenceDepth?.workspacePersonId !== workspacePersonId) {
+    throw new Error('Candidate evidence-depth did not resolve the canonical workspace person.');
+  }
+  assertAtLeast(candidateEvidenceDepth?.totalSourceSpans, 1, 'candidate evidence-depth source spans');
+  assertAtLeast(candidateEvidenceDepth?.totalContextRecords, 1, 'candidate evidence-depth context records');
+
+  const encodedPersonId = encodeURIComponent(personId);
+  const personGraph = await requestJson(
+    recruiterApiBase,
+    `/api/v1/contacts/${encodedPersonId}/living-context`,
+  );
+  if (personGraph?.person?.personId !== personId) {
+    throw new Error('Canonical person living-context graph did not resolve the same person id.');
+  }
+  if (personGraph?.person?.workspacePersonId !== workspacePersonId) {
+    throw new Error('Canonical person living-context graph did not resolve the canonical workspace person.');
+  }
+  assertSourceBackedTalentPoolProfileContext(personGraph, needle, 'Canonical person living-context graph');
+
+  const personSearch = await requestJson(
+    recruiterApiBase,
+    `/api/v1/contacts/${encodedPersonId}/living-context/search?q=${encodeURIComponent(needle)}`,
+  );
+  if (personSearch?.personId !== workspacePersonId) {
+    throw new Error('Person source search did not resolve the canonical workspace person.');
+  }
+  if (!Array.isArray(personSearch?.hits) || !personSearch.hits.some((hit) => String(hit?.exactText ?? '').includes(needle))) {
+    throw new Error('Person source search did not return the submitted exact source text.');
+  }
+
+  const personTimeline = await requestJson(
+    recruiterApiBase,
+    `/api/v1/contacts/${encodedPersonId}/living-context/timeline`,
+  );
+  if (personTimeline?.workspacePersonId !== workspacePersonId) {
+    throw new Error('Person evidence timeline did not resolve the canonical workspace person.');
+  }
+  assertAtLeast(personTimeline?.totalEntries, 1, 'person evidence timeline entries');
+  if (!JSON.stringify(personTimeline?.entries ?? []).includes('Candidate submitted Talent Pool profile evidence.')) {
+    throw new Error('Person evidence timeline did not include the Talent Pool profile evidence event.');
+  }
+
+  const personEvidenceDepth = await requestJson(
+    recruiterApiBase,
+    `/api/v1/contacts/${encodedPersonId}/living-context/evidence-depth`,
+  );
+  if (personEvidenceDepth?.workspacePersonId !== workspacePersonId) {
+    throw new Error('Person evidence-depth did not resolve the canonical workspace person.');
+  }
+  assertAtLeast(personEvidenceDepth?.totalSourceSpans, 1, 'person evidence-depth source spans');
+  assertAtLeast(personEvidenceDepth?.totalContextRecords, 1, 'person evidence-depth context records');
+
+  return {
+    personId,
+    workspacePersonId,
+    unifiedPeopleType: unifiedPerson.type,
+    candidateSearchHits: candidateSearch.hits.length,
+    personSearchHits: personSearch.hits.length,
+    timelineEntries: personTimeline.totalEntries,
+    personEvidenceSourceSpans: personEvidenceDepth.totalSourceSpans,
+    personEvidenceContextRecords: personEvidenceDepth.totalContextRecords,
+    sourceBackedProfileContext: true,
+  };
+}
+
+async function main() {
+  assertConfigured();
+  console.log('[talent-smoke] creating standalone Talent Pool candidate', {
+    recruiterApiBase,
+    rpcBase,
+    email: candidateEmail,
+    mode: smokeMode,
+  });
+
+  const created = await requestJson(recruiterApiBase, '/api/v1/candidates', {
+    method: 'POST',
+    body: {
+      name: candidateName,
+      email: candidateEmail,
+      skipEmail: true,
+      message: `Dev smoke seed for ${runId}.`,
+    },
+  });
+
+  const inviteToken = created?.candidate?.inviteToken;
+  if (typeof inviteToken !== 'string' || inviteToken.length === 0) {
+    throw new Error(`Candidate creation did not return inviteToken:\n${JSON.stringify(created, null, 2)}`);
+  }
+  const candidateId = assertString(created?.candidate?.id, 'created candidate id');
+
+  const initialDashboard = await requestJson(rpcBase, '/rpc/talent/resolve-token', {
+    method: 'POST',
+    body: { inviteToken },
+  });
+  if (initialDashboard?.status !== 'PROFILE_NEEDED') {
+    throw new Error(`Expected PROFILE_NEEDED before submit, got ${initialDashboard?.status}`);
+  }
+  assertCandidateDashboardSafe(initialDashboard, candidateId, 'resolve-token');
+
+  const submittedDashboard = await (async () => {
+    if (smokeMode === 'browser-submit-text' || browserUploadModes.has(smokeMode)) {
+      await submitProfileThroughBrowser(inviteToken, candidateId);
+      return requestJson(rpcBase, '/rpc/talent/resolve-token', {
+        method: 'POST',
+        body: { inviteToken },
+      });
+    }
+
+    if (
+      smokeMode === 'upload-text'
+      || smokeMode === 'upload-docx'
+      || smokeMode === 'upload-pdf'
+      || smokeMode === 'upload-pdf-gap'
+    ) {
+        const uploadFile = smokeUploadFile();
+        const formData = new FormData();
+        formData.set('inviteToken', inviteToken);
+        formData.set(
+          'file',
+          uploadFile.blob,
+          uploadFile.fileName,
+        );
+        formData.set('githubUrl', `https://github.com/talent-smoke-${smokeMode}-${runId}`);
+        formData.set('linkedinUrl', `https://linkedin.com/in/talent-smoke-${smokeMode}-${runId}`);
+        formData.set('portfolioUrl', `https://talent-smoke-${smokeMode}-${runId}.example.dev`);
+        formData.set('phoneScreenerConsent', 'true');
+        formData.set('phoneNumber', '+15551234567');
+        formData.set('timezone', 'America/Vancouver');
+        formData.set('availability', 'Weekday afternoons after 2 PM.');
+        return requestMultipart(rpcBase, '/rpc/talent/upload-profile', formData);
+    }
+
+    return requestJson(rpcBase, '/rpc/talent/submit-profile', {
+        method: 'POST',
+        body: {
+          inviteToken,
+          resumeText: profileText,
+          githubUrl: `https://github.com/talent-smoke-${runId}`,
+          linkedinUrl: `https://linkedin.com/in/talent-smoke-${runId}`,
+          portfolioUrl: `https://talent-smoke-${runId}.example.dev`,
+          phoneScreenerConsent: true,
+          phoneNumber: '+15551234567',
+          timezone: 'America/Vancouver',
+          availability: 'Weekday afternoons after 2 PM.',
+        },
+      });
+  })();
+  if (submittedDashboard?.status !== 'CHALLENGE_PREPARING') {
+    throw new Error(`Expected CHALLENGE_PREPARING after submit, got ${submittedDashboard?.status}`);
+  }
+  if (Array.isArray(submittedDashboard?.readyChallenges) && submittedDashboard.readyChallenges.length > 0) {
+    throw new Error('Talent Pool smoke unexpectedly exposed ready challenges immediately after profile submit.');
+  }
+  assertCandidateDashboardSafe(submittedDashboard, candidateId, 'submit-profile');
+
+  let report = await pollAudit(inviteToken);
+  report = await verifyAuditStability(inviteToken, report);
+  const sourceObjectProof = await verifyRemoteSourceObject(inviteToken);
+  const recruiterReadProof = await verifyRecruiterEvidenceReads(candidateId);
+  console.log(expectsEvidenceGap ? '[talent-smoke] expected evidence gap' : '[talent-smoke] ready', {
+    inviteToken,
+    expectedEvidenceGap: expectsEvidenceGap,
+    status: report.status,
+    checkedAt: report.checkedAt,
+    ingestionSteps: report.ingestionState.steps,
+    sourceLessPositiveClaimCount: report.sourceLessPositiveClaimCount,
+    sourceLessDesignQueueSuggestionCount: report.sourceLessDesignQueueSuggestionCount,
+    duplicateProjectedEdgeCount: report.duplicateProjectedEdgeCount,
+    candidateNodeCount: report.sourceProof.candidateNodeCount,
+    candidateNodeExactSourceQuoteCount: report.sourceProof.candidateNodeExactSourceQuoteCount,
+    submittedIntakeWithoutExactCandidateNodeCount: report.sourceProof.submittedIntakeWithoutExactCandidateNodeCount,
+    contextSourceRefCount: report.sourceProof.contextSourceRefCount,
+    contentAddressedProfileStorageKeyCount: report.rawCapture.contentAddressedProfileStorageKeyCount,
+    nonContentAddressedProfileStorageKeyCount: report.rawCapture.nonContentAddressedProfileStorageKeyCount,
+    documentProfileStorageKeyCount: report.rawCapture.documentProfileStorageKeyCount,
+    documentProfileSourceSpanCount: report.sourceProof.documentProfileSourceSpanCount,
+    documentProfileExtractionGapCount: report.sourceProof.documentProfileExtractionGapCount,
+    documentProfileMissingExtractionProofCount: report.sourceProof.documentProfileMissingExtractionProofCount,
+    profileUploadArtifactVersionCount: report.sourceProof.profileUploadArtifactVersionCount,
+    profileUploadReceiptContextCount: report.sourceProof.profileUploadReceiptContextCount,
+    sourceObjectProof,
+    talentPoolWorkspacePersonCount: report.personProjection.talentPoolWorkspacePersonCount,
+    designQueueCount: report.personProjection.designQueueCount,
+    recruiterReadProof,
+    failures: report.failures,
+    nextActions: report.nextActions,
+  });
+}
+
+main().catch((error) => {
+  console.error('[talent-smoke] failed:', error instanceof Error ? (error.stack ?? error.message) : String(error));
+  process.exit(1);
+});

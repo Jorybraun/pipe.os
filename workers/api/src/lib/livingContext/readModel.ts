@@ -400,6 +400,12 @@ interface SummaryApplicationRow {
   legacy_candidate_id: string | null;
 }
 
+export interface CandidateLivingContextIdentity {
+  personId: string;
+  workspacePersonId: string;
+  applicationId: string | null;
+}
+
 interface InteractionRow {
   id: string;
   interaction_type: string;
@@ -640,6 +646,87 @@ async function countCandidateMatchContextRecords(
   }
 }
 
+async function loadCandidateIdentityRow(
+  db: D1Database,
+  candidateId: string,
+): Promise<SummaryIdentityRow | null> {
+  try {
+    const applicationIdentity = await db.prepare(
+      `SELECT p.id AS person_id,
+              wp.id AS workspace_person_id,
+              app.id AS application_id,
+              p.display_name,
+              p.primary_email,
+              p.primary_phone,
+              wp.relationship_summary,
+              app.status AS application_status,
+              app.pipeline_id,
+              app.legacy_candidate_id
+         FROM applications app
+         JOIN workspace_people wp ON wp.id = app.workspace_person_id
+         JOIN people p ON p.id = wp.person_id
+        WHERE app.legacy_candidate_id = ?1
+        LIMIT 1`,
+    ).bind(candidateId).first<SummaryIdentityRow>();
+    if (applicationIdentity) return applicationIdentity;
+  } catch (error) {
+    if (!isMissingTableError(error, 'applications')) throw error;
+  }
+
+  try {
+    return await db.prepare(
+      `SELECT p.id AS person_id,
+              wp.id AS workspace_person_id,
+              NULL AS application_id,
+              p.display_name,
+              p.primary_email,
+              p.primary_phone,
+              wp.relationship_summary,
+              c.status AS application_status,
+              c.pipeline_id,
+              c.id AS legacy_candidate_id
+         FROM candidates c
+         JOIN workspace_people wp ON wp.workspace_id = c.owner_id
+         JOIN people p ON p.id = wp.person_id
+        WHERE c.id = ?1
+          AND (
+            json_extract(wp.context_json, '$.talentPool.candidateId') = c.id
+            OR EXISTS (
+              SELECT 1
+                FROM json_each(wp.context_json, '$.legacyCandidateIds') candidate_ids
+               WHERE candidate_ids.value = c.id
+            )
+          )
+        ORDER BY CASE WHEN json_extract(wp.context_json, '$.talentPool.roleless') = 1 THEN 0 ELSE 1 END,
+                 wp.created_at,
+                 wp.id
+        LIMIT 1`,
+    ).bind(candidateId).first<SummaryIdentityRow>();
+  } catch (error) {
+    if (
+      isMissingTableError(error, 'candidates')
+      || isMissingTableError(error, 'workspace_people')
+      || isMissingTableError(error, 'people')
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function loadCandidateLivingContextIdentity(
+  db: D1Database,
+  candidateId: string,
+): Promise<CandidateLivingContextIdentity | null> {
+  const identity = await loadCandidateIdentityRow(db, candidateId);
+  if (!identity) return null;
+  return {
+    personId: identity.person_id,
+    workspacePersonId: identity.workspace_person_id,
+    applicationId: identity.application_id,
+  };
+}
+
 function parseUnknown(raw: string | null): unknown {
   if (!raw) return null;
   try {
@@ -720,22 +807,7 @@ export async function loadCandidateLivingContext(
   db: D1Database,
   candidateId: string,
 ): Promise<LivingContextReadModel | null> {
-  const identity = await db.prepare(
-    `SELECT p.id AS person_id,
-            wp.id AS workspace_person_id,
-            app.id AS application_id,
-            p.display_name,
-            p.primary_email,
-            p.primary_phone,
-            wp.relationship_summary,
-            app.status AS application_status,
-            app.pipeline_id
-       FROM applications app
-       JOIN workspace_people wp ON wp.id = app.workspace_person_id
-       JOIN people p ON p.id = wp.person_id
-      WHERE app.legacy_candidate_id = ?1
-      LIMIT 1`,
-  ).bind(candidateId).first<IdentityRow>();
+  const identity = await loadCandidateIdentityRow(db, candidateId);
   if (!identity) return null;
 
   return loadLivingContextByWorkspacePerson(db, identity);
@@ -745,23 +817,7 @@ export async function loadCandidateLivingContextSummary(
   db: D1Database,
   candidateId: string,
 ): Promise<LivingContextReadModel | null> {
-  const identity = await db.prepare(
-    `SELECT p.id AS person_id,
-            wp.id AS workspace_person_id,
-            app.id AS application_id,
-            p.display_name,
-            p.primary_email,
-            p.primary_phone,
-            wp.relationship_summary,
-            app.status AS application_status,
-            app.pipeline_id,
-            app.legacy_candidate_id
-       FROM applications app
-       JOIN workspace_people wp ON wp.id = app.workspace_person_id
-       JOIN people p ON p.id = wp.person_id
-      WHERE app.legacy_candidate_id = ?1
-      LIMIT 1`,
-  ).bind(candidateId).first<SummaryIdentityRow>();
+  const identity = await loadCandidateIdentityRow(db, candidateId);
   if (!identity) return null;
 
   return loadLivingContextSummaryByWorkspacePerson(db, identity);

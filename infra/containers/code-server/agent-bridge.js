@@ -8,6 +8,7 @@ const {
   agentDiagnosticMessage,
   agentDiagnosticSessionEvent,
   agentPromptHandoffDiagnosticMessage,
+  agentStatusSessionEvent,
   isAgentAuthFailureText,
   redactDiagnosticText,
 } = require('./agent-diagnostics.js');
@@ -579,7 +580,8 @@ async function buildWorkspaceCommitSubmission(body = {}) {
 
   const occurredAt = new Date().toISOString();
   const sourceRepositoryUrl = workspaceRepositoryUrl || repositoryUrl;
-  const testCommand = normalizeOptionalString(process.env.PIPE_TEST_COMMAND);
+  const testCommand = normalizeOptionalString(process.env.PIPE_TEST_COMMAND)
+    || normalizeOptionalString(body.testCommand);
   const finalizerCommandEvidenceText = buildFinalizerCommandEvidenceText({
     baseCommitSha: baseCommitSha.toLowerCase(),
     commitSha,
@@ -608,6 +610,7 @@ async function buildWorkspaceCommitSubmission(body = {}) {
       evidenceRole: 'verification_test_output',
       locator: {
         repositoryUrl: sourceRepositoryUrl,
+        baseCommitSha: baseCommitSha.toLowerCase(),
         commitSha,
         command: testCommand,
         exitCode: testResult.status,
@@ -627,6 +630,7 @@ async function buildWorkspaceCommitSubmission(body = {}) {
       evidenceRole: 'missing_test_evidence_note',
       locator: {
         repositoryUrl: sourceRepositoryUrl,
+        baseCommitSha: baseCommitSha.toLowerCase(),
         commitSha,
         expectedSourceRefType: 'test_run',
       },
@@ -790,6 +794,10 @@ async function postSessionEventEvidence(event, logLabel) {
 
 async function captureAgentDiagnosticEvidence(message) {
   return postSessionEventEvidence(agentDiagnosticSessionEvent(message), 'agent diagnostic');
+}
+
+async function captureAgentStatusEvidence(message) {
+  return postSessionEventEvidence(agentStatusSessionEvent(message), 'agent status');
 }
 
 async function captureAgentChatEvidence(message) {
@@ -1078,15 +1086,30 @@ function broadcastAgentReady() {
 
 function agentStatusMessage() {
   if (!AGENT_NAME) return null;
-  return { type: 'AGENT_STATUS', agent: AGENT_NAME, status: agentStatus };
+  return {
+    type: 'AGENT_STATUS',
+    agent: AGENT_NAME,
+    status: agentStatus,
+    observedAt: new Date().toISOString(),
+  };
 }
 
 function broadcastAgentStatus() {
-  broadcast(agentStatusMessage());
+  const message = agentStatusMessage();
+  broadcast({ ...message, persisted: false });
+  void captureAgentStatusEvidence(message)
+    .then((persisted) => {
+      if (persisted) broadcast({ ...message, persisted });
+    });
 }
 
 function sendAgentStatus(ws) {
-  send(ws, agentStatusMessage());
+  const message = agentStatusMessage();
+  send(ws, { ...message, persisted: false });
+  void captureAgentStatusEvidence(message)
+    .then((persisted) => {
+      if (persisted) send(ws, { ...message, persisted });
+    });
 }
 
 function markAgentReady() {

@@ -152,6 +152,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     const headers = await authHeader();
     const response = await fetch(resolveApiUrl(baseUrl, path), {
       method: 'GET',
+      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         ...headers,

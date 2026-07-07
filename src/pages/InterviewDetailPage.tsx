@@ -7,6 +7,7 @@ import {
   CheckCircle,
   Clock,
   Copy,
+  Download,
   FileText,
   GitPullRequest,
   Loader2,
@@ -16,11 +17,18 @@ import {
   Video,
 } from 'lucide-react';
 import { useApiClient } from '../hooks/useApiClient';
+import { ApiError } from '../lib/api/types';
 import { asCodeReviewReviewProfile, ReviewProfileCard } from '../components/Assessment/CodeReviewChallenge';
-import { summarizeAssessmentAssignment } from '../lib/scheduling/assessmentChallenge';
+import {
+  summarizeResolvedAssessmentAssignment,
+  type AssessmentAssignmentSummary,
+} from '../lib/scheduling/assessmentChallenge';
 import type {
+  AssessmentEvidenceBundle,
+  AssessmentEvidenceBundleEvent,
   AssessmentEvidenceCoverageItem,
   AssessmentProgressSnapshot,
+  AssessmentProgressReviewPacketSummary,
   CodeReviewEvidencePlanItem,
   CodeReviewMatchAlignment,
   CodeReviewMatchDetail,
@@ -64,6 +72,8 @@ const STATUS_COLORS: Record<string, string> = {
 
 const LIVE_RECORDING_STALE_AFTER_MS = 4 * 60 * 60 * 1000;
 const CLIPBOARD_WRITE_TIMEOUT_MS = 800;
+const ASSESSMENT_PROGRESS_REFRESH_INTERVAL_MS = 1500;
+const ASSESSMENT_PROGRESS_REFRESH_MAX_ATTEMPTS = 8;
 
 interface PreparedRoomLinks {
   id: string;
@@ -119,6 +129,8 @@ interface StartAssessmentEvaluationResponse {
     code: string;
     severity: string;
   } | null;
+  accepted?: boolean;
+  backgrounded?: boolean;
 }
 
 type HumanAssessmentDecisionValue = NonNullable<NonNullable<AssessmentProgressSnapshot['humanDecision']>>['decision'];
@@ -135,6 +147,10 @@ interface AssessmentProofChecklistItem {
 interface RecordHumanAssessmentDecisionResponse {
   decision: NonNullable<NonNullable<AssessmentProgressSnapshot['humanDecision']>>;
   progress: AssessmentProgressSnapshot;
+}
+
+interface AssessmentEvidenceBundleResponse {
+  bundle: AssessmentEvidenceBundle;
 }
 
 interface CodeReviewAnnotationDetail {
@@ -312,7 +328,7 @@ function assessmentEvaluationStatusLabel(status: string): string {
 }
 
 function assessmentAssignmentToneStyle(
-  tone: NonNullable<ReturnType<typeof summarizeAssessmentAssignment>>['tone'],
+  tone: AssessmentAssignmentSummary['tone'],
 ): CSSProperties {
   switch (tone) {
     case 'matched':
@@ -419,7 +435,13 @@ function assessmentSourceRefTypeLabel(sourceRefType: string): string {
     case 'ai_user_prompt_blocked':
       return 'Blocked AI prompt';
     case 'ai_agent_response':
+    case 'agent_response':
       return 'Agent response';
+    case 'ai_agent_diagnostic':
+    case 'agent_diagnostic':
+      return 'Agent diagnostic';
+    case 'agent_status':
+      return 'Agent status';
     case 'ai_usage_event':
       return 'AI evaluator trace';
     default:
@@ -439,6 +461,9 @@ function assessmentEvaluationNoticeForResult(result: StartAssessmentEvaluationRe
   }
   if (result.diagnostic) {
     return `Evaluation needs attention: ${result.progress.evaluation?.summary ?? result.diagnostic.code}.`;
+  }
+  if (result.progress.stage === 'EVALUATING' || result.progress.nextAction === 'WAIT_FOR_EVALUATION') {
+    return 'Source-backed assessment evaluation is running. Progress will update when the report is ready.';
   }
   return 'Source-backed assessment evaluation started.';
 }
@@ -504,6 +529,18 @@ function firstLocatorString(locator: Record<string, unknown>, keys: string[]): s
   return null;
 }
 
+function firstLocatorNumber(locator: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = locator[key];
+    if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number.parseInt(value.trim().replace(/^#/, ''), 10);
+      if (Number.isInteger(parsed) && parsed > 0) return parsed;
+    }
+  }
+  return null;
+}
+
 function workspaceSessionSummary(interview: ScheduledInterviewDetail): string | null {
   const workspace = interview.workspaceSession ?? null;
   if (!workspace) return null;
@@ -515,6 +552,15 @@ function workspaceSessionSummary(interview: ScheduledInterviewDetail): string | 
   return details.length > 0 ? `${status} · ${details.join(' · ')}` : status;
 }
 
+function roomSessionSummary(interview: ScheduledInterviewDetail): string | null {
+  const roomStatus = interview.roomStatus ?? interview.linkedMeeting?.room?.status ?? null;
+  const guestWaiting = Boolean(interview.guestWaiting ?? interview.linkedMeeting?.room?.guestWaiting);
+  const status = roomStatus ? sentenceCaseToken(roomStatus) : null;
+  const guest = guestWaiting ? 'guest waiting' : null;
+  const parts = [status, guest].filter((value): value is string => Boolean(value));
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
 function compactEvidenceText(value: string, maxLength = 160): string | null {
   const trimmed = value.replace(/\s+/g, ' ').trim();
   if (!trimmed) return null;
@@ -524,8 +570,12 @@ function compactEvidenceText(value: string, maxLength = 160): string | null {
 
 interface AssessmentChallengeContract {
   repositoryUrl: string | null;
+  githubPrNumber: number | null;
+  pullRequestUrl: string | null;
   baseCommitSha: string | null;
   task: string | null;
+  assessmentFit: string[];
+  matchProof: string[];
   successCriteria: string[];
   expectedEvidence: string[];
 }
@@ -538,22 +588,57 @@ function normalizePacketListItem(line: string): string {
     .trim();
 }
 
-function parseAssessmentChallengeContract(challenge: {
-  exactText: string;
-  locator: Record<string, unknown>;
-} | null | undefined): AssessmentChallengeContract | null {
+function normalizeGitHubPullRequestUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return null;
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com') return null;
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length < 4 || parts[2] !== 'pull') return null;
+    const prNumber = Number.parseInt(parts[3] ?? '', 10);
+    if (!Number.isInteger(prNumber) || prNumber <= 0) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/pull/${prNumber}`;
+  } catch {
+    return null;
+  }
+}
+
+function gitHubPullRequestUrlForRepo(repositoryUrl: string | null, githubPrNumber: number | null): string | null {
+  if (!repositoryUrl || !githubPrNumber) return null;
+
+  try {
+    const url = new URL(repositoryUrl);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com') return null;
+    const parts = url.pathname.replace(/\.git$/i, '').split('/').filter(Boolean);
+    if (parts.length < 2) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/pull/${githubPrNumber}`;
+  } catch {
+    return null;
+  }
+}
+
+function parseAssessmentChallengeContract(challenge: AssessmentProgressSnapshot['challenge'] | null | undefined): AssessmentChallengeContract | null {
   if (!challenge) return null;
-  const lines = challenge.exactText
+  const summary = challenge.summary;
+  const lines = (challenge.exactText ?? '')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  let section: 'successCriteria' | 'expectedEvidence' | null = null;
+  let section: 'assessmentFit' | 'matchProof' | 'successCriteria' | 'expectedEvidence' | null = null;
   const contract: AssessmentChallengeContract = {
-    repositoryUrl: firstLocatorString(challenge.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']),
-    baseCommitSha: firstLocatorString(challenge.locator, ['baseCommitSha', 'baseCommit']),
-    task: null,
-    successCriteria: [],
-    expectedEvidence: [],
+    repositoryUrl: summary?.repositoryUrl ?? firstLocatorString(challenge.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']),
+    githubPrNumber: summary?.githubPrNumber ?? firstLocatorNumber(challenge.locator, ['githubPrNumber', 'prNumber', 'pullRequestNumber']),
+    pullRequestUrl: summary?.pullRequestUrl
+      ? normalizeGitHubPullRequestUrl(summary.pullRequestUrl)
+      : null,
+    baseCommitSha: summary?.baseCommitSha ?? firstLocatorString(challenge.locator, ['baseCommitSha', 'baseCommit']),
+    task: summary?.task ?? null,
+    assessmentFit: [...(summary?.assessmentFit ?? [])],
+    matchProof: [...(summary?.matchProof ?? [])],
+    successCriteria: [...(summary?.successCriteria ?? [])],
+    expectedEvidence: [...(summary?.expectedEvidence ?? [])],
   };
 
   for (const line of lines) {
@@ -566,6 +651,19 @@ function parseAssessmentChallengeContract(challenge: {
     const baseCommitMatch = line.match(/^base commit\s*:\s*([a-f0-9]{7,40})$/i);
     if (baseCommitMatch?.[1] && !contract.baseCommitSha) {
       contract.baseCommitSha = baseCommitMatch[1].trim();
+      section = null;
+      continue;
+    }
+    const pullRequestUrlMatch = line.match(/^pull request url\s*:\s*(.+)$/i);
+    if (pullRequestUrlMatch?.[1] && !contract.pullRequestUrl) {
+      contract.pullRequestUrl = normalizeGitHubPullRequestUrl(pullRequestUrlMatch[1]);
+      section = null;
+      continue;
+    }
+    const pullRequestMatch = line.match(/^(?:pull request|pr)\s*:\s*#?(\d+)$/i);
+    if (pullRequestMatch?.[1] && !contract.githubPrNumber) {
+      const parsedPrNumber = Number.parseInt(pullRequestMatch[1], 10);
+      contract.githubPrNumber = Number.isInteger(parsedPrNumber) && parsedPrNumber > 0 ? parsedPrNumber : null;
       section = null;
       continue;
     }
@@ -585,6 +683,14 @@ function parseAssessmentChallengeContract(challenge: {
       section = 'successCriteria';
       continue;
     }
+    if (/^match proof\s*:?\s*$/i.test(line)) {
+      section = 'matchProof';
+      continue;
+    }
+    if (/^assessment fit\s*:?\s*$/i.test(line)) {
+      section = 'assessmentFit';
+      continue;
+    }
     if (/^expected evidence\s*:?\s*$/i.test(line)) {
       section = 'expectedEvidence';
       continue;
@@ -595,24 +701,33 @@ function parseAssessmentChallengeContract(challenge: {
     }
     if (!section) continue;
     const item = normalizePacketListItem(line);
-    if (item.length > 0) contract[section].push(item);
+    if (item.length > 0 && !contract[section].includes(item)) contract[section].push(item);
   }
+  contract.pullRequestUrl = contract.pullRequestUrl
+    ?? normalizeGitHubPullRequestUrl(firstLocatorString(challenge.locator, ['pullRequestUrl', 'githubPullRequestUrl', 'prUrl']))
+    ?? gitHubPullRequestUrlForRepo(contract.repositoryUrl, contract.githubPrNumber);
 
   return contract.repositoryUrl
+    || contract.githubPrNumber
+    || contract.pullRequestUrl
     || contract.baseCommitSha
     || contract.task
+    || contract.assessmentFit.length > 0
+    || contract.matchProof.length > 0
     || contract.successCriteria.length > 0
     || contract.expectedEvidence.length > 0
     ? contract
     : null;
 }
 
-function assessmentChallengeSummary(challenge: {
-  exactText: string;
-  sourceRefType: string;
-} | null | undefined): string | null {
+function assessmentChallengeSummary(challenge: AssessmentProgressSnapshot['challenge'] | null | undefined): string | null {
   if (!challenge) return null;
-  const lines = challenge.exactText
+  const summarized = challenge.summary?.task
+    ?? challenge.summary?.successCriteria?.[0]
+    ?? challenge.summary?.expectedEvidence?.[0]
+    ?? null;
+  if (summarized) return compactEvidenceText(summarized);
+  const lines = (challenge.exactText ?? '')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
@@ -730,7 +845,13 @@ function assessmentEvidenceSnippetLabel(sourceRefType: string): string {
     case 'ai_user_prompt_blocked':
       return 'Blocked AI prompt evidence';
     case 'ai_agent_response':
+    case 'agent_response':
       return 'Agent response evidence';
+    case 'ai_agent_diagnostic':
+    case 'agent_diagnostic':
+      return 'Agent diagnostic evidence';
+    case 'agent_status':
+      return 'Agent status evidence';
     case 'ai_usage_event':
       return 'AI evaluator trace';
     case 'room_chat_message':
@@ -806,6 +927,10 @@ function assessmentSourceRefCount(progress: AssessmentProgressSnapshot | null, k
   return progress?.sourceRefCounts.find((item) => item.kind === kind)?.count ?? 0;
 }
 
+function assessmentEvidenceCount(progress: AssessmentProgressSnapshot | null, kind: string): number {
+  return progress?.evidenceCounts.find((item) => item.kind === kind)?.count ?? 0;
+}
+
 function sourceRefCountLabel(count: number, singular: string, plural = `${singular}s`): string | null {
   if (count <= 0) return null;
   return `${count} ${count === 1 ? singular : plural}`;
@@ -817,6 +942,10 @@ function readableList(parts: string[]): string {
   return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
 }
 
+function pluralVerb(parts: readonly unknown[], singular: string, plural: string): string {
+  return parts.length === 1 ? singular : plural;
+}
+
 function assessmentHasSatisfiedCoverage(
   progress: AssessmentProgressSnapshot | null,
   label: string,
@@ -825,6 +954,19 @@ function assessmentHasSatisfiedCoverage(
   const coverageItem = progress?.evaluation?.evidenceCoverage?.requiredForEvaluation
     .find((item) => item.label === label);
   return coverageItem ? coverageItem.satisfied : fallback;
+}
+
+function assessmentReadinessHasConfidenceLimitations(progress: AssessmentProgressSnapshot | null): boolean {
+  return Boolean(
+    progress?.readiness?.isReadyForEvaluation
+    && progress.readiness.confidence.some((item) => !item.satisfied),
+  );
+}
+
+function assessmentProgressDisplayLabel(progress: AssessmentProgressSnapshot | null): string {
+  if (!progress) return 'Not started';
+  if (assessmentReadinessHasConfidenceLimitations(progress)) return 'Ready with limitations';
+  return progress.readiness?.label ?? assessmentProgressStageLabel(progress.stage);
 }
 
 function workspaceAssessmentNextActionTitle(progress: AssessmentProgressSnapshot | null): string {
@@ -839,6 +981,8 @@ function workspaceAssessmentNextActionTitle(progress: AssessmentProgressSnapshot
       return 'Submit commit';
     case 'START_EVALUATION':
       return 'Start evaluation';
+    case 'WAIT_FOR_EVALUATION':
+      return 'Evaluation running';
     case 'REVIEW_EVALUATION':
       return 'Review evaluation';
     case 'RESOLVE_DIAGNOSTIC':
@@ -894,11 +1038,13 @@ function workspaceAssessmentDecisionItem(progress: AssessmentProgressSnapshot | 
   }
 
   if (progress.nextAction === 'START_EVALUATION') {
+    const hasConfidenceLimitations = assessmentReadinessHasConfidenceLimitations(progress);
     return {
       label: 'Decision',
-      value: 'Ready for evaluation',
-      detail: 'Challenge and commit evidence are captured; run source-backed AI or human evaluation before making a hiring decision.',
-      tone: 'neutral',
+      value: hasConfidenceLimitations ? 'Ready with limitations' : 'Ready for evaluation',
+      detail: progress.readiness?.detail
+        ?? 'Challenge and commit evidence are captured; run source-backed AI or human evaluation before making a hiring decision.',
+      tone: hasConfidenceLimitations ? 'watch' : 'neutral',
     };
   }
 
@@ -951,6 +1097,15 @@ function workspaceAssessmentFitItem(input: {
     };
   }
 
+  if (input.progress?.assignmentTrust?.state === 'matched_challenge') {
+    return {
+      label: 'Challenge fit',
+      value: 'Matched task',
+      detail: input.progress.assignmentTrust.detail,
+      tone: 'positive',
+    };
+  }
+
   if (input.setup?.source === 'matched_repo_id' || input.setup?.kind === 'auto_match') {
     return {
       label: 'Challenge fit',
@@ -992,6 +1147,53 @@ function workspaceAssessmentFitItem(input: {
     value: 'No task packet',
     detail: input.setup?.message ?? 'Assign a concrete repo URL, base commit, task, success criteria, and expected evidence.',
     tone: 'blocked',
+  };
+}
+
+function workspaceAssessmentSelectionRationaleItem(input: {
+  progress: AssessmentProgressSnapshot | null;
+  setup: AssessmentSetupProjection | null | undefined;
+}): WorkspaceAssessmentReadoutItem | null {
+  const setup = input.setup;
+  const progressMatched = input.progress?.assignmentTrust?.state === 'matched_challenge';
+  const setupIsManual = setup?.source === 'recruiter_manual_override'
+    || setup?.kind === 'manual_open_source_task';
+  if (progressMatched && setupIsManual) {
+    const trustDetail = input.progress?.assignmentTrust?.detail?.trim()
+      || 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside captured candidate work.';
+    return {
+      label: 'Selection rationale',
+      value: 'PIPE-selected repo task',
+      detail: [
+        `${trustDetail} The durable assignment is shown instead of handing the candidate a generic repo.`,
+        'Lower-ranked or withheld challenges stay secondary once the assessment session is bound to this source-backed packet.',
+        'The assignment proves challenge fit only; the hiring signal still depends on the captured branch commit, diff, tests or verification gap, transcript/chat, AI-use trail, evaluator report, and human review.',
+        'Next: Run the controlled workspace assessment and review the source-backed evidence before making a hiring decision.',
+      ].join(' '),
+      tone: 'positive',
+    };
+  }
+
+  const rationale = setup?.selectionRationale ?? null;
+  if (!rationale) return null;
+
+  const tone: CodeReviewNextStepTone = setup?.blocksPositiveAssessment
+    ? 'blocked'
+    : setup?.source === 'recruiter_manual_override' || setup?.kind === 'manual_open_source_task'
+      ? 'watch'
+      : 'positive';
+  const detail = [
+    rationale.whyThisChallenge,
+    rationale.whyNotAlternatives,
+    rationale.residualRisk,
+    `Next: ${rationale.nextAction}`,
+  ].filter((item) => item.trim().length > 0).join(' ');
+
+  return {
+    label: 'Selection rationale',
+    value: rationale.summary,
+    detail,
+    tone,
   };
 }
 
@@ -1105,19 +1307,357 @@ function workspaceAssessmentNextActionItem(progress: AssessmentProgressSnapshot 
   };
 }
 
+function workspaceAssessmentProofDecisionLabelForProgress(
+  label: string,
+  progress: AssessmentProgressSnapshot | null,
+): string {
+  const isMatchedChallenge = progress?.assignmentTrust?.state === 'matched_challenge';
+  switch (label) {
+    case 'challenge_packet':
+      return isMatchedChallenge ? 'PIPE-matched challenge packet' : 'Complete challenge packet';
+    case 'Complete challenge packet':
+      return isMatchedChallenge ? 'PIPE-matched challenge packet' : label;
+    case 'work_evidence':
+      return 'Candidate work evidence';
+    case 'assessment_commit':
+    case 'git_commit':
+      return 'Assessment branch commit';
+    case 'code_diff':
+      return 'Code diff';
+    case 'test_run':
+      return 'Test or verification run';
+    case 'terminal_activity':
+      return 'Terminal activity';
+    case 'code_editor_activity':
+      return 'Code editor activity';
+    case 'ai_assistance':
+      return 'AI-use trail';
+    case 'workspace_captured_commit':
+      return 'Workspace-captured commit';
+    case 'transcript_or_chat':
+      return 'Explanation trail';
+    default:
+      return assessmentProofDisplayLabel(label);
+  }
+}
+
+function workspaceAssessmentSourceRefBasisLabel(
+  kind: string,
+  progress: AssessmentProgressSnapshot | null,
+): string {
+  switch (kind) {
+    case 'review_challenge_packet':
+      return progress?.assignmentTrust?.state === 'matched_challenge'
+        ? 'PIPE-matched challenge packet'
+        : 'challenge packet';
+    case 'open_source_challenge_packet':
+    case 'repo_task_challenge_packet':
+    case 'challenge_packet':
+      return 'challenge packet';
+    case 'git_commit':
+      return 'git commit';
+    case 'code_diff':
+      return 'code diff';
+    case 'test_run':
+      return 'test run';
+    case 'terminal_command':
+      return 'terminal command';
+    case 'terminal_output':
+      return 'terminal output';
+    case 'code_server_file_observation':
+      return 'file observation';
+    case 'room_chat_message':
+      return 'room chat message';
+    case 'meeting_transcript_segment':
+      return 'transcript segment';
+    case 'ai_user_prompt':
+      return 'AI prompt';
+    case 'ai_agent_response':
+    case 'agent_response':
+      return 'agent response';
+    default:
+      return kind.replace(/[_-]+/g, ' ');
+  }
+}
+
+function workspaceAssessmentSourceRefBasis(progress: AssessmentProgressSnapshot | null): string {
+  const counts = progress?.sourceRefCounts ?? [];
+  if (counts.length === 0) return 'No source refs captured yet.';
+  const priority = new Map([
+    ['review_challenge_packet', 0],
+    ['open_source_challenge_packet', 1],
+    ['repo_task_challenge_packet', 2],
+    ['challenge_packet', 3],
+    ['git_commit', 4],
+    ['code_diff', 5],
+    ['test_run', 6],
+    ['terminal_command', 7],
+    ['terminal_output', 8],
+    ['code_server_file_observation', 9],
+    ['room_chat_message', 10],
+    ['meeting_transcript_segment', 11],
+    ['ai_user_prompt', 12],
+    ['ai_agent_response', 13],
+    ['agent_response', 14],
+  ]);
+  const parts = [...counts]
+    .filter((item) => item.count > 0)
+    .sort((a, b) => (priority.get(a.kind) ?? 100) - (priority.get(b.kind) ?? 100)
+      || a.kind.localeCompare(b.kind))
+    .slice(0, 5)
+    .map((item) => sourceRefCountLabel(
+      item.count,
+      workspaceAssessmentSourceRefBasisLabel(item.kind, progress),
+    ))
+    .filter((item): item is string => Boolean(item));
+  return parts.length > 0 ? readableList(parts) : 'No source refs captured yet.';
+}
+
+function workspaceAssessmentValidityProof(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem[] {
+  const requiredProof = assessmentRequiredProofItems(progress);
+  const confidenceSignals = assessmentConfidenceSignalItems(progress);
+  const satisfiedRequired = requiredProof
+    .filter((item) => item.satisfied)
+    .map((item) => workspaceAssessmentProofDecisionLabelForProgress(item.label, progress));
+  const missingRequired = requiredProof
+    .filter((item) => !item.satisfied)
+    .map((item) => workspaceAssessmentProofDecisionLabelForProgress(item.label, progress));
+  const satisfiedConfidence = confidenceSignals
+    .filter((item) => item.satisfied)
+    .map((item) => workspaceAssessmentProofDecisionLabelForProgress(item.label, progress));
+  const missingConfidence = confidenceSignals
+    .filter((item) => !item.satisfied)
+    .map((item) => workspaceAssessmentProofDecisionLabelForProgress(item.label, progress));
+
+  const validityItem: WorkspaceAssessmentReadoutItem = !progress
+    ? {
+        label: 'Valid because',
+        value: 'Not valid yet',
+        detail: 'No source-backed assessment session exists yet.',
+        tone: 'blocked',
+      }
+    : missingRequired.length > 0
+      ? {
+          label: 'Valid because',
+          value: 'Not valid yet',
+          detail: `Missing required source-backed proof: ${readableList(missingRequired)}.`,
+          tone: progress.hasChallengePacket ? 'watch' : 'blocked',
+        }
+      : {
+          label: 'Valid because',
+          value: 'Required proof is source-backed',
+          detail: satisfiedRequired.length > 0
+            ? `${readableList(satisfiedRequired)} ${pluralVerb(satisfiedRequired, 'is', 'are')} source-backed.`
+            : 'Required source-backed proof is present.',
+          tone: 'positive',
+        };
+
+  const calibrationItem: WorkspaceAssessmentReadoutItem = missingRequired.length > 0
+    ? {
+        label: 'Still calibrate because',
+        value: 'Required proof missing',
+        detail: 'Resolve the missing required proof before using this assessment as hiring signal.',
+        tone: 'blocked',
+      }
+    : missingConfidence.length > 0
+      ? {
+          label: 'Still calibrate because',
+          value: 'Confidence gaps remain',
+          detail: `${readableList(missingConfidence)} ${pluralVerb(missingConfidence, 'is', 'are')} not captured.`,
+          tone: 'watch',
+        }
+      : {
+          label: 'Still calibrate because',
+          value: 'No confidence gaps flagged',
+          detail: satisfiedConfidence.length > 0
+            ? `${readableList(satisfiedConfidence)} ${pluralVerb(satisfiedConfidence, 'is', 'are')} captured.`
+            : 'No optional confidence signals were returned by the evaluator.',
+          tone: 'positive',
+        };
+
+  const useAsItem: WorkspaceAssessmentReadoutItem = !progress || missingRequired.length > 0
+    ? {
+        label: 'Use as',
+        value: 'Do not use for hiring decision',
+        detail: 'Treat this interview as setup or raw evidence until required proof exists.',
+        tone: 'blocked',
+      }
+    : progress.humanDecision
+      ? {
+          label: 'Use as',
+          value: 'Use with recorded human decision',
+          detail: 'A reviewer decision is tied to the source-backed assessment report and commit evidence.',
+          tone: progress.humanDecision.decision === 'advance' ? 'positive' : 'watch',
+        }
+      : progress.evaluation?.status === 'EVALUATED'
+        ? {
+            label: 'Use as',
+            value: 'Use as source-backed signal, not an automatic decision',
+            detail: 'Review the evaluator claims, cautions, diff, and evidence trail before advancing or rejecting.',
+            tone: assessmentEvaluationNeedsHumanCorrectnessReview(progress.evaluation) ? 'watch' : 'positive',
+          }
+        : {
+            label: 'Use as',
+            value: 'Use after evaluation',
+            detail: progress.nextActionLabel ?? 'Run source-backed evaluation before treating this work as hiring signal.',
+            tone: 'neutral',
+          };
+
+  return [
+    validityItem,
+    calibrationItem,
+    {
+      label: 'Evidence basis',
+      value: 'Source refs captured',
+      detail: workspaceAssessmentSourceRefBasis(progress),
+      tone: progress?.sourceRefCounts.length ? 'positive' : 'watch',
+    },
+    useAsItem,
+  ];
+}
+
+function workspaceAssessmentCollaborationItem(progress: AssessmentProgressSnapshot): WorkspaceAssessmentReadoutItem {
+  const chatMessageCount = assessmentSourceRefCount(progress, 'room_chat_message');
+  const sessionEventCount = assessmentSourceRefCount(progress, 'meeting_session_event');
+  const collaborationParts = [
+    sourceRefCountLabel(chatMessageCount, 'room chat message'),
+    sourceRefCountLabel(sessionEventCount, 'room session event'),
+  ].filter((item): item is string => Boolean(item));
+
+  return {
+    label: 'Collaboration',
+    value: progress.hasMessageEvidence ? 'Room chat captured' : 'No chat evidence captured',
+    detail: progress.hasMessageEvidence
+      ? collaborationParts.length > 0
+        ? `${readableList(collaborationParts)} tied to the assessment evidence trail.`
+        : 'Candidate and recruiter messages are present as source-backed assessment evidence.'
+      : 'Candidate collaboration is unobserved for this assessment session.',
+    tone: progress.hasMessageEvidence ? 'positive' : 'watch',
+  };
+}
+
+function workspaceAssessmentProcessTelemetryItem(progress: AssessmentProgressSnapshot): WorkspaceAssessmentReadoutItem {
+  const workspaceLaunchCount = assessmentSourceRefCount(progress, 'dev_container_workspace_launch');
+  const terminalCommandCount = assessmentSourceRefCount(progress, 'terminal_command');
+  const terminalOutputCount = assessmentSourceRefCount(progress, 'terminal_output');
+  const fileObservationCount = assessmentSourceRefCount(progress, 'code_server_file_observation');
+  const editorSaveCount = assessmentSourceRefCount(progress, 'code_editor_save');
+  const telemetryParts = [
+    sourceRefCountLabel(workspaceLaunchCount, 'workspace launch'),
+    sourceRefCountLabel(terminalCommandCount, 'terminal command'),
+    sourceRefCountLabel(terminalOutputCount, 'terminal output'),
+    sourceRefCountLabel(fileObservationCount, 'file observation'),
+    sourceRefCountLabel(editorSaveCount, 'editor save'),
+  ].filter((item): item is string => Boolean(item));
+  const hasTelemetry = progress.hasDevContainerEvidence || progress.hasToolUsageEvidence || telemetryParts.length > 0;
+
+  return {
+    label: 'Process telemetry',
+    value: hasTelemetry ? 'Workspace/tool telemetry captured' : 'No workspace telemetry captured',
+    detail: hasTelemetry
+      ? telemetryParts.length > 0
+        ? `${readableList(telemetryParts)} tied to the assessment evidence trail.`
+        : 'Workspace or tool activity is present as source-backed assessment evidence.'
+      : 'Candidate terminal, workspace, and code-server activity is unobserved for this assessment session.',
+    tone: hasTelemetry ? 'positive' : 'watch',
+  };
+}
+
+function workspaceAssessmentReviewPathItem(progress: AssessmentProgressSnapshot): WorkspaceAssessmentReadoutItem {
+  const commit = progress.commit;
+  if (!commit) {
+    return {
+      label: 'Review path',
+      value: 'No commit captured',
+      detail: 'PIPE has not captured a commit, GitHub URL, or code_diff source evidence for this assessment yet.',
+      tone: 'blocked',
+    };
+  }
+
+  const sourceRepo = repoLabelFromUrl(commit.repositoryUrl) ?? 'source repository';
+  const forkRepo = repoLabelFromUrl(commit.forkRepositoryUrl);
+  const branch = commit.branchName ? `branch ${commit.branchName}` : 'branch not captured';
+  const shortSha = shortCommitSha(commit.commitSha);
+  const hasCodeDiff = assessmentSourceRefCount(progress, 'code_diff') > 0;
+  const upstreamPullRequestUrl = commit.upstreamPullRequestUrl?.trim() || null;
+  const upstreamPullRequestLabel = upstreamPullRequestUrl
+    ? upstreamPullRequestUrl.replace(/^https:\/\/github\.com\//, '')
+    : null;
+
+  if (upstreamPullRequestUrl && !commit.upstreamPrConsent) {
+    return {
+      label: 'Review path',
+      value: 'Upstream blocked',
+      detail: `${upstreamPullRequestUrl} was supplied without candidate consent; do not treat it as upstream submission proof. Review ${shortSha} from ${forkRepo ?? sourceRepo} and the captured evidence inside PIPE.`,
+      tone: 'blocked',
+    };
+  }
+
+  if (upstreamPullRequestUrl) {
+    return {
+      label: 'Review path',
+      value: 'Consented upstream PR candidate',
+      detail: `Review upstream PR ${upstreamPullRequestLabel} only as candidate-approved tracking; keep human review before any upstream merge or submission.`,
+      tone: 'positive',
+    };
+  }
+
+  if (commit.commitUrl && forkRepo) {
+    return {
+      label: 'Review path',
+      value: 'Fork commit ready',
+      detail: `Review ${shortSha} on ${forkRepo} ${branch} against ${sourceRepo}. Upstream PRs remain opt-in after human review.`,
+      tone: 'positive',
+    };
+  }
+
+  if (commit.commitUrl) {
+    return {
+      label: 'Review path',
+      value: 'GitHub commit ready',
+      detail: `Review ${shortSha} from the captured GitHub commit URL against ${sourceRepo}; fork metadata was not captured.`,
+      tone: 'positive',
+    };
+  }
+
+  if (hasCodeDiff) {
+    return {
+      label: 'Review path',
+      value: 'Workspace diff ready',
+      detail: `No remote commit URL was captured; PIPE preserved exact code_diff evidence for ${shortSha} on ${sourceRepo} ${branch}.`,
+      tone: 'watch',
+    };
+  }
+
+  return {
+    label: 'Review path',
+    value: 'Review artifact missing',
+    detail: `Commit ${shortSha} exists, but PIPE has no GitHub commit URL or exact code_diff evidence. Do not score the implementation until reviewable proof is attached.`,
+    tone: 'blocked',
+  };
+}
+
 function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem[] {
   if (!progress?.commit) return [];
 
   const changedFiles = assessmentChangedFiles(progress);
   const aiPromptCount = assessmentSourceRefCount(progress, 'ai_user_prompt');
   const aiBlockedPromptCount = assessmentSourceRefCount(progress, 'ai_user_prompt_blocked');
-  const aiResponseCount = assessmentSourceRefCount(progress, 'ai_agent_response');
+  const aiResponseCount = assessmentSourceRefCount(progress, 'ai_agent_response')
+    + assessmentSourceRefCount(progress, 'agent_response');
+  const aiDiagnosticCount = assessmentSourceRefCount(progress, 'ai_agent_diagnostic')
+    + assessmentSourceRefCount(progress, 'agent_diagnostic');
+  const aiStatusCount = assessmentSourceRefCount(progress, 'agent_status');
   const aiEvidenceParts = [
     sourceRefCountLabel(aiPromptCount, 'prompt'),
     sourceRefCountLabel(aiBlockedPromptCount, 'blocked prompt'),
     sourceRefCountLabel(aiResponseCount, 'agent response'),
+    sourceRefCountLabel(aiDiagnosticCount, 'bridge diagnostic'),
+    sourceRefCountLabel(aiStatusCount, 'bridge status', 'bridge statuses'),
   ].filter((item): item is string => Boolean(item));
-  const aiTransparencyDetail = progress.hasAiInteraction
+  const hasAiAssistanceEvidence = aiPromptCount + aiBlockedPromptCount + aiResponseCount > 0;
+  const hasAiBridgeEvidence = progress.hasAiInteraction || aiEvidenceParts.length > 0;
+  const aiTransparencyDetail = hasAiBridgeEvidence
     ? aiEvidenceParts.length > 0
       ? `${readableList(aiEvidenceParts)} captured from the real agent bridge.`
       : 'AI prompts, responses, or bridge traces are part of the source-backed evidence trail.'
@@ -1190,6 +1730,7 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
       detail: commitDetail,
       tone: changedFiles.length > 0 ? 'positive' : 'watch',
     },
+    workspaceAssessmentReviewPathItem(progress),
     {
       label: 'Verification',
       value: progress.hasTestEvidence
@@ -1202,6 +1743,7 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
         : 'Treat implementation quality as lower-confidence until test output or a source-backed explanation is reviewed.',
       tone: progress.hasTestEvidence ? 'positive' : 'watch',
     },
+    workspaceAssessmentProcessTelemetryItem(progress),
     {
       label: 'Upstream PR',
       value: progress.commit.upstreamPullRequestUrl && progress.commit.upstreamPrConsent
@@ -1212,13 +1754,82 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
         : 'Default assessment output remains the fork or assessment branch; upstream PRs require later review and explicit consent.',
       tone: progress.commit.upstreamPullRequestUrl && progress.commit.upstreamPrConsent ? 'positive' : 'neutral',
     },
+    workspaceAssessmentCollaborationItem(progress),
     {
       label: 'AI transparency',
-      value: progress.hasAiInteraction ? 'AI use observed' : 'No AI evidence captured',
+      value: hasAiAssistanceEvidence
+        ? 'AI use observed'
+        : hasAiBridgeEvidence
+          ? 'AI bridge observed'
+          : 'No AI evidence captured',
       detail: aiTransparencyDetail,
-      tone: progress.hasAiInteraction ? 'neutral' : 'watch',
+      tone: hasAiBridgeEvidence ? 'neutral' : 'watch',
     },
     reviewItem,
+  ];
+}
+
+function workspaceAssessmentAiUseReceipt(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem[] {
+  if (!progress?.evaluation) return [];
+
+  const aiInteractionEvents = assessmentEvidenceCount(progress, 'ai_interaction');
+  const aiPromptCount = assessmentSourceRefCount(progress, 'ai_user_prompt');
+  const aiBlockedPromptCount = assessmentSourceRefCount(progress, 'ai_user_prompt_blocked');
+  const aiResponseCount = assessmentSourceRefCount(progress, 'ai_agent_response')
+    + assessmentSourceRefCount(progress, 'agent_response');
+  const aiDiagnosticCount = assessmentSourceRefCount(progress, 'ai_agent_diagnostic')
+    + assessmentSourceRefCount(progress, 'agent_diagnostic');
+  const aiStatusCount = assessmentSourceRefCount(progress, 'agent_status');
+  const promptResponseParts = [
+    sourceRefCountLabel(aiPromptCount, 'AI prompt'),
+    sourceRefCountLabel(aiBlockedPromptCount, 'blocked prompt'),
+    sourceRefCountLabel(aiResponseCount, 'agent response'),
+  ].filter((item): item is string => Boolean(item));
+  const bridgeParts = [
+    sourceRefCountLabel(aiDiagnosticCount, 'bridge diagnostic'),
+    sourceRefCountLabel(aiStatusCount, 'bridge status', 'bridge statuses'),
+    sourceRefCountLabel(aiInteractionEvents, 'AI interaction event'),
+  ].filter((item): item is string => Boolean(item));
+  const hasPromptResponseProof = promptResponseParts.length > 0;
+  const hasBridgeProof = progress.hasAiInteraction || bridgeParts.length > 0;
+
+  return [
+    {
+      label: 'AI-use state',
+      value: hasPromptResponseProof
+        ? 'AI assistance observed'
+        : hasBridgeProof
+          ? 'AI bridge observed'
+          : 'AI use unobserved',
+      detail: hasPromptResponseProof
+        ? `${readableList(promptResponseParts)} captured as exact source-backed evidence.`
+        : hasBridgeProof
+          ? 'AI interaction event recorded, but no prompt or response source refs were returned.'
+          : 'No AI prompt, response, bridge status, or bridge diagnostic source refs were captured.',
+      tone: hasPromptResponseProof ? 'positive' : hasBridgeProof ? 'watch' : 'neutral',
+    },
+    {
+      label: 'Prompt/response proof',
+      value: hasPromptResponseProof ? 'Source refs captured' : 'No prompt/response source refs',
+      detail: hasPromptResponseProof
+        ? `Reviewer can inspect ${readableList(promptResponseParts)} before judging AI collaboration quality.`
+        : 'Treat AI use as unobserved when prompt/response evidence is missing.',
+      tone: hasPromptResponseProof ? 'positive' : 'watch',
+    },
+    {
+      label: 'Bridge proof',
+      value: bridgeParts.length > 0 ? 'Bridge telemetry captured' : 'No bridge telemetry',
+      detail: bridgeParts.length > 0
+        ? `${readableList(bridgeParts)} captured from the real agent bridge or assessment event stream.`
+        : 'No Clippy/Devin bridge diagnostic or status evidence is attached to this report.',
+      tone: bridgeParts.length > 0 ? 'neutral' : 'watch',
+    },
+    {
+      label: 'Assessment boundary',
+      value: 'No inference from silence',
+      detail: 'Missing AI evidence is a confidence gap, not proof that the candidate avoided AI.',
+      tone: 'neutral',
+    },
   ];
 }
 
@@ -1267,6 +1878,473 @@ function workspaceAssessmentReviewerReceipt(progress: AssessmentProgressSnapshot
   ];
 }
 
+function workspaceAssessmentReviewPacketItems(
+  packet: AssessmentProgressReviewPacketSummary | null,
+): WorkspaceAssessmentReadoutItem[] {
+  if (!packet) return [];
+
+  const challengeRepo = repoLabelFromUrl(packet.challenge.repositoryUrl) ?? packet.challenge.repositoryUrl;
+  const challengeMeta = [
+    challengeRepo ? `Repo ${challengeRepo}` : null,
+    packet.challenge.baseCommitSha ? `Base ${shortCommitSha(packet.challenge.baseCommitSha)}` : null,
+    packet.challenge.pullRequestUrl ? `PR ${packet.challenge.pullRequestUrl.replace(/^https:\/\/github\.com\//, '')}` : null,
+    packet.challenge.contract.isComplete
+      ? 'challenge contract complete'
+      : `missing ${readableList(packet.challenge.contract.missingFields.map(sentenceCaseToken))}`,
+  ].filter((item): item is string => Boolean(item));
+  const submission = packet.submission;
+  const submissionDetail = submission
+    ? [
+        submission.branchName ? `Branch ${submission.branchName}` : null,
+        submission.repositoryUrl ? `Repo ${repoLabelFromUrl(submission.repositoryUrl) ?? submission.repositoryUrl}` : null,
+        submission.submissionSourceLabel,
+        submission.integrity.label,
+        submission.challengeBinding.label,
+        `${submission.changedFileCount} changed ${submission.changedFileCount === 1 ? 'file' : 'files'}`,
+      ].filter((item): item is string => Boolean(item)).join(' · ')
+    : 'No submitted commit is attached to this review packet.';
+  const topSourceRefs = Object.entries(packet.evidence.sourceRefTypeCounts)
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 4)
+    .map(([kind, count]) => `${count} ${sentenceCaseToken(kind)}`);
+  const evidenceDetail = [
+    `${packet.evidence.sourceRefCount} source ${packet.evidence.sourceRefCount === 1 ? 'ref' : 'refs'}`,
+    topSourceRefs.length > 0 ? readableList(topSourceRefs) : null,
+    `${packet.evaluation.claimCount} claim${packet.evaluation.claimCount === 1 ? '' : 's'}`,
+    `${packet.evaluation.diagnosticCount} diagnostic${packet.evaluation.diagnosticCount === 1 ? '' : 's'}`,
+  ].filter((item): item is string => Boolean(item)).join(' · ');
+
+  return [
+    {
+      label: 'Report artifact',
+      value: packet.schemaVersion,
+      detail: 'Immutable source-backed reviewer packet persisted inside the final assessment report.',
+      tone: 'positive',
+    },
+    {
+      label: 'Challenge packet',
+      value: packet.challenge.focus ?? packet.challenge.assignmentTrust.label,
+      detail: [packet.challenge.assignmentTrust.label, ...challengeMeta].join(' · '),
+      tone: packet.challenge.contract.isComplete ? 'positive' : 'watch',
+    },
+    {
+      label: 'Submitted work',
+      value: submission?.commitSha ? shortCommitSha(submission.commitSha) : 'No commit attached',
+      detail: submissionDetail,
+      tone: submission?.challengeBinding.tone === 'verified' && submission.integrity.tone === 'verified'
+        ? 'positive'
+        : submission
+          ? 'watch'
+          : 'blocked',
+    },
+    {
+      label: 'Evidence packet',
+      value: packet.evidence.readiness.label,
+      detail: `${packet.evidence.readiness.detail} ${evidenceDetail}`.trim(),
+      tone: packet.evidence.readiness.isUsableHiringSignal
+        ? 'positive'
+        : packet.evidence.readiness.isReadyForEvaluation
+          ? 'neutral'
+          : 'watch',
+    },
+  ];
+}
+
+function assessmentEvidenceBundleSourceRefCount(bundle: AssessmentEvidenceBundle): number {
+  return bundle.timeline.reduce((total, event) => total + event.sourceRefs.length, 0);
+}
+
+function assessmentEvidenceBundleSourceRefTypeCounts(bundle: AssessmentEvidenceBundle): Array<{ kind: string; count: number }> {
+  const counts = new Map<string, number>();
+  bundle.timeline.forEach((event) => {
+    event.sourceRefs.forEach((sourceRef) => {
+      counts.set(sourceRef.sourceRefType, (counts.get(sourceRef.sourceRefType) ?? 0) + 1);
+    });
+  });
+  return [...counts.entries()]
+    .map(([kind, count]) => ({ kind, count }))
+    .sort((a, b) => b.count - a.count || a.kind.localeCompare(b.kind));
+}
+
+function assessmentEvidenceBundleTopSourceRefs(bundle: AssessmentEvidenceBundle): string {
+  const parts = assessmentEvidenceBundleSourceRefTypeCounts(bundle)
+    .slice(0, 5)
+    .map((item) => sourceRefCountLabel(
+      item.count,
+      workspaceAssessmentSourceRefBasisLabel(item.kind, null),
+    ))
+    .filter((item): item is string => Boolean(item));
+  return parts.length > 0 ? readableList(parts) : 'No source refs are attached to the final bundle.';
+}
+
+function assessmentEvidenceBundleMissingProof(bundle: AssessmentEvidenceBundle): string[] {
+  return [
+    bundle.completeness.hasChallengePacket ? null : 'challenge packet',
+    bundle.completeness.hasCommitSubmission ? null : 'submitted commit',
+    bundle.completeness.hasEvaluationReport ? null : 'evaluation report',
+    bundle.completeness.hasHumanDecision ? null : 'human decision',
+  ].filter((item): item is string => Boolean(item));
+}
+
+function assessmentEvidenceBundleReviewabilityItem(bundle: AssessmentEvidenceBundle): WorkspaceAssessmentReadoutItem {
+  const missing = assessmentEvidenceBundleMissingProof(bundle);
+  if (bundle.completeness.isReviewable && missing.length === 0) {
+    return {
+      label: 'Reviewability',
+      value: 'Final packet reviewable',
+      detail: 'Challenge, commit, evaluator report, source refs, and human decision are assembled into one audit packet.',
+      tone: 'positive',
+    };
+  }
+  if (bundle.completeness.isReviewable) {
+    return {
+      label: 'Reviewability',
+      value: 'Reviewable, decision pending',
+      detail: `The candidate work and evaluator report are present. Still missing ${readableList(missing)}.`,
+      tone: 'watch',
+    };
+  }
+  return {
+    label: 'Reviewability',
+    value: 'Packet incomplete',
+    detail: `Missing ${readableList(missing)} before this is a final buyer-ready assessment packet.`,
+    tone: 'blocked',
+  };
+}
+
+function assessmentEvidenceBundleReadout(bundle: AssessmentEvidenceBundle): WorkspaceAssessmentReadoutItem[] {
+  const sourceRefCount = assessmentEvidenceBundleSourceRefCount(bundle);
+  const evaluationClaimCount = bundle.evaluation?.claims.length ?? 0;
+  const evaluationDiagnosticCount = bundle.evaluation?.diagnostics.length ?? 0;
+  return [
+    {
+      label: 'Bundle artifact',
+      value: bundle.schemaVersion,
+      detail: `Generated ${formatDate(bundle.generatedAt, 'just now')} from the durable assessment session in state ${sentenceCaseToken(bundle.assessment.state)}.`,
+      tone: 'positive',
+    },
+    assessmentEvidenceBundleReviewabilityItem(bundle),
+    {
+      label: 'Timeline',
+      value: `${bundle.timeline.length} event${bundle.timeline.length === 1 ? '' : 's'} · ${sourceRefCount} source ${sourceRefCount === 1 ? 'ref' : 'refs'}`,
+      detail: assessmentEvidenceBundleTopSourceRefs(bundle),
+      tone: sourceRefCount > 0 ? 'positive' : 'blocked',
+    },
+    {
+      label: 'Evaluation',
+      value: bundle.evaluation
+        ? assessmentEvaluationStatusLabel(bundle.evaluation.status)
+        : 'No report',
+      detail: bundle.evaluation
+        ? `${bundle.evaluation.summary} ${evaluationClaimCount} cited ${evaluationClaimCount === 1 ? 'claim' : 'claims'} and ${evaluationDiagnosticCount} ${evaluationDiagnosticCount === 1 ? 'diagnostic' : 'diagnostics'}.`
+        : 'Run source-backed evaluation before relying on the submitted work.',
+      tone: bundle.evaluation?.status === 'EVALUATED' ? 'positive' : 'watch',
+    },
+    {
+      label: 'Human decision',
+      value: bundle.humanDecision
+        ? assessmentHumanDecisionLabel(bundle.humanDecision.decision)
+        : 'Not recorded',
+      detail: bundle.humanDecision
+        ? `${bundle.humanDecision.summary} Anchored to ${bundle.humanDecision.sourceRefCount} source ${bundle.humanDecision.sourceRefCount === 1 ? 'ref' : 'refs'}.`
+        : 'A reviewer still needs to inspect the report, diff, evidence gaps, and commit before finalizing the hiring decision.',
+      tone: bundle.humanDecision
+        ? bundle.humanDecision.decision === 'advance' ? 'positive' : 'watch'
+        : 'watch',
+    },
+  ];
+}
+
+function assessmentEvidenceBundlePreviewEvents(bundle: AssessmentEvidenceBundle): AssessmentEvidenceBundleEvent[] {
+  return [...bundle.timeline]
+    .sort((a, b) => b.sequence - a.sequence)
+    .slice(0, 5)
+    .reverse();
+}
+
+function assessmentEvidenceBundleEventLabel(event: AssessmentEvidenceBundleEvent): string {
+  switch (event.kind) {
+    case 'challenge_assigned':
+      return 'Challenge assigned';
+    case 'commit_submission':
+      return 'Commit submitted';
+    case 'assessment_evaluation_requested':
+      return 'Evaluation requested';
+    case 'assessment_evaluation_completed':
+      return 'Evaluation completed';
+    case 'human_decision':
+      return 'Human decision';
+    case 'room_chat_message':
+      return 'Room chat';
+    case 'terminal_command':
+      return 'Terminal command';
+    case 'ai_interaction':
+      return 'AI interaction';
+    default:
+      return sentenceCaseToken(event.kind);
+  }
+}
+
+function assessmentEvidenceBundleSourceSnippets(bundle: AssessmentEvidenceBundle): Array<{
+  id: string;
+  label: string;
+  exactText: string;
+}> {
+  const priority = new Map<string, number>([
+    ['code_diff', 0],
+    ['test_run', 1],
+    ['git_commit', 2],
+    ['terminal_command', 3],
+    ['room_chat_message', 4],
+    ['ai_user_prompt', 5],
+    ['ai_agent_response', 6],
+    ['assessment_evaluation_report', 7],
+    ['review_challenge_packet', 8],
+  ]);
+  return bundle.timeline
+    .flatMap((event) => event.sourceRefs.map((sourceRef) => ({
+      id: `${event.sequence}:${sourceRef.sourceRefType}:${sourceRef.sourceRefId}:${sourceRef.evidenceRole}`,
+      label: `${assessmentEvidenceSnippetLabel(sourceRef.sourceRefType)} · ${sentenceCaseToken(sourceRef.evidenceRole)}`,
+      exactText: sourceRef.exactText,
+      priority: priority.get(sourceRef.sourceRefType) ?? 100,
+    })))
+    .filter((sourceRef) => sourceRef.exactText.trim().length > 0)
+    .sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label))
+    .slice(0, 4)
+    .map(({ id, label, exactText }) => ({ id, label, exactText }));
+}
+
+function assessmentEvidenceBundleFilenamePart(value: string | null | undefined, fallback: string): string {
+  const normalized = value
+    ?.trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 72);
+  return normalized && normalized.length > 0 ? normalized : fallback;
+}
+
+function assessmentEvidenceBundleBaseFilename(bundle: AssessmentEvidenceBundle): string {
+  const candidate = assessmentEvidenceBundleFilenamePart(
+    bundle.interview.recipientName ?? bundle.interview.recipientEmail,
+    'candidate',
+  );
+  const assessment = assessmentEvidenceBundleFilenamePart(
+    bundle.interview.title ?? bundle.interview.id,
+    'assessment',
+  );
+  const generatedDate = /^\d{4}-\d{2}-\d{2}/.test(bundle.generatedAt)
+    ? bundle.generatedAt.slice(0, 10)
+    : 'undated';
+  return `pipe-assessment-${candidate}-${assessment}-${generatedDate}`;
+}
+
+function assessmentEvidenceBundleDownloadFilename(bundle: AssessmentEvidenceBundle): string {
+  return `${assessmentEvidenceBundleBaseFilename(bundle)}.json`;
+}
+
+function assessmentEvidenceBundleBriefFilename(bundle: AssessmentEvidenceBundle): string {
+  return `${assessmentEvidenceBundleBaseFilename(bundle)}-brief.md`;
+}
+
+function stringFromRecord(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function markdownBullet(value: string): string {
+  return `- ${value.replace(/\n+/g, ' ').trim()}`;
+}
+
+function markdownBulletList(values: string[], fallback: string): string[] {
+  const cleaned = values.map((value) => value.trim()).filter((value) => value.length > 0);
+  return cleaned.length > 0 ? cleaned.map(markdownBullet) : [markdownBullet(fallback)];
+}
+
+function assessmentEvidenceBundleTaskText(bundle: AssessmentEvidenceBundle): string {
+  const rawTask = bundle.challenge?.summary?.task
+    ?? compactEvidenceText(bundle.challenge?.exactText ?? '', 360)
+    ?? '';
+  const withoutLabel = rawTask.replace(/^task:\s*/i, '').trim();
+  if (!withoutLabel) return 'Not recorded';
+  return `${withoutLabel.slice(0, 1).toUpperCase()}${withoutLabel.slice(1)}`;
+}
+
+function assessmentEvidenceBundleBriefMarkdown(bundle: AssessmentEvidenceBundle): string {
+  const submission = bundle.submission;
+  const challengeSummary = bundle.challenge?.summary ?? null;
+  const evaluationRecommendation = bundle.evaluation
+    ? stringFromRecord(bundle.evaluation.output, 'recommendation')
+    : null;
+  const missingProof = assessmentEvidenceBundleMissingProof(bundle);
+  const sourceRefCounts = assessmentEvidenceBundleSourceRefTypeCounts(bundle)
+    .map((item) => markdownBullet(`${workspaceAssessmentSourceRefBasisLabel(item.kind, null)}: ${item.count}`));
+  const claims = (bundle.evaluation?.claims ?? []).slice(0, 5).map((claim) => {
+    const confidence = claim.confidence === null ? '' : ` (${Math.round(claim.confidence * 100)}% confidence)`;
+    const sourceRefs = sourceRefCountLabel(claim.sourceRefs.length, 'source ref') ?? '0 source refs';
+    return markdownBullet(`${sentenceCaseToken(claim.dimension)}${confidence}: ${claim.narrative} [${sourceRefs}]`);
+  });
+  const diagnostics = (bundle.evaluation?.diagnostics ?? []).slice(0, 5).map((diagnostic) => {
+    const sourceRefs = sourceRefCountLabel(diagnostic.sourceRefs.length, 'source ref') ?? '0 source refs';
+    return markdownBullet(`${sentenceCaseToken(diagnostic.severity)} ${sentenceCaseToken(diagnostic.code)}: ${diagnostic.message} [${sourceRefs}]`);
+  });
+  const timeline = assessmentEvidenceBundlePreviewEvents(bundle).map((event) =>
+    markdownBullet(`${event.sequence}. ${assessmentEvidenceBundleEventLabel(event)}: ${compactEvidenceText(event.narrative, 240) ?? sentenceCaseToken(event.kind)} (${event.sourceRefs.length} source ${event.sourceRefs.length === 1 ? 'ref' : 'refs'})`)
+  );
+  const snippets = assessmentEvidenceBundleSourceSnippets(bundle).map((snippet) =>
+    markdownBullet(`${snippet.label}: ${compactEvidenceText(snippet.exactText, 280) ?? 'Exact source text captured.'}`)
+  );
+
+  return [
+    '# PIPE Assessment Brief',
+    '',
+    `Generated: ${formatDate(bundle.generatedAt, 'just now')}`,
+    `Candidate: ${bundle.interview.recipientName ?? bundle.interview.recipientEmail ?? 'Unknown candidate'}`,
+    `Assessment: ${bundle.interview.title ?? bundle.interview.id}`,
+    `Mode: ${sentenceCaseToken(bundle.assessment.mode)}`,
+    `Stage: ${sentenceCaseToken(bundle.assessment.stage)}`,
+    `Schema: ${bundle.schemaVersion}`,
+    '',
+    '## Decision',
+    '',
+    `Human decision: ${bundle.humanDecision ? assessmentHumanDecisionLabel(bundle.humanDecision.decision) : 'Not recorded'}`,
+    `Human summary: ${bundle.humanDecision?.summary ?? 'A reviewer still needs to inspect the source-backed packet before finalizing.'}`,
+    `Evaluator status: ${bundle.evaluation ? assessmentEvaluationStatusLabel(bundle.evaluation.status) : 'No report'}`,
+    `Evaluator recommendation: ${evaluationRecommendation ? sentenceCaseToken(evaluationRecommendation) : 'Not recorded'}`,
+    `Evaluator summary: ${bundle.evaluation?.summary ?? 'No evaluator summary is available.'}`,
+    '',
+    '## Challenge',
+    '',
+    `Repository: ${challengeSummary?.repositoryUrl ?? submission?.repositoryUrl ?? 'Not recorded'}`,
+    `Base commit: ${challengeSummary?.baseCommitSha ?? submission?.baseCommitSha ?? 'Not recorded'}`,
+    `Task: ${assessmentEvidenceBundleTaskText(bundle)}`,
+    'Success criteria:',
+    ...markdownBulletList(challengeSummary?.successCriteria ?? [], 'No structured success criteria recorded.'),
+    'Expected evidence:',
+    ...markdownBulletList(challengeSummary?.expectedEvidence ?? [], 'No structured expected evidence recorded.'),
+    '',
+    '## Submitted Work',
+    '',
+    `Commit: ${submission?.commitSha ?? 'Not recorded'}`,
+    `Branch: ${submission?.branchName ?? 'Not recorded'}`,
+    `Commit URL: ${submission?.commitUrl ?? 'Not recorded'}`,
+    `Repository/fork: ${submission?.forkRepositoryUrl ?? submission?.repositoryUrl ?? 'Not recorded'}`,
+    `Integrity: ${submission?.integrity?.label ?? 'Not recorded'}`,
+    `Challenge binding: ${submission?.challengeBinding?.label ?? 'Not recorded'}`,
+    '',
+    '## Evidence Coverage',
+    '',
+    `Reviewability: ${assessmentEvidenceBundleReviewabilityItem(bundle).value}`,
+    `Missing proof: ${missingProof.length > 0 ? readableList(missingProof) : 'None'}`,
+    `Timeline events: ${bundle.timeline.length}`,
+    `Timeline source refs: ${assessmentEvidenceBundleSourceRefCount(bundle)}`,
+    'Source ref counts:',
+    ...(sourceRefCounts.length > 0 ? sourceRefCounts : [markdownBullet('No source refs recorded.')]),
+    '',
+    '## Evidence-Backed Claims',
+    '',
+    ...(claims.length > 0 ? claims : [markdownBullet('No evaluator claims recorded.')]),
+    '',
+    '## Evaluator Diagnostics',
+    '',
+    ...(diagnostics.length > 0 ? diagnostics : [markdownBullet('No evaluator diagnostics recorded.')]),
+    '',
+    '## Timeline',
+    '',
+    ...(timeline.length > 0 ? timeline : [markdownBullet('No timeline events recorded.')]),
+    '',
+    '## Source Preview',
+    '',
+    ...(snippets.length > 0 ? snippets : [markdownBullet('No exact source snippets available in preview.')]),
+    '',
+    '## Use Guidance',
+    '',
+    '- Use this as a source-backed assessment artifact, not an automatic hiring decision.',
+    '- Inspect the commit, diff, test evidence, AI-use trail, transcript/chat, and diagnostics before relying on the signal.',
+    '- Missing evidence should reduce confidence instead of being treated as positive signal.',
+    '',
+  ].join('\n');
+}
+
+function downloadTextFile(filename: string, contents: string, mimeType: string): void {
+  const blob = new Blob([contents], { type: mimeType });
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => {
+    URL.revokeObjectURL(objectUrl);
+  }, 0);
+}
+
+function downloadAssessmentEvidenceBundle(bundle: AssessmentEvidenceBundle): void {
+  downloadTextFile(
+    assessmentEvidenceBundleDownloadFilename(bundle),
+    JSON.stringify(bundle, null, 2),
+    'application/json',
+  );
+}
+
+function downloadAssessmentEvidenceBrief(bundle: AssessmentEvidenceBundle): void {
+  downloadTextFile(
+    assessmentEvidenceBundleBriefFilename(bundle),
+    assessmentEvidenceBundleBriefMarkdown(bundle),
+    'text/markdown',
+  );
+}
+
+type ContractEvidenceReceipt = NonNullable<AssessmentProgressReviewPacketSummary['evidence']['contractEvidence']>;
+
+function contractEvidenceStatusLabel(
+  status: ContractEvidenceReceipt['expectedEvidence'][number]['status'],
+): string {
+  switch (status) {
+    case 'captured':
+      return 'Captured';
+    case 'gap_declared':
+      return 'Gap declared';
+    case 'needs_human_review':
+      return 'Needs human review';
+  }
+}
+
+function contractEvidenceTone(
+  status: ContractEvidenceReceipt['expectedEvidence'][number]['status'],
+): CodeReviewNextStepTone {
+  switch (status) {
+    case 'captured':
+      return 'positive';
+    case 'gap_declared':
+      return 'watch';
+    case 'needs_human_review':
+      return 'neutral';
+  }
+}
+
+function workspaceAssessmentContractReceiptItems(
+  receipt: ContractEvidenceReceipt | null | undefined,
+): WorkspaceAssessmentReadoutItem[] {
+  if (!receipt) return [];
+  return [
+    ...receipt.expectedEvidence.map((item): WorkspaceAssessmentReadoutItem => ({
+      label: item.label,
+      value: contractEvidenceStatusLabel(item.status),
+      detail: item.detail,
+      tone: contractEvidenceTone(item.status),
+    })),
+    ...receipt.successCriteria.map((item): WorkspaceAssessmentReadoutItem => ({
+      label: item.label,
+      value: 'Needs human review',
+      detail: item.detail,
+      tone: 'neutral',
+    })),
+  ];
+}
+
 function workspaceAssessmentHiringReadout(input: {
   progress: AssessmentProgressSnapshot | null;
   setup: AssessmentSetupProjection | null | undefined;
@@ -1275,10 +2353,14 @@ function workspaceAssessmentHiringReadout(input: {
   return [
     workspaceAssessmentDecisionItem(input.progress),
     workspaceAssessmentFitItem(input),
+    workspaceAssessmentSelectionRationaleItem({
+      progress: input.progress,
+      setup: input.setup,
+    }),
     workspaceAssessmentProofItem(input.progress),
     workspaceAssessmentRiskItem(input.progress),
     workspaceAssessmentNextActionItem(input.progress),
-  ];
+  ].filter((item): item is WorkspaceAssessmentReadoutItem => Boolean(item));
 }
 
 function sourceRefText(ref: CodeReviewMatchSourceRef | null | undefined): string | null {
@@ -1499,6 +2581,7 @@ function codeReviewVerdictLabel(
 
 function codeReviewMatchIsQualityGated(match: CodeReviewMatchDetail | null): boolean {
   if (!match || match.status !== 'MATCHED') return false;
+  if (match.qualityGate) return match.qualityGate.verdict === 'PASSED';
   const qualityVerdict = match.assessmentQuality?.verdict?.toUpperCase() ?? null;
   if (qualityVerdict) {
     return qualityVerdict === 'STRONG' || qualityVerdict === 'USABLE' || qualityVerdict === 'PASSED';
@@ -1532,6 +2615,12 @@ function codeReviewMatchHasSourceBackedBridge(match: CodeReviewMatchDetail): boo
   return match.evidence.some((entry) =>
     countMatchRefs(entry.challengeSourceRefs) > 0
     && (countMatchRefs(entry.candidateSourceRefs) > 0 || countMatchRefs(entry.roleSourceRefs) > 0),
+  );
+}
+
+function codeReviewQualityGateDiagnostics(match: CodeReviewMatchDetail | null): string[] {
+  return uniqueTextParts(
+    (match?.qualityGate?.diagnostics ?? []).map(readableGapLabel),
   );
 }
 
@@ -1572,6 +2661,8 @@ function codeReviewFitLabel(match: CodeReviewMatchDetail | null): string {
 }
 
 function codeReviewFitDetail(match: CodeReviewMatchDetail | null): string {
+  const diagnostics = codeReviewQualityGateDiagnostics(match);
+  if (diagnostics.length > 0) return diagnostics[0]!;
   if (match?.assessmentQuality) {
     return `${match.assessmentQuality.score}/${match.assessmentQuality.maxScore}`;
   }
@@ -1974,12 +3065,15 @@ function codeReviewMatchExplanation(input: {
     match: input.match,
   });
   if (!input.match || !codeReviewMatchIsQualityGated(input.match)) {
+    const diagnostics = codeReviewQualityGateDiagnostics(input.match);
     return {
       selectedChallenge,
       whyThisChallenge: input.match?.summary
         || 'PIPE has not selected a quality-gated, source-backed repo challenge for this interview.',
       proofLabel: 'Missing proof',
-      proofSummary: input.risk.missingContext[0]
+      proofSummary: diagnostics[0]
+        ? `Quality gate: ${diagnostics.join(' · ')}`
+        : input.risk.missingContext[0]
         ? `Missing: ${input.risk.missingContext[0]}`
         : 'Missing source-backed candidate, role, or repo evidence.',
       riskSummary: input.validity.detail,
@@ -2175,7 +3269,7 @@ function readableGapLabel(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return 'Missing source-backed evidence';
   if (/^[A-Z0-9_:-]+$/.test(trimmed)) {
-    return titleCaseToken(trimmed).replace(/\bPr\b/g, 'PR');
+    return titleCaseToken(trimmed.toLowerCase()).replace(/\bPr\b/g, 'PR');
   }
   return trimmed;
 }
@@ -2203,7 +3297,9 @@ function codeReviewDecisionRiskSummary(
   }
 
   if (!hasMatchedChallenge) {
+    const diagnostics = codeReviewQualityGateDiagnostics(match);
     missingContext.push(
+      ...diagnostics,
       ...(match.gaps.length > 0
         ? match.gaps.slice(0, 3).map(readableGapLabel)
         : ['Source-backed candidate work evidence']),
@@ -2213,7 +3309,7 @@ function codeReviewDecisionRiskSummary(
         value: 'Repo fit not proven',
         detail: match.summary || 'PIPE needs more source-backed person evidence before this meeting can assign a fair PR challenge.',
       },
-      missingContext,
+      missingContext: uniqueTextParts(missingContext).slice(0, 4),
     };
   }
 
@@ -2861,10 +3957,14 @@ export default function InterviewDetailPage(): JSX.Element {
   const [humanDecisionError, setHumanDecisionError] = useState<string | null>(null);
   const [humanDecisionNotice, setHumanDecisionNotice] = useState<string | null>(null);
   const [isRecordingHumanDecision, setIsRecordingHumanDecision] = useState(false);
+  const [assessmentEvidenceBundle, setAssessmentEvidenceBundle] = useState<AssessmentEvidenceBundle | null>(null);
+  const [isLoadingAssessmentEvidenceBundle, setIsLoadingAssessmentEvidenceBundle] = useState(false);
+  const [assessmentEvidenceBundleError, setAssessmentEvidenceBundleError] = useState<string | null>(null);
   const [workspaceRepoUrl, setWorkspaceRepoUrl] = useState('');
   const [workspacePrNumber, setWorkspacePrNumber] = useState('');
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
   const hasLoadedOnceRef = useRef(false);
+  const assessmentProgressRefreshAttemptsRef = useRef(0);
   const guestLinkInputRef = useRef<HTMLInputElement | null>(null);
   const assessmentLinkInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -2888,6 +3988,7 @@ export default function InterviewDetailPage(): JSX.Element {
 
   useEffect(() => {
     hasLoadedOnceRef.current = false;
+    assessmentProgressRefreshAttemptsRef.current = 0;
     setInterview(null);
     void load({ showLoading: true });
   }, [interviewId, load]);
@@ -2904,7 +4005,58 @@ export default function InterviewDetailPage(): JSX.Element {
     setHumanDecisionError(null);
     setHumanDecisionNotice(null);
     setHumanDecisionValue('advance');
+    setAssessmentEvidenceBundle(null);
+    setAssessmentEvidenceBundleError(null);
   }, [interviewId]);
+
+  useEffect(() => {
+    const progress = interview?.assessmentProgress ?? null;
+    const shouldLoadBundle = Boolean(
+      interviewId
+        && progress?.session.id
+        && (progress.evaluation || progress.humanDecision),
+    );
+    if (!shouldLoadBundle) {
+      setAssessmentEvidenceBundle(null);
+      setAssessmentEvidenceBundleError(null);
+      setIsLoadingAssessmentEvidenceBundle(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setIsLoadingAssessmentEvidenceBundle(true);
+    setAssessmentEvidenceBundleError(null);
+    Promise.resolve(api.get<AssessmentEvidenceBundleResponse>(
+      `/api/v1/scheduling/interviews/${interviewId}/assessment/evidence-bundle`,
+    )).then((result) => {
+      if (cancelled) return;
+      setAssessmentEvidenceBundle(result?.bundle ?? null);
+    }).catch((err: unknown) => {
+      if (cancelled) return;
+      setAssessmentEvidenceBundle(null);
+      if (err instanceof ApiError && err.code === 'CONFLICT') {
+        setAssessmentEvidenceBundleError(null);
+        return;
+      }
+      setAssessmentEvidenceBundleError(
+        err instanceof Error ? err.message : 'Unable to load final assessment evidence bundle',
+      );
+    }).finally(() => {
+      if (!cancelled) setIsLoadingAssessmentEvidenceBundle(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    api,
+    interviewId,
+    interview?.assessmentProgress?.commit?.commitSha,
+    interview?.assessmentProgress?.evaluation?.id,
+    interview?.assessmentProgress?.evaluation?.status,
+    interview?.assessmentProgress?.humanDecision?.eventId,
+    interview?.assessmentProgress?.session.id,
+  ]);
 
   const transcriptEntries = useMemo(() => {
     const meetingEntries = parseTranscriptJson(interview?.linkedMeeting?.transcriptJson);
@@ -3273,6 +4425,30 @@ export default function InterviewDetailPage(): JSX.Element {
     load,
   ]);
 
+  useEffect(() => {
+    const isWorkspaceAssessment = interview?.interviewType === 'DEV_CONTAINER_CHALLENGE'
+      || interview?.interviewType === 'OPEN_SOURCE_BUG_FIX';
+    const shouldRefresh = Boolean(
+      interview
+        && isWorkspaceAssessment
+        && !interview.assessmentProgress
+        && !interview.assessmentSetup?.blocksPositiveAssessment,
+    );
+    if (!shouldRefresh) return undefined;
+    if (assessmentProgressRefreshAttemptsRef.current >= ASSESSMENT_PROGRESS_REFRESH_MAX_ATTEMPTS) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      assessmentProgressRefreshAttemptsRef.current += 1;
+      void load({ showLoading: false });
+    }, ASSESSMENT_PROGRESS_REFRESH_INTERVAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [
+    interview,
+    load,
+  ]);
+
   if (isLoading) {
     return (
       <div style={CENTERED}>
@@ -3304,6 +4480,15 @@ export default function InterviewDetailPage(): JSX.Element {
   const personEmail = interview.candidateEmail ?? interview.recipientEmail ?? null;
   const roleTitle = interview.pipelineTitle ?? 'Talent Pool';
   const stageTitle = interview.stageTitle ?? interview.interviewType ?? 'Interview';
+  const detailTitle = interview.title?.trim() || null;
+  const detailDescription = interview.description?.trim() || null;
+  const pageTitle = detailTitle ?? personName;
+  const personIdentity = personEmail && personEmail !== personName
+    ? `${personName} · ${personEmail}`
+    : personName;
+  const headerSubtitle = detailTitle
+    ? `${personIdentity} · ${roleTitle} · ${stageTitle}`
+    : `${roleTitle} · ${stageTitle}`;
   const rawTranscriptStatus =
     interview.linkedMeeting?.transcriptStatus
     ?? interview.transcriptArtifact?.status
@@ -3467,7 +4652,10 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentInviteUrlLabel = canCopyAssessmentInvite
     ? (assessmentInviteIsWorkspace ? 'CANDIDATE WORKSPACE ROOM URL' : 'CANDIDATE ASSESSMENT URL')
     : (assessmentInviteIsWorkspace ? 'LAST CANDIDATE WORKSPACE ROOM URL' : 'LAST CANDIDATE ASSESSMENT URL');
-  const assessmentAssignment = summarizeAssessmentAssignment(interview.assessmentSetup);
+  const assessmentAssignment = summarizeResolvedAssessmentAssignment({
+    setup: interview.assessmentSetup,
+    assignmentTrust: assessmentProgress?.assignmentTrust,
+  });
   const hasStandaloneCodeReviewReadout = isCodeReviewInterview && Boolean(
     interview.codeReviewMatch
       || interview.codeReviewScore
@@ -3476,9 +4664,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const showsAssessmentProgress = usesWorkspaceInterview
     || Boolean(assessmentProgress)
     || (Boolean(assessmentAssignment) && !hasStandaloneCodeReviewReadout);
-  const assessmentProgressStage = assessmentProgress
-    ? assessmentProgress.readiness?.label ?? assessmentProgressStageLabel(assessmentProgress.stage)
-    : 'Not started';
+  const assessmentProgressStage = assessmentProgressDisplayLabel(assessmentProgress);
   const assessmentProgressNextAction = assessmentProgress?.readiness?.detail
     ?? assessmentProgress?.nextActionLabel
     ?? interview.assessmentSetup?.nextActionLabel
@@ -3512,6 +4698,9 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentWorkspaceDiffSummary = !assessmentCommitCompareUrl && assessmentDiffSourceRefCount > 0
     ? compactEvidenceText(assessmentSubmittedDiffSnippet?.exactText ?? '', 220)
     : null;
+  const assessmentCapturedDiffText = !assessmentCommitCompareUrl
+    ? assessmentSubmittedDiffSnippet?.exactText.trim() || null
+    : null;
   const assessmentEvaluationClaims = assessmentProgress?.evaluation?.claims
     ?.filter((claim) => claim.sourceRefCount > 0)
     .slice(0, 3) ?? [];
@@ -3522,11 +4711,33 @@ export default function InterviewDetailPage(): JSX.Element {
   );
   const assessmentWorkPacket = workspaceAssessmentWorkPacket(assessmentProgress);
   const assessmentReviewerReceipt = workspaceAssessmentReviewerReceipt(assessmentProgress);
+  const assessmentReviewPacket = assessmentProgress?.evaluation?.reviewPacket ?? null;
+  const assessmentReviewPacketItems = workspaceAssessmentReviewPacketItems(assessmentReviewPacket);
+  const assessmentContractReceipt = assessmentReviewPacket?.evidence.contractEvidence ?? null;
+  const assessmentContractReceiptItems = workspaceAssessmentContractReceiptItems(assessmentContractReceipt);
+  const assessmentAiUseReceipt = workspaceAssessmentAiUseReceipt(assessmentProgress);
+  const assessmentEvidenceBundleReadoutItems = assessmentEvidenceBundle
+    ? assessmentEvidenceBundleReadout(assessmentEvidenceBundle)
+    : [];
+  const assessmentEvidenceBundleEvents = assessmentEvidenceBundle
+    ? assessmentEvidenceBundlePreviewEvents(assessmentEvidenceBundle)
+    : [];
+  const assessmentEvidenceBundleSnippets = assessmentEvidenceBundle
+    ? assessmentEvidenceBundleSourceSnippets(assessmentEvidenceBundle)
+    : [];
+  const showsAssessmentEvidenceBundle = usesWorkspaceInterview && Boolean(
+    assessmentEvidenceBundle
+      || isLoadingAssessmentEvidenceBundle
+      || assessmentEvidenceBundleError
+      || assessmentProgress?.evaluation,
+  );
   const workspaceAssessmentReadout = workspaceAssessmentHiringReadout({
     progress: assessmentProgress,
     setup: interview.assessmentSetup,
     challengeText: assessmentChallengeText,
   });
+  const workspaceAssessmentValidity = workspaceAssessmentValidityProof(assessmentProgress);
+  const assessmentRoomSummary = roomSessionSummary(interview);
   const showsRoomPanel = !isCodeReviewInterview;
   const hasCallRecordEvidence = Boolean(
     interview.transcriptArtifact
@@ -3783,10 +4994,15 @@ export default function InterviewDetailPage(): JSX.Element {
           </button>
           <div>
             <div style={EYEBROW}>INTERVIEW</div>
-            <h1 style={TITLE}>{personName}</h1>
+            <h1 style={TITLE}>{pageTitle}</h1>
             <div style={SUBTITLE}>
-              {roleTitle} · {stageTitle}
+              {headerSubtitle}
             </div>
+            {detailDescription && (
+              <div data-testid="interview-detail-objective" style={HEADER_OBJECTIVE}>
+                {detailDescription}
+              </div>
+            )}
           </div>
           <StatusBadge status={displayStatus} />
         </div>
@@ -3813,7 +5029,7 @@ export default function InterviewDetailPage(): JSX.Element {
               <Video size={15} />
               Room
             </div>
-            <h2 style={ROOM_TITLE}>{interview.linkedMeeting?.title ?? `${personName} interview`}</h2>
+            <h2 style={ROOM_TITLE}>{interview.linkedMeeting?.title ?? detailTitle ?? `${personName} interview`}</h2>
             <div style={ROOM_LINK_TEXT}>
               {guestRoomUrl
                 ? 'Guest and host join the same meeting with different secure links.'
@@ -4072,6 +5288,24 @@ export default function InterviewDetailPage(): JSX.Element {
               ))}
             </div>
           </div>
+          <div data-testid="interview-workspace-assessment-validity-proof" style={DECISION_COCKPIT}>
+            <div style={FIELD_LABEL}>Score validity</div>
+            <div style={DECISION_COCKPIT_GRID}>
+              {workspaceAssessmentValidity.map((item) => (
+                <div
+                  key={item.label}
+                  style={{
+                    ...DECISION_COCKPIT_ITEM,
+                    ...DECISION_NEXT_STEP_TONE[item.tone],
+                  }}
+                >
+                  <div style={FIELD_LABEL}>{item.label}</div>
+                  <div style={DECISION_COCKPIT_VALUE}>{item.value}</div>
+                  <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
       )}
 
@@ -4122,6 +5356,10 @@ export default function InterviewDetailPage(): JSX.Element {
             <div style={ASSESSMENT_PROGRESS_CARD}>
               <div style={FIELD_LABEL}>Workspace</div>
               <div style={ASSESSMENT_PROGRESS_VALUE}>{assessmentWorkspaceSummary ?? 'Not launched'}</div>
+            </div>
+            <div style={ASSESSMENT_PROGRESS_CARD}>
+              <div style={FIELD_LABEL}>Room</div>
+              <div style={ASSESSMENT_PROGRESS_VALUE}>{assessmentRoomSummary ?? 'No room activity'}</div>
             </div>
             <div style={ASSESSMENT_PROGRESS_CARD}>
               <div style={FIELD_LABEL}>Commit</div>
@@ -4195,6 +5433,176 @@ export default function InterviewDetailPage(): JSX.Element {
                   </div>
                 </div>
               )}
+              {assessmentReviewPacketItems.length > 0 && (
+                <div data-testid="interview-assessment-review-packet" style={DECISION_COCKPIT}>
+                  <div style={FIELD_LABEL}>Final review packet</div>
+                  <div style={ROOM_LINK_TEXT}>
+                    Source-backed assessment artifact persisted with the final evaluator report.
+                  </div>
+                  <div style={DECISION_COCKPIT_GRID}>
+                    {assessmentReviewPacketItems.map((item) => (
+                      <div
+                        key={item.label}
+                        style={{
+                          ...DECISION_COCKPIT_ITEM,
+                          ...DECISION_NEXT_STEP_TONE[item.tone],
+                        }}
+                      >
+                        <div style={FIELD_LABEL}>{item.label}</div>
+                        <div style={DECISION_COCKPIT_VALUE}>{item.value}</div>
+                        <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {showsAssessmentEvidenceBundle && (
+                <div data-testid="interview-assessment-evidence-bundle" style={DECISION_COCKPIT}>
+                  <div style={DECISION_HEADER}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={FIELD_LABEL}>Final evidence bundle</div>
+                      <div style={ROOM_LINK_TEXT}>
+                        Buyer-reviewable audit packet assembled from immutable assessment events, exact source refs, evaluator output, and human review.
+                      </div>
+                    </div>
+                    {assessmentEvidenceBundle && (
+                      <div style={EVIDENCE_BUNDLE_ACTIONS}>
+                        <span style={MATCH_BADGE}>{sentenceCaseToken(assessmentEvidenceBundle.assessment.stage)}</span>
+                        <button
+                          type="button"
+                          onClick={() => downloadAssessmentEvidenceBrief(assessmentEvidenceBundle)}
+                          style={{ ...PRIMARY_BUTTON, ...EVIDENCE_BUNDLE_EXPORT_BUTTON }}
+                        >
+                          <FileText size={14} />
+                          EXPORT BRIEF
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => downloadAssessmentEvidenceBundle(assessmentEvidenceBundle)}
+                          style={{ ...PRIMARY_BUTTON, ...EVIDENCE_BUNDLE_EXPORT_BUTTON }}
+                        >
+                          <Download size={14} />
+                          EXPORT JSON
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {isLoadingAssessmentEvidenceBundle && (
+                    <div style={SMALL_NOTE}>Loading final source-backed evidence bundle...</div>
+                  )}
+                  {assessmentEvidenceBundleError && (
+                    <div style={ERROR_NOTE}>{assessmentEvidenceBundleError}</div>
+                  )}
+                  {!isLoadingAssessmentEvidenceBundle && !assessmentEvidenceBundleError && !assessmentEvidenceBundle && (
+                    <div style={EMPTY_TEXT}>
+                      Final evidence bundle will appear after challenge, commit, evaluation, and review evidence are assembled.
+                    </div>
+                  )}
+                  {assessmentEvidenceBundle && (
+                    <>
+                      <div style={DECISION_COCKPIT_GRID}>
+                        {assessmentEvidenceBundleReadoutItems.map((item) => (
+                          <div
+                            key={item.label}
+                            style={{
+                              ...DECISION_COCKPIT_ITEM,
+                              ...DECISION_NEXT_STEP_TONE[item.tone],
+                            }}
+                          >
+                            <div style={FIELD_LABEL}>{item.label}</div>
+                            <div style={DECISION_COCKPIT_VALUE}>{item.value}</div>
+                            <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {assessmentEvidenceBundleEvents.length > 0 && (
+                        <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                          <span style={FIELD_LABEL}>Timeline</span>
+                          <span style={{ ...FIELD_VALUE, ...ASSESSMENT_CLAIM_LIST }}>
+                            {assessmentEvidenceBundleEvents.map((event) => (
+                              <span key={`${event.sequence}:${event.kind}`} style={ASSESSMENT_CLAIM_ROW}>
+                                <span style={ASSESSMENT_CLAIM_HEAD}>
+                                  <span>{assessmentEvidenceBundleEventLabel(event)}</span>
+                                  <span>{event.sourceRefs.length} source {event.sourceRefs.length === 1 ? 'ref' : 'refs'}</span>
+                                </span>
+                                <span style={ASSESSMENT_CLAIM_NARRATIVE}>
+                                  {compactEvidenceText(event.narrative, 280) ?? sentenceCaseToken(event.kind)}
+                                </span>
+                              </span>
+                            ))}
+                          </span>
+                        </div>
+                      )}
+                      {assessmentEvidenceBundleSnippets.length > 0 && (
+                        <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                          <span style={FIELD_LABEL}>Source preview</span>
+                          <span style={{ ...FIELD_VALUE, ...ASSESSMENT_CLAIM_LIST }}>
+                            {assessmentEvidenceBundleSnippets.map((snippet) => (
+                              <span key={snippet.id} style={ASSESSMENT_CLAIM_ROW}>
+                                <span style={ASSESSMENT_CLAIM_HEAD}>
+                                  <span>{snippet.label}</span>
+                                </span>
+                                <span style={ASSESSMENT_CLAIM_NARRATIVE}>
+                                  {compactEvidenceText(snippet.exactText, 360)}
+                                </span>
+                              </span>
+                            ))}
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+              {assessmentContractReceipt && assessmentContractReceiptItems.length > 0 && (
+                <div data-testid="interview-assessment-contract-receipt" style={DECISION_COCKPIT}>
+                  <div style={FIELD_LABEL}>Evidence contract receipt</div>
+                  <div style={ROOM_LINK_TEXT}>
+                    {assessmentContractReceipt.summary.capturedCount} of {assessmentContractReceipt.summary.expectedEvidenceCount} expected evidence items machine-supported
+                    {assessmentContractReceipt.summary.needsHumanReviewCount > 0
+                      ? ` · ${assessmentContractReceipt.summary.needsHumanReviewCount} ${assessmentContractReceipt.summary.needsHumanReviewCount === 1 ? 'item still needs' : 'items still need'} human review`
+                      : ' · no contract receipt gaps declared'}
+                  </div>
+                  <div style={DECISION_COCKPIT_GRID}>
+                    {assessmentContractReceiptItems.map((item) => (
+                      <div
+                        key={`${item.label}:${item.value}`}
+                        style={{
+                          ...DECISION_COCKPIT_ITEM,
+                          ...DECISION_NEXT_STEP_TONE[item.tone],
+                        }}
+                      >
+                        <div style={FIELD_LABEL}>{item.label}</div>
+                        <div style={DECISION_COCKPIT_VALUE}>{item.value}</div>
+                        <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {assessmentAiUseReceipt.length > 0 && (
+                <div data-testid="interview-assessment-ai-use-receipt" style={DECISION_COCKPIT}>
+                  <div style={FIELD_LABEL}>AI-use receipt</div>
+                  <div style={ROOM_LINK_TEXT}>
+                    Real Clippy/Devin bridge evidence separated from evaluator claims and missing-evidence gaps.
+                  </div>
+                  <div style={DECISION_COCKPIT_GRID}>
+                    {assessmentAiUseReceipt.map((item) => (
+                      <div
+                        key={item.label}
+                        style={{
+                          ...DECISION_COCKPIT_ITEM,
+                          ...DECISION_NEXT_STEP_TONE[item.tone],
+                        }}
+                      >
+                        <div style={FIELD_LABEL}>{item.label}</div>
+                        <div style={DECISION_COCKPIT_VALUE}>{item.value}</div>
+                        <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {assessmentProgress.challenge && (
                 <div style={EVIDENCE_ROW}>
                   <span style={FIELD_LABEL}>Challenge</span>
@@ -4210,7 +5618,9 @@ export default function InterviewDetailPage(): JSX.Element {
                     data-testid="interview-assessment-challenge-contract"
                     style={ASSESSMENT_CHALLENGE_CONTRACT}
                   >
-                    {(assessmentChallengeContract.repositoryUrl || assessmentChallengeContract.baseCommitSha) && (
+                    {(assessmentChallengeContract.repositoryUrl
+                      || assessmentChallengeContract.githubPrNumber
+                      || assessmentChallengeContract.baseCommitSha) && (
                       <div style={ASSESSMENT_CHALLENGE_META}>
                         {assessmentChallengeContract.repositoryUrl && (
                           <span>
@@ -4219,6 +5629,23 @@ export default function InterviewDetailPage(): JSX.Element {
                               {repoLabelFromUrl(assessmentChallengeContract.repositoryUrl)
                                 ?? assessmentChallengeContract.repositoryUrl}
                             </strong>
+                          </span>
+                        )}
+                        {assessmentChallengeContract.githubPrNumber && (
+                          <span>
+                            PR{' '}
+                            {assessmentChallengeContract.pullRequestUrl ? (
+                              <a
+                                href={assessmentChallengeContract.pullRequestUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={INLINE_LINK}
+                              >
+                                #{assessmentChallengeContract.githubPrNumber}
+                              </a>
+                            ) : (
+                              <strong>#{assessmentChallengeContract.githubPrNumber}</strong>
+                            )}
                           </span>
                         )}
                         {assessmentChallengeContract.baseCommitSha && (
@@ -4232,6 +5659,26 @@ export default function InterviewDetailPage(): JSX.Element {
                       <div style={ASSESSMENT_CHALLENGE_SECTION}>
                         <span style={FIELD_LABEL}>Task</span>
                         <p style={ASSESSMENT_CHALLENGE_TEXT}>{assessmentChallengeContract.task}</p>
+                      </div>
+                    )}
+                    {assessmentChallengeContract.matchProof.length > 0 && (
+                      <div style={ASSESSMENT_CHALLENGE_SECTION}>
+                        <span style={FIELD_LABEL}>Match proof</span>
+                        <ul style={ASSESSMENT_CHALLENGE_LIST}>
+                          {assessmentChallengeContract.matchProof.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {assessmentChallengeContract.assessmentFit.length > 0 && (
+                      <div style={ASSESSMENT_CHALLENGE_SECTION}>
+                        <span style={FIELD_LABEL}>Assessment fit</span>
+                        <ul style={ASSESSMENT_CHALLENGE_LIST}>
+                          {assessmentChallengeContract.assessmentFit.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
                       </div>
                     )}
                     {assessmentChallengeContract.successCriteria.length > 0 && (
@@ -4290,6 +5737,20 @@ export default function InterviewDetailPage(): JSX.Element {
                       ? `Stored in the assessment evidence trail: ${assessmentWorkspaceDiffSummary}`
                       : 'Stored as immutable code_diff source evidence for this workspace-only commit.'}
                   </span>
+                </div>
+              )}
+              {assessmentCapturedDiffText && (
+                <div
+                  data-testid="interview-assessment-captured-diff"
+                  style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}
+                >
+                  <span style={FIELD_LABEL}>Captured diff</span>
+                  <div style={{ ...FIELD_VALUE, display: 'grid', gap: 8 }}>
+                    <strong style={{ color: 'var(--pipe-text)' }}>
+                      Captured source-backed diff
+                    </strong>
+                    <pre style={ASSESSMENT_CAPTURED_DIFF_CODE}>{assessmentCapturedDiffText}</pre>
+                  </div>
                 </div>
               )}
               {(assessmentProgress.commit?.integrity?.label ?? assessmentProgress.commit?.submissionSourceLabel) && (
@@ -5350,6 +6811,16 @@ export default function InterviewDetailPage(): JSX.Element {
                         </div>
                       ))}
                     </div>
+                    {codeReviewMatch.qualityGate?.diagnostics?.length ? (
+                      <div data-testid="interview-code-review-quality-diagnostics" style={CONTEXT_RECORD}>
+                        <div style={FIELD_LABEL}>Quality diagnostics</div>
+                        <div style={TAG_ROW}>
+                          {codeReviewQualityGateDiagnostics(codeReviewMatch).map((diagnostic) => (
+                            <span key={diagnostic} style={TAG}>{diagnostic}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </details>
               )}
@@ -5358,7 +6829,7 @@ export default function InterviewDetailPage(): JSX.Element {
                 <ReviewProfileCard profile={codeReviewProfile} />
               )}
 
-              {(codeReviewMatch.validatorAgent || matchHyperedges.length > 0 || primaryMatchEvidence || codeReviewMatch.gaps.length > 0) && (
+              {(codeReviewMatch.validatorAgent || matchHyperedges.length > 0 || primaryMatchEvidence || codeReviewMatch.gaps.length > 0 || (codeReviewMatch.qualityGate?.diagnostics?.length ?? 0) > 0) && (
                 <details style={DETAILS_CARD}>
                   <summary style={DETAILS_SUMMARY}>
                     Source proof
@@ -5405,6 +6876,20 @@ export default function InterviewDetailPage(): JSX.Element {
                   )}
                     </div>
                   )}
+
+                  {codeReviewMatch.qualityGate?.diagnostics?.length ? (
+                    <div data-testid="interview-code-review-match-diagnostics" style={CONTEXT_RECORD}>
+                      <div style={FIELD_LABEL}>Match diagnostics</div>
+                      <div style={CONTEXT_RECORD_NARRATIVE}>
+                        The assignment is blocked until these source-backed gate failures are resolved.
+                      </div>
+                      <div style={TAG_ROW}>
+                        {codeReviewQualityGateDiagnostics(codeReviewMatch).map((diagnostic) => (
+                          <span key={diagnostic} style={TAG}>{diagnostic}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
 
                   {matchHyperedges.length > 0 && (
                     <div data-testid="interview-code-review-match-hyperedges" style={CONTEXT_RECORD}>
@@ -5812,6 +7297,21 @@ const ASSESSMENT_CLAIM_NARRATIVE: CSSProperties = {
   overflowWrap: 'anywhere',
 };
 
+const ASSESSMENT_CAPTURED_DIFF_CODE: CSSProperties = {
+  margin: 0,
+  maxHeight: 360,
+  overflow: 'auto',
+  padding: 12,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'rgba(0,0,0,0.28)',
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 11,
+  lineHeight: 1.45,
+  whiteSpace: 'pre',
+};
+
 const ASSESSMENT_CLAIM_SOURCES: CSSProperties = {
   color: 'var(--pipe-text-dim)',
   fontFamily: FONT,
@@ -5984,6 +7484,14 @@ const EYEBROW: CSSProperties = recruiterEyebrowStyle;
 const TITLE: CSSProperties = recruiterTitleStyle;
 
 const SUBTITLE: CSSProperties = recruiterSubtitleStyle;
+
+const HEADER_OBJECTIVE: CSSProperties = {
+  marginTop: 10,
+  maxWidth: 760,
+  color: 'var(--pipe-text-dim)',
+  fontSize: 13,
+  lineHeight: 1.6,
+};
 
 const ACTION_ROW: CSSProperties = {
   display: 'flex',
@@ -6325,6 +7833,21 @@ const DECISION_HEADER: CSSProperties = {
   justifyContent: 'space-between',
   gap: 14,
   minWidth: 0,
+};
+
+const EVIDENCE_BUNDLE_ACTIONS: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  gap: 8,
+  flexWrap: 'wrap',
+};
+
+const EVIDENCE_BUNDLE_EXPORT_BUTTON: CSSProperties = {
+  minHeight: 30,
+  padding: '7px 10px',
+  fontSize: 9,
+  whiteSpace: 'nowrap',
 };
 
 const DECISION_TITLE: CSSProperties = {

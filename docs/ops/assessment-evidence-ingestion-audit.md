@@ -69,14 +69,23 @@ npm run assessment-evidence:audit -- --remote
 npm run assessment-evidence:audit -- --remote --session-id <assessment_session_id>
 npm run assessment-evidence:audit -- --remote --session-id <assessment_session_id> --require-all-families
 npm run assessment-evidence:replay -- --remote --session-id <assessment_session_id>
+npm run assessment-evidence:replay -- --remote --session-id <assessment_session_id> --missing-events-only
 npm run assessment-evidence:replay -- --remote --all-missing --limit 25
 npm run assessment-evidence:replay -- --remote --all-missing --limit 25 --summary
 npm run assessment-evidence:replay -- --remote --all-missing --limit 25 --summary --progress --exclude-state IN_PROGRESS
+npm run assessment-evidence:replay -- --remote --all-missing --limit 25 --summary --progress --missing-events-only
 ```
 
 For app-dev, prefix remote proof commands with
 `CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1`; otherwise
 the shell may audit a different configured D1 target.
+
+The open-source workspace and Devin bridge smokes print the exact
+`assessmentSessionId` they created plus scoped replay and audit commands. Treat
+that final JSON as the handoff from live candidate-work or AI-use proof to
+living-context ingestion proof. The printed commands default to the app-dev D1
+above; set `WORKSPACE_SMOKE_D1_DATABASE_ID` or `AGENT_SMOKE_D1_DATABASE_ID`
+only when intentionally targeting a different remote database.
 
 The goal is not that every environment has every evidence family populated, but
 that a real open-source assessment session shows captured and projected rows for
@@ -215,3 +224,94 @@ for the remote replay loop and repeatedly hits D1 request timeouts. Treat
 remaining `IN_PROGRESS` rows as live-data backlog rather than completed
 historical debt; replay them after they settle or with a narrower active-session
 repair path.
+
+The narrower active-session repair path is now `--missing-events-only`. It
+projects only raw assessment events that still lack `assessment_event_context:*`
+person context and avoids rebuilding an already-large assessment transcript.
+The first timeout-heavy active row was repaired with:
+
+```bash
+CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
+  npm run assessment-evidence:replay -- --remote \
+  --session-id assessment_session_3250c4945a65a1595ffe801d04e31caf \
+  --missing-events-only
+```
+
+That run succeeded in roughly 15 seconds, selected six missing events, moved
+the session from 95 to 101 context records and from 274 to 285 source refs, and
+reported `answers.missingPersonProjectionCount: 0`.
+
+The same mode was then run against live app-dev batches:
+
+- `--limit 20 --summary --progress --missing-events-only`: `processedCount: 20`,
+  `succeededCount: 20`, `failedCount: 0`, `sourceRefsAfter: 565`, and
+  `missingPersonProjectionsAfter: 0`.
+- `--limit 100 --summary --progress --missing-events-only`: repaired 23 normal
+  candidate-backed sessions, adding 46 context records and 198 source refs.
+  Thirteen old synthetic smoke sessions did not repair because their
+  `candidate_id` values had no corresponding `candidates` row, application, or
+  workspace person identity.
+- After aligning the audit and replay selector to require a real candidate row,
+  a follow-up live batch repaired four fresh `IN_PROGRESS` rows:
+  `processedCount: 4`, `succeededCount: 4`, `failedCount: 0`,
+  `contextRecordsAfter: 8`, `sourceRefsAfter: 148`, and
+  `missingPersonProjectionsAfter: 0`.
+- After deploying `pipe-api-dev`, app-dev produced one fresh
+  `EVALUATING` session while the deploy was running. The same command repaired
+  it with `processedCount: 1`, `succeededCount: 1`, `failedCount: 0`,
+  `contextRecordsAfter: 8`, `sourceRefsAfter: 17`, and
+  `missingPersonProjectionsAfter: 0`.
+
+The unscoped app-dev audit now exits `ready`:
+
+```bash
+D1_REQUEST_TIMEOUT_MS=60000 \
+CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
+  npm run assessment-evidence:audit -- --remote
+```
+
+Final post-deploy app-dev proof on 2026-07-02:
+
+- `auditedAssessmentSessionCount: 696`
+- every evidence family status is `projected`
+- every family has `missingPersonProjectionCount: 0`
+- `sourceLessPositiveClaimCount: 0`
+- `duplicateProjectedEdgeCount: 0`
+- `failures: []`
+- `nextActions: []`
+
+Dangling synthetic smoke rows with no real `candidates` record remain in raw
+assessment tables, but they are not person-projectable evidence and are no
+longer counted as living-context debt.
+
+Latest open-source workspace smoke proof on 2026-07-04:
+
+- `interviewId: 53fc9818-4678-43cc-929e-597dcc127f59`
+- `assessmentSessionId: assessment_session_fe7ff1df4504d21984b1e38a1cb7bfb0`
+- replay `ok: true`
+- replay projected `context_record_count: 17` and `source_ref_count: 42`
+- `answers.missingPersonProjectionCount: 0`
+- scoped audit `status: ready`
+- scoped audit `sourceLessPositiveClaimCount: 0`
+- scoped audit `duplicateProjectedEdgeCount: 0`
+- scoped audit `failures: []`
+- scoped audit reports the expected gap that this smoke did not exercise
+  Clippy/Devin interactions.
+
+Latest Devin bridge auth-needed smoke proof on 2026-07-04:
+
+- `interviewId: 11217eff-86e7-4101-9530-c2c137ebc05d`
+- `assessmentSessionId: assessment_session_0a347af964f1b1b9f1624bce813214bd`
+- live bridge statuses ended in `auth_needed`
+- no `CHAT_RESPONSE` or `ai_agent_response` was counted
+- replay `ok: true`
+- replay projected `context_record_count: 5` and `source_ref_count: 12`
+- `answers.missingPersonProjectionCount: 0`
+- scoped audit `status: ready`
+- scoped audit projected the `clippy_devin_interactions` family
+- scoped audit `sourceLessPositiveClaimCount: 0`
+- scoped audit `duplicateProjectedEdgeCount: 0`
+- scoped audit `failures: []`
+- scoped audit reports expected coverage gaps for commit, diff, tests,
+  evaluator report, and human decision because this smoke only exercises the
+  real agent bridge auth/status path.

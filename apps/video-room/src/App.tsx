@@ -15,6 +15,7 @@ import {
   Video,
 } from 'lucide-react';
 import {
+  downloadRoomAssessmentReceipt,
   finalizeRoomWorkspaceAssessment,
   getRoomWorkspace,
   launchRoomWorkspace,
@@ -52,6 +53,8 @@ import {
 } from './hooks/useRoomConnection';
 import { useAssessmentProgressPolling } from './hooks/useAssessmentProgressPolling';
 import { useToolSurfaceManager } from './hooks/useToolSurfaceManager';
+import { shouldAutoRelaunchWorkspace } from './lib/workspaceRecovery';
+import { assessmentSubmissionActionLabel } from './lib/assessmentSubmissionState';
 import { StandardLayout } from './components/StandardLayout';
 import { ChatPanel, type ChatMessage } from './components/ChatPanel';
 import { TerminalPanel } from './components/TerminalPanel';
@@ -269,6 +272,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceRepoInput, setWorkspaceRepoInput] = useState('');
+  const autoRelaunchedWorkspaceSessionsRef = useRef<Set<string>>(new Set());
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const toolSurfaces = useToolSurfaceManager();
   const [deviceState, setDeviceState] = useState<DeviceState>('checking');
@@ -849,6 +853,26 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         ? 'The previous workspace expired. Relaunch creates a fresh controlled workspace for this assessment.'
         : 'The previous workspace was stopped. Relaunch creates a fresh controlled workspace for this assessment.'
     : null;
+  useEffect(() => {
+    if (!workspaceSession) return;
+    const shouldRecover = shouldAutoRelaunchWorkspace({
+      roomRole: metadata.role,
+      workspaceLoading,
+      canLaunchWorkspace,
+      session: workspaceSession,
+      alreadyAttempted: autoRelaunchedWorkspaceSessionsRef.current.has(workspaceSession.sessionId),
+    });
+    if (!shouldRecover) return;
+    autoRelaunchedWorkspaceSessionsRef.current.add(workspaceSession.sessionId);
+    setWorkspaceError('Workspace start hit a transient container race. Relaunching a fresh controlled workspace.');
+    void launchWorkspace();
+  }, [
+    canLaunchWorkspace,
+    launchWorkspace,
+    metadata.role,
+    workspaceLoading,
+    workspaceSession,
+  ]);
   const showWorkspacePanel = hasWorkspaceFeature;
   const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
   const hasActiveWorkspace = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
@@ -1208,6 +1232,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       return response;
     });
 
+  const downloadAssessmentReceiptFromRoom = (): ReturnType<typeof downloadRoomAssessmentReceipt> =>
+    downloadRoomAssessmentReceipt(token);
+
   const finalizeCommitFromWorkspace = (
     payload: RoomWorkspaceFinalizeRequest,
   ): Promise<RoomWorkspaceFinalizeResponse> => {
@@ -1254,6 +1281,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       onOpenSubmission={() => openSubmissionPanel()}
     />
   );
+  const submissionActionLabel = assessmentSubmissionActionLabel(assessmentProgress);
 
   const renderSurfaceContent = (surface: ToolSurfaceState): JSX.Element => {
     switch (surface.surfaceType) {
@@ -1488,6 +1516,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
               : 'Commit submission is only available for dev-container assessment rooms.'}
             onSubmit={submitCommitFromRoom}
             onProgressChange={setAssessmentProgress}
+            onDownloadReceipt={downloadAssessmentReceiptFromRoom}
             workspaceFinalizeAvailable={Boolean(workspace?.enabled && hasActiveWorkspace)}
             workspaceFinalizeDisabledReason={workspace?.enabled && !hasActiveWorkspace
               ? 'Launch the workspace before finalizing the assessment commit.'
@@ -1515,6 +1544,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recordingActive={visibleRecordingActive}
       modeLabel={roomAssessmentModeLabel}
       primarySurface={roomAssessmentMode === 'dev_container_assessment' ? 'workspace' : 'video'}
+      submissionActionLabel={submissionActionLabel}
     />
   );
 

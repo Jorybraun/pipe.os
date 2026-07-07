@@ -54,6 +54,11 @@ The controlling product rule remains:
   `PROVENANCE_INCOMPLETE`, or `NO_ROLE_SAFE_CHALLENGE`.
 - Candidate-facing packets never expose hidden ground truth. Server-only rubric
   and expected-solution refs stay in `serverOnlyEvaluationContext`.
+- Candidate-facing packets created from historical source-backed review packets
+  hide the solution pull request number, pull request URL, and head commit SHA.
+  They may still expose the public repo URL, immutable base commit, task,
+  verification command, success criteria, expected evidence, and candidate-safe
+  match proof. Recruiter audit surfaces keep the upstream source proof.
 
 ## Flow
 
@@ -97,9 +102,23 @@ The controlling product rule remains:
 ## Recruiter List Projection
 
 - `GET /api/v1/scheduling/interviews` is a paged recruiter projection, not a
-  full-history dump. It accepts `limit`, `offset`, and `sort`
-  (`created_desc`, `created_asc`, or `scheduled_asc`) and returns pagination
-  metadata with `total`, `hasMore`, and `nextOffset`.
+  full-history dump. It accepts `limit`, `offset`, `sort`
+  (`created_desc`, `created_asc`, or `scheduled_asc`), and `interviewType`
+  (`STANDARD_CALLS`, `CODE_REVIEW`, `DEV_CONTAINER_CHALLENGE`, or
+  `OPEN_SOURCE_BUG_FIX`) and returns pagination metadata with `total`,
+  `hasMore`, and `nextOffset`.
+- The list endpoint returns global interview-mode facets so recruiter filters
+  show real owned-history counts even when the current page is filtered or only
+  partially loaded.
+- The deployed open-source workspace smoke verifies the mode-filter contract by
+  requesting the recruiter list with `interviewType=OPEN_SOURCE_BUG_FIX`,
+  requiring only open-source rows, matching filtered pagination totals to the
+  open-source facet count, and proving the fresh assessment remains visible in
+  that filtered list.
+- Recruiter projections treat real AI bridge prompts, blocked prompts,
+  responses, statuses, and diagnostics as AI-use transparency evidence. Status
+  or diagnostic-only traces prove observability, not assistance, and UI copy
+  must keep that distinction visible.
 - The list endpoint loads source-backed assessment progress only for the
   returned interview page. Detail views remain the place for full evidence
   audit trails, evaluation claims, and human-decision records.
@@ -133,11 +152,41 @@ The controlling product rule remains:
   `OPEN_SOURCE_BUG_FIX`; manual task assignment must carry repo URL, base
   commit, task, success criteria, and expected evidence instead of falling back
   to a generic quick-create invite.
+- Matched repo-task assignment trust is shared by the durable assessment session
+  spine and recruiter projections. It may be used as source-backed match-fit
+  evidence for the assigned challenge, but the hiring signal still depends on
+  captured candidate work: commit, diff, tests or verification gap,
+  transcript/chat, AI-use trail, evaluator report, and human review.
+- Recruiter detail and list projections expose room status, current
+  guest-waiting state, and latest workspace status together, so reviewers can
+  tell whether the candidate is in the controlled room, the dev container is
+  ready or failed, and the next action is to launch, observe, recover, or
+  evaluate.
+- The deployed open-source workspace smoke now enforces that same recruiter
+  projection contract for room-backed assessments: detail and list responses
+  must expose room status, boolean guest-waiting state, workspace session
+  status, repository URL, and base commit for the assigned challenge.
 - The invite modal renders a live packet-contract checklist for those required
   fields and tells recruiters the candidate should work on an assessment branch
   or fork, with any upstream PR gated behind later review.
 - Candidate assessment routing currently serves it through the existing
   dev-container `CODE_IMPLEMENTATION` runtime.
+- Standalone `OPEN_SOURCE_BUG_FIX` auto-matching now has to materialize the
+  matched repo/PR into a canonical assessment session from a production-ready
+  review challenge packet before the candidate can receive a ready challenge.
+  If the packet is missing repo provenance, concept links, exact commits, PR
+  identity, success criteria, or expected evidence, the candidate remains at the
+  safe profile-received handoff instead of seeing a generic repo dump.
+- Standalone open-source/code-review auto-assignment now carries explicit
+  source-backed quality-gate diagnostics for missing candidate evidence, missing
+  repo evidence, incomplete provenance, unusable assessment quality, unverified
+  contrast separation, and embedding-only recalls. Matches with those
+  diagnostics are blocked before challenge-session materialization, and the
+  match proof UI surfaces the diagnostics separately from passing proof checks.
+- Recruiter CODE_REVIEW detail now recomputes that same source-backed quality
+  gate from the selected match-run evidence and surfaces unsafe-match
+  diagnostics in the hiring-manager decision readout, so a selected PR cannot
+  look usable when it is embedding-only or missing candidate/repo source spans.
 - Meeting-room workspace provisioning treats it as a workspace-backed interview.
 - Host room end now replays the authoritative Durable Object chat, media,
   recording, workspace, terminal, and code-server activity logs into
@@ -163,6 +212,10 @@ The controlling product rule remains:
   repository or the candidate's declared fork. A GitHub commit URL from an
   unrelated repository is rejected even when the commit SHA, diff source ref, and
   source hashes are otherwise well-formed.
+- Candidate commit-submission UI must expose the declared fork URL, exact GitHub
+  commit URL, optional upstream PR URL, and explicit upstream consent field, so
+  real assessment-branch/fork work remains reviewable instead of degrading into
+  hash-only manual evidence.
 - Assessment progress must expose commit integrity separately from generic
   submission status: live dev-container finalizer captures are labelled
   workspace-captured, while manual evidence fallback remains explicit as needing
@@ -182,10 +235,53 @@ The controlling product rule remains:
 - Live assessment-room progress coverage must name those same verification gaps,
   so hosts and candidates do not read a missing-test note as captured passing
   tests while the session is still underway.
-- Live assessment-room progress coverage must label accepted terminal, code,
-  and tool evidence as `tool activity`, matching recruiter summaries and
-  preserving the distinction between generic room presence and actual assessment
-  work proof.
+- Candidate manual commit submission preserves partial verification gaps even
+  when test output is present, so "unit tests passed but browser e2e could not
+  run" remains source-backed as both `test_run` and `verification_gap` evidence.
+- Deterministic assessment fallback reports now cite source-backed
+  `verification_gap` notes as explicit warnings instead of collapsing declared
+  blockers into generic missing-test diagnostics, while still refusing positive
+  verification claims without successful `test_run` evidence.
+- Scheduled recruiter list/detail progress surfaces `verification_gap` as its
+  own declared limitation and keeps `test_run` confidence unsatisfied until
+  actual test output is captured, matching the durable session progress
+  behavior.
+- Scheduled recruiter lists must preserve evaluated assessment evidence
+  coverage, cited claim previews, and diagnostic previews from the latest
+  report, so scan-level cards show why a commit assessment is trustworthy or
+  limited instead of collapsing the report into status-only text.
+- Readiness details must make lower-confidence review states explicit: a session
+  may be ready to start evaluation with a declared verification gap or manual
+  commit evidence, but the recruiter readout must say that missing test output
+  or non-workspace commit provenance is a limitation and not correctness proof.
+- Recruiter list cards and detail badges must use the same limited-readiness
+  language for those sessions, so the most detailed review page cannot collapse
+  lower-confidence evidence back into a generic "ready" state.
+- Source-backed evaluator prompts expose `verification_gap` separately from
+  `test_run`, allowing reports to cite declared verification limits while
+  preserving the no-positive-verification-without-test-output rule.
+- Source-backed evaluator normalization drops positive implementation
+  correctness, quality, security, reliability, or performance claims unless the
+  claim cites a successful `test_run` bound to the submitted `git_commit`. A
+  final diff alone can support `implementation_evidence`, not proven
+  correctness.
+- Source-backed evaluator recommendation normalization downgrades
+  `strong_evidence_to_advance` to human review unless verified
+  implementation-quality claims survive normalization and no warning or
+  blocking diagnostics remain.
+- Source-backed evaluator normalization drops positive debugging/process claims
+  unless the claim cites terminal, code-editor, workspace, transcript, chat, or
+  candidate AI-prompt evidence. A final diff alone proves implementation
+  content, not workflow quality.
+- Source-backed evaluator normalization drops positive communication,
+  reasoning, collaboration, explanation, or tradeoff claims unless the claim
+  cites transcript, chat, candidate plan, or candidate-authored AI-prompt
+  evidence. A final diff alone proves implementation content, not candidate
+  explanation quality.
+- Live assessment-room progress coverage now labels accepted terminal command,
+  terminal output, code-server file/editor observations, and room media/tool
+  controls as `tool activity`, matching recruiter summaries and preserving the
+  distinction between generic room presence and actual assessment work proof.
 - Live assessment-room progress coverage must label accepted agent evidence as
   `AI use`, matching recruiter summaries and making transparent candidate AI
   assistance observable instead of implying generic platform AI.
@@ -278,6 +374,14 @@ The controlling product rule remains:
   stores the commit through the repo-task assessment spine. Dirty or untracked
   worktrees are still refused so uncommitted editor changes cannot be mistaken
   for submitted work.
+- Candidate dev-container assessment workspaces now keep the source-backed
+  task packet, repo/base commit locator, evidence coverage, AI-use state, and
+  Submit Work action visible above the code workspace instead of hiding
+  assessment readiness inside a drawer.
+- Open-source assessment containers now set a deterministic Git author identity
+  before the candidate creates an assessment-branch commit, and the candidate
+  workspace submit panel shows the exact status, verification, add, commit, and
+  finalizer sequence before the trusted workspace finalizer runs.
 - Workspace finalization also attaches bounded `code_server_file_observation`
   source refs for changed files at the submitted commit. These observations are
   derived from immutable git blobs, carry blob/content hashes and safe previews
@@ -289,9 +393,52 @@ The controlling product rule remains:
 - `repo_task_interview_sessions` exists as a compatibility view over
   `assessment_sessions` so repo-task-specific routes can build on the common
   assessment substrate without duplicating event storage.
-- Repo-task route/API integration, final evidence bundle assembly, and
-  production `FinalRepoTaskAssessmentOutput` persistence from real assessment
-  runs remain pending.
+- Source-backed repo-task evaluator reports now persist a
+  `repo-task-review-packet-v1` artifact inside
+  `repo-task-assessment-output-v1`, joining the assigned challenge packet,
+  assignment trust, challenge contract, submitted commit, commit-to-challenge
+  binding, evidence coverage, readiness, recommendation, claim ids, and
+  diagnostic codes in one immutable evaluation report payload.
+- Recruiter assessment detail, the candidate room task brief, and the live
+  open-source workspace smoke now expose that persisted
+  `repo-task-review-packet-v1` as a safe final review packet summary: assigned
+  challenge, submitted commit, evidence readiness, claim count, and diagnostic
+  count, without leaking hidden rubric data.
+- Candidate Report Ready panels now expose a richer candidate-safe final
+  evidence packet view that separates selected evidence snippets, evaluator
+  claims, evaluator diagnostics, and AI-use state without exposing internal
+  claim or diagnostic ids.
+- Candidate Report Ready panels now download that same candidate-safe final
+  evidence packet from a server-backed Markdown receipt endpoint built from the
+  room assessment progress serializer. The artifact gives candidates a
+  portable summary of the assigned challenge title, repo URL, base commit,
+  task, success criteria, expected evidence, verification command, submitted
+  commit, upstream PR tracking URL and candidate consent status, AI-use state,
+  source previews, evaluator claims, diagnostics, and use guidance without
+  exposing internal session/event/claim identifiers or hidden rubric data. The
+  artifact explicitly states that PIPE does not imply automatic upstream PR
+  submission; upstream tracking is recorded only when a candidate-approved PR
+  URL is source-backed, and the live open-source workspace smoke verifies the
+  deployed download path.
+- Recruiter assessment detail now shows an AI-use receipt beside the final
+  review packet, separating real prompt/response source refs, Clippy/Devin
+  bridge telemetry, and missing-evidence boundaries without implying silence
+  proves no AI use.
+- Final repo-task review packets now persist an evidence-contract receipt and
+  recruiter detail displays it, showing which expected evidence items were
+  machine-supported by source refs and which success criteria still require
+  human review.
+- Recruiter assessment APIs now expose a
+  `repo-task-final-evidence-bundle-v1` audit packet for each scheduled
+  assessment, assembling the assigned challenge, submitted commit, immutable
+  event timeline, event source refs, latest evaluation report, cited claims,
+  diagnostics, and human decision from the source-backed assessment spine.
+- Recruiter assessment detail now renders that final evidence bundle after
+  evaluation, showing reviewability, timeline events, source-ref counts, exact
+  source previews, evaluator output, and human-decision state from the audit
+  packet, and recruiters can download both the exact JSON audit packet and a
+  human-readable Markdown assessment brief from the detail page. Broader signed
+  artifact storage and cross-interview export views remain pending.
 
 ## Proposed TypeScript Surface
 
@@ -350,8 +497,10 @@ Required blocking diagnostics:
 5. Expand the initial `OPEN_SOURCE_BUG_FIX` meeting creation seam so matched
    repo-task assessments accept only `CandidateRepoTaskMatch` or explicit
    diagnostics.
-6. Add final evaluation persistence using `FinalRepoTaskAssessmentOutput`
-   against the canonical assessment event spine.
+6. Expand final evidence bundle assembly on top of the persisted
+   `repo-task-review-packet-v1` output, beyond the current recruiter-safe
+   summary, including candidate-safe views that separate selected evidence,
+   diagnostics, AI usage, and server-only ground truth.
 7. Add recruiter and candidate-safe views that separate selected evidence,
    diagnostics, AI usage, and server-only ground truth.
 

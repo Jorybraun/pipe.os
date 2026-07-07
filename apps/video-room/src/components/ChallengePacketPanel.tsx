@@ -1,6 +1,10 @@
 import { ClipboardCheck } from 'lucide-react';
 import type { RoomWorkspaceChallengePacket } from '../types';
-import { summarizeChallengePacket } from '../lib/challengePacketSummary';
+import {
+  candidateSafeChallengeExactText,
+  hidesCandidateSolutionPullRequest,
+  summarizeChallengePacket,
+} from '../lib/challengePacketSummary';
 
 interface ChallengePacketPanelProps {
   packet: RoomWorkspaceChallengePacket;
@@ -12,8 +16,20 @@ export function ChallengePacketPanel({
   compact = false,
 }: ChallengePacketPanelProps): JSX.Element {
   const summary = summarizeChallengePacket(packet);
+  const hideSolutionPullRequest = hidesCandidateSolutionPullRequest({
+    sourceRefType: packet.sourceRefType,
+  });
+  const visibleGithubPrNumber = hideSolutionPullRequest ? null : summary.githubPrNumber;
+  const visiblePullRequestUrl = hideSolutionPullRequest ? null : summary.pullRequestUrl;
+  const candidateSafeExactText = candidateSafeChallengeExactText({
+    sourceRefType: packet.sourceRefType,
+    exactText: packet.exactText,
+  });
   const hasContract = Boolean(
     summary.task
+    || summary.verificationCommand
+    || summary.matchProof.length > 0
+    || summary.assessmentFit.length > 0
     || summary.successCriteria.length > 0
     || summary.expectedEvidence.length > 0,
   );
@@ -32,7 +48,7 @@ export function ChallengePacketPanel({
         </div>
       </div>
 
-      {(summary.repositoryUrl || summary.githubPrNumber || summary.baseCommitSha) && (
+      {(summary.repositoryUrl || hideSolutionPullRequest || visibleGithubPrNumber || summary.baseCommitSha) && (
         <dl className="challenge-packet-locator">
           {summary.repositoryUrl && (
             <>
@@ -40,10 +56,24 @@ export function ChallengePacketPanel({
               <dd>{summary.repositoryUrl}</dd>
             </>
           )}
-          {summary.githubPrNumber && (
+          {hideSolutionPullRequest && (
+            <>
+              <dt>Source</dt>
+              <dd>Source-backed replay</dd>
+            </>
+          )}
+          {visibleGithubPrNumber && (
             <>
               <dt>PR</dt>
-              <dd>#{summary.githubPrNumber}</dd>
+              <dd>
+                {visiblePullRequestUrl ? (
+                  <a href={visiblePullRequestUrl} target="_blank" rel="noopener noreferrer">
+                    #{visibleGithubPrNumber}
+                  </a>
+                ) : (
+                  <>#{visibleGithubPrNumber}</>
+                )}
+              </dd>
             </>
           )}
           {summary.baseCommitSha && (
@@ -61,6 +91,32 @@ export function ChallengePacketPanel({
             <div className="challenge-packet-contract-section">
               <strong>Task</strong>
               <p>{summary.task}</p>
+            </div>
+          )}
+          {summary.verificationCommand && (
+            <div className="challenge-packet-contract-section">
+              <strong>Verification command</strong>
+              <p><code>{summary.verificationCommand}</code></p>
+            </div>
+          )}
+          {summary.matchProof.length > 0 && (
+            <div className="challenge-packet-contract-section">
+              <strong>Match proof</strong>
+              <ul>
+                {summary.matchProof.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {summary.assessmentFit.length > 0 && (
+            <div className="challenge-packet-contract-section">
+              <strong>Assessment fit</strong>
+              <ul>
+                {summary.assessmentFit.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
             </div>
           )}
           {summary.successCriteria.length > 0 && (
@@ -87,7 +143,7 @@ export function ChallengePacketPanel({
       )}
 
       <pre className="challenge-packet-exact-text" data-testid="challenge-packet-exact-text">
-        {packet.exactText}
+        {candidateSafeExactText}
       </pre>
 
       <div className="challenge-packet-footer">

@@ -19,6 +19,7 @@ import {
   type TemporalDecayConfig,
   DEFAULT_DECAY_CONFIG,
 } from '../challengeMatching/temporalDecay';
+import { resolveCandidateWorkspacePersonId } from './compatibility';
 
 export interface EvidenceObservation {
   assertionId: string;
@@ -218,6 +219,9 @@ export async function loadAggregatedCandidateEvidence(
     polarity: string;
   }
 
+  const workspacePersonId = await resolveCandidateWorkspacePersonId(db, candidateId);
+  if (!workspacePersonId) return aggregateAllConceptEvidence([], fullConfig);
+
   const result = await db.prepare(
     `SELECT sa.id AS assertion_id,
             c.canonical_key,
@@ -226,16 +230,15 @@ export async function loadAggregatedCandidateEvidence(
             COALESCE(sa.observed_at, sa.created_at) AS observed_at,
             COALESCE(i.interaction_type, 'unknown') AS interaction_type,
             COALESCE(sa.polarity, 'positive') AS polarity
-       FROM applications app
-       JOIN semantic_assertions sa ON sa.workspace_person_id = app.workspace_person_id
+       FROM semantic_assertions sa
        JOIN assertion_concepts ac ON ac.assertion_id = sa.id
        JOIN concepts c ON c.id = ac.concept_id
        LEFT JOIN episodes ep ON ep.id = sa.episode_id
        LEFT JOIN interactions i ON i.id = ep.interaction_id
        LEFT JOIN signal_evidence se ON se.assertion_id = sa.id AND se.concept_id = ac.concept_id
-      WHERE app.legacy_candidate_id = ?1
+      WHERE sa.workspace_person_id = ?1
       ORDER BY c.canonical_key, COALESCE(sa.observed_at, sa.created_at) DESC`,
-  ).bind(candidateId).all<ObservationRow>();
+  ).bind(workspacePersonId).all<ObservationRow>();
 
   const observations: EvidenceObservation[] = (result.results ?? []).map((row) => ({
     assertionId: row.assertion_id,

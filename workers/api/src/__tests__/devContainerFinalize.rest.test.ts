@@ -71,6 +71,21 @@ function buildCtx(): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
+function buildCapturingCtx(): { ctx: ExecutionContext; waitUntilAll: () => Promise<void> } {
+  const promises: Promise<unknown>[] = [];
+  return {
+    ctx: {
+      waitUntil: (promise: Promise<unknown>) => {
+        promises.push(promise);
+      },
+      passThroughOnException: () => {},
+    } as unknown as ExecutionContext,
+    waitUntilAll: async () => {
+      await Promise.all(promises);
+    },
+  };
+}
+
 async function authHeader(candidateId: string): Promise<string> {
   const token = await signJwt({ sub: candidateId, pid: 'pipe_1' }, 'test-secret');
   return `Bearer ${token}`;
@@ -105,7 +120,7 @@ async function sourceRef(input: {
   return {
     ...input,
     contentHash: await sha256ContentHash(input.exactText),
-    metadata: { source: 'dev_container_finalize_test' },
+    metadata: { source: 'agent_bridge_workspace_finalize' },
   };
 }
 
@@ -171,6 +186,311 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
     sqlite.close();
   });
 
+  async function seedFinalizeScenario(options: {
+    includeVerificationEvidence?: boolean;
+    includeTerminalEvidence?: boolean;
+    terminalLocatorCommitSha?: string;
+  } = {}): Promise<{
+    candidateId: string;
+    devContainerSessionId: string;
+    assessmentSessionId: string;
+    baseCommitSha: string;
+    commitSha: string;
+    repositoryUrl: string;
+    devContainerNamespace: FakeFinalizeNamespace;
+    env: Env;
+  }> {
+    const candidateId = 'cand_finalize_workspace_minimal';
+    const devContainerSessionId = 'dev-session-finalize-minimal';
+    const assessmentSessionId = 'assessment-session-finalize-minimal';
+    const interviewId = 'interview-finalize-minimal';
+    const baseCommitSha = 'c'.repeat(40);
+    const commitSha = 'd'.repeat(40);
+    const now = '2026-06-30T18:00:00.000Z';
+    const repositoryUrl = 'https://github.com/pipe/source-backed-worker';
+    const challengeExactText = [
+      `Repo: ${repositoryUrl}`,
+      `Base commit: ${baseCommitSha}`,
+      'Task: Fix the source-backed workspace finalizer verification path.',
+      'Success criteria:',
+      '- Persist commit evidence through the assessment evidence spine.',
+      '- Capture verification output or an explicit missing-test gap.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the finalizer path',
+      '- test output or verification note',
+      'Verification command: npm test -- finalize',
+    ].join('\n');
+    const commitExactText = `commit ${commitSha}\nAuthor: Candidate\n\nFix workspace finalizer verification`;
+    const diffExactText = [
+      'diff --git a/src/finalize.ts b/src/finalize.ts',
+      `index ${baseCommitSha.slice(0, 7)}..${commitSha.slice(0, 7)} 100644`,
+      '--- a/src/finalize.ts',
+      '+++ b/src/finalize.ts',
+      '@@ -1,3 +1,4 @@',
+      '+export const verification = "source-backed";',
+    ].join('\n');
+    const testRunExactText = 'npm test -- finalize\nPASS src/finalize.test.ts';
+    const terminalExactText = [
+      '$ git status --short',
+      ' M src/finalize.ts',
+      '$ npm test -- finalize',
+      'PASS src/finalize.test.ts',
+    ].join('\n');
+
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (id, candidate_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?)`,
+    ).run(interviewId, candidateId, now, now);
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'DEV_CONTAINER_REPO_TASK', 'IN_PROGRESS', ?, ?, ?, '{}', ?, ?)`,
+    ).run(
+      assessmentSessionId,
+      `assessment-session:finalize-minimal:${interviewId}`,
+      interviewId,
+      candidateId,
+      devContainerSessionId,
+      'workspace-router',
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_evidence_events (
+         id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+         narrative, payload_json, occurred_at, created_at
+       ) VALUES (?, ?, ?, 1, 'dev_container_event', 'system', NULL, ?, ?, ?, ?)`,
+    ).run(
+      'assessment-event-finalize-minimal-challenge',
+      `assessment-event:finalize-minimal-challenge:${interviewId}`,
+      assessmentSessionId,
+      'Assigned source-backed workspace task.',
+      JSON.stringify({ repositoryUrl, baseCommitSha }),
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_event_source_refs (
+         id, event_id, source_ref_type, source_ref_id, evidence_role,
+         locator_json, exact_text, content_hash, metadata_json, created_at
+       ) VALUES (?, ?, 'open_source_challenge_packet', ?, 'assigned_challenge', ?, ?, ?, '{}', ?)`,
+    ).run(
+      'assessment-source-finalize-minimal-challenge',
+      'assessment-event-finalize-minimal-challenge',
+      `challenge:${interviewId}`,
+      JSON.stringify({ repositoryUrl, baseCommitSha }),
+      challengeExactText,
+      await sha256ContentHash(challengeExactText),
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO dev_container_sessions (
+         id, session_id, candidate_id, challenge_id, pipeline_id, access_scope,
+         status, instance_type, ttl_seconds, ttl_source, expires_at, warned_at,
+         url, repo_git_url, challenge_branch, base_commit_sha, started_at, stopped_at,
+         error_message, created_at, updated_at
+       ) VALUES (?, ?, ?, NULL, 'pipe_1', 'candidate', 'READY', 'standard-1',
+         3600, 'GLOBAL', ?, NULL, ?, ?, 'pipe-assessment/finalizer', ?, ?, NULL, NULL, ?, ?)`,
+    ).run(
+      'dev-container-row-finalize-minimal',
+      devContainerSessionId,
+      candidateId,
+      '2026-06-30T19:00:00.000Z',
+      `https://app-dev.hire-pipe.com/rpc/dev-container/${devContainerSessionId}/proxy/`,
+      repositoryUrl,
+      baseCommitSha,
+      now,
+      now,
+      now,
+    );
+
+    const sourceRefs: BridgeSourceRef[] = [
+      await sourceRef({
+        sourceRefType: 'git_commit',
+        sourceRefId: commitSha,
+        evidenceRole: 'submitted_commit',
+        locator: { repositoryUrl, commitSha },
+        exactText: commitExactText,
+      }),
+      await sourceRef({
+        sourceRefType: 'code_diff',
+        sourceRefId: `${baseCommitSha}..${commitSha}`,
+        evidenceRole: 'submitted_diff',
+        locator: { repositoryUrl, baseCommitSha, commitSha },
+        exactText: diffExactText,
+      }),
+    ];
+    if (options.includeVerificationEvidence !== false) {
+      sourceRefs.push(
+        await sourceRef({
+          sourceRefType: 'test_run',
+          sourceRefId: `${commitSha}:test-run`,
+          evidenceRole: 'verification_test_output',
+          locator: { repositoryUrl, baseCommitSha, commitSha, command: 'npm test -- finalize' },
+          exactText: testRunExactText,
+        }),
+      );
+    }
+    if (options.includeTerminalEvidence !== false) {
+      sourceRefs.push(
+        await sourceRef({
+          sourceRefType: 'terminal_command',
+          sourceRefId: `${commitSha}:terminal-finalize`,
+          evidenceRole: 'workspace_terminal_command',
+          locator: {
+            repositoryUrl,
+            baseCommitSha,
+            commitSha: options.terminalLocatorCommitSha ?? commitSha,
+            command: 'npm test -- finalize',
+          },
+          exactText: terminalExactText,
+        }),
+      );
+    }
+
+    const bridgeBody = {
+      ok: true,
+      submitted: false,
+      submissionPayload: {
+        narrative: 'Candidate finalized the source-backed workspace fix.',
+        repositoryUrl,
+        forkRepositoryUrl: null,
+        branchName: 'pipe-assessment/finalizer',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `${repositoryUrl}/commit/${commitSha}`,
+        upstreamPullRequestUrl: null,
+        upstreamPrConsent: false,
+        changedFiles: [{ path: 'src/finalize.ts', status: 'modified', additions: 1, deletions: 0 }],
+        occurredAt: now,
+        sourceRefs,
+      },
+    };
+    const devContainerNamespace = fakeFinalizeNamespace(bridgeBody);
+    const env = {
+      SESSION_TOKEN_SECRET: 'test-secret',
+      DB: createMockD1(sqlite),
+      DEV_CONTAINER: devContainerNamespace,
+    } as unknown as Env;
+
+    return {
+      candidateId,
+      devContainerSessionId,
+      assessmentSessionId,
+      baseCommitSha,
+      commitSha,
+      repositoryUrl,
+      devContainerNamespace,
+      env,
+    };
+  }
+
+  it('rejects bridge-captured commits that omit verification output or an explicit gap', async () => {
+    const scenario = await seedFinalizeScenario({ includeVerificationEvidence: false });
+
+    const response = await rpcAuth.request(
+      `/dev-container/${scenario.devContainerSessionId}/assessment/finalize`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: await authHeader(scenario.candidateId),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          narrative: 'Finish my workspace assessment.',
+          testCommand: 'npm test -- finalize',
+          verificationNotes: 'Focused finalizer test passed in the workspace.',
+        }),
+      },
+      scenario.env,
+      buildCtx(),
+    );
+
+    expect(response.status).toBe(502);
+    const body = await response.json() as { error?: { message?: string } };
+    expect(body.error?.message).toContain('test_run or verification_gap');
+
+    const commitRows = sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'commit_submission'`,
+    ).get(scenario.assessmentSessionId) as { count: number };
+    expect(commitRows.count).toBe(0);
+  });
+
+  it('rejects bridge-captured commits that omit terminal process telemetry', async () => {
+    const scenario = await seedFinalizeScenario({ includeTerminalEvidence: false });
+
+    const response = await rpcAuth.request(
+      `/dev-container/${scenario.devContainerSessionId}/assessment/finalize`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: await authHeader(scenario.candidateId),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          narrative: 'Finish my workspace assessment.',
+          testCommand: 'npm test -- finalize',
+          verificationNotes: 'Focused finalizer test passed in the workspace.',
+        }),
+      },
+      scenario.env,
+      buildCtx(),
+    );
+
+    expect(response.status).toBe(502);
+    const body = await response.json() as { error?: { message?: string } };
+    expect(body.error?.message).toContain('terminal_command');
+
+    const commitRows = sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'commit_submission'`,
+    ).get(scenario.assessmentSessionId) as { count: number };
+    expect(commitRows.count).toBe(0);
+  });
+
+  it('rejects bridge-captured commits whose process source refs point at another commit', async () => {
+    const scenario = await seedFinalizeScenario({
+      terminalLocatorCommitSha: 'e'.repeat(40),
+    });
+
+    const response = await rpcAuth.request(
+      `/dev-container/${scenario.devContainerSessionId}/assessment/finalize`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: await authHeader(scenario.candidateId),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          narrative: 'Finish my workspace assessment.',
+          testCommand: 'npm test -- finalize',
+          verificationNotes: 'Focused finalizer test passed in the workspace.',
+        }),
+      },
+      scenario.env,
+      buildCtx(),
+    );
+
+    expect(response.status).toBe(502);
+    const body = await response.json() as { error?: { message?: string } };
+    expect(body.error?.message).toContain('source refs are not bound');
+
+    const commitRows = sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'commit_submission'`,
+    ).get(scenario.assessmentSessionId) as { count: number };
+    expect(commitRows.count).toBe(0);
+  });
+
   it('persists bridge-captured commit evidence without leaking internal assessment ids', async () => {
     const candidateId = 'cand_finalize_workspace';
     const devContainerSessionId = 'dev-session-finalize';
@@ -214,6 +534,15 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
       fileContentHash: await sha256ContentHash('export const finalizer = "source-backed";'),
       observedAt: now,
     }, null, 2);
+    const testRunExactText = 'npm test -- finalize\nPASS src/finalize.test.ts';
+    const terminalExactText = [
+      '$ git status --short',
+      ' M src/finalize.ts',
+      '$ npm test -- finalize',
+      'PASS src/finalize.test.ts',
+      '$ git commit -am "Fix workspace finalizer"',
+      `[pipe-assessment/finalizer ${commitSha.slice(0, 7)}] Fix workspace finalizer`,
+    ].join('\n');
 
     sqlite.prepare(
       `INSERT INTO scheduled_interviews (id, candidate_id, created_at, updated_at)
@@ -329,6 +658,32 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
             exactText: diffExactText,
           }),
           await sourceRef({
+            sourceRefType: 'test_run',
+            sourceRefId: `${commitSha}:test-run`,
+            evidenceRole: 'verification_test_output',
+            locator: {
+              repositoryUrl,
+              baseCommitSha,
+              commitSha,
+              command: 'npm test -- finalize',
+              internalAssessmentSessionId: assessmentSessionId,
+            },
+            exactText: testRunExactText,
+          }),
+          await sourceRef({
+            sourceRefType: 'terminal_command',
+            sourceRefId: `${commitSha}:terminal-finalize`,
+            evidenceRole: 'workspace_terminal_command',
+            locator: {
+              repositoryUrl,
+              baseCommitSha,
+              commitSha,
+              command: 'npm test -- finalize && git commit -am "Fix workspace finalizer"',
+              internalAssessmentSessionId: assessmentSessionId,
+            },
+            exactText: terminalExactText,
+          }),
+          await sourceRef({
             sourceRefType: 'code_server_file_observation',
             sourceRefId: `${commitSha}:file-observation:src_finalize.ts`,
             evidenceRole: 'workspace_file_observation',
@@ -345,6 +700,7 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
       DEV_CONTAINER: devContainerNamespace,
     } as unknown as Env;
 
+    const { ctx, waitUntilAll } = buildCapturingCtx();
     const response = await rpcAuth.request(
       `/dev-container/${devContainerSessionId}/assessment/finalize`,
       {
@@ -353,15 +709,20 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
           Authorization: await authHeader(candidateId),
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ narrative: 'Finish my workspace assessment.' }),
+        body: JSON.stringify({
+          narrative: 'Finish my workspace assessment.',
+          testCommand: 'npm test -- finalize',
+          verificationNotes: 'Focused finalizer test passed in the workspace.',
+        }),
       },
       env,
-      buildCtx(),
+      ctx,
     );
 
     expect(response.status).toBe(201);
     const body = await response.json() as {
       submission: { accepted: boolean; repositoryUrl: string; branchName: string; commitSha: string };
+      evaluationStart: { autoStarted: boolean; backgrounded: boolean };
       progress: {
         mode: string;
         state: string;
@@ -379,11 +740,15 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
       branchName: 'pipe-assessment/finalizer',
       commitSha,
     });
+    expect(body.evaluationStart).toEqual({
+      autoStarted: true,
+      backgrounded: true,
+    });
     expect(body.progress).toMatchObject({
       mode: 'DEV_CONTAINER_REPO_TASK',
-      state: 'FINAL_SUBMITTED',
-      stage: 'READY_FOR_EVALUATION',
-      nextAction: 'START_EVALUATION',
+      state: 'EVALUATING',
+      stage: 'EVALUATING',
+      nextAction: 'WAIT_FOR_EVALUATION',
       hasChallengePacket: true,
       hasCommitSubmission: true,
     });
@@ -401,6 +766,8 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
       repositoryUrl,
       baseCommitSha,
       narrative: 'Finish my workspace assessment.',
+      testCommand: 'npm test -- finalize',
+      verificationNotes: 'Focused finalizer test passed in the workspace.',
     });
 
     const commitRow = sqlite.prepare(
@@ -410,6 +777,31 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
           AND kind = 'commit_submission'`,
     ).get(assessmentSessionId) as { count: number };
     expect(commitRow.count).toBe(1);
+    const evaluationRequestRow = sqlite.prepare(
+      `SELECT actor_type, actor_id, payload_json
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'dev_container_event'
+          AND narrative = 'PIPE queued source-backed assessment evaluation after workspace commit finalization.'
+        LIMIT 1`,
+    ).get(assessmentSessionId) as { actor_type: string; actor_id: string; payload_json: string } | undefined;
+    expect(evaluationRequestRow).toMatchObject({
+      actor_type: 'system',
+      actor_id: 'pipe-assessment-evaluator',
+    });
+    expect(JSON.parse(evaluationRequestRow?.payload_json ?? '{}')).toMatchObject({
+      action: 'auto_start_evaluation',
+      evaluatorStatus: 'source_backed_evaluator_requested',
+      devContainerSessionId,
+      commitSha,
+    });
+    const evaluationRequestSource = sqlite.prepare(
+      `SELECT exact_text
+         FROM assessment_event_source_refs
+        WHERE source_ref_type = 'assessment_evaluation_request'
+        LIMIT 1`,
+    ).get() as { exact_text: string } | undefined;
+    expect(evaluationRequestSource?.exact_text).toContain(`workspace commit ${commitSha}`);
     const fileObservationRow = sqlite.prepare(
       `SELECT exact_text
          FROM assessment_event_source_refs
@@ -424,5 +816,20 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
     expect(serialized).not.toContain(`assessment-session:finalize:${interviewId}`);
     expect(serialized).not.toContain('assessment-event-finalize-challenge');
     expect(serialized).not.toContain('internalAssessmentSessionId');
+
+    await waitUntilAll();
+    expect(sqlite.prepare(
+      `SELECT state FROM assessment_sessions WHERE id = ?`,
+    ).get(assessmentSessionId)).toEqual({ state: 'DIAGNOSTIC' });
+    const diagnosticRow = sqlite.prepare(
+      `SELECT code, provider
+         FROM assessment_diagnostics
+        WHERE session_id = ?
+        LIMIT 1`,
+    ).get(assessmentSessionId) as { code: string; provider: string } | undefined;
+    expect(diagnosticRow).toEqual({
+      code: 'AI_DEVELOPER_UNAVAILABLE',
+      provider: 'cloudflare-ai',
+    });
   });
 });

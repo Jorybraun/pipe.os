@@ -135,6 +135,12 @@ describe('assessments_to_living_context backfill', () => {
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now'))
       );
+      CREATE TABLE talent_pool_intakes (
+        candidate_id TEXT PRIMARY KEY,
+        profile_r2_key TEXT,
+        submitted_at TEXT,
+        updated_at TEXT
+      );
     `);
     sqlite.exec(livingContextMigration);
     sqlite.exec(matchingMigration);
@@ -168,6 +174,66 @@ describe('assessments_to_living_context backfill', () => {
   afterEach(() => {
     sqlite.close();
     clearGateCache();
+  });
+
+  it('does not fabricate application bridges for roleless Talent Pool intake candidates', async () => {
+    sqlite.exec(`
+      INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status, resume_s3_key, skills)
+      VALUES (
+        'talent-roleless-1',
+        'owner-1',
+        NULL,
+        'Taylor Talent',
+        'taylor@example.com',
+        'INVITED',
+        'talent-intake/talent-roleless-1/profile.txt',
+        '["TypeScript"]'
+      );
+      INSERT INTO talent_pool_intakes (candidate_id, profile_r2_key, submitted_at, updated_at)
+      VALUES (
+        'talent-roleless-1',
+        'talent-intake/talent-roleless-1/profile.txt',
+        '2026-07-02T19:53:49.000Z',
+        '2026-07-02T19:53:49.000Z'
+      );
+      INSERT INTO people (
+        id, ingestion_key, display_name, primary_email, external_ids_json, created_at, updated_at
+      ) VALUES (
+        'person-talent-roleless-1',
+        'email:taylor@example.com',
+        'Taylor Talent',
+        'taylor@example.com',
+        '{}',
+        '2026-07-02T19:53:49.000Z',
+        '2026-07-02T19:53:49.000Z'
+      );
+      INSERT INTO workspace_people (
+        id, ingestion_key, workspace_id, person_id, context_json, created_at, updated_at
+      ) VALUES (
+        'workspace-person-talent-roleless-1',
+        'workspace:owner-1:person:person-talent-roleless-1',
+        'owner-1',
+        'person-talent-roleless-1',
+        '{"talentPool":{"candidateId":"talent-roleless-1","status":"active","roleless":true},"legacyCandidateIds":["talent-roleless-1"]}',
+        '2026-07-02T19:53:49.000Z',
+        '2026-07-02T19:53:49.000Z'
+      );
+    `);
+
+    const result = await runScheduledBackfill({ DB: db } as unknown as Parameters<typeof runScheduledBackfill>[0]);
+
+    expect(result.gateEnabled).toBe(true);
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM applications
+        WHERE legacy_candidate_id = 'talent-roleless-1'`,
+    ).get()).toEqual({ count: 0 });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM person_roles pr
+         JOIN applications app ON app.id = pr.application_id
+        WHERE app.legacy_candidate_id = 'talent-roleless-1'`,
+    ).get()).toEqual({ count: 0 });
   });
 
   it('reprocesses partially ingested assessment sessions when evaluation report context is missing', async () => {

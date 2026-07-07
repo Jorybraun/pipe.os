@@ -143,6 +143,7 @@ describe('AssessmentStatusStrip', () => {
     expect(screen.getByTestId('assessment-base-commit').textContent).toContain('Base dddddddd');
     expect(screen.getByTestId('assessment-next-action').textContent).toContain('Fix the source-backed worker retry path.');
     expect(screen.getByText('2 evidence items')).not.toBeNull();
+    expect(screen.getByTestId('assessment-open-submission').textContent).toContain('Submit Work');
 
     fireEvent.click(screen.getByTestId('assessment-open-workspace'));
     fireEvent.click(screen.getByTestId('assessment-open-submission'));
@@ -151,20 +152,167 @@ describe('AssessmentStatusStrip', () => {
     expect(onOpenSubmission).toHaveBeenCalledTimes(1);
   });
 
+  it('labels source-backed replay challenges without exposing the solution PR badge', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="INTERVIEW"
+        workspace={workspace({
+          githubPrNumber: 144,
+          challenge: {
+            status: 'repo_task_assigned',
+            kind: 'repo_only',
+            source: 'scheduled_interview.challenge_packet',
+            message: null,
+            packet: {
+              ...challengePacket,
+              sourceRefType: 'review_challenge_packet',
+              locator: {
+                ...challengePacket.locator,
+                pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/144',
+                headCommitSha: 'e'.repeat(40),
+              },
+            },
+          },
+        })}
+        assessmentProgress={{
+          ...progress,
+          assignmentTrust: {
+            state: 'matched_challenge',
+            label: 'PIPE-matched challenge',
+            detail: 'Selected from source-backed repo and candidate evidence.',
+            tone: 'matched',
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('assessment-source-context').textContent).toContain('Source-backed replay');
+    expect(screen.queryByTestId('assessment-pr')).toBeNull();
+  });
+
   it('surfaces durable assessment progress after commit submission', () => {
+    const onOpenSubmission = vi.fn();
     render(
       <AssessmentStatusStrip
         meetingType="DEV_CONTAINER_CHALLENGE"
         workspace={workspace()}
-        assessmentProgress={progress}
+        onOpenSubmission={onOpenSubmission}
+        assessmentProgress={{
+          ...progress,
+          sourceRefCounts: [
+            { kind: 'ai_user_prompt', count: 1 },
+            { kind: 'ai_agent_response', count: 1 },
+            { kind: 'test_run', count: 1 },
+          ],
+        }}
       />,
     );
 
     expect(screen.getByTestId('assessment-progress-stage').textContent).toContain('Ready For Evaluation');
     expect(screen.getByTestId('assessment-readiness').textContent).toContain('Ready to evaluate');
     expect(screen.getByTestId('assessment-progress-commit').textContent).toContain('Commit cccccccc');
+    expect(screen.getByTestId('assessment-ai-usage-state').textContent).toContain('AI response captured');
     expect(screen.getByText('Start source-backed AI or human evaluation.')).not.toBeNull();
-    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain('challenge, chat, workspace, tool activity, commit, AI use, tests');
+    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain('challenge, chat, workspace, tool activity, commit, AI response, tests');
+    expect(screen.getByTestId('assessment-open-submission').textContent).toContain('Review Submission');
+    expect(screen.getByTestId('assessment-open-submission').textContent).not.toContain('Submit Work');
+    fireEvent.click(screen.getByTestId('assessment-open-submission'));
+    expect(onOpenSubmission).toHaveBeenCalledTimes(1);
+  });
+
+  it('labels evaluated submissions as report-ready instead of asking for another submission', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace()}
+        onOpenSubmission={vi.fn()}
+        assessmentProgress={{
+          ...progress,
+          stage: 'EVALUATED',
+          nextAction: 'REVIEW_EVALUATION',
+          nextActionLabel: 'Review the source-backed report.',
+          evaluation: {
+            status: 'EVALUATED',
+            summary: 'Source-backed report ready.',
+            createdAt: '2026-07-03T20:00:00.000Z',
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('assessment-open-submission').textContent).toContain('Report Ready');
+    expect(screen.getByTestId('assessment-open-submission').textContent).not.toContain('Submit Work');
+  });
+
+  it('makes the absence of AI usage visible instead of implying it was captured', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace()}
+        assessmentProgress={{
+          ...progress,
+          hasAiInteraction: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('assessment-ai-usage-state').textContent).toContain('No AI use captured');
+    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain(
+      'challenge, chat, workspace, tool activity, commit, tests',
+    );
+    expect(screen.getByTestId('assessment-progress-coverage').textContent).not.toContain('AI use');
+  });
+
+  it('shows blocked AI prompts as diagnostics instead of completed AI help', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace()}
+        assessmentProgress={{
+          ...progress,
+          hasAiInteraction: true,
+          sourceRefCounts: [
+            { kind: 'ai_user_prompt_blocked', count: 1 },
+            { kind: 'test_run', count: 1 },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('assessment-ai-usage-state').textContent).toContain('AI prompt blocked');
+    expect(screen.getByTestId('assessment-ai-usage-state').getAttribute('title')).toBe(
+      '1 blocked prompt captured. A prompt was blocked or the bridge was unavailable; no agent response is counted as assistance.',
+    );
+    expect(screen.getByTestId('assessment-ai-usage-state').textContent).not.toContain('AI use captured');
+    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain(
+      'challenge, chat, workspace, tool activity, commit, AI prompt blocked, tests',
+    );
+  });
+
+  it('surfaces agent bridge status without counting it as completed AI help', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace()}
+        assessmentProgress={{
+          ...progress,
+          hasAiInteraction: true,
+          sourceRefCounts: [
+            { kind: 'agent_status', count: 1 },
+            { kind: 'test_run', count: 1 },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('assessment-ai-usage-state').textContent).toContain('AI bridge status');
+    expect(screen.getByTestId('assessment-ai-usage-state').getAttribute('title')).toBe(
+      '1 bridge status captured; no agent response is counted as assistance.',
+    );
+    expect(screen.getByTestId('assessment-ai-usage-state').textContent).not.toContain('AI response captured');
+    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain(
+      'challenge, chat, workspace, tool activity, commit, AI bridge status, tests',
+    );
   });
 
   it('surfaces verification gaps in live room progress coverage', () => {
@@ -200,8 +348,48 @@ describe('AssessmentStatusStrip', () => {
     );
 
     const coverage = screen.getByTestId('assessment-progress-coverage');
-    expect(coverage.textContent).toContain('challenge, chat, workspace, tool activity, commit, AI use, verification gap');
+    expect(coverage.textContent).toContain('challenge, chat, workspace, tool activity, commit, AI trace, verification gap');
     expect(coverage.textContent).not.toContain('tests');
+  });
+
+  it('surfaces evaluation diagnostics in the room status strip', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace()}
+        assessmentProgress={{
+          ...progress,
+          stage: 'NEEDS_ATTENTION',
+          nextAction: 'RESOLVE_DIAGNOSTIC',
+          nextActionLabel: 'Resolve the blocking diagnostic before continuing.',
+          evaluation: {
+            status: 'AI_DEVELOPER_UNAVAILABLE',
+            summary: 'Workers AI is not configured for source-backed repo-task evaluation.',
+            recommendation: 'insufficient_evidence',
+            createdAt: '2026-06-29T22:03:00.000Z',
+            diagnostics: [
+              {
+                id: 'diagnostic-ai-unavailable',
+                code: 'AI_DEVELOPER_UNAVAILABLE',
+                severity: 'blocking',
+                message: 'Workers AI is not configured for source-backed repo-task evaluation.',
+                sourceRefCount: 1,
+                sourceRefTypes: ['assessment_evaluation_request'],
+              },
+            ],
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('assessment-progress-stage').textContent).toContain('Needs Attention');
+    expect(screen.getByTestId('assessment-evaluation-diagnostic').textContent).toContain('AI Developer Unavailable');
+    expect(screen.getByTestId('assessment-evaluation-diagnostic').getAttribute('title')).toBe(
+      'Workers AI is not configured for source-backed repo-task evaluation.',
+    );
+    expect(screen.getByTestId('assessment-evaluation-diagnostic-detail').textContent).toContain(
+      'Workers AI is not configured for source-backed repo-task evaluation.',
+    );
   });
 
   it('shows a launch action when the host can start the controlled workspace', () => {

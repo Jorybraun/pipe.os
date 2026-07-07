@@ -1,11 +1,16 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { CheckCircle2, Loader2, Send, TriangleAlert } from 'lucide-react';
+import { CheckCircle2, Download, Loader2, Send, TriangleAlert } from 'lucide-react';
 import {
   buildCommitSubmissionPayload,
   buildCommitSubmissionDefaults,
   type CommitSubmissionFormFields,
 } from '../lib/commitSubmission';
-import { summarizeChallengePacket } from '../lib/challengePacketSummary';
+import { hidesCandidateSolutionPullRequest, summarizeChallengePacket } from '../lib/challengePacketSummary';
+import {
+  assessmentSubmissionLocked,
+  assessmentSubmissionLockedReason,
+} from '../lib/assessmentSubmissionState';
+import { summarizeAssessmentAiUse } from '../lib/aiUseSummary';
 import type {
   RoomCommitSubmissionRequest,
   RoomCommitSubmissionResponse,
@@ -23,9 +28,15 @@ interface CommitSubmissionPanelProps {
   disabledReason?: string | null;
   onSubmit: (payload: RoomCommitSubmissionRequest) => Promise<RoomCommitSubmissionResponse>;
   onProgressChange?: (progress: RoomAssessmentProgressSnapshot) => void;
+  onDownloadReceipt?: () => Promise<RoomAssessmentReceiptDownload>;
   workspaceFinalizeAvailable?: boolean;
   workspaceFinalizeDisabledReason?: string | null;
   onFinalizeWorkspace?: (payload: RoomWorkspaceFinalizeRequest) => Promise<RoomWorkspaceFinalizeResponse>;
+}
+
+interface RoomAssessmentReceiptDownload {
+  filename: string;
+  markdown: string;
 }
 
 const EMPTY_FIELDS: CommitSubmissionFormFields = {
@@ -59,9 +70,174 @@ function formatEvidenceKind(kind: string): string {
   return kind.trim().replace(/[_-]+/g, ' ').toLowerCase();
 }
 
+function formatSourceKind(kind: string): string {
+  return formatProgressLabel(kind).replace(/\bAi\b/g, 'AI');
+}
+
 function shortSha(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed.slice(0, 12) : null;
+}
+
+function sourceRefSummary(sourceRefTypes: readonly string[], sourceRefCount: number): string {
+  const countLabel = sourceRefCount === 1 ? 'source ref' : 'source refs';
+  const sourceTypes = sourceRefTypes.length > 0
+    ? sourceRefTypes.map(formatSourceKind).join(', ')
+    : 'Source refs captured';
+  return `${sourceRefCount} ${countLabel}: ${sourceTypes}`;
+}
+
+function boundedEvidenceText(value: string): string {
+  const normalized = value.trim();
+  if (normalized.length <= 240) return normalized;
+  return `${normalized.slice(0, 237)}...`;
+}
+
+function compactMarkdownText(value: string, maxLength = 360): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function markdownBullet(value: string): string {
+  return `- ${compactMarkdownText(value)}`;
+}
+
+function markdownBulletList(values: string[], fallback: string): string[] {
+  const cleaned = values.map((value) => value.trim()).filter((value) => value.length > 0);
+  return cleaned.length > 0 ? cleaned.map(markdownBullet) : [markdownBullet(fallback)];
+}
+
+function finalEvidenceReceiptFilename(progress: RoomAssessmentProgressSnapshot): string {
+  const commit = shortSha(progress.commit?.commitSha ?? null);
+  const basis = commit ?? formatProgressLabel(progress.stage).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  return `pipe-assessment-receipt-${basis || 'report'}.md`;
+}
+
+function finalEvidenceReceiptMarkdown(progress: RoomAssessmentProgressSnapshot): string {
+  const evaluation = progress.evaluation;
+  const commit = progress.commit;
+  const challenge = progress.challenge;
+  const hideAssignedChallengePullRequest = hidesCandidateSolutionPullRequest({
+    assignmentTrustState: progress.assignmentTrust?.state,
+  });
+  const aiUse = summarizeAssessmentAiUse(progress);
+  const snippets = (progress.evidenceSnippets ?? []).slice(0, 6).map((snippet) =>
+    markdownBullet(`${formatSourceKind(snippet.sourceRefType)} · ${formatProgressLabel(snippet.evidenceRole)}: ${snippet.exactText}`)
+  );
+  const claims = (evaluation?.claims ?? []).slice(0, 6).map((claim) => {
+    const confidence = claim.confidence === null ? '' : ` (${Math.round(claim.confidence * 100)}% confidence)`;
+    return markdownBullet(`${formatProgressLabel(claim.dimension)} · ${formatProgressLabel(claim.polarity)}${confidence}: ${claim.narrative} [${sourceRefSummary(claim.sourceRefTypes, claim.sourceRefCount)}]`);
+  });
+  const diagnostics = (evaluation?.diagnostics ?? []).slice(0, 6).map((diagnostic) =>
+    markdownBullet(`${formatProgressLabel(diagnostic.severity)} ${formatSourceKind(diagnostic.code)}: ${diagnostic.message} [${sourceRefSummary(diagnostic.sourceRefTypes, diagnostic.sourceRefCount)}]`)
+  );
+  const sourceCounts = progress.sourceRefCounts.map((sourceRef) =>
+    markdownBullet(`${formatEvidenceKind(sourceRef.kind)}: ${sourceRef.count}`)
+  );
+  const readinessRequired = (progress.readiness?.required ?? []).map((item) =>
+    markdownBullet(`${item.label}: ${item.satisfied ? 'Captured' : 'Missing'}${item.satisfied ? '' : ` - ${item.missingImpact}`}`)
+  );
+  const challengeMatchProof = [
+    ...(challenge?.assessmentFit ?? []),
+    ...(challenge?.matchProof ?? []),
+  ];
+
+  return [
+    '# PIPE Candidate Assessment Receipt',
+    '',
+    `Status: ${formatProgressLabel(progress.stage)}`,
+    `State: ${formatProgressLabel(progress.state)}`,
+    `Next action: ${progress.nextActionLabel}`,
+    `Evaluation: ${evaluation ? formatProgressLabel(evaluation.status) : 'Not available'}`,
+    `Summary: ${evaluation?.summary ?? 'No evaluator summary is available yet.'}`,
+    `Recommendation: ${evaluation?.recommendation ? formatProgressLabel(evaluation.recommendation) : 'Not shared'}`,
+    '',
+    '## Assigned Challenge',
+    '',
+    `Title: ${challenge?.title ?? 'Not recorded'}`,
+    `Repository: ${challenge?.repositoryUrl ?? 'Not recorded'}`,
+    `Base commit: ${challenge?.baseCommitSha ?? 'Not recorded'}`,
+    `Pull request: ${hideAssignedChallengePullRequest ? 'Hidden until recruiter review' : challenge?.pullRequestUrl ?? (challenge?.githubPrNumber ? `#${challenge.githubPrNumber}` : 'Not recorded')}`,
+    `Task: ${challenge?.task ?? 'Not recorded'}`,
+    `Verification command: ${challenge?.verificationCommand ?? 'Not recorded'}`,
+    'Success criteria:',
+    ...markdownBulletList(challenge?.successCriteria ?? [], 'No success criteria were attached to the candidate-safe challenge packet.'),
+    'Expected evidence:',
+    ...markdownBulletList(challenge?.expectedEvidence ?? [], 'No expected evidence list was attached to the candidate-safe challenge packet.'),
+    'Match proof:',
+    ...markdownBulletList(challengeMatchProof, 'No candidate-safe match proof was attached to the challenge packet.'),
+    '',
+    '## Submitted Work',
+    '',
+    `Repository: ${commit?.repositoryUrl ?? 'Not recorded'}`,
+    `Fork: ${commit?.forkRepositoryUrl ?? 'Not recorded'}`,
+    `Branch: ${commit?.branchName ?? 'Not recorded'}`,
+    `Base commit: ${commit?.baseCommitSha ?? 'Not recorded'}`,
+    `Commit: ${commit?.commitSha ?? 'Not recorded'}`,
+    `Commit URL: ${commit?.commitUrl ?? 'Not recorded'}`,
+    `Upstream PR: ${commit?.upstreamPullRequestUrl ?? 'Not recorded'}`,
+    `Upstream PR consent: ${commit?.upstreamPrConsent === true ? 'Yes' : 'No'}`,
+    'Upstream PR boundary: PIPE assessment receipts do not imply automatic upstream PR submission; upstream tracking is recorded only when a candidate-approved PR URL is source-backed.',
+    `Changed files: ${commit?.changedFiles.length ?? 0}`,
+    '',
+    '## AI Use',
+    '',
+    `AI state: ${aiUse.label}`,
+    `AI detail: ${aiUse.detail}`,
+    '',
+    '## Evidence Coverage',
+    '',
+    `Readiness: ${progress.readiness?.label ?? 'Not recorded'}`,
+    `Readiness detail: ${progress.readiness?.detail ?? 'Not recorded'}`,
+    `Ready for evaluation: ${progress.readiness?.isReadyForEvaluation === true ? 'Yes' : 'No'}`,
+    `Usable hiring signal: ${progress.readiness?.isUsableHiringSignal === true ? 'Yes' : 'No'}`,
+    'Required proof:',
+    ...markdownBulletList(readinessRequired.map((item) => item.replace(/^- /, '')), 'No required proof checklist was attached.'),
+    'Source refs:',
+    ...(sourceCounts.length > 0 ? sourceCounts : [markdownBullet('No source refs recorded.')]),
+    '',
+    '## Evaluator Claims',
+    '',
+    ...(claims.length > 0 ? claims : [markdownBullet('No candidate-safe evaluator claims recorded.')]),
+    '',
+    '## Evaluator Diagnostics',
+    '',
+    ...(diagnostics.length > 0 ? diagnostics : [markdownBullet('No candidate-safe evaluator diagnostics recorded.')]),
+    '',
+    '## Source Preview',
+    '',
+    ...(snippets.length > 0 ? snippets : [markdownBullet('No exact source snippets are included in this candidate-safe receipt.')]),
+    '',
+    '## Use Guidance',
+    '',
+    '- Use this as your candidate receipt, not as an automatic hiring decision.',
+    '- The recruiter still needs to inspect the source-backed report, commit, diff, tests, transcript/chat, AI-use trail, and diagnostics.',
+    '- Missing evidence should reduce confidence instead of being treated as positive signal.',
+    '',
+  ].join('\n');
+}
+
+function downloadTextFile(filename: string, contents: string, mimeType: string): void {
+  const blob = new Blob([contents], { type: mimeType });
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => {
+    URL.revokeObjectURL(objectUrl);
+  }, 0);
+}
+
+function downloadFinalEvidenceReceipt(progress: RoomAssessmentProgressSnapshot): void {
+  downloadTextFile(
+    finalEvidenceReceiptFilename(progress),
+    finalEvidenceReceiptMarkdown(progress),
+    'text/markdown',
+  );
 }
 
 function evidenceFlagLabel(value: boolean): string {
@@ -200,6 +376,153 @@ function AssessmentReadinessPanel({
   );
 }
 
+function AssessmentAiUsePanel({
+  progress,
+}: {
+  progress: RoomAssessmentProgressSnapshot;
+}): JSX.Element {
+  const aiUse = summarizeAssessmentAiUse(progress);
+
+  return (
+    <div
+      className={`commit-submission-ai-use is-${aiUse.tone}`}
+      data-testid="commit-submission-ai-use"
+      aria-label="Assessment AI-use evidence"
+    >
+      <strong>{aiUse.label}</strong>
+      <span>{aiUse.detail}</span>
+    </div>
+  );
+}
+
+function FinalEvidencePacketPanel({
+  progress,
+  onDownloadReceipt,
+}: {
+  progress: RoomAssessmentProgressSnapshot;
+  onDownloadReceipt?: () => Promise<RoomAssessmentReceiptDownload>;
+}): JSX.Element | null {
+  const [downloadingReceipt, setDownloadingReceipt] = useState(false);
+  const [receiptWarning, setReceiptWarning] = useState<string | null>(null);
+
+  if (!progress.evaluation) return null;
+
+  const snippets = (progress.evidenceSnippets ?? []).slice(0, 4);
+  const claims = progress.evaluation.claims?.slice(0, 4) ?? [];
+  const diagnostics = progress.evaluation.diagnostics?.slice(0, 4) ?? [];
+  const aiUse = summarizeAssessmentAiUse(progress);
+  const hasDetailedEvidence = snippets.length > 0 || claims.length > 0 || diagnostics.length > 0;
+  if (!hasDetailedEvidence && !progress.evaluation.summary) return null;
+
+  const handleDownloadReceipt = async (): Promise<void> => {
+    setReceiptWarning(null);
+    if (!onDownloadReceipt) {
+      downloadFinalEvidenceReceipt(progress);
+      return;
+    }
+
+    setDownloadingReceipt(true);
+    try {
+      const receipt = await onDownloadReceipt();
+      downloadTextFile(receipt.filename, receipt.markdown, 'text/markdown');
+    } catch (error) {
+      console.error('[CommitSubmissionPanel] receipt download failed:', error);
+      setReceiptWarning('Server receipt unavailable. Downloaded a candidate-safe local receipt instead.');
+      downloadFinalEvidenceReceipt(progress);
+    } finally {
+      setDownloadingReceipt(false);
+    }
+  };
+
+  return (
+    <section
+      className="commit-submission-final-evidence"
+      data-testid="commit-submission-final-evidence"
+      aria-label="Candidate-safe final evidence packet"
+    >
+      <div className="commit-submission-final-evidence-header">
+        <div>
+          <strong>Final evidence packet</strong>
+          <span>{progress.evaluation.summary || progress.nextActionLabel}</span>
+        </div>
+        <button
+          type="button"
+          className="commit-submission-final-evidence-download"
+          data-testid="commit-submission-final-evidence-download"
+          disabled={downloadingReceipt}
+          onClick={() => {
+            void handleDownloadReceipt();
+          }}
+        >
+          {downloadingReceipt ? <Loader2 size={13} className="spin" /> : <Download size={13} />}
+          {downloadingReceipt ? 'Downloading...' : 'Download receipt'}
+        </button>
+      </div>
+
+      {receiptWarning && (
+        <div
+          className="commit-submission-final-evidence-warning"
+          data-testid="commit-submission-final-evidence-download-warning"
+        >
+          {receiptWarning}
+        </div>
+      )}
+
+      <AssessmentAiUsePanel progress={progress} />
+
+      {snippets.length > 0 && (
+        <div className="commit-submission-final-evidence-block">
+          <strong>Selected source evidence</strong>
+          <ul>
+            {snippets.map((snippet) => (
+              <li key={`${snippet.eventKind}:${snippet.sourceRefType}:${snippet.occurredAt}`}>
+                <span>
+                  {formatSourceKind(snippet.sourceRefType)} · {formatProgressLabel(snippet.evidenceRole)}
+                </span>
+                <pre>{boundedEvidenceText(snippet.exactText)}</pre>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {claims.length > 0 && (
+        <div className="commit-submission-final-evidence-block">
+          <strong>Evaluator claims</strong>
+          <ul>
+            {claims.map((claim) => (
+              <li key={`${claim.dimension}:${claim.narrative}`}>
+                <span>
+                  {formatProgressLabel(claim.dimension)} · {formatProgressLabel(claim.polarity)}
+                </span>
+                <p>{claim.narrative}</p>
+                <small>{sourceRefSummary(claim.sourceRefTypes, claim.sourceRefCount)}</small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {diagnostics.length > 0 && (
+        <div className="commit-submission-final-evidence-block is-diagnostic">
+          <strong>Evaluator diagnostics</strong>
+          <ul>
+            {diagnostics.map((diagnostic) => (
+              <li key={`${diagnostic.code}:${diagnostic.message}`}>
+                <span>
+                  {formatProgressLabel(diagnostic.severity)}: {formatSourceKind(diagnostic.code)}
+                </span>
+                <p>{diagnostic.message}</p>
+                <small>{sourceRefSummary(diagnostic.sourceRefTypes, diagnostic.sourceRefCount)}</small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ChallengeCompletionPanel({
   packet,
   progress,
@@ -210,9 +533,17 @@ function ChallengeCompletionPanel({
   const summary = summarizeChallengePacket(packet);
   const missingFields = challengePacketMissingFields(packet, progress?.challengePacketContract);
   const hasCompletePacket = missingFields.length === 0;
-  const hasLocator = Boolean(summary.repositoryUrl || summary.githubPrNumber || summary.baseCommitSha);
+  const hideSolutionPullRequest = hidesCandidateSolutionPullRequest({
+    sourceRefType: packet?.sourceRefType,
+    assignmentTrustState: progress?.assignmentTrust?.state,
+  });
+  const visibleGithubPrNumber = hideSolutionPullRequest ? null : summary.githubPrNumber;
+  const visiblePullRequestUrl = hideSolutionPullRequest ? null : summary.pullRequestUrl;
+  const hasLocator = Boolean(summary.repositoryUrl || hideSolutionPullRequest || visibleGithubPrNumber || summary.baseCommitSha);
   const hasContract = Boolean(
     summary.task
+    || summary.matchProof.length > 0
+    || summary.assessmentFit.length > 0
     || summary.successCriteria.length > 0
     || summary.expectedEvidence.length > 0,
   );
@@ -240,10 +571,24 @@ function ChallengeCompletionPanel({
               <dd>{summary.repositoryUrl}</dd>
             </>
           )}
-          {summary.githubPrNumber && (
+          {hideSolutionPullRequest && (
+            <>
+              <dt>Source</dt>
+              <dd>Source-backed replay</dd>
+            </>
+          )}
+          {visibleGithubPrNumber && (
             <>
               <dt>PR</dt>
-              <dd>#{summary.githubPrNumber}</dd>
+              <dd>
+                {visiblePullRequestUrl ? (
+                  <a href={visiblePullRequestUrl} target="_blank" rel="noopener noreferrer">
+                    #{visibleGithubPrNumber}
+                  </a>
+                ) : (
+                  <>#{visibleGithubPrNumber}</>
+                )}
+              </dd>
             </>
           )}
           {summary.baseCommitSha && (
@@ -261,6 +606,22 @@ function ChallengeCompletionPanel({
             <div>
               <strong>Task</strong>
               <p>{summary.task}</p>
+            </div>
+          )}
+          {summary.matchProof.length > 0 && (
+            <div>
+              <strong>Match proof</strong>
+              <ul>
+                {summary.matchProof.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </div>
+          )}
+          {summary.assessmentFit.length > 0 && (
+            <div>
+              <strong>Assessment fit</strong>
+              <ul>
+                {summary.assessmentFit.map((item) => <li key={item}>{item}</li>)}
+              </ul>
             </div>
           )}
           {summary.successCriteria.length > 0 && (
@@ -295,6 +656,7 @@ function ChallengeCompletionPanel({
           <EvidenceStatusChip label="Transcript evidence" captured={progress.hasTranscriptEvidence} />
         </div>
       )}
+      {progress && <AssessmentAiUsePanel progress={progress} />}
       {missingFields.length > 0 && (
         <div className="commit-submission-status is-blocked" data-testid="commit-submission-challenge-warning">
           <TriangleAlert size={16} />
@@ -311,8 +673,10 @@ function ChallengeCompletionPanel({
 
 function AssessmentProgressPanel({
   progress,
+  onDownloadReceipt,
 }: {
   progress: RoomAssessmentProgressSnapshot;
+  onDownloadReceipt?: () => Promise<RoomAssessmentReceiptDownload>;
 }): JSX.Element {
   const commitSha = shortSha(progress.commit?.commitSha ?? null);
   const baseSha = shortSha(progress.commit?.baseCommitSha ?? null);
@@ -436,6 +800,7 @@ function AssessmentProgressPanel({
           ))}
         </ul>
       )}
+      <FinalEvidencePacketPanel progress={progress} onDownloadReceipt={onDownloadReceipt} />
     </section>
   );
 }
@@ -447,10 +812,12 @@ export function CommitSubmissionPanel({
   disabledReason,
   onSubmit,
   onProgressChange,
+  onDownloadReceipt,
   workspaceFinalizeAvailable = false,
   workspaceFinalizeDisabledReason = null,
   onFinalizeWorkspace,
 }: CommitSubmissionPanelProps): JSX.Element {
+  const assignedVerificationCommand = summarizeChallengePacket(challengePacket ?? null).verificationCommand ?? '';
   const submissionDefaults = buildCommitSubmissionDefaults({
     repositoryUrl: defaultRepositoryUrl,
     challengePacket,
@@ -466,10 +833,16 @@ export function CommitSubmissionPanel({
   const [workspaceFinalizeResult, setWorkspaceFinalizeResult] = useState<RoomWorkspaceFinalizeResponse | null>(null);
   const [workspaceFinalizeFields, setWorkspaceFinalizeFields] = useState<Required<RoomWorkspaceFinalizeRequest>>({
     narrative: '',
+    testCommand: assignedVerificationCommand,
+    verificationNotes: '',
   });
   const displayedProgress = workspaceFinalizeResult?.progress ?? result?.progress ?? assessmentProgress;
+  const submissionLocked = assessmentSubmissionLocked(displayedProgress);
+  const submissionLockedReason = assessmentSubmissionLockedReason(displayedProgress);
+  const submissionButtonLabel = submissionLocked ? 'Submission captured' : 'Submit commit';
   const challengeDisabledReason = challengePacketDisabledReason(challengePacket, displayedProgress);
-  const effectiveDisabledReason = disabledReason ?? challengeDisabledReason;
+  const effectiveDisabledReason = disabledReason ?? challengeDisabledReason ?? submissionLockedReason;
+  const manualSubmissionDisabled = Boolean(disabledReason) || submissionLocked || submitting;
   const workspaceFinalizeBlockedReason = effectiveDisabledReason
     ?? workspaceFinalizeDisabledReason
     ?? (!workspaceFinalizeAvailable ? 'Launch the workspace before finalizing the assessment commit.' : null);
@@ -494,6 +867,15 @@ export function CommitSubmissionPanel({
     submissionDefaults.branchName,
     submissionDefaults.baseCommitSha,
   ]);
+
+  useEffect(() => {
+    if (!assignedVerificationCommand) return;
+    setWorkspaceFinalizeFields((current) => (
+      current.testCommand.trim()
+        ? current
+        : { ...current, testCommand: assignedVerificationCommand }
+    ));
+  }, [assignedVerificationCommand]);
 
   const setField = (key: keyof CommitSubmissionFormFields, value: string | boolean): void => {
     setFields((current) => ({ ...current, [key]: value }));
@@ -521,7 +903,11 @@ export function CommitSubmissionPanel({
     try {
       const payload: RoomWorkspaceFinalizeRequest = {};
       const narrative = workspaceFinalizeFields.narrative.trim();
+      const testCommand = workspaceFinalizeFields.testCommand.trim();
+      const verificationNotes = workspaceFinalizeFields.verificationNotes.trim();
       if (narrative) payload.narrative = narrative;
+      if (testCommand) payload.testCommand = testCommand;
+      if (verificationNotes) payload.verificationNotes = verificationNotes;
       const response = await onFinalizeWorkspace(payload);
       setWorkspaceFinalizeResult(response);
       if (response.progress) onProgressChange?.(response.progress);
@@ -582,6 +968,27 @@ export function CommitSubmissionPanel({
             data-testid="workspace-finalize-narrative"
           />
         </label>
+        <label>
+          <span>Verification command</span>
+          <input
+            value={workspaceFinalizeFields.testCommand}
+            onChange={(event) => setWorkspaceFinalizeField('testCommand', event.target.value)}
+            placeholder="npm test -- retry"
+            disabled={Boolean(workspaceFinalizeBlockedReason) || finalizing || submitting}
+            data-testid="workspace-finalize-test-command"
+          />
+        </label>
+        <label>
+          <span>Missing-test note</span>
+          <textarea
+            value={workspaceFinalizeFields.verificationNotes}
+            onChange={(event) => setWorkspaceFinalizeField('verificationNotes', event.target.value)}
+            placeholder="If tests could not run, say exactly why."
+            disabled={Boolean(workspaceFinalizeBlockedReason) || finalizing || submitting}
+            rows={2}
+            data-testid="workspace-finalize-verification-notes"
+          />
+        </label>
         <button
           type="button"
           className="room-workspace-launch-btn"
@@ -625,7 +1032,7 @@ export function CommitSubmissionPanel({
             value={fields.repositoryUrl}
             onChange={(event) => setField('repositoryUrl', event.target.value)}
             placeholder="https://github.com/org/repo"
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
             data-testid="commit-submission-repository-url"
           />
         </label>
@@ -635,7 +1042,7 @@ export function CommitSubmissionPanel({
             value={fields.forkRepositoryUrl}
             onChange={(event) => setField('forkRepositoryUrl', event.target.value)}
             placeholder="https://github.com/you/repo"
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
           />
         </label>
         <label>
@@ -644,7 +1051,7 @@ export function CommitSubmissionPanel({
             value={fields.branchName}
             onChange={(event) => setField('branchName', event.target.value)}
             placeholder="pipe-assessment/my-fix"
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
             data-testid="commit-submission-branch"
           />
         </label>
@@ -654,7 +1061,7 @@ export function CommitSubmissionPanel({
             value={fields.changedFilesText}
             onChange={(event) => setField('changedFilesText', event.target.value)}
             placeholder="modified src/retry.ts"
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
             rows={3}
             data-testid="commit-submission-changed-files"
           />
@@ -665,7 +1072,7 @@ export function CommitSubmissionPanel({
             value={fields.baseCommitSha}
             onChange={(event) => setField('baseCommitSha', event.target.value)}
             placeholder="40-char SHA"
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
             data-testid="commit-submission-base-sha"
           />
         </label>
@@ -675,7 +1082,7 @@ export function CommitSubmissionPanel({
             value={fields.commitSha}
             onChange={(event) => setField('commitSha', event.target.value)}
             placeholder="40-char SHA"
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
             data-testid="commit-submission-commit-sha"
           />
         </label>
@@ -685,7 +1092,7 @@ export function CommitSubmissionPanel({
             value={fields.commitUrl}
             onChange={(event) => setField('commitUrl', event.target.value)}
             placeholder="https://github.com/you/repo/commit/..."
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
           />
         </label>
         <label>
@@ -694,7 +1101,7 @@ export function CommitSubmissionPanel({
             value={fields.upstreamPullRequestUrl}
             onChange={(event) => setField('upstreamPullRequestUrl', event.target.value)}
             placeholder="https://github.com/org/repo/pull/123"
-            disabled={Boolean(disabledReason) || submitting}
+            disabled={manualSubmissionDisabled}
             data-testid="commit-submission-upstream-pr-url"
           />
         </label>
@@ -705,7 +1112,7 @@ export function CommitSubmissionPanel({
           type="checkbox"
           checked={fields.upstreamPrConsent}
           onChange={(event) => setField('upstreamPrConsent', event.target.checked)}
-          disabled={Boolean(disabledReason) || submitting}
+          disabled={manualSubmissionDisabled}
           data-testid="commit-submission-upstream-consent"
         />
         <span>Candidate approved optional upstream PR tracking</span>
@@ -717,7 +1124,7 @@ export function CommitSubmissionPanel({
           value={fields.narrative}
           onChange={(event) => setField('narrative', event.target.value)}
           placeholder="Submitted retry fix; tests passing locally."
-          disabled={Boolean(disabledReason) || submitting}
+          disabled={manualSubmissionDisabled}
           rows={2}
           data-testid="commit-submission-narrative"
         />
@@ -729,7 +1136,7 @@ export function CommitSubmissionPanel({
           value={fields.commitEvidenceText}
           onChange={(event) => setField('commitEvidenceText', event.target.value)}
           placeholder="Paste git show --stat --no-patch output"
-          disabled={Boolean(disabledReason) || submitting}
+          disabled={manualSubmissionDisabled}
           rows={5}
           data-testid="commit-submission-commit-evidence"
         />
@@ -741,7 +1148,7 @@ export function CommitSubmissionPanel({
           value={fields.diffText}
           onChange={(event) => setField('diffText', event.target.value)}
           placeholder="Paste git diff BASE..COMMIT"
-          disabled={Boolean(disabledReason) || submitting}
+          disabled={manualSubmissionDisabled}
           rows={7}
           data-testid="commit-submission-diff"
         />
@@ -753,7 +1160,7 @@ export function CommitSubmissionPanel({
           value={fields.testEvidenceText}
           onChange={(event) => setField('testEvidenceText', event.target.value)}
           placeholder="Paste test command output, e.g. npm test -- retry"
-          disabled={Boolean(disabledReason) || submitting}
+          disabled={manualSubmissionDisabled}
           rows={4}
           data-testid="commit-submission-test-evidence"
         />
@@ -765,7 +1172,7 @@ export function CommitSubmissionPanel({
           value={fields.verificationNotesText}
           onChange={(event) => setField('verificationNotesText', event.target.value)}
           placeholder="If test output is missing, record why and what remains unverified."
-          disabled={Boolean(disabledReason) || submitting}
+          disabled={manualSubmissionDisabled}
           rows={3}
           data-testid="commit-submission-verification-notes"
         />
@@ -791,7 +1198,7 @@ export function CommitSubmissionPanel({
         </div>
       )}
       {displayedProgress && (
-        <AssessmentProgressPanel progress={displayedProgress} />
+        <AssessmentProgressPanel progress={displayedProgress} onDownloadReceipt={onDownloadReceipt} />
       )}
 
       <div className="commit-submission-actions">
@@ -801,8 +1208,8 @@ export function CommitSubmissionPanel({
           disabled={Boolean(effectiveDisabledReason) || submitting}
           data-testid="commit-submission-submit"
         >
-          {submitting ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
-          Submit commit
+          {submitting ? <Loader2 size={14} className="spin" /> : submissionLocked ? <CheckCircle2 size={14} /> : <Send size={14} />}
+          {submissionButtonLabel}
         </button>
       </div>
     </form>

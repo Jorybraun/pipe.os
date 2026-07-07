@@ -373,6 +373,15 @@ npm run review-packets:repair-profiles -- --write
 npx tsx scripts/verifyCodeReviewMatchingLocal.ts --json
 ```
 
+To prove the deployed app-dev packet corpus is contrast-ready before claiming
+automatic CODE_REVIEW matching quality:
+
+```bash
+cd workers/api
+CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
+  npm run review-packets:remote-audit
+```
+
 Set `CODE_REVIEW_SMOKE_ROLE_BACKED=1` with auto-match, or run `npm run smoke:code-review-assess-dev:role-backed`, to create a simple-JD role context, auto-build a role-backed CODE_REVIEW pipeline, add a candidate to that pipeline, and prove the candidate receives a ready source-backed CODE_REVIEW challenge when matchable source-backed resume evidence exists. Role-backed mode intentionally clicks through the candidate Welcome gate before asserting the CODE_REVIEW browser surface and verifying the recruiter projection uses the `candidate_challenge_assignment` repo/PR.
 
 Auto-match smoke runs now require measured positive contrast separation by
@@ -389,6 +398,8 @@ Latest deployed app-dev proof: after deploying dev API version `043f0c50-1552-41
 The same deployed API/app pair also passed the roleless full-submit auto-match command for interview `43210dfe-d589-4229-841f-f9b9c9b9fe5e`, review session `ea8a07c9-9631-4ace-8f67-8f1cbdfb8f41`, and judge replay example `code_review_judge_example_ee8b8947c9838f1e25bd80e8714a1c25`, selecting `mui/base-ui#973`, returning `MATCHED`, passing the source-backed quality gate, measuring positive contrast separation against the next comparable challenge (`1/2`, selected challenge ahead by 2%), completing recruiter/profile results, and preserving 4 recruiter-visible evidence hyperedges.
 
 Latest manual app-dev proof on 2026-07-02: render-only smoke passed for interview `8bdd62f1-33d0-470b-88bb-9922134f5b26`, selecting `mui/base-ui#973` with `MATCHED`, `PASSED`, and `USABLE`; post-deploy full-submit smoke passed for interview `edb3b5ef-e6e8-45f4-a654-e4297dc00d2c`, review session `51ab6d6a-da7f-4ad6-9353-3f49ef3ddb3a`, judge replay example `code_review_judge_example_b454c70ea73f5446e32a58d9e0430020`, remote D1 score persistence `54`, review status `scored`, and completed pipeline through durable scoring.
+
+Latest role-backed app-dev proof on 2026-07-04: after the packet-context remote audit reported 10 real review packets, 8 production-ready packets, and persisted review profiles across `cloudflare/workers-sdk`, `mui/base-ui`, and `vercel/swr`, `npm run smoke:code-review-assess-dev:role-backed` passed for interview `e97ec6d1-9b80-4f71-a395-72d1217b15fb`, role context `c7a4a9dfd7fceef8612d4e83adc77252`, pipeline `f05ef82a838d61fd1c504c834bc04322`, and stage `01941a4599f4ec34861d3a3399b54b1a`. The deployed flow auto-matched `mui/base-ui#973`, returned `role_backed_auto_match`, `MATCHED`, `qualityGate: PASSED`, `assessmentQuality: STRONG`, measured contrast separation `1/2` with the selected challenge ahead by 2%, rendered the candidate CODE_REVIEW browser smoke, and verified recruiter detail readiness from `candidate_challenge_assignment`.
 
 Latest full-submit app-dev proof on 2026-07-03: manual override
 `mui/base-ui#973` passed for interview
@@ -449,17 +460,23 @@ app-dev recruiter detail page and verifies the reviewer receipt renders the
 final decision, source-report anchor, reviewed commit, repo/branch, and no raw
 reviewer ID, then verifies the deployed interview list card shows the
 assessment mode, task, repo/base, source-backed commit trust, final decision,
-and next action. Latest deployed proof on 2026-07-02 passed for interview
-`8a89e2a2-3803-4652-adc9-c38027d069f6`, repo `mui/base-ui`, candidate task
-brief visible, recruiter list card visible, workspace commit
-`e4a4f2b9d60625470230b6c0e594b90816a764aa`, bridge revision
+and next action. Latest deployed proof on 2026-07-04 passed for interview
+`60da2a12-f1fd-48c2-a10a-8fb51aa7ba8f`, assessment session
+`assessment_session_ff96117c444a3e8f78bfa7778bca7187`, repo `mui/base-ui`,
+matched PR `#973`, candidate task brief visible, recruiter detail/list visible,
+workspace commit `14996d601e0119637b01e8eb1d4dd9b12c837f52`, bridge revision
 `2026-06-30-assessment-branch-v1`, and evaluation report
-`assessment_evaluation_report_9710c858486da5298ec7950fb7eeca8d` with
-recommendation `strong_evidence_to_advance`. The recruiter projection was
+`assessment_evaluation_report_19e4c2ed70bb87fbe7ce57fdbe6339e7` with
+recommendation `mixed_evidence_human_review`. The recruiter projection was
 reviewable from source-backed `git_commit`, `code_diff`, `test_run`,
-`terminal_command`, AI usage, challenge-packet, workspace launch, and
-file-observation refs; `recruiterCompareUrl` was correctly `null` because
-workspace-only finalizer commits are not pushed to GitHub by default.
+`terminal_command`, `room_chat_message`, `meeting_session_event`,
+`review_challenge_packet`, workspace launch, and file-observation refs; the
+smoke also recorded a source-backed human `hold` decision anchored to the
+`assessment_evaluation_report`. The deployed interview-list API also exposed
+`assessment-evidence-coverage-v1`, 3 cited claim previews, and 3 diagnostic
+previews for the fresh evaluated row. `recruiterCompareUrl` was correctly
+`null` because workspace-only finalizer commits are not pushed to GitHub by
+default.
 
 Latest deployed upstream-PR progress proof on 2026-07-02 passed for assessment
 session `assessment_session_d6172ba3d55b5035f0ecb250985c814a`: the live
@@ -476,11 +493,16 @@ prove the deployed room launches the real Devin bridge without fabricating a
 reply when credentials are missing. The smoke creates a dev-container interview,
 launches the workspace with explicit `agentType: "devin"`, connects to the
 room agent WebSocket, and passes only when the bridge reports `auth_needed` with
-no `CHAT_RESPONSE`. Latest deployed proof on 2026-07-02 passed for interview
-`245e2258-5f99-424d-85e3-812a161eb63d`, workspace status `READY`, statuses
-`disconnected -> starting -> starting -> disconnected -> auth_needed`, and the
-real Devin CLI auth message. The default smoke mode still requires a real Devin
-API/CLI response and should fail if the bridge cannot answer.
+no `CHAT_RESPONSE`. The smoke prints the `assessmentSessionId` plus replay and
+audit commands so the same auth-needed event can be projected into living
+context. Latest deployed proof on 2026-07-04 passed for interview
+`85922911-c2cc-4eea-9c45-439fb1121fd8`, assessment session
+`assessment_session_92374897d4a572b3db9dcfdf0bb74f8b`, workspace status
+`READY`, statuses `disconnected -> starting -> starting -> disconnected ->
+auth_needed`, the real Devin CLI auth message, and recruiter-list AI proof
+visible with one bridge diagnostic source ref and no counted agent response.
+The default smoke mode still requires a real Devin API/CLI response and should
+fail if the bridge cannot answer.
 
 Latest standalone `/assess` blocked-boundary proof: after deploying app-dev
 version `3413dea3-2899-40ac-afc0-8163e3a899ff`, the CODE_REVIEW matrix passed

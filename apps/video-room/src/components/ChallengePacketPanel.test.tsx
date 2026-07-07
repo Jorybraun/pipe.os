@@ -11,7 +11,15 @@ const packet: RoomWorkspaceChallengePacket = {
   exactText: [
     'Repo: https://github.com/pipe/source-backed-worker',
     'Base commit: dddddddddddddddddddddddddddddddddddddddd',
+    'Pull request URL: https://github.com/pipe/source-backed-worker/pull/144',
     'Task: Fix the source-backed worker retry path.',
+    'Verification command: npm test -- retry-worker',
+    'Match proof:',
+    '- Review packet quality 92% from source-backed repo analysis.',
+    '- 2 source-backed repo demands in the selected PR packet.',
+    'Assessment fit:',
+    '- focused review calibrated for senior candidates.',
+    '- 30 minute target from deterministic engineering prior.',
     'Success criteria:',
     '- Retry order remains deterministic',
     '- Existing worker tests pass',
@@ -22,6 +30,7 @@ const packet: RoomWorkspaceChallengePacket = {
   locator: {
     repositoryUrl: 'https://github.com/pipe/source-backed-worker',
     githubPrNumber: 144,
+    pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/144',
     baseCommitSha: 'dddddddddddddddddddddddddddddddddddddddd',
   },
   contentHash: 'sha256:packet-content-hash',
@@ -33,7 +42,9 @@ describe('ChallengePacketPanel', () => {
 
     expect(screen.getByText('Open-source challenge')).not.toBeNull();
     expect(screen.getByText('https://github.com/pipe/source-backed-worker')).not.toBeNull();
-    expect(screen.getByText('#144')).not.toBeNull();
+    expect(screen.getByRole('link', { name: '#144' }).getAttribute('href')).toBe(
+      'https://github.com/pipe/source-backed-worker/pull/144',
+    );
     expect(screen.getByText('dddddddddddddddddddddddddddddddddddddddd')).not.toBeNull();
     expect(screen.getByTestId('challenge-packet-exact-text').textContent).toContain(
       'Fix the source-backed worker retry path.',
@@ -47,6 +58,14 @@ describe('ChallengePacketPanel', () => {
     const contract = screen.getByTestId('challenge-packet-contract');
     expect(contract.textContent).toContain('Task');
     expect(contract.textContent).toContain('Fix the source-backed worker retry path.');
+    expect(contract.textContent).toContain('Verification command');
+    expect(contract.textContent).toContain('npm test -- retry-worker');
+    expect(contract.textContent).toContain('Match proof');
+    expect(contract.textContent).toContain('Review packet quality 92% from source-backed repo analysis.');
+    expect(contract.textContent).toContain('2 source-backed repo demands in the selected PR packet.');
+    expect(contract.textContent).toContain('Assessment fit');
+    expect(contract.textContent).toContain('focused review calibrated for senior candidates.');
+    expect(contract.textContent).toContain('30 minute target from deterministic engineering prior.');
     expect(contract.textContent).toContain('Success criteria');
     expect(contract.textContent).toContain('Retry order remains deterministic');
     expect(contract.textContent).toContain('Existing worker tests pass');
@@ -64,6 +83,34 @@ describe('ChallengePacketPanel', () => {
     expect(screen.getByTestId('challenge-packet-exact-text').textContent).toContain(
       'Commit SHA on assessment branch',
     );
+  });
+
+  it('hides solution PR and head commit details for source-backed replay packets', () => {
+    render(<ChallengePacketPanel packet={{
+      ...packet,
+      sourceRefType: 'review_challenge_packet',
+      exactText: [
+        packet.exactText,
+        'Pull request: #144',
+        'Head commit: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      ].join('\n'),
+      locator: {
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        githubPrNumber: 144,
+        pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/144',
+        baseCommitSha: 'dddddddddddddddddddddddddddddddddddddddd',
+        headCommitSha: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      },
+    }} />);
+
+    expect(screen.getByText('Source-backed replay')).not.toBeNull();
+    expect(screen.queryByRole('link', { name: '#144' })).toBeNull();
+    expect(screen.queryByText('#144')).toBeNull();
+    const exactText = screen.getByTestId('challenge-packet-exact-text').textContent ?? '';
+    expect(exactText).toContain('Fix the source-backed worker retry path.');
+    expect(exactText).not.toContain('/pull/144');
+    expect(exactText).not.toContain('#144');
+    expect(exactText).not.toContain('eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee');
   });
 
   it('does not invent a structured contract when exact packet text lacks contract sections', () => {

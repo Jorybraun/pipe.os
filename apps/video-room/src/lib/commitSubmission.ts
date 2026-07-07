@@ -45,6 +45,14 @@ const CHANGED_FILE_STATUSES: ReadonlySet<RoomCommitChangedFileStatus> = new Set(
 const DEFAULT_ASSESSMENT_BRANCH = 'pipe-assessment';
 const GIT_COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/i;
 
+function firstNonBlankLine(value: string): string | null {
+  const line = value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .find((item) => item.length > 0);
+  return line ?? null;
+}
+
 function normalizeOptionalText(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
@@ -251,6 +259,7 @@ export async function buildCommitSubmissionPayload(
   const diffText = fields.diffText.trim();
   const testEvidenceText = fields.testEvidenceText.trim();
   const verificationNotesText = fields.verificationNotesText.trim();
+  const testEvidenceCommand = firstNonBlankLine(testEvidenceText);
   const narrative = fields.narrative.trim();
 
   if (!narrative) throw new Error('Submission note is required.');
@@ -345,7 +354,9 @@ export async function buildCommitSubmissionPayload(
             evidenceRole: 'verification_test_output',
             locator: {
               repositoryUrl: sourceRepositoryUrl,
+              baseCommitSha,
               commitSha,
+              command: testEvidenceCommand,
             },
             exactText: testEvidenceText,
             contentHash: await sha256ContentHash(testEvidenceText),
@@ -359,6 +370,7 @@ export async function buildCommitSubmissionPayload(
             evidenceRole: 'missing_test_evidence_note',
             locator: {
               repositoryUrl: sourceRepositoryUrl,
+              baseCommitSha,
               commitSha,
               expectedSourceRefType: 'test_run',
             },

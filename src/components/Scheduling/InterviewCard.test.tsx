@@ -40,6 +40,74 @@ function renderCard(
   );
 }
 
+function reviewArtifactInterview(options: {
+  id: string;
+  commitUrl: string | null;
+  sourceRefCounts: Array<{ kind: string; count: number }>;
+}): ScheduledInterview {
+  const commitSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  return {
+    id: options.id,
+    createdAt: '2026-06-23T00:00:00.000Z',
+    updatedAt: '2026-06-23T00:20:00.000Z',
+    status: 'INVITED',
+    interviewType: 'OPEN_SOURCE_BUG_FIX',
+    meetingType: 'DIRECT_VIDEO_CALL',
+    scheduledAt: null,
+    assessmentProgress: {
+      session: {
+        id: `assessment-session-${options.id}`,
+        ingestionKey: `assessment-session:${options.id}`,
+        interviewId: options.id,
+        candidateId: 'candidate-1',
+        workspaceId: 'workspace-1',
+        workspacePersonId: null,
+        applicationId: null,
+        mode: 'OPEN_SOURCE_BUG_FIX',
+        state: 'FINAL_SUBMITTED',
+        createdAt: '2026-06-23T00:00:00.000Z',
+        updatedAt: '2026-06-23T00:20:00.000Z',
+      },
+      stage: 'READY_FOR_EVALUATION',
+      nextAction: 'START_EVALUATION',
+      nextActionLabel: 'Start source-backed AI or human evaluation.',
+      hasChallengePacket: true,
+      hasWorkEvidence: true,
+      hasMessageEvidence: false,
+      hasDevContainerEvidence: true,
+      hasToolUsageEvidence: true,
+      hasCommitSubmission: true,
+      hasFinalSubmission: false,
+      hasAiInteraction: false,
+      hasTranscriptEvidence: false,
+      hasTestEvidence: false,
+      evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+      sourceRefCounts: options.sourceRefCounts,
+      challenge: null,
+      latestEvent: {
+        id: `assessment-event-${options.id}`,
+        kind: 'commit_submission',
+        sequence: 2,
+        occurredAt: '2026-06-23T00:18:00.000Z',
+      },
+      commit: {
+        eventId: `assessment-event-${options.id}`,
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/widgets',
+        baseCommitSha: '3333333333333333333333333333333333333333',
+        commitSha,
+        commitUrl: options.commitUrl,
+        submissionSource: 'live_workspace',
+        submissionSourceLabel: 'Live workspace finalizer',
+        changedFiles: [{ path: 'src/widget.ts', status: 'modified' }],
+        occurredAt: '2026-06-23T00:18:00.000Z',
+      },
+      evaluation: null,
+    },
+  };
+}
+
 describe('InterviewCard assessment progress', () => {
   it('shows source-backed stage, next action, and evidence readiness without raw ids', () => {
     renderCard({
@@ -131,7 +199,14 @@ describe('InterviewCard assessment progress', () => {
         hasTranscriptEvidence: true,
         hasTestEvidence: true,
         evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
-        sourceRefCounts: [{ kind: 'test_run', count: 1 }],
+        sourceRefCounts: [
+          { kind: 'test_run', count: 1 },
+          { kind: 'dev_container_workspace_launch', count: 1 },
+          { kind: 'terminal_command', count: 1 },
+          { kind: 'code_server_file_observation', count: 6 },
+          { kind: 'room_chat_message', count: 1 },
+          { kind: 'meeting_session_event', count: 2 },
+        ],
         challenge: {
           sourceRefType: 'review_challenge_packet',
           sourceRefId: 'challenge-packet-card',
@@ -140,6 +215,7 @@ describe('InterviewCard assessment progress', () => {
             'Repo: https://github.com/open-source/widgets',
             'Base commit: 1111111111111111111111111111111111111111',
             'Task: Fix the assessment card progress regression.',
+            'Verification command: npm test -- card-progress',
             'Success criteria:',
             '- Card shows stage and next action',
             'Expected evidence:',
@@ -198,12 +274,13 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Ready for evaluation');
     expect(progress).toHaveTextContent('ASSIGNMENT');
     expect(progress).toHaveTextContent('PIPE-matched challenge');
-    expect(progress).toHaveTextContent(
-      'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
-    );
+    expect(progress).toHaveTextContent('PIPE matched a reviewable open-source task.');
     expect(progress).toHaveTextContent('DECISION');
     expect(progress).toHaveTextContent('Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.');
-    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, tool activity, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, tool activity, commit, AI bridge trace captured, transcript, tests');
+    expect(progress).toHaveTextContent('AI USE');
+    expect(progress).toHaveTextContent('AI bridge trace captured');
+    expect(progress).toHaveTextContent('source-backed evidence trail');
     expect(progress).toHaveTextContent('PROOF');
     expect(progress).toHaveTextContent('Required: Captured: Complete challenge packet · Captured: Assessment branch commit');
     expect(progress).toHaveTextContent('Confidence: Captured: Workspace-captured commit');
@@ -211,6 +288,12 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 111111111111');
     expect(progress).toHaveTextContent('ROOM');
     expect(progress).toHaveTextContent('Active · guest waiting');
+    expect(progress).toHaveTextContent('CHAT');
+    expect(progress).toHaveTextContent('Room chat captured');
+    expect(progress).toHaveTextContent('1 room chat message and 2 room session events tied to the assessment evidence trail.');
+    expect(progress).toHaveTextContent('PROCESS');
+    expect(progress).toHaveTextContent('Workspace telemetry captured');
+    expect(progress).toHaveTextContent('1 workspace launch, 1 terminal command, and 6 file observations tied to the assessment evidence trail.');
     expect(progress).toHaveTextContent('open-source/widgets');
     expect(progress).toHaveTextContent('PR #72');
     expect(progress).toHaveTextContent('BASE');
@@ -219,11 +302,16 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Fix the assessment card progress regression.');
     expect(progress).toHaveTextContent('CRITERIA');
     expect(progress).toHaveTextContent('Card shows stage and next action');
+    expect(progress).toHaveTextContent('VERIFY');
+    expect(progress).toHaveTextContent('npm test -- card-progress');
     expect(progress).toHaveTextContent('EXPECTED');
     expect(progress).toHaveTextContent('Commit SHA on assessment branch');
     expect(progress).toHaveTextContent('abcdef123456');
     expect(progress).toHaveTextContent('UPSTREAM PR');
     expect(progress).toHaveTextContent('open-source/widgets/pull/72 · candidate-approved tracking');
+    expect(progress).toHaveTextContent('REVIEW ARTIFACT');
+    expect(progress).toHaveTextContent('GitHub commit available');
+    expect(progress).toHaveTextContent('External commit URL is captured; open detail to compare base to submitted work.');
     expect(progress).toHaveTextContent('Workspace-captured commit');
     expect(progress).toHaveTextContent('COMMIT TRUST');
     expect(progress).toHaveTextContent('Workspace-captured commit · Bound to assigned challenge');
@@ -234,11 +322,78 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).not.toHaveTextContent('abcdef1234567890abcdef1234567890abcdef12');
   });
 
+  it('keeps auto-match quality gate proof visible on recruiter list cards', () => {
+    renderCard({
+      id: 'interview-auto-match-proof',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'INVITED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      githubRepoUrl: 'https://github.com/mui/base-ui',
+      githubPrNumber: 973,
+      assessmentSetup: {
+        status: 'reviewable_task_assigned',
+        kind: 'github_pr',
+        source: 'matched_repo_id',
+        blocksPositiveAssessment: false,
+        message: 'PIPE found a source-backed candidate challenge at https://github.com/mui/base-ui #973. It passed the auto-assignment quality gate. Assessment quality: USABLE 9/12. It leads the next comparable challenge by 2%.',
+        nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+        nextActionLabel: 'Review the latest match run and open the assessment room.',
+      },
+      assessmentProgress: null,
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('PIPE-matched challenge');
+    expect(progress).toHaveTextContent('https://github.com/mui/base-ui #973');
+    expect(progress).toHaveTextContent('auto-assignment quality gate');
+    expect(progress).toHaveTextContent('Assessment quality: USABLE 9/12');
+    expect(progress).toHaveTextContent('leads the next comparable challenge by 2%');
+    expect(progress).toHaveTextContent('Review the latest match run and open the assessment room.');
+    expect(progress).not.toHaveTextContent('assessment-session');
+    expect(progress).not.toHaveTextContent('match_run_');
+  });
+
+  it('shows workspace-only captured diffs as recruiter-reviewable artifacts', () => {
+    renderCard(reviewArtifactInterview({
+      id: 'interview-captured-diff-artifact',
+      commitUrl: null,
+      sourceRefCounts: [
+        { kind: 'git_commit', count: 1 },
+        { kind: 'code_diff', count: 1 },
+      ],
+    }));
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('REVIEW ARTIFACT');
+    expect(progress).toHaveTextContent('Captured diff available');
+    expect(progress).toHaveTextContent('Workspace-only commit has exact code_diff source evidence ready for review.');
+    expect(progress).not.toHaveTextContent('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+  });
+
+  it('warns when a submitted commit has no recruiter-reviewable artifact proof', () => {
+    renderCard(reviewArtifactInterview({
+      id: 'interview-missing-review-artifact',
+      commitUrl: null,
+      sourceRefCounts: [{ kind: 'git_commit', count: 1 }],
+    }));
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('REVIEW ARTIFACT');
+    expect(progress).toHaveTextContent('Review artifact missing');
+    expect(progress).toHaveTextContent('Commit exists, but PIPE has no remote commit URL or captured code_diff source evidence.');
+    expect(progress).not.toHaveTextContent('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+  });
+
   it('shows the assigned open-source task before candidate work starts', () => {
     renderCard({
       id: 'interview-setup-task',
       createdAt: '2026-06-23T00:00:00.000Z',
       updatedAt: '2026-06-23T00:20:00.000Z',
+      title: 'Fix reconnect ordering in the event stream',
+      description: 'Candidate must isolate the reconnect ordering bug, commit a focused fix, and submit source-backed evidence.',
       status: 'INVITED',
       interviewType: 'OPEN_SOURCE_BUG_FIX',
       meetingType: 'DIRECT_VIDEO_CALL',
@@ -310,6 +465,9 @@ describe('InterviewCard assessment progress', () => {
     });
 
     const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(screen.getByText('Fix reconnect ordering in the event stream')).toBeInTheDocument();
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+    expect(screen.getByText(/Candidate must isolate the reconnect ordering bug/)).toBeInTheDocument();
     expect(progress).toHaveTextContent('Challenge ready');
     expect(progress).toHaveTextContent('ASSIGNMENT');
     expect(progress).toHaveTextContent('Manual task assignment');
@@ -592,7 +750,7 @@ describe('InterviewCard assessment progress', () => {
         assignmentTrust: {
           state: 'matched_challenge',
           label: 'PIPE-matched challenge',
-          detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+          detail: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside captured candidate work.',
           tone: 'matched',
         },
         hasChallengePacket: true,
@@ -611,15 +769,28 @@ describe('InterviewCard assessment progress', () => {
           sourceRefType: 'review_challenge_packet',
           sourceRefId: 'challenge-packet-progress-trust',
           evidenceRole: 'assigned_challenge',
-          exactText: [
-            'Repo: https://github.com/open-source/widgets',
-            'Base commit: 4444444444444444444444444444444444444444',
-            'Task: Fix the matched assignment fallback.',
-          ].join('\n'),
+          exactText: null,
           locator: {
             repositoryUrl: 'https://github.com/open-source/widgets',
+            githubPrNumber: 321,
             matchedRepoId: 42,
             baseCommitSha: '4444444444444444444444444444444444444444',
+          },
+          summary: {
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            githubPrNumber: 321,
+            baseCommitSha: '4444444444444444444444444444444444444444',
+            task: 'Fix the matched assignment fallback.',
+            assessmentFit: [
+              'focused review calibrated for senior candidates.',
+              '45 minute target from deterministic engineering prior.',
+            ],
+            matchProof: [
+              'Review packet quality 91% from source-backed repo analysis.',
+              '2 source-backed repo demands in the selected PR packet.',
+            ],
+            successCriteria: [],
+            expectedEvidence: [],
           },
         },
         latestEvent: {
@@ -637,8 +808,15 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('ASSIGNMENT');
     expect(progress).toHaveTextContent('PIPE-matched challenge');
     expect(progress).toHaveTextContent(
-      'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+      'Use the assignment as match-fit evidence alongside captured candidate work.',
     );
+    expect(progress).toHaveTextContent('MATCH PROOF');
+    expect(progress).toHaveTextContent('Review packet quality 91% from source-backed repo analysis.');
+    expect(progress).toHaveTextContent('2 source-backed repo demands in the selected PR packet.');
+    expect(progress).toHaveTextContent('FIT');
+    expect(progress).toHaveTextContent('focused review calibrated for senior candidates.');
+    expect(progress).toHaveTextContent('45 minute target from deterministic engineering prior.');
+    expect(progress).toHaveTextContent('PR #321');
     expect(progress).not.toHaveTextContent('challenge-packet-progress-trust');
     expect(progress).not.toHaveTextContent('assessment-session-progress-trust');
   });
@@ -793,7 +971,7 @@ describe('InterviewCard assessment progress', () => {
         readiness: {
           status: 'READY_FOR_EVALUATION',
           label: 'Ready for evaluation',
-          detail: 'Required evidence is captured, but commit provenance needs repository or workspace verification before final reliance.',
+          detail: 'Required evidence is captured, but commit provenance still needs repository or workspace verification and test output is missing and only a declared verification gap is available; start evaluation as lower-confidence and do not treat correctness as proven.',
           isReadyForEvaluation: true,
           isUsableHiringSignal: false,
           missingRequiredCount: 0,
@@ -801,11 +979,19 @@ describe('InterviewCard assessment progress', () => {
           confidence: [
             {
               id: 'test_run',
-              label: 'Test or verification evidence',
+              label: 'Test output',
+              required: false,
+              satisfied: false,
+              sourceRefTypes: ['test_run'],
+              missingImpact: 'A verification gap was declared, but no test output was captured; keep correctness lower-confidence.',
+            },
+            {
+              id: 'verification_gap_declared',
+              label: 'Verification gap declared',
               required: false,
               satisfied: true,
-              sourceRefTypes: ['test_run', 'verification_gap'],
-              missingImpact: 'Missing test evidence lowers confidence; an explicit verification gap is better than silence.',
+              sourceRefTypes: ['verification_gap'],
+              missingImpact: 'A source-backed verification gap explains missing or partial test output; it does not prove correctness.',
             },
           ],
         },
@@ -851,10 +1037,141 @@ describe('InterviewCard assessment progress', () => {
     });
 
     const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('Ready with limitations');
+    expect(progress).toHaveTextContent('test output is missing');
     expect(progress).toHaveTextContent('workspace telemetry, tool activity, commit, verification gap');
+    expect(progress).toHaveTextContent('Confidence: Missing: Test output · Captured: Verification gap declared');
     expect(progress).not.toHaveTextContent('tests');
     expect(progress).not.toHaveTextContent('assessment-session-verification-gap');
     expect(progress).not.toHaveTextContent('assessment-event-verification-gap');
+  });
+
+  it('distinguishes blocked AI prompts from real agent assistance on recruiter cards', () => {
+    renderCard({
+      id: 'interview-blocked-ai-prompt',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'INVITED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-blocked-ai',
+          ingestionKey: 'assessment-session:blocked-ai',
+          interviewId: 'interview-blocked-ai-prompt',
+          candidateId: 'candidate-1',
+          workspaceId: 'workspace-1',
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'IN_PROGRESS',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:20:00.000Z',
+        },
+        stage: 'WORK_IN_PROGRESS',
+        nextAction: 'SUBMIT_COMMIT',
+        nextActionLabel: 'Submit a real assessment branch commit.',
+        hasChallengePacket: true,
+        hasWorkEvidence: true,
+        hasMessageEvidence: true,
+        hasDevContainerEvidence: true,
+        hasToolUsageEvidence: true,
+        hasCommitSubmission: false,
+        hasFinalSubmission: false,
+        hasAiInteraction: true,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: false,
+        evidenceCounts: [{ kind: 'ai_prompt_blocked', count: 1 }],
+        sourceRefCounts: [
+          { kind: 'open_source_challenge_packet', count: 1 },
+          { kind: 'ai_user_prompt_blocked', count: 1 },
+        ],
+        challenge: null,
+        latestEvent: {
+          id: 'assessment-event-blocked-ai',
+          kind: 'ai_prompt_blocked',
+          sequence: 3,
+          occurredAt: '2026-06-23T00:18:00.000Z',
+        },
+        commit: null,
+        evaluation: null,
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('AI USE');
+    expect(progress).toHaveTextContent('AI prompt blocked');
+    expect(progress).toHaveTextContent('no agent response is counted as assistance');
+    expect(progress).not.toHaveTextContent('AI response captured');
+    expect(progress).not.toHaveTextContent('assessment-session-blocked-ai');
+    expect(progress).not.toHaveTextContent('assessment-event-blocked-ai');
+  });
+
+  it('shows real AI agent responses separately from generic traces on recruiter cards', () => {
+    renderCard({
+      id: 'interview-ai-response',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'INVITED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-ai-response',
+          ingestionKey: 'assessment-session:ai-response',
+          interviewId: 'interview-ai-response',
+          candidateId: 'candidate-1',
+          workspaceId: 'workspace-1',
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'IN_PROGRESS',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:20:00.000Z',
+        },
+        stage: 'WORK_IN_PROGRESS',
+        nextAction: 'SUBMIT_COMMIT',
+        nextActionLabel: 'Submit a real assessment branch commit.',
+        hasChallengePacket: true,
+        hasWorkEvidence: true,
+        hasMessageEvidence: true,
+        hasDevContainerEvidence: true,
+        hasToolUsageEvidence: true,
+        hasCommitSubmission: false,
+        hasFinalSubmission: false,
+        hasAiInteraction: true,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: false,
+        evidenceCounts: [
+          { kind: 'ai_user_prompt', count: 2 },
+          { kind: 'ai_agent_response', count: 1 },
+        ],
+        sourceRefCounts: [
+          { kind: 'open_source_challenge_packet', count: 1 },
+          { kind: 'ai_user_prompt', count: 2 },
+          { kind: 'ai_agent_response', count: 1 },
+        ],
+        challenge: null,
+        latestEvent: {
+          id: 'assessment-event-ai-response',
+          kind: 'ai_agent_response',
+          sequence: 4,
+          occurredAt: '2026-06-23T00:19:00.000Z',
+        },
+        commit: null,
+        evaluation: null,
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('AI USE');
+    expect(progress).toHaveTextContent('AI response captured');
+    expect(progress).toHaveTextContent('2 prompts and 1 agent response captured from the real agent bridge.');
+    expect(progress).not.toHaveTextContent('AI bridge trace captured');
+    expect(progress).not.toHaveTextContent('assessment-session-ai-response');
+    expect(progress).not.toHaveTextContent('assessment-event-ai-response');
   });
 
   it('shows sourced evaluator claims, coverage gaps, and diagnostics without source-less praise or ids', () => {
@@ -972,8 +1289,8 @@ describe('InterviewCard assessment progress', () => {
               dimension: 'repo_understanding',
               narrative: 'The candidate isolated the regression to the widget loader and changed only the relevant file.',
               confidence: 0.82,
-              sourceRefCount: 2,
-              sourceRefTypes: ['ai_user_prompt_blocked', 'ai_agent_response'],
+              sourceRefCount: 4,
+              sourceRefTypes: ['ai_user_prompt_blocked', 'ai_agent_response', 'ai_agent_diagnostic', 'agent_status'],
             },
             {
               id: 'assessment-claim-uncited-secret',
@@ -1004,7 +1321,7 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('CLAIMS');
     expect(progress).toHaveTextContent('Repo understanding · Positive · 82%');
     expect(progress).toHaveTextContent('The candidate isolated the regression to the widget loader');
-    expect(progress).toHaveTextContent('2 source refs: Blocked AI prompt, Agent response');
+    expect(progress).toHaveTextContent('4 source refs: Blocked AI prompt, Agent response, Agent diagnostic +');
     expect(progress).toHaveTextContent('UPSTREAM PR');
     expect(progress).toHaveTextContent('open-source/widgets/pull/42 · candidate-approved tracking');
     expect(progress).toHaveTextContent('GAPS');
@@ -1017,6 +1334,115 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).not.toHaveTextContent('assessment-evaluation-proof-secret');
     expect(progress).not.toHaveTextContent('assessment-claim-cited-secret');
     expect(progress).not.toHaveTextContent('assessment-diagnostic-proof-secret');
+  });
+
+  it('summarizes missing high-confidence signals on evaluated open-source assessment cards', () => {
+    renderCard({
+      id: 'interview-evaluation-limitations',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:22:00.000Z',
+      status: 'COMPLETED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-limitations-secret',
+          ingestionKey: 'assessment-session:limitations',
+          interviewId: 'interview-evaluation-limitations',
+          candidateId: 'candidate-1',
+          workspaceId: 'workspace-1',
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'EVALUATED',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:22:00.000Z',
+        },
+        stage: 'EVALUATED',
+        nextAction: 'REVIEW_EVALUATION',
+        nextActionLabel: 'Review the source-backed evaluator report.',
+        hasChallengePacket: true,
+        hasWorkEvidence: true,
+        hasMessageEvidence: true,
+        hasDevContainerEvidence: true,
+        hasToolUsageEvidence: true,
+        hasCommitSubmission: true,
+        hasFinalSubmission: true,
+        hasAiInteraction: false,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: true,
+        evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+        sourceRefCounts: [
+          { kind: 'review_challenge_packet', count: 1 },
+          { kind: 'git_commit', count: 1 },
+          { kind: 'code_diff', count: 1 },
+          { kind: 'test_run', count: 1 },
+        ],
+        challenge: null,
+        latestEvent: {
+          id: 'assessment-event-limitations-secret',
+          kind: 'final_submission',
+          sequence: 4,
+          occurredAt: '2026-06-23T00:20:00.000Z',
+        },
+        commit: {
+          eventId: 'assessment-event-limitations-secret',
+          repositoryUrl: 'https://github.com/mui/base-ui',
+          forkRepositoryUrl: null,
+          branchName: 'pipe-assessment',
+          baseCommitSha: '3333333333333333333333333333333333333333',
+          commitSha: '123456abcdef123456abcdef123456abcdef1234',
+          commitUrl: null,
+          submissionSource: 'live_workspace',
+          submissionSourceLabel: 'Live workspace finalizer',
+          changedFiles: [{ path: 'packages/react/src/popover/root/usePopoverRoot.ts', status: 'modified' }],
+          occurredAt: '2026-06-23T00:18:00.000Z',
+        },
+        evaluation: {
+          id: 'assessment-report-limitations-secret',
+          status: 'EVALUATED',
+          summary: 'PIPE produced a conservative source-backed assessment report from captured challenge, commit, diff, verification, and workspace evidence.',
+          recommendation: 'mixed_evidence_human_review',
+          createdAt: '2026-06-23T00:22:00.000Z',
+          evidenceCoverage: {
+            schemaVersion: 'assessment-evidence-coverage-v1',
+            sourceRefCount: 4,
+            sourceRefTypeCounts: {
+              review_challenge_packet: 1,
+              git_commit: 1,
+              code_diff: 1,
+              test_run: 1,
+            },
+            requiredForEvaluation: [],
+            expectedForHighConfidence: [],
+          },
+          claims: [],
+          diagnostics: [{
+            id: 'assessment-diagnostic-limitations-secret',
+            code: 'HUMAN_CORRECTNESS_REVIEW_REQUIRED',
+            severity: 'warning',
+            message: 'A human reviewer should inspect the diff before treating the commit as proven upstream-correct.',
+            sourceRefCount: 1,
+            sourceRefTypes: ['code_diff'],
+          }],
+        },
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('LIMITATIONS');
+    expect(progress).toHaveTextContent('AI USE');
+    expect(progress).toHaveTextContent('No AI use captured');
+    expect(progress).toHaveTextContent('treat AI use as unobserved, not absent');
+    expect(progress).toHaveTextContent('Human correctness review required');
+    expect(progress).toHaveTextContent('Inspect the submitted diff and verification evidence before deciding.');
+    expect(progress).toHaveTextContent('AI-use trail missing');
+    expect(progress).toHaveTextContent('Do not judge AI collaboration from this session.');
+    expect(progress).toHaveTextContent('Transcript missing');
+    expect(progress).toHaveTextContent('Reasoning and communication signals come from chat/code evidence only.');
+    expect(progress).not.toHaveTextContent('assessment-report-limitations-secret');
+    expect(progress).not.toHaveTextContent('assessment-diagnostic-limitations-secret');
   });
 
   it('shows human assessment decision before evaluator recommendation without exposing ids', () => {

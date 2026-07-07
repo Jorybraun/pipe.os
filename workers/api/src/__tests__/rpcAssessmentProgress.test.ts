@@ -108,6 +108,240 @@ describe('candidate assessment RPC progress and commit submission', () => {
     await expect(response.json()).resolves.toEqual({ progress: null });
   });
 
+  it('redacts hidden review packet provenance from candidate progress', async () => {
+    const candidateId = 'cand_review_packet_progress';
+    const sessionId = 'assessment-session-hidden-review-packet';
+    const interviewId = 'scheduled-interview-hidden-review-packet';
+    const eventId = 'assessment-event-hidden-review-packet';
+    const sourceRefId = 'review-packet-secret-973';
+    const reportId = 'assessment-report-hidden-review-packet';
+    const claimId = 'assessment-claim-hidden-review-packet';
+    const diagnosticId = 'assessment-diagnostic-hidden-review-packet';
+    const baseCommitSha = 'a'.repeat(40);
+    const headCommitSha = 'b'.repeat(40);
+    const now = '2026-07-07T12:00:00.000Z';
+    const pullRequestUrl = 'https://github.com/mui/base-ui/pull/973';
+    const challengeExactText = [
+      'Repo: https://github.com/mui/base-ui',
+      `Base commit: ${baseCommitSha}`,
+      'Task: Fix the popup trigger regression.',
+      'Success criteria:',
+      '- Candidate explains event timing risk.',
+      'Expected evidence:',
+      '- inline review comment',
+      `Pull request: ${pullRequestUrl}`,
+      `Head commit SHA: ${headCommitSha}`,
+      'Source-backed demands:',
+      '- Hidden solution evidence says exact bug is pointerdown ordering.',
+      'Solution evidence:',
+      '- Apply patch in popup-trigger.tsx before focus restoration.',
+      `Internal source ref: ${sourceRefId}`,
+    ].join('\n');
+
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (id, candidate_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?)`,
+    ).run(interviewId, candidateId, now, now);
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'IN_PROGRESS', ?, ?, ?, '{}', ?, ?)`,
+    ).run(
+      sessionId,
+      `assessment-session:hidden-review:${interviewId}`,
+      interviewId,
+      candidateId,
+      'workspace-hidden-review',
+      'owner-hidden-review',
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_evidence_events (
+         id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+         narrative, payload_json, occurred_at, created_at
+       ) VALUES (?, ?, ?, 1, 'match_decision', 'system', NULL, ?, ?, ?, ?)`,
+    ).run(
+      eventId,
+      `assessment-event:hidden-review:${interviewId}`,
+      sessionId,
+      'Assigned replayed source-backed review packet.',
+      JSON.stringify({ repositoryUrl: 'https://github.com/mui/base-ui', baseCommitSha }),
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_event_source_refs (
+         id, event_id, source_ref_type, source_ref_id, evidence_role,
+         locator_json, exact_text, content_hash, metadata_json, created_at
+       ) VALUES (?, ?, 'review_challenge_packet', ?, 'assigned_challenge', ?, ?, ?, '{}', ?)`,
+    ).run(
+      'assessment-source-hidden-review-packet',
+      eventId,
+      sourceRefId,
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        pullRequestUrl,
+        baseCommitSha,
+        headCommitSha,
+        sourceRefId,
+        assessmentSessionId: sessionId,
+      }),
+      challengeExactText,
+      await sha256ContentHash(challengeExactText),
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_evaluation_reports (
+         id, ingestion_key, session_id, status, summary, output_json,
+         diagnostics_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'EVALUATED', ?, ?, '[]', ?, ?)`,
+    ).run(
+      reportId,
+      `assessment-report:hidden-review:${interviewId}`,
+      sessionId,
+      'Human review recommended after source-backed replay packet.',
+      JSON.stringify({
+        recommendation: 'mixed_evidence_human_review',
+        reviewPacket: {
+          schemaVersion: 'repo-task-review-packet-v1',
+          challenge: {
+            focus: 'Fix popup trigger regression',
+            repositoryUrl: 'https://github.com/mui/base-ui',
+            baseCommitSha,
+            pullRequestUrl,
+            assignmentTrust: {
+              state: 'source_backed_challenge',
+              label: 'Source-backed challenge',
+              detail: 'Derived from a historical review packet.',
+              tone: 'neutral',
+            },
+            contract: {
+              schemaVersion: 'challenge-packet-contract-v1',
+              isComplete: true,
+              missingFields: [],
+            },
+          },
+          submission: null,
+          evidence: {
+            sourceRefCount: 1,
+            sourceRefTypeCounts: { review_challenge_packet: 1 },
+            readiness: {
+              status: 'READY_FOR_EVALUATION',
+              label: 'Ready',
+              detail: 'Source-backed packet is ready for candidate work.',
+              isReadyForEvaluation: true,
+              isUsableHiringSignal: true,
+              missingRequiredCount: 0,
+            },
+          },
+          evaluation: {
+            recommendation: 'mixed_evidence_human_review',
+            claimIds: [claimId],
+            diagnosticCodes: ['hidden_review_packet_warning'],
+          },
+        },
+      }),
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_evaluation_claims (
+         id, report_id, polarity, dimension, narrative, confidence, created_at
+       ) VALUES (?, ?, 'positive', 'review_reasoning', ?, 0.72, ?)`,
+    ).run(
+      claimId,
+      reportId,
+      'Candidate identified a plausible event timing risk.',
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_diagnostics (
+         id, session_id, report_id, event_id, code, severity, message, provider,
+         retryable, details_json, metadata_json, created_at
+       ) VALUES (?, ?, ?, NULL, 'hidden_review_packet_warning', 'warning', ?, NULL, 0, '{}', '{}', ?)`,
+    ).run(
+      diagnosticId,
+      sessionId,
+      reportId,
+      'Review packet requires human validation before a decision.',
+      now,
+    );
+
+    const response = await rpcAuth.request(
+      '/assessment/progress',
+      { method: 'GET', headers: { Authorization: await authHeader(candidateId) } },
+      env,
+      buildCtx(),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      progress: {
+        evidenceSnippets: Array<{ exactText: string; sourceRefType: string }>;
+        challenge: {
+          exactText: string;
+          locator: Record<string, unknown>;
+          summary: {
+            repositoryUrl: string | null;
+            githubPrNumber: number | null;
+            pullRequestUrl: string | null;
+            baseCommitSha: string | null;
+            task: string | null;
+            successCriteria: string[];
+            expectedEvidence: string[];
+          };
+        } | null;
+        evaluation: {
+          reviewPacket: {
+            challenge: { pullRequestUrl: string | null };
+          } | null;
+        } | null;
+      } | null;
+    };
+
+    expect(body.progress?.challenge?.locator).toEqual({
+      repositoryUrl: 'https://github.com/mui/base-ui',
+      baseCommitSha,
+    });
+    expect(body.progress?.challenge?.summary).toMatchObject({
+      repositoryUrl: 'https://github.com/mui/base-ui',
+      githubPrNumber: null,
+      pullRequestUrl: null,
+      baseCommitSha,
+      task: 'Fix the popup trigger regression.',
+      successCriteria: ['Candidate explains event timing risk.'],
+      expectedEvidence: ['inline review comment'],
+    });
+    expect(body.progress?.challenge?.exactText).toContain('Repo: https://github.com/mui/base-ui');
+    expect(body.progress?.challenge?.exactText).toContain(`Base commit: ${baseCommitSha}`);
+    expect(body.progress?.challenge?.exactText).toContain('Task: Fix the popup trigger regression.');
+    expect(body.progress?.evaluation?.reviewPacket?.challenge.pullRequestUrl).toBeNull();
+    expect(body.progress?.evidenceSnippets).toEqual([
+      expect.objectContaining({
+        sourceRefType: 'review_challenge_packet',
+        exactText: expect.stringContaining('Task: Fix the popup trigger regression.'),
+      }),
+    ]);
+
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain(pullRequestUrl);
+    expect(serialized).not.toContain('pull/973');
+    expect(serialized).not.toContain(headCommitSha);
+    expect(serialized).not.toContain(sourceRefId);
+    expect(serialized).not.toContain(sessionId);
+    expect(serialized).not.toContain(reportId);
+    expect(serialized).not.toContain(claimId);
+    expect(serialized).not.toContain(diagnosticId);
+    expect(serialized).not.toContain(eventId);
+    expect(serialized).not.toContain('Hidden solution evidence');
+    expect(serialized).not.toContain('pointerdown ordering');
+    expect(serialized).not.toContain('Apply patch');
+    expect(serialized).not.toContain('popup-trigger.tsx');
+  });
+
   it('accepts source-backed candidate commits and hides internal assessment ids from responses', async () => {
     const candidateId = 'cand_rpc_assessment';
     const sessionId = 'assessment-session-rpc-candidate';
@@ -188,6 +422,7 @@ describe('candidate assessment RPC progress and commit submission', () => {
       '@@ -1,3 +1,4 @@',
       '+export const retryBackoff = "source-backed";',
     ].join('\n');
+    const testRunExactText = 'npm test -- retry\nPASS src/retry.test.ts';
 
     const response = await rpcAuth.request(
       '/assessment/commit-submission',
@@ -232,6 +467,19 @@ describe('candidate assessment RPC progress and commit submission', () => {
               },
               exactText: diffExactText,
             }),
+            await sourceRef({
+              sourceRefType: 'test_run',
+              sourceRefId: `${commitSha}:test-run`,
+              evidenceRole: 'verification_test_output',
+              locator: {
+                repositoryUrl: 'https://github.com/candidate/source-backed-worker',
+                baseCommitSha,
+                commitSha,
+                command: 'npm test -- retry',
+                internalAssessmentSessionId: sessionId,
+              },
+              exactText: testRunExactText,
+            }),
           ],
         }),
       },
@@ -249,7 +497,17 @@ describe('candidate assessment RPC progress and commit submission', () => {
         nextAction: string;
         hasChallengePacket: boolean;
         hasCommitSubmission: boolean;
-        challenge: { locator: Record<string, unknown> } | null;
+        challenge: {
+          locator: Record<string, unknown>;
+          summary: {
+            repositoryUrl: string | null;
+            baseCommitSha: string | null;
+            task: string | null;
+            successCriteria: string[];
+            expectedEvidence: string[];
+            verificationCommand: string | null;
+          };
+        } | null;
         latestEvent: { kind: string; sequence: number };
         commit: { eventId?: string; commitSha: string; branchName: string };
       };
@@ -272,6 +530,18 @@ describe('candidate assessment RPC progress and commit submission', () => {
     expect(body.progress.challenge?.locator).toEqual({
       repositoryUrl: 'https://github.com/pipe/source-backed-worker',
       baseCommitSha,
+    });
+    expect(body.progress.challenge?.summary).toMatchObject({
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      baseCommitSha,
+      task: 'Fix the durable retry path.',
+      successCriteria: ['Retry behavior is deterministic and covered by a focused test.'],
+      expectedEvidence: [
+        'git commit SHA on a pipe-assessment branch',
+        'code diff for the retry path',
+        'test output or verification note',
+      ],
+      verificationCommand: null,
     });
     expect(body.progress.commit).toMatchObject({
       commitSha,

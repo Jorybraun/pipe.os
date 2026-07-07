@@ -817,6 +817,11 @@ function isSourceBackedAgentInteractionEvidence(
     const persistedDiagnosticOk = bridgeMessageSource === 'bridge_diagnostic'
       && evidence.bridgePersisted === true
       && diagnosticSource !== null;
+    const persistedContainerStatusOk = evidence.agentStatusEventSource === 'container_agent_bridge'
+      && bridgeMessageSource === 'agent_status'
+      && evidence.bridgePersisted === true
+      && status !== null
+      && diagnosticSource === null;
     return actor === 'agent'
       && evidence.source === 'agent_bridge'
       && agent !== null
@@ -830,7 +835,7 @@ function isSourceBackedAgentInteractionEvidence(
       && typeof evidence.agentStatusEventId === 'string'
       && AGENT_STATUS_EVENT_ID_RE.test(evidence.agentStatusEventId)
       && evidence.agentStatusEventId === expectedId
-      && (browserObservationOk || persistedDiagnosticOk);
+      && (browserObservationOk || persistedDiagnosticOk || persistedContainerStatusOk);
   }
 
   return false;
@@ -1496,9 +1501,9 @@ async function chatTextSourceRef(input: {
     if (!AGENT_CHAT_RESPONSE_ID_RE.test(agentChatResponseId)) return null;
     if (agentChatResponseId !== `agent-chat:${safeEvidenceIdPart(agent)}:${capturedAtMs}:CHAT_RESPONSE:${responseFingerprint}`) return null;
     return {
-      sourceRefType: 'agent_response',
+      sourceRefType: 'ai_agent_response',
       sourceRefId: agentChatResponseId,
-      evidenceRole: 'agent_response',
+      evidenceRole: 'ai_agent_response',
       locator: {
         sessionId: input.event.sessionId,
         candidateId: input.event.candidateId,
@@ -1554,13 +1559,18 @@ async function chatTextSourceRef(input: {
     const persistedDiagnosticOk = bridgeMessageSource === 'bridge_diagnostic'
       && input.properties.bridgePersisted === true
       && diagnosticSource !== null;
-    if (!browserObservationOk && !persistedDiagnosticOk) return null;
+    const persistedContainerStatusOk = input.properties.agentStatusEventSource === 'container_agent_bridge'
+      && bridgeMessageSource === 'agent_status'
+      && input.properties.bridgePersisted === true
+      && status !== null
+      && diagnosticSource === null;
+    if (!browserObservationOk && !persistedDiagnosticOk && !persistedContainerStatusOk) return null;
 
     const diagnosticBacked = bridgeMessageSource === 'bridge_diagnostic';
     return {
-      sourceRefType: diagnosticBacked ? 'agent_diagnostic' : 'agent_status',
+      sourceRefType: diagnosticBacked ? 'ai_agent_diagnostic' : 'agent_status',
       sourceRefId: agentStatusEventId,
-      evidenceRole: diagnosticBacked ? 'agent_diagnostic' : 'agent_status',
+      evidenceRole: diagnosticBacked ? 'ai_agent_diagnostic' : 'agent_status',
       locator: {
         sessionId: input.event.sessionId,
         candidateId: input.event.candidateId,

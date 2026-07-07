@@ -656,6 +656,8 @@ describe('agent bridge readiness', () => {
       sourceRefId: `${commitSha}:test-run`,
       evidenceRole: 'verification_test_output',
       locator: {
+        baseCommitSha,
+        commitSha,
         command: 'node -e "console.log(42)"',
         exitCode: 0,
       },
@@ -663,6 +665,45 @@ describe('agent bridge readiness', () => {
     expect(testRun.exactText).toContain('$ node -e "console.log(42)"');
     expect(testRun.exactText).toContain('42');
     expect(testRun.exactText).not.toContain('999');
+  });
+
+  it('uses the requested verification command when no challenge command is configured', async () => {
+    const { workspaceDir, baseCommitSha, commitSha } = createCommittedWorkspace();
+    const { port } = await startBridge('', {
+      AGENT_TYPE: '',
+      PATH: process.env.PATH ?? '',
+      REPO_GIT_URL: 'https://github.com/example/repo',
+      CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+    }, {
+      installFakeDevin: false,
+      workspaceDir,
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/assessment/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submitToPipe: false,
+        testCommand: 'node -e "console.log(999)"',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const testRun = body.submissionPayload.sourceRefs.find((ref) => ref.sourceRefType === 'test_run');
+    expect(testRun).toMatchObject({
+      sourceRefType: 'test_run',
+      sourceRefId: `${commitSha}:test-run`,
+      evidenceRole: 'verification_test_output',
+      locator: {
+        baseCommitSha,
+        commitSha,
+        command: 'node -e "console.log(999)"',
+        exitCode: 0,
+      },
+    });
+    expect(testRun.exactText).toContain('$ node -e "console.log(999)"');
+    expect(testRun.exactText).toContain('999');
   });
 
   it('blocks workspace finalization when the request repository does not match the configured challenge repo', async () => {
@@ -752,6 +793,12 @@ describe('agent bridge readiness', () => {
       expect(verificationGap).toMatchObject({
         sourceRefId: `${commitSha}:test-evidence-missing`,
         evidenceRole: 'missing_test_evidence_note',
+        locator: {
+          repositoryUrl: 'https://github.com/example/repo',
+          baseCommitSha,
+          commitSha,
+          expectedSourceRefType: 'test_run',
+        },
         metadata: {
           source: 'agent_bridge_workspace_finalize',
           missingEvidence: 'test_run',
@@ -914,7 +961,9 @@ setInterval(() => {}, 1000);
   });
 
   it('does not treat DEVIN_API_KEY as Devin CLI login', async () => {
-    const { port } = await startBridge(`
+    const captureServer = await startSessionEventCaptureServer();
+    try {
+      const { port } = await startBridge(`
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', () => process.stdout.write('This should not start without CLI auth.\\n'));
 setInterval(() => {}, 1000);
@@ -922,43 +971,83 @@ setInterval(() => {}, 1000);
       DEVIN_API_KEY: 'test-devin-service-token',
       DEVIN_API_BASE_URL: 'http://127.0.0.1:9/v3',
       FAKE_DEVIN_AUTH_STATUS: 'not_logged_in',
+      PIPE_API_URL: captureServer.url,
+      ROOM_TOKEN: 'room-token',
     });
 
-    const { ws, messages } = await connectAgent(port);
-    const authNeeded = await waitForMessage(messages, (message) => message.type === 'AUTH_NEEDED');
+      const { ws, messages } = await connectAgent(port);
+      const authNeeded = await waitForMessage(messages, (message) => message.type === 'AUTH_NEEDED');
 
-    expect(authNeeded).toMatchObject({
-      agent: 'devin',
-      message: expect.stringContaining('Not logged in.'),
-    });
-    expect(messages.some((message) => message.type === 'AGENT_READY')).toBe(false);
-    const authStatusDiagnostic = await waitForMessage(
-      messages,
-      (message) => (
-        message.type === 'AGENT_DIAGNOSTIC'
-        && message.diagnosticSource === 'devin_auth_status_not_logged_in'
-      ),
-    );
-    expect(authStatusDiagnostic).toMatchObject({
-      agent: 'devin',
-      status: 'auth_needed',
-      message: expect.stringContaining('devin auth login --force-manual-token-flow'),
-    });
+      expect(authNeeded).toMatchObject({
+        agent: 'devin',
+        message: expect.stringContaining('Not logged in.'),
+      });
+      expect(messages.some((message) => message.type === 'AGENT_READY')).toBe(false);
+      const authStatusDiagnostic = await waitForMessage(
+        messages,
+        (message) => (
+          message.type === 'AGENT_DIAGNOSTIC'
+          && message.diagnosticSource === 'devin_auth_status_not_logged_in'
+        ),
+      );
+      expect(authStatusDiagnostic).toMatchObject({
+        agent: 'devin',
+        status: 'auth_needed',
+        message: expect.stringContaining('devin auth login --force-manual-token-flow'),
+      });
 
-    ws.send(JSON.stringify({ type: 'CHAT', text: 'hello?' }));
-    const repeatedAuth = await waitForMessage(
-      messages,
-      (message) => (
-        message.type === 'AGENT_DIAGNOSTIC'
-        && message.diagnosticSource === 'devin_auth_status_not_logged_in'
-      ),
-    );
-    expect(repeatedAuth).toBeTruthy();
-    expect(messages.some((message) => (
-      message.type === 'CHAT_RESPONSE'
-      && String(message.text || '').includes('This should not start')
-    ))).toBe(false);
-    ws.close();
+      ws.send(JSON.stringify({ type: 'CHAT', text: 'hello?' }));
+      const repeatedAuth = await waitForMessage(
+        messages,
+        (message) => (
+          message.type === 'AGENT_DIAGNOSTIC'
+          && message.diagnosticSource === 'devin_auth_status_not_logged_in'
+        ),
+      );
+      expect(repeatedAuth).toBeTruthy();
+      expect(messages.some((message) => (
+        message.type === 'CHAT_RESPONSE'
+        && String(message.text || '').includes('This should not start')
+      ))).toBe(false);
+      await waitForMessage(
+        captureServer.events,
+        (event) => (
+          event.type === 'ai_agent_status'
+          && event.properties?.agentStatusEventSource === 'container_agent_bridge'
+          && event.properties?.bridgeMessageSource === 'agent_status'
+          && event.properties?.status === 'auth_needed'
+          && event.properties?.bridgePersisted === true
+        ),
+      );
+      expect(captureServer.events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'ai_agent_status',
+          actor: 'agent',
+          properties: expect.objectContaining({
+            source: 'agent_bridge',
+            agent: 'devin',
+            status: 'auth_needed',
+            bridgeMessageSource: 'agent_status',
+            agentStatusEventSource: 'container_agent_bridge',
+            bridgePersisted: true,
+          }),
+        }),
+        expect.objectContaining({
+          type: 'ai_agent_status',
+          actor: 'agent',
+          properties: expect.objectContaining({
+            source: 'agent_bridge',
+            agent: 'devin',
+            status: 'auth_needed',
+            bridgeMessageSource: 'bridge_diagnostic',
+            bridgePersisted: true,
+          }),
+        }),
+      ]));
+      ws.close();
+    } finally {
+      await captureServer.close();
+    }
   });
 
   it('rechecks real Devin CLI auth and starts the agent after terminal login completes', async () => {

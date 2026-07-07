@@ -13,6 +13,7 @@ vi.mock('../candidateNodes', () => ({
     updated_at: Date.now(),
   })),
   embedCandidateNode: vi.fn(async () => Array(1024).fill(0.1)),
+  repairCandidateResumeNodeSourceRefs: vi.fn(async () => ({ scanned: 0, repaired: 0 })),
 }));
 
 vi.mock('../candidateCoverage', () => ({
@@ -144,6 +145,138 @@ describe('decomposeResumeToGraph', () => {
       source_quote_char_start: 'Jane Doe\n'.length,
       source_quote_char_end: 'Jane Doe\nLed backend migration to microservices using Kafka.'.length,
     });
+  });
+
+  it('anchors repeated experience title quotes to the matching company occurrence', async () => {
+    const db = mockDb();
+    const resumeText = [
+      'History',
+      'Morgan Stanley',
+      'Senior UI Developer : January 2024 - March 2025',
+      'Collaborated directly with stakeholders.',
+      'Orium',
+      'Fullstack Developer : March 2022 - August 2023',
+      'Optimized dynamic CMS-driven components.',
+      'Sycle',
+      'Senior UI Developer : October 2021 - March 2022',
+      'Built a HIPAA-compliant real-time chat feature.',
+      'SAP',
+      'UI Developer : April 2019 - February 2020',
+      'Contributed to accessibility remediation efforts.',
+      'SSENSE',
+      'Fullstack Developer : May 2017 - July 2018',
+      'Developed core Checkout and Cart pages.',
+    ].join('\n');
+    const parsedCV: ParsedCV = {
+      name: 'Repeated Title Candidate',
+      skills: [],
+      experiences: [],
+      educationBlocks: [],
+      credentials: [],
+      projects: [],
+    };
+
+    await decomposeResumeToGraph({
+      db,
+      candidateId: 'candidate-repeated-title',
+      resumeText,
+      parsedCV,
+      env: mockEnv,
+      decompositionResult: {
+        ...mockDecomposition,
+        experiences: [
+          {
+            company: 'Morgan Stanley',
+            role: 'Senior UI Developer',
+            duration_months: 15,
+            narrative: 'Collaborated directly with stakeholders.',
+            skills_demonstrated: ['react'],
+            confidence: 0.8,
+            source_quote: 'Senior UI Developer',
+          },
+          {
+            company: 'Orium',
+            role: 'Fullstack Developer',
+            duration_months: 18,
+            narrative: 'Optimized dynamic CMS-driven components.',
+            skills_demonstrated: ['react'],
+            confidence: 0.8,
+            source_quote: 'Fullstack Developer',
+          },
+          {
+            company: 'Sycle',
+            role: 'Senior UI Developer',
+            duration_months: 6,
+            narrative: 'Built a HIPAA-compliant real-time chat feature.',
+            skills_demonstrated: ['react'],
+            confidence: 0.8,
+            source_quote: 'Senior UI Developer',
+          },
+          {
+            company: 'SAP',
+            role: 'UI Developer',
+            duration_months: 11,
+            narrative: 'Contributed to accessibility remediation efforts.',
+            skills_demonstrated: ['accessibility'],
+            confidence: 0.8,
+            source_quote: 'UI Developer',
+          },
+          {
+            company: 'SSENSE',
+            role: 'Fullstack Developer',
+            duration_months: 15,
+            narrative: 'Developed core Checkout and Cart pages.',
+            skills_demonstrated: ['vue'],
+            confidence: 0.8,
+            source_quote: 'Fullstack Developer',
+          },
+        ],
+        projects: [],
+        skills: [],
+        education: [],
+        credentials: [],
+        career_arc: {
+          narrative: 'Progressed through frontend roles.',
+          growth_velocity: 'normal',
+          transitions: [],
+          confidence: 0.7,
+        },
+      },
+    });
+
+    const experienceProperties = new Map<string, {
+      source_quote?: string;
+      source_quote_validated?: boolean;
+      source_quote_char_start?: number;
+      source_quote_char_end?: number;
+    }>();
+    for (const call of vi.mocked(insertCandidateNode).mock.calls) {
+      if (call[1].node_type !== 'Experience') continue;
+      const properties = JSON.parse(String(call[1].extracted_properties_json)) as {
+        company?: string;
+        source_quote?: string;
+        source_quote_validated?: boolean;
+        source_quote_char_start?: number;
+        source_quote_char_end?: number;
+      };
+      if (properties.company) experienceProperties.set(properties.company, properties);
+    }
+
+    for (const [company, quote] of [
+      ['Morgan Stanley', 'Morgan Stanley\nSenior UI Developer'],
+      ['Orium', 'Orium\nFullstack Developer'],
+      ['Sycle', 'Sycle\nSenior UI Developer'],
+      ['SAP', 'SAP\nUI Developer'],
+      ['SSENSE', 'SSENSE\nFullstack Developer'],
+    ] as const) {
+      const quoteStart = resumeText.indexOf(quote);
+      expect(experienceProperties.get(company)).toMatchObject({
+        source_quote: quote,
+        source_quote_validated: true,
+        source_quote_char_start: quoteStart,
+        source_quote_char_end: quoteStart + quote.length,
+      });
+    }
   });
 
   it('persists source-backed nodes even when embedding is unavailable', async () => {
@@ -441,7 +574,7 @@ describe('decomposeResumeToGraph', () => {
     const result = await decomposeResumeToGraph({
       db,
       candidateId: 'candidate-456',
-      resumeText: 'short text',
+      resumeText: 'TypeScript engineer. Led backend migration.',
       parsedCV,
       env: mockEnv,
       decompositionResult: null,
@@ -470,11 +603,54 @@ describe('decomposeResumeToGraph', () => {
     const result = await decomposeResumeToGraph({
       db,
       candidateId: 'candidate-789',
-      resumeText: 'short text',
+      resumeText: 'TypeScript engineer. Led backend migration.',
       parsedCV,
       env: mockEnv,
     });
 
     expect(result.nodesInserted).toBeGreaterThan(0);
+  });
+
+  it('does not persist parser-only resume nodes without exact source quotes', async () => {
+    const db = mockDb();
+    const parsedCV: ParsedCV = {
+      name: 'Jane Doe',
+      skills: ['Rust'],
+      experiences: [
+        {
+          company: 'Acme Corp',
+          role: 'Senior Engineer',
+          description: 'Led backend migration.',
+        },
+      ],
+      educationBlocks: [],
+      credentials: [],
+      projects: [],
+    };
+
+    await decomposeResumeToGraph({
+      db,
+      candidateId: 'candidate-source-filter',
+      resumeText: 'TypeScript engineer. Led backend migration.',
+      parsedCV,
+      env: mockEnv,
+      decompositionResult: null,
+    });
+
+    const resumeNodes = vi.mocked(insertCandidateNode).mock.calls
+      .map((call) => call[1])
+      .filter((node) => node.source_type === 'resume');
+    expect(resumeNodes.length).toBeGreaterThan(0);
+    expect(resumeNodes.every((node) => {
+      const properties = JSON.parse(String(node.extracted_properties_json)) as {
+        source_quote?: string;
+        source_quote_validated?: boolean;
+      };
+      return properties.source_quote_validated === true
+        && typeof properties.source_quote === 'string'
+        && properties.source_quote.length > 0;
+    })).toBe(true);
+    expect(resumeNodes.some((node) => node.node_type === 'Skill'
+      && node.narrative_text === 'rust')).toBe(false);
   });
 });

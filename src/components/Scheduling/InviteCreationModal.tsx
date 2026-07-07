@@ -9,7 +9,11 @@ import {
 } from '../../lib/scheduling/types';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 
+const CREATE_INVITE_STATUS_TEXT = 'Creating interview and preparing invite delivery...';
+
 interface InviteCreationData {
+  title?: string;
+  description?: string;
   recipientName: string;
   recipientEmail: string;
   meetingType: MeetingType;
@@ -24,6 +28,7 @@ interface InviteCreationData {
   challengeInstructions?: string;
   challengeSuccessCriteria?: string[];
   challengeExpectedEvidence?: string[];
+  challengeVerificationCommand?: string;
   recruiterNotes?: string;
   features?: {
     videoEnabled: boolean;
@@ -40,6 +45,7 @@ interface InviteCreationModalProps {
     id: string;
     meetingUrl?: string | null;
     emailSent?: boolean;
+    emailQueued?: boolean;
     provider?: string | undefined;
     emailError?: string | undefined;
     assessmentSetup?: AssessmentSetupProjection | null;
@@ -54,6 +60,7 @@ interface CreatedInviteState {
   id: string;
   meetingUrl: string | null;
   emailSent: boolean | null;
+  emailQueued: boolean;
   provider?: string | undefined;
   emailError?: string | undefined;
   assessmentSetup?: AssessmentSetupProjection | null;
@@ -199,6 +206,7 @@ export function InviteCreationModal({
   const [challengeInstructions, setChallengeInstructions] = useState('');
   const [challengeSuccessCriteria, setChallengeSuccessCriteria] = useState('');
   const [challengeExpectedEvidence, setChallengeExpectedEvidence] = useState('');
+  const [challengeVerificationCommand, setChallengeVerificationCommand] = useState('');
   const [schedulingMode, setSchedulingMode] = useState<'manual' | 'calendly'>('manual');
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [workspaceEnabled, setWorkspaceEnabled] = useState(true);
@@ -224,6 +232,7 @@ export function InviteCreationModal({
       setChallengeInstructions('');
       setChallengeSuccessCriteria('');
       setChallengeExpectedEvidence('');
+      setChallengeVerificationCommand('');
       setCreateError(null);
       setCreatedInvite(null);
       setCopied(false);
@@ -353,11 +362,17 @@ export function InviteCreationModal({
           inviteData.githubPrNumber = parsedPrNumber;
         }
         if (interviewType === 'OPEN_SOURCE_BUG_FIX') {
+          inviteData.title = challengeTitle.trim();
+          inviteData.description = challengeInstructions.trim();
           inviteData.challengeBaseCommitSha = challengeBaseCommitSha.trim();
           inviteData.challengeTitle = challengeTitle.trim();
           inviteData.challengeInstructions = challengeInstructions.trim();
           inviteData.challengeSuccessCriteria = challengeSuccessCriteriaItems;
           inviteData.challengeExpectedEvidence = challengeExpectedEvidenceItems;
+          const trimmedVerificationCommand = challengeVerificationCommand.trim();
+          if (trimmedVerificationCommand.length > 0) {
+            inviteData.challengeVerificationCommand = trimmedVerificationCommand;
+          }
         }
       }
 
@@ -380,6 +395,7 @@ export function InviteCreationModal({
         id: result.id,
         meetingUrl: result.meetingUrl ?? null,
         emailSent: typeof result.emailSent === 'boolean' ? result.emailSent : null,
+        emailQueued: Boolean(result.emailQueued),
         provider: result.provider,
         emailError: result.emailError,
         assessmentSetup: result.assessmentSetup ?? null,
@@ -400,6 +416,7 @@ export function InviteCreationModal({
   };
 
   const handleClose = () => {
+    if (isCreating) return;
     setRecipientName('');
     setRecipientEmail('');
     setRecruiterNotes('');
@@ -413,6 +430,7 @@ export function InviteCreationModal({
     setChallengeInstructions('');
     setChallengeSuccessCriteria('');
     setChallengeExpectedEvidence('');
+    setChallengeVerificationCommand('');
     setSchedulingMode('manual');
     setCreateError(null);
     setCreatedInvite(null);
@@ -439,13 +457,14 @@ export function InviteCreationModal({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
-          maxWidth: 480,
-          maxHeight: 'calc(100vh - 48px)',
+          maxWidth: 720,
+          maxHeight: 'calc(100vh - 40px)',
           overflowY: 'auto',
           background: 'var(--pipe-bg)',
           border: '1px solid var(--pipe-border)',
-          borderRadius: 12,
-          padding: 32,
+          borderRadius: 8,
+          padding: 28,
+          boxShadow: '0 24px 80px rgba(0,0,0,0.55)',
         }}
       >
         {/* Header */}
@@ -460,7 +479,14 @@ export function InviteCreationModal({
           </div>
           <button
             onClick={handleClose}
-            style={{ background: 'transparent', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer' }}
+            disabled={isCreating}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--pipe-text-dim)',
+              cursor: isCreating ? 'wait' : 'pointer',
+              opacity: isCreating ? 0.45 : 1,
+            }}
             aria-label="Close"
           >
             <X size={18} />
@@ -485,6 +511,8 @@ export function InviteCreationModal({
               <div style={{ fontSize: 11, color: createdInvite.emailSent ? '#4ade80' : 'var(--pipe-text-dim)', marginBottom: 12, fontFamily: '"Space Mono", monospace', lineHeight: 1.5 }}>
                 {createdInvite.emailSent === true
                   ? `Invite email sent${createdInvite.provider ? ` via ${createdInvite.provider}` : ''}.`
+                  : createdInvite.emailQueued
+                    ? `${linkLabel} is ready, and the invite email is sending in the background.`
                   : createdInvite.emailError
                     ? `${linkLabel} is ready, but email delivery failed. Copy and send it manually.`
                     : `${linkLabel} is ready. Copy it or send it from the interview page.`}
@@ -588,7 +616,7 @@ export function InviteCreationModal({
             {/* Meeting type selector */}
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>INTERVIEW TYPE</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 8 }}>
                 {INTERVIEW_MODES.map((type) => (
                   <button
                     key={type.value}
@@ -705,28 +733,28 @@ export function InviteCreationModal({
               )}
             </div>
 
-            {/* Recipient name */}
-            <div style={{ marginBottom: 20 }}>
-              <label style={labelStyle}>PERSON NAME</label>
-              <input
-                type="text"
-                value={recipientName}
-                onChange={(e) => setRecipientName(e.target.value)}
-                placeholder="Jane Doe"
-                style={inputStyle}
-              />
-            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
+              <div>
+                <label style={labelStyle}>PERSON NAME</label>
+                <input
+                  type="text"
+                  value={recipientName}
+                  onChange={(e) => setRecipientName(e.target.value)}
+                  placeholder="Jane Doe"
+                  style={inputStyle}
+                />
+              </div>
 
-            {/* Recipient email */}
-            <div style={{ marginBottom: 20 }}>
-              <label style={labelStyle}>PERSON EMAIL</label>
-              <input
-                type="email"
-                value={recipientEmail}
-                onChange={(e) => setRecipientEmail(e.target.value)}
-                placeholder="jane@example.com"
-                style={inputStyle}
-              />
+              <div>
+                <label style={labelStyle}>PERSON EMAIL</label>
+                <input
+                  type="email"
+                  value={recipientEmail}
+                  onChange={(e) => setRecipientEmail(e.target.value)}
+                  placeholder="jane@example.com"
+                  style={inputStyle}
+                />
+              </div>
             </div>
 
             <div style={{ marginBottom: 20 }}>
@@ -815,6 +843,13 @@ export function InviteCreationModal({
                             placeholder="One required evidence item per line"
                             style={{ ...inputStyle, minHeight: 76, resize: 'vertical' }}
                           />
+                          <input
+                            type="text"
+                            value={challengeVerificationCommand}
+                            onChange={(e) => setChallengeVerificationCommand(e.target.value)}
+                            placeholder="Optional verification command, e.g. npm test -- transcript"
+                            style={inputStyle}
+                          />
                           <PacketChecklist items={packetChecklistItems} />
                         </div>
                       </div>
@@ -870,16 +905,50 @@ export function InviteCreationModal({
               </div>
             )}
 
+            {isCreating && (
+              <div
+                role="status"
+                aria-live="polite"
+                style={{
+                  padding: 12,
+                  background: 'rgba(96,165,250,0.1)',
+                  border: '1px solid rgba(96,165,250,0.22)',
+                  borderRadius: 4,
+                  color: '#93c5fd',
+                  fontSize: 11,
+                  fontFamily: '"Space Mono", monospace',
+                  marginBottom: 16,
+                  lineHeight: 1.5,
+                }}
+              >
+                {CREATE_INVITE_STATUS_TEXT}
+              </div>
+            )}
+
             {createError && (
-              <p style={{ color: '#f87171', fontSize: 12, fontFamily: '"Space Mono", monospace', marginBottom: 16 }}>
+              <div
+                role="alert"
+                style={{
+                  padding: 12,
+                  background: 'rgba(248,113,113,0.1)',
+                  border: '1px solid rgba(248,113,113,0.28)',
+                  borderRadius: 4,
+                  color: '#fca5a5',
+                  fontSize: 12,
+                  fontFamily: '"Space Mono", monospace',
+                  marginBottom: 16,
+                  lineHeight: 1.5,
+                }}
+              >
                 {createError}
-              </p>
+              </div>
             )}
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
               <button
                 onClick={handleClose}
+                disabled={isCreating}
                 style={{
                   padding: '10px 20px',
                   background: 'transparent',
@@ -888,8 +957,9 @@ export function InviteCreationModal({
                   fontSize: 10,
                   letterSpacing: '0.1em',
                   fontFamily: '"Space Mono", monospace',
-                  cursor: 'pointer',
+                  cursor: isCreating ? 'wait' : 'pointer',
                   borderRadius: 4,
+                  opacity: isCreating ? 0.55 : 1,
                 }}
               >
                 CANCEL
@@ -897,6 +967,7 @@ export function InviteCreationModal({
               <button
                 onClick={handleCreate}
                 disabled={!canCreate || isCreating}
+                aria-busy={isCreating}
                 style={{
                   padding: '10px 20px',
                   background: canCreate ? 'rgba(96,165,250,0.15)' : 'var(--pipe-surface)',
@@ -905,7 +976,7 @@ export function InviteCreationModal({
                   fontSize: 10,
                   letterSpacing: '0.1em',
                   fontFamily: '"Space Mono", monospace',
-                  cursor: canCreate ? 'pointer' : 'default',
+                  cursor: isCreating ? 'wait' : canCreate ? 'pointer' : 'default',
                   borderRadius: 4,
                   transition: 'all 0.2s',
                 }}

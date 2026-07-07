@@ -29,6 +29,20 @@ interface CachedMeta {
   reviewProfile?: unknown;
 }
 
+interface CandidateSafeCodeReviewTaskPacket {
+  repositoryUrl: string | null;
+  pullRequestUrl: string | null;
+  githubPrNumber: number | null;
+  baseCommitSha: string | null;
+  headCommitSha: string | null;
+  task: string | null;
+  successCriteria: string[];
+  expectedEvidence: string[];
+  constraints: string[];
+  isComplete: boolean;
+  missingFields: string[];
+}
+
 export interface CodeReviewReviewProfile {
   source: 'deterministic_engineering_prior';
   difficultyBand: 'introductory' | 'focused' | 'advanced' | 'oversized';
@@ -57,6 +71,7 @@ export interface CodeReviewChallengeProps {
     cachedMetadata?: unknown;
     matchExplanation?: CodeReviewMatchExplanation | null;
     reviewProfile?: unknown;
+    challengePacket?: unknown;
   };
   diff: DiffJson | null;
   isFetchingDiff: boolean;
@@ -121,6 +136,41 @@ function repoLabelFromUrl(repoUrl: string | null | undefined): string {
   } catch {
     return repoUrl;
   }
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function stringArrayValue(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function sanitizeChallengePacket(value: unknown): CandidateSafeCodeReviewTaskPacket | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  return {
+    repositoryUrl: stringValue(record.repositoryUrl),
+    pullRequestUrl: stringValue(record.pullRequestUrl),
+    githubPrNumber: numberValue(record.githubPrNumber),
+    baseCommitSha: stringValue(record.baseCommitSha),
+    headCommitSha: stringValue(record.headCommitSha),
+    task: stringValue(record.task),
+    successCriteria: stringArrayValue(record.successCriteria),
+    expectedEvidence: stringArrayValue(record.expectedEvidence),
+    constraints: stringArrayValue(record.constraints),
+    isComplete: record.isComplete === true,
+    missingFields: stringArrayValue(record.missingFields),
+  };
+}
+
+function commitLabel(commitSha: string | null): string {
+  return commitSha ? commitSha.slice(0, 12) : 'Not provided';
 }
 
 export function asCodeReviewReviewProfile(value: unknown): CodeReviewReviewProfile | null {
@@ -266,6 +316,118 @@ export function ReviewProfileCard({ profile }: { profile: CodeReviewReviewProfil
   );
 }
 
+function TaskPacketList({
+  title,
+  items,
+}: {
+  title: string;
+  items: string[];
+}): JSX.Element | null {
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <div style={{ fontSize: 8, color: BRAND_DIM, fontFamily: LABEL_FONT, marginBottom: 6 }}>
+        {title}
+      </div>
+      <ul style={{ margin: 0, paddingLeft: 16, color: BRAND_MUTED, fontSize: 10, lineHeight: 1.6 }}>
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function CodeReviewTaskPacketCard({
+  packet,
+  fallbackRepoUrl,
+  fallbackPrNumber,
+}: {
+  packet: CandidateSafeCodeReviewTaskPacket;
+  fallbackRepoUrl: string | null;
+  fallbackPrNumber: number | null;
+}): JSX.Element {
+  const repositoryUrl = packet.repositoryUrl ?? fallbackRepoUrl;
+  const prNumber = packet.githubPrNumber ?? fallbackPrNumber;
+  const pullRequestUrl = packet.pullRequestUrl
+    ?? (repositoryUrl && prNumber ? `${repositoryUrl.replace(/\/$/, '')}/pull/${prNumber}` : null);
+  const statusLabel = packet.isComplete ? 'TASK_PACKET' : 'PACKET_INCOMPLETE';
+
+  return (
+    <div
+      data-testid="code-review-challenge-packet"
+      style={{
+        padding: 16,
+        borderRadius: 6,
+        background: packet.isComplete
+          ? 'linear-gradient(180deg, rgba(52,211,153,0.055), rgba(98,143,185,0.045))'
+          : 'linear-gradient(180deg, rgba(251,191,36,0.065), rgba(98,143,185,0.045))',
+        border: `1px solid ${packet.isComplete ? 'rgba(52,211,153,0.2)' : 'rgba(251,191,36,0.24)'}`,
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.07)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+        <span style={{ fontSize: 8, letterSpacing: '0.16em', color: BRAND_DIM, fontFamily: LABEL_FONT }}>
+          {statusLabel}
+        </span>
+        {pullRequestUrl && (
+          <a
+            href={pullRequestUrl}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              color: '#b9ddff',
+              fontSize: 9,
+              fontFamily: LABEL_FONT,
+              fontWeight: 700,
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            PR {prNumber != null ? `#${prNumber}` : ''}
+            <ExternalLink size={10} />
+          </a>
+        )}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 8, color: BRAND_DIM, fontFamily: LABEL_FONT, marginBottom: 3 }}>
+            REPOSITORY
+          </div>
+          <div style={{ fontSize: 11, color: '#f4f8ff', fontWeight: 800, overflowWrap: 'anywhere' }}>
+            {repoLabelFromUrl(repositoryUrl)}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 8, color: BRAND_DIM, fontFamily: LABEL_FONT, marginBottom: 3 }}>
+            BASE_COMMIT
+          </div>
+          <div style={{ fontSize: 11, color: '#f4f8ff', fontWeight: 800, fontFamily: LABEL_FONT }}>
+            {commitLabel(packet.baseCommitSha)}
+          </div>
+        </div>
+      </div>
+
+      {packet.task && (
+        <p style={{ margin: 0, marginBottom: 12, color: 'rgba(244,248,255,0.78)', fontSize: 11, lineHeight: 1.55 }}>
+          {packet.task}
+        </p>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <TaskPacketList title="SUCCESS_CRITERIA" items={packet.successCriteria} />
+        <TaskPacketList title="EXPECTED_EVIDENCE" items={packet.expectedEvidence} />
+        <TaskPacketList title="CONSTRAINTS" items={packet.constraints} />
+        <TaskPacketList title="MISSING_FIELDS" items={packet.missingFields} />
+      </div>
+    </div>
+  );
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -342,6 +504,7 @@ export function CodeReviewChallenge({
   const repoUrl = challenge.githubRepoUrl ?? null;
   const repoLabel = repoLabelFromUrl(repoUrl);
   const prUrl = repoUrl && hasPrAssigned ? `${repoUrl.replace(/\/$/, '')}/pull/${prNumber}` : null;
+  const challengePacket = sanitizeChallengePacket(challenge.challengePacket);
   const isPlaceholderInstructions =
     challenge.instructions?.includes('when your profile is ingested') ?? false;
 
@@ -594,6 +757,16 @@ export function CodeReviewChallenge({
             </div>
           </LiquidMetalCard>
         </div>
+
+        {challengePacket && (
+          <div style={{ padding: '0 24px 24px' }}>
+            <CodeReviewTaskPacketCard
+              packet={challengePacket}
+              fallbackRepoUrl={repoUrl}
+              fallbackPrNumber={prNumber ?? null}
+            />
+          </div>
+        )}
 
         {reviewProfile && (
           <div style={{ padding: '0 24px 24px' }}>

@@ -46,6 +46,24 @@ async function sourceRef(
   };
 }
 
+async function verificationRef(
+  commitSha: string,
+  baseCommitSha: string,
+  exactText = 'npm test -- popover\nPASS popover cleanup regression',
+  repositoryUrl = 'https://github.com/open-source/widgets',
+): Promise<AssessmentEvidenceSourceRefInput> {
+  return {
+    ...await sourceRef('test_run', `${commitSha}:test-run`, exactText),
+    evidenceRole: 'verification_test_output',
+    locator: {
+      repositoryUrl,
+      baseCommitSha,
+      commitSha,
+      command: exactText.split('\n')[0] ?? 'npm test',
+    },
+  };
+}
+
 function buildEnv(db: D1Database): Env {
   return {
     DB: db,
@@ -338,6 +356,12 @@ describe('repo task assessment session routes', () => {
         sourceRefs: [
           await sourceRef('git_commit', commitSha, commitText),
           await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+          await verificationRef(
+            commitSha,
+            baseCommitSha,
+            'npm test -- stream\nPASS reconnect ordering',
+            'https://github.com/open-source/streaming',
+          ),
         ],
       }),
       env,
@@ -730,8 +754,8 @@ describe('repo task assessment session routes', () => {
       expect.objectContaining({
         id: 'ai_usage_transparency',
         satisfied: true,
-        sourceRefTypes: ['ai_user_prompt', 'ai_user_prompt_blocked', 'ai_agent_response'],
-        missingImpact: 'If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly.',
+        sourceRefTypes: expect.arrayContaining(['ai_user_prompt', 'ai_user_prompt_blocked', 'ai_agent_response']),
+        missingImpact: 'If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly. Silence is not proof of no AI use.',
       }),
     ]));
 
@@ -793,6 +817,128 @@ describe('repo task assessment session routes', () => {
     ]));
   });
 
+  it('treats accepted terminal and code-server source refs as tool activity progress', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:workspace-tool-activity',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-tool-activity',
+    });
+
+    const terminalText = 'npm test -- popover\nPASS popover cleanup regression';
+    const fileObservationText = 'Saved src/popover.ts with cleanupStaleHandler applied.';
+    const eventResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:workspace-tool-activity',
+        kind: 'dev_container_event',
+        actorType: 'dev_container',
+        actorId: 'workspace-session-tool-activity',
+        narrative: 'Dev container captured terminal and editor telemetry for candidate work.',
+        payload: { workspaceSessionId: 'workspace-session-tool-activity' },
+        sourceRefs: [
+          await sourceRef('terminal_command', 'terminal-command-tool-activity', terminalText),
+          await sourceRef('code_server_file_observation', 'file-observation-tool-activity', fileObservationText),
+        ],
+      }),
+      env,
+    );
+    expect(eventResponse.status).toBe(201);
+
+    const progressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(progressResponse.status).toBe(200);
+    const progressBody = await progressResponse.json() as {
+      progress: {
+        hasWorkEvidence: boolean;
+        hasDevContainerEvidence: boolean;
+        hasToolUsageEvidence: boolean;
+        sourceRefCounts: Array<{ kind: string; count: number }>;
+        readiness: {
+          confidence: Array<{ id: string; satisfied: boolean; sourceRefTypes: string[] }>;
+        };
+      };
+    };
+    expect(progressBody.progress).toMatchObject({
+      hasWorkEvidence: true,
+      hasDevContainerEvidence: true,
+      hasToolUsageEvidence: true,
+    });
+    expect(progressBody.progress.sourceRefCounts).toEqual(expect.arrayContaining([
+      { kind: 'terminal_command', count: 1 },
+      { kind: 'code_server_file_observation', count: 1 },
+    ]));
+    expect(progressBody.progress.readiness.confidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'workspace_activity',
+        satisfied: true,
+        sourceRefTypes: expect.arrayContaining(['terminal_command', 'code_server_file_observation']),
+      }),
+    ]));
+  });
+
+  it('counts room transcript source refs as transcript evidence even when the event kind is not transcript_span', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:room-transcript-source-ref',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-room-transcript',
+    });
+    const transcriptText = 'Speaker candidate: I chose the smaller patch because it preserves the public API.';
+
+    const response = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:room-transcript-message',
+        kind: 'message',
+        actorType: 'candidate',
+        actorId: 'candidate-room-transcript',
+        narrative: 'Room transcript segment captured candidate reasoning.',
+        payload: { source: 'video_room_transcript' },
+        sourceRefs: [
+          await sourceRef(
+            'meeting_transcript_segment',
+            'meeting-transcript-segment-1',
+            transcriptText,
+            { speaker: 'candidate', startMs: 12000, endMs: 18000 },
+          ),
+        ],
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(201);
+
+    const progressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(progressResponse.status).toBe(200);
+    const progressBody = await progressResponse.json() as {
+      progress: {
+        hasTranscriptEvidence: boolean;
+        sourceRefCounts: Array<{ kind: string; count: number }>;
+        readiness: {
+          confidence: Array<{ id: string; satisfied: boolean; sourceRefTypes: string[] }>;
+        };
+      };
+    };
+
+    expect(progressBody.progress.hasTranscriptEvidence).toBe(true);
+    expect(progressBody.progress.sourceRefCounts).toEqual(expect.arrayContaining([
+      { kind: 'meeting_transcript_segment', count: 1 },
+    ]));
+    expect(progressBody.progress.readiness.confidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'transcript_context',
+        satisfied: true,
+        sourceRefTypes: ['meeting_transcript_segment', 'transcript_span'],
+      }),
+    ]));
+  });
+
   it('submits a real commit as source-backed assessment evidence and marks the session final', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:commit-submission',
@@ -842,6 +988,7 @@ index 5c7b20a..7f9a12e 100644
         sourceRefs: [
           await sourceRef('git_commit', commitSha, commitText),
           await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+          await verificationRef(commitSha, baseCommitSha),
         ],
       }),
       env,
@@ -906,6 +1053,11 @@ index 5c7b20a..7f9a12e 100644
         source_ref_id: commitSha,
         exact_text: commitText,
       },
+      {
+        source_ref_type: 'test_run',
+        source_ref_id: `${commitSha}:test-run`,
+        exact_text: 'npm test -- popover\nPASS popover cleanup regression',
+      },
     ]);
   });
 
@@ -955,6 +1107,7 @@ Fix stale popover listener cleanup.`;
         sourceRefs: [
           await sourceRef('git_commit', commitSha, commitText),
           await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+          await verificationRef(commitSha, baseCommitSha),
           await sourceRef('upstream_pull_request', upstreamPullRequestUrl, upstreamPullRequestUrl),
         ],
       }),
@@ -1036,6 +1189,7 @@ Fix stale popover listener cleanup.`;
       sourceRefs: [
         await sourceRef('git_commit', commitSha, commitText),
         await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+        await verificationRef(commitSha, baseCommitSha),
       ],
     };
 
@@ -1112,6 +1266,7 @@ Fix stale popover listener cleanup.`;
       sourceRefs: [
         await sourceRef('git_commit', commitSha, commitText),
         await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+        await verificationRef(commitSha, baseCommitSha),
       ],
     };
 
@@ -1226,6 +1381,62 @@ Fix stale popover listener cleanup.`;
     ).get(session.id)).toEqual({ count: 0 });
   });
 
+  it('rejects commit submissions that omit test output or an explicit verification gap', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:commit-submission-no-verification',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const baseCommitSha = '2222222222222222222222222222222222222222';
+    const commitSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    await assignOpenSourceChallenge(app, env, {
+      sessionId: session.id,
+      ingestionKey: 'assessment-event:challenge-no-verification',
+      sourceRefId: 'challenge-packet-no-verification',
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      baseCommitSha,
+    });
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -1,2 +1,3 @@
++cleanupStaleHandler();`;
+
+    const response = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:commit-submission-no-verification',
+        actorType: 'candidate',
+        narrative: 'Candidate submitted a commit without verification evidence.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha,
+        commitSha,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('git_commit', commitSha, commitText),
+          await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+        ],
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: { message: string } };
+    expect(body.error.message).toContain(
+      'commit submission requires a test_run or verification_gap source ref',
+    );
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'commit_submission'`,
+    ).get(session.id)).toEqual({ count: 0 });
+  });
+
   it('rejects commit submissions whose diff source ref is not tied to the submitted commit range', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:commit-submission-loose-diff',
@@ -1305,6 +1516,7 @@ Fix stale popover listener cleanup.`;
         sourceRefs: [
           await sourceRef('git_commit', commitSha, commitText),
           await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+          await verificationRef(commitSha, baseCommitSha),
         ],
       }),
       env,
@@ -1405,6 +1617,7 @@ Fix stale popover listener cleanup.`;
             `${repoCase.assignedBaseCommitSha}..${repoCase.commitSha}`,
             repoCase.diffText,
           ),
+          await verificationRef(repoCase.commitSha, repoCase.assignedBaseCommitSha),
         ],
       }),
       env,
@@ -1435,6 +1648,7 @@ Fix stale popover listener cleanup.`;
         sourceRefs: [
           await sourceRef('git_commit', baseCase.commitSha, baseCase.commitText),
           await sourceRef('code_diff', `${wrongBaseCommitSha}..${baseCase.commitSha}`, baseCase.diffText),
+          await verificationRef(baseCase.commitSha, wrongBaseCommitSha),
         ],
       }),
       env,
@@ -1513,6 +1727,7 @@ Fix stale popover listener cleanup.`;
             `${textOnlyWrongBaseCommitSha}..${textOnlyCommitSha}`,
             textOnlyDiffText,
           ),
+          await verificationRef(textOnlyCommitSha, textOnlyWrongBaseCommitSha),
         ],
       }),
       env,
@@ -2171,7 +2386,7 @@ Fix stale popover listener cleanup.`;
       readiness: {
         status: 'READY_FOR_EVALUATION',
         label: 'Ready for evaluation',
-        detail: 'Required evidence is captured, but commit provenance needs repository or workspace verification before final reliance.',
+        detail: 'Required evidence is captured, but commit provenance still needs repository or workspace verification; start evaluation as lower-confidence and do not treat correctness as proven.',
         isReadyForEvaluation: true,
         isUsableHiringSignal: false,
         missingRequiredCount: 0,
@@ -2308,6 +2523,36 @@ Fix stale popover listener cleanup.`;
         narrative: 'Legacy evaluator praise without source refs must not leak into progress.',
       }),
     ]));
+    sqlite.prepare(
+      `UPDATE assessment_sessions
+          SET state = 'EVALUATING'
+        WHERE id = ?`,
+    ).run(session.id);
+    const staleSessionProgressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(staleSessionProgressResponse.status).toBe(200);
+    const staleSessionProgressBody = await staleSessionProgressResponse.json() as {
+      progress: {
+        stage: string;
+        nextAction: string;
+        evaluation: { status: string } | null;
+      };
+    };
+    expect(staleSessionProgressBody.progress).toMatchObject({
+      stage: 'EVALUATED',
+      nextAction: 'REVIEW_EVALUATION',
+      evaluation: {
+        status: 'EVALUATED',
+      },
+    });
+    sqlite.prepare(
+      `UPDATE assessment_sessions
+          SET state = 'EVALUATED'
+        WHERE id = ?`,
+    ).run(session.id);
 
     const humanDecisionSourceRef = await sourceRef(
       'assessment_evaluation_report',
@@ -2467,6 +2712,73 @@ Fix stale popover listener cleanup.`;
     expect(duplicateProjectedEdges).toEqual([]);
   });
 
+  it('labels matched repo-task assignments as match-fit evidence for captured candidate work', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:matched-assignment-trust',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const challengeText = [
+      'Repo: https://github.com/mui/base-ui',
+      'Pull request: #973',
+      'Base commit: 1111111111111111111111111111111111111111',
+      'Task: fix retry state cleanup from the selected review packet.',
+      'Match proof:',
+      '- Review packet quality 92% from source-backed repo analysis.',
+      '- Demand families: retry logic.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the retry cleanup fix',
+    ].join('\n');
+    const challengeResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:matched-assignment-trust',
+        kind: 'match_decision',
+        actorType: 'system',
+        narrative: 'PIPE assigned a matched source-backed open-source challenge packet.',
+        payload: { matchedRepoId: 42, githubPrNumber: 973 },
+        sourceRefs: [{
+          ...await sourceRef('review_challenge_packet', 'matched-review-packet-973', challengeText),
+          evidenceRole: 'assigned_challenge',
+          locator: {
+            matchedRepoId: 42,
+            repositoryUrl: 'https://github.com/mui/base-ui',
+            githubPrNumber: 973,
+            baseCommitSha: '1111111111111111111111111111111111111111',
+          },
+        }],
+      }),
+      env,
+    );
+    expect(challengeResponse.status).toBe(201);
+
+    const progressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(progressResponse.status).toBe(200);
+    const body = await progressResponse.json() as {
+      progress: {
+        assignmentTrust: {
+          state: string;
+          label: string;
+          detail: string;
+          tone: string;
+        };
+      };
+    };
+
+    expect(body.progress.assignmentTrust).toMatchObject({
+      state: 'matched_challenge',
+      label: 'PIPE-matched challenge',
+      detail: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside captured candidate work.',
+      tone: 'matched',
+    });
+    expect(body.progress.assignmentTrust.detail).not.toContain('role context');
+    expect(body.progress.assignmentTrust.detail).not.toContain('candidate review');
+  });
+
   it('surfaces source-backed verification gaps separately from real test evidence', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:verification-gap',
@@ -2530,6 +2842,15 @@ Fix retry cleanup without captured tests.`;
         hasTestEvidence: boolean;
         hasVerificationGap: boolean;
         sourceRefCounts: Array<{ kind: string; count: number }>;
+        readiness: {
+          detail: string;
+          confidence: Array<{
+            id: string;
+            label: string;
+            satisfied: boolean;
+            sourceRefTypes: string[];
+          }>;
+        };
       };
     };
     expect(progressBody.progress).toMatchObject({
@@ -2537,11 +2858,28 @@ Fix retry cleanup without captured tests.`;
       hasWorkEvidence: true,
       hasTestEvidence: false,
       hasVerificationGap: true,
+      readiness: {
+        detail: 'Required evidence is captured, but commit provenance still needs repository or workspace verification and test output is missing and only a declared verification gap is available; start evaluation as lower-confidence and do not treat correctness as proven.',
+      },
     });
     expect(progressBody.progress.sourceRefCounts).toEqual(expect.arrayContaining([
       { kind: 'code_diff', count: 1 },
       { kind: 'git_commit', count: 1 },
       { kind: 'verification_gap', count: 1 },
+    ]));
+    expect(progressBody.progress.readiness.confidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'test_run',
+        label: 'Test output',
+        satisfied: false,
+        sourceRefTypes: ['test_run'],
+      }),
+      expect.objectContaining({
+        id: 'verification_gap_declared',
+        label: 'Verification gap declared',
+        satisfied: true,
+        sourceRefTypes: ['verification_gap'],
+      }),
     ]));
   });
 

@@ -144,4 +144,26 @@ describe('StandardLayout', () => {
     expect(toolSurfaces.focusSurface).toHaveBeenCalledWith('submission');
     expect(screen.getByTestId('standard-tool-submission').textContent).toContain('submission surface');
   });
+
+  it('renames the persistent submission control after work is captured', () => {
+    const toolSurfaces = makeSurfaceManager([
+      roomSurface({ id: 'video', surfaceType: 'video', title: 'Video Call' }),
+      roomSurface({ id: 'workspace', surfaceType: 'workspace', title: 'VS Code', active: true }),
+      roomSurface({ id: 'submission', surfaceType: 'submission', title: 'Submit Work' }),
+    ]);
+
+    render(
+      <StandardLayout
+        toolSurfaces={toolSurfaces}
+        renderSurfaceContent={(surface) => <div>{surface.surfaceType} surface</div>}
+        modeLabel="Dev-container assessment"
+        primarySurface="workspace"
+        submissionActionLabel="Review Submission"
+      />,
+    );
+
+    const submitButton = screen.getByRole('button', { name: 'Open Review Submission' });
+    expect(submitButton.textContent).toContain('Review Submission');
+    expect(submitButton.textContent).not.toContain('Submit Work');
+  });
 });

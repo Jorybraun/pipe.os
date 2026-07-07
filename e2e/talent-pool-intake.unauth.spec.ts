@@ -192,4 +192,75 @@ test.describe('Talent Pool candidate intake', () => {
     await expect(page.getByText(/Completed Jun 28, 2026/i)).toBeVisible();
     await expect(page.locator('body')).not.toContainText(/WAITING_FOR_MATCH|Repo matching|Challenge needs attention/i);
   });
+
+  test('candidate dashboard ignores accidental internal fields in public API payloads', async ({ page }) => {
+    const forbiddenValues = [
+      'candidate-internal-123',
+      'application-internal-456',
+      'workspace-person-internal-789',
+      'person-internal-abc',
+      'source-span-internal-def',
+      'artifact-version-internal-ghi',
+      'assignment-internal-jkl',
+      'challenge-internal-mno',
+      'stage-internal-pqr',
+      'talent-intake/candidate-internal-123/raw-profile.txt',
+    ];
+
+    await page.route('**/rpc/talent/resolve-token', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'CHALLENGE_READY',
+          candidateName: 'Morgan Safe',
+          candidateId: forbiddenValues[0],
+          applicationId: forbiddenValues[1],
+          workspacePersonId: forbiddenValues[2],
+          personId: forbiddenValues[3],
+          sourceSpanId: forbiddenValues[4],
+          artifactVersionId: forbiddenValues[5],
+          resume_s3_key: forbiddenValues[9],
+          profile_r2_key: forbiddenValues[9],
+          profileReceivedAt: '2026-06-30T12:00:00.000Z',
+          phoneScreener: {
+            consent: false,
+            status: 'NOT_REQUESTED',
+            phoneNumber: null,
+            timezone: null,
+            availability: null,
+            internalPhoneScreenId: 'phone-screen-internal',
+          },
+          readyChallenges: [
+            {
+              title: 'Source-backed review',
+              type: 'CODE_REVIEW',
+              entryUrl: '/assess/ready-token',
+              summary: 'Ready for source-backed review.',
+              assignmentId: forbiddenValues[6],
+              challengeId: forbiddenValues[7],
+              stageId: forbiddenValues[8],
+            },
+          ],
+          completedChallenges: [
+            {
+              title: 'CODE REVIEW',
+              completedAt: '2026-06-28T12:00:00.000Z',
+              summary: 'Completed',
+              assessmentSessionId: 'assessment-session-internal',
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.goto(`${APP_BASE}/talent/${INTAKE_TOKEN}`, { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByRole('heading', { name: 'A challenge is ready' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Source-backed review' })).toBeVisible();
+    for (const forbiddenValue of forbiddenValues) {
+      await expect(page.locator('body')).not.toContainText(forbiddenValue);
+    }
+    await expect(page.locator('body')).not.toContainText(/phone-screen-internal|assessment-session-internal/i);
+  });
 });

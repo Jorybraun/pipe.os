@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  downloadRoomAssessmentReceipt,
   finalizeRoomWorkspaceAssessment,
   getRoomAssessmentProgress,
   launchRoomWorkspace,
@@ -73,6 +74,18 @@ describe('submitRoomAssessmentCommit', () => {
           stage: 'READY_FOR_EVALUATION',
           nextAction: 'START_EVALUATION',
           nextActionLabel: 'Start source-backed evaluation.',
+          challenge: {
+            repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+            githubPrNumber: 973,
+            pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/973',
+            baseCommitSha: 'a'.repeat(40),
+            task: 'Fix the source-backed worker retry path.',
+            assessmentFit: ['Matched to source-backed retry evidence.'],
+            matchProof: ['Repo demand aligns with candidate evidence.'],
+            successCriteria: ['Existing worker tests pass'],
+            expectedEvidence: ['Git commit', 'Code diff', 'Test run'],
+            verificationCommand: 'npm test -- retry',
+          },
           hasChallengePacket: true,
           hasWorkEvidence: true,
           hasCommitSubmission: true,
@@ -156,6 +169,18 @@ describe('finalizeRoomWorkspaceAssessment', () => {
           stage: 'READY_FOR_EVALUATION',
           nextAction: 'START_EVALUATION',
           nextActionLabel: 'Start source-backed evaluation.',
+          challenge: {
+            repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+            githubPrNumber: 973,
+            pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/973',
+            baseCommitSha: 'a'.repeat(40),
+            task: 'Fix the source-backed worker retry path.',
+            assessmentFit: ['Matched to source-backed retry evidence.'],
+            matchProof: ['Repo demand aligns with candidate evidence.'],
+            successCriteria: ['Existing worker tests pass'],
+            expectedEvidence: ['Git commit', 'Code diff', 'Test run'],
+            verificationCommand: 'npm test -- retry',
+          },
           hasChallengePacket: true,
           hasWorkEvidence: true,
           hasCommitSubmission: true,
@@ -175,6 +200,8 @@ describe('finalizeRoomWorkspaceAssessment', () => {
 
     await expect(finalizeRoomWorkspaceAssessment('room-token', 'workspace-session-1', {
       narrative: 'Submitted retry fix.',
+      testCommand: 'npm test -- retry',
+      verificationNotes: 'Targeted retry test passed in the workspace.',
     })).resolves.toMatchObject({
       submitted: true,
       commit: { commitSha: 'b'.repeat(40) },
@@ -192,6 +219,8 @@ describe('finalizeRoomWorkspaceAssessment', () => {
     });
     expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body))).toEqual({
       narrative: 'Submitted retry fix.',
+      testCommand: 'npm test -- retry',
+      verificationNotes: 'Targeted retry test passed in the workspace.',
     });
     fetchSpy.mockRestore();
   });
@@ -281,6 +310,18 @@ describe('getRoomAssessmentProgress', () => {
           stage: 'READY_FOR_EVALUATION',
           nextAction: 'START_EVALUATION',
           nextActionLabel: 'Start source-backed evaluation.',
+          challenge: {
+            repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+            githubPrNumber: 973,
+            pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/973',
+            baseCommitSha: 'a'.repeat(40),
+            task: 'Fix the source-backed worker retry path.',
+            assessmentFit: ['Matched to source-backed retry evidence.'],
+            matchProof: ['Repo demand aligns with candidate evidence.'],
+            successCriteria: ['Existing worker tests pass'],
+            expectedEvidence: ['Git commit', 'Code diff', 'Test run'],
+            verificationCommand: 'npm test -- retry',
+          },
           hasChallengePacket: true,
           hasWorkEvidence: true,
           hasCommitSubmission: true,
@@ -309,6 +350,11 @@ describe('getRoomAssessmentProgress', () => {
 
     await expect(getRoomAssessmentProgress('room-token')).resolves.toMatchObject({
       stage: 'READY_FOR_EVALUATION',
+      challenge: {
+        task: 'Fix the source-backed worker retry path.',
+        successCriteria: ['Existing worker tests pass'],
+        expectedEvidence: ['Git commit', 'Code diff', 'Test run'],
+      },
       commit: { commitSha: 'b'.repeat(40) },
     });
 
@@ -328,6 +374,35 @@ describe('getRoomAssessmentProgress', () => {
     ));
 
     await expect(getRoomAssessmentProgress('room-token')).resolves.toBeNull();
+    fetchSpy.mockRestore();
+  });
+});
+
+describe('downloadRoomAssessmentReceipt', () => {
+  it('downloads the server-backed candidate receipt as markdown', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      '# PIPE Candidate Assessment Receipt\n\nCommit: abc123',
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/markdown; charset=UTF-8',
+          'Content-Disposition': 'attachment; filename="pipe-assessment-receipt-abc123.md"',
+        },
+      },
+    ));
+
+    await expect(downloadRoomAssessmentReceipt('room-token')).resolves.toEqual({
+      filename: 'pipe-assessment-receipt-abc123.md',
+      markdown: '# PIPE Candidate Assessment Receipt\n\nCommit: abc123',
+    });
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy.mock.calls[0]?.[0]).toContain('/api/v1/meeting-rooms/room-token/assessment/receipt');
+    expect(fetchSpy.mock.calls[0]?.[1]).toMatchObject({
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: { Accept: 'text/markdown' },
+    });
     fetchSpy.mockRestore();
   });
 });

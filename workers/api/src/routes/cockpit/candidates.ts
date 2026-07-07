@@ -20,10 +20,15 @@ import { buildProfileSections } from '../../lib/candidateDiscovery/buildProfileS
 import {
   ensureCandidateLivingContext,
   loadCandidateLivingContext,
-  LivingContextStore,
+  loadCandidateLivingContextIdentity,
   searchSourceContent,
   requireGate,
 } from '../../lib/livingContext';
+import {
+  buildRolelessTalentPoolContext,
+  ensureRolelessTalentPoolIdentity,
+  TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER,
+} from '../../lib/talentPoolIdentity';
 import {
   formatMatchNarrative,
   type MatchNarrative,
@@ -38,8 +43,13 @@ import {
   loadSourceBackedReviewPacketById,
 } from '../../lib/review/sourceBackedReviewDiff';
 import { INTERVIEW_TYPE_VALUES } from './scheduling';
-import type { JsonObject, JsonValue } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
+
+export {
+  buildRolelessTalentPoolContext,
+  ensureRolelessTalentPoolIdentity,
+  TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER,
+};
 
 // ─── Validation ──────────────────────────────────────────────────────────────
 
@@ -72,66 +82,6 @@ function sanitizeCandidateName(name: string): string {
 
 export function normalizeCandidateEmail(email: string): string {
   return email.trim().toLowerCase();
-}
-
-export const TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER =
-  'Current D1 schema has no TalentPoolMembership table; roleless intake records membership state in workspace_people.context_json until that table exists.';
-
-function isJsonObject(value: JsonValue | undefined): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function parseJsonObject(raw: string | null): JsonObject {
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw) as JsonValue;
-    return isJsonObject(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function stringList(value: JsonValue | undefined): string[] {
-  if (typeof value === 'string' && value.trim()) return [value.trim()];
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) =>
-    typeof entry === 'string' && entry.trim() ? [entry.trim()] : [],
-  );
-}
-
-function uniqueStrings(...values: string[][]): string[] {
-  return [...new Set(values.flat())].sort();
-}
-
-export function buildRolelessTalentPoolContext(
-  existingContext: JsonObject,
-  candidateId: string,
-  joinedAt: string,
-): JsonObject {
-  const existingTalentPool = isJsonObject(existingContext.talentPool)
-    ? existingContext.talentPool
-    : {};
-  return {
-    ...existingContext,
-    source: 'roleless_candidate_intake',
-    sources: uniqueStrings(
-      stringList(existingContext.sources),
-      stringList(existingContext.source),
-      ['roleless_candidate_intake'],
-    ),
-    legacyCandidateIds: uniqueStrings(
-      stringList(existingContext.legacyCandidateIds),
-      [candidateId],
-    ),
-    talentPool: {
-      ...existingTalentPool,
-      status: 'active',
-      roleless: true,
-      candidateId,
-      joinedAt: typeof existingTalentPool.joinedAt === 'string' ? existingTalentPool.joinedAt : joinedAt,
-      membershipSchemaBlocker: TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER,
-    },
-  };
 }
 
 /** Maximum file size for CV uploads: 10 MB. */
@@ -1282,133 +1232,6 @@ const createStandaloneCandidateSchema = z.object({
   }
 });
 
-async function sha256Hex(text: string): Promise<string> {
-  const bytes = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-async function loadWorkspacePersonContext(
-  db: D1Database,
-  workspaceId: string,
-  personId: string,
-): Promise<JsonObject> {
-  const existing = await db.prepare(
-    `SELECT context_json
-       FROM workspace_people
-      WHERE workspace_id = ?1 AND person_id = ?2
-      LIMIT 1`,
-  ).bind(workspaceId, personId).first<{ context_json: string | null }>();
-  return parseJsonObject(existing?.context_json ?? null);
-}
-
-async function persistRolelessMessageArtifact(input: {
-  store: LivingContextStore;
-  workspacePersonId: string;
-  candidateId: string;
-  message: string;
-  now: string;
-}): Promise<void> {
-  const message = input.message;
-  if (!message.trim()) return;
-
-  const contentHash = await sha256Hex(message);
-  const baseKey = `candidate:${input.candidateId}:roleless-message:${contentHash}`;
-  const interaction = await input.store.upsertInteraction({
-    ingestionKey: baseKey,
-    workspacePersonId: input.workspacePersonId,
-    interactionType: 'message',
-    externalReference: input.candidateId,
-    startedAt: input.now,
-    metadata: {
-      source: 'roleless_candidate_intake',
-      roleless: true,
-    },
-  });
-  const artifact = await input.store.upsertArtifact({
-    ingestionKey: baseKey,
-    workspacePersonId: input.workspacePersonId,
-    interactionId: interaction.id,
-    artifactType: 'message',
-    logicalKey: 'roleless_candidate_intake_message',
-    metadata: {
-      source: 'roleless_candidate_intake',
-      roleless: true,
-    },
-  });
-  const version = await input.store.createArtifactVersion({
-    ingestionKey: `${baseKey}:v1`,
-    artifactId: artifact.id,
-    versionNumber: 1,
-    contentHash,
-    mediaType: 'text/plain',
-    contentText: message,
-    byteLength: new TextEncoder().encode(message).byteLength,
-    metadata: {
-      source: 'roleless_candidate_intake',
-      roleless: true,
-    },
-  });
-  await input.store.createSourceSpan({
-    ingestionKey: `${baseKey}:span:full`,
-    artifactVersionId: version.id,
-    stableSegmentId: 'full-message',
-    charStart: 0,
-    charEnd: message.length,
-    exactText: message,
-    exactTextHash: contentHash,
-    metadata: {
-      source: 'roleless_candidate_intake',
-      roleless: true,
-    },
-  });
-}
-
-export async function ensureRolelessTalentPoolIdentity(input: {
-  db: D1Database;
-  userId: string;
-  candidateId: string;
-  name: string;
-  email: string;
-  message?: string;
-  now: string;
-}): Promise<{ personId: string; workspacePersonId: string }> {
-  const { db, userId, candidateId, name, email, message, now } = input;
-  const store = new LivingContextStore(db);
-  const existingPerson = await db.prepare(
-    `SELECT id, ingestion_key
-       FROM people
-      WHERE primary_email = ?1
-      ORDER BY created_at
-      LIMIT 1`,
-  ).bind(email).first<{ id: string; ingestion_key: string }>();
-
-  const person = await store.upsertPerson({
-    ingestionKey: existingPerson?.ingestion_key ?? `email:${email}`,
-    displayName: name,
-    primaryEmail: email,
-    externalIds: { legacyCandidateId: candidateId },
-  });
-
-  const existingContext = await loadWorkspacePersonContext(db, userId, person.id);
-  const workspacePerson = await store.upsertWorkspacePerson({
-    ingestionKey: `workspace:${userId}:person:${person.id}`,
-    workspaceId: userId,
-    personId: person.id,
-    context: buildRolelessTalentPoolContext(existingContext, candidateId, now),
-  });
-
-  await persistRolelessMessageArtifact({
-    store,
-    workspacePersonId: workspacePerson.id,
-    candidateId,
-    message: message ?? '',
-    now,
-  });
-
-  return { personId: person.id, workspacePersonId: workspacePerson.id };
-}
-
 // POST / — create a standalone candidate (talent pool, no pipeline)
 candidateOps.post('/', async (c) => {
   const userId = c.var.userId;
@@ -1492,6 +1315,7 @@ candidateOps.post('/', async (c) => {
       name,
       email,
       message: customMessage,
+      projectMessageAsProfileEvidence: false,
       now,
     });
   } catch (err) {
@@ -1580,8 +1404,11 @@ candidateOps.get('/:candidateId/living-context', requireGate('living_context_rea
   ).bind(candidateId, userId).first<{ id: string }>();
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
 
-  await ensureCandidateLivingContext(db, candidateId);
-  const livingContext = await loadCandidateLivingContext(db, candidateId);
+  let livingContext = await loadCandidateLivingContext(db, candidateId);
+  if (!livingContext) {
+    await ensureCandidateLivingContext(db, candidateId);
+    livingContext = await loadCandidateLivingContext(db, candidateId);
+  }
   if (!livingContext) {
     return apiError(c, 'NOT_FOUND', 'Living context not found.');
   }
@@ -1603,16 +1430,10 @@ candidateOps.get('/:candidateId/living-context/search', requireGate('living_cont
   ).bind(candidateId, userId).first<{ id: string }>();
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
 
-  const wp = await db.prepare(
-    `SELECT wp.id
-       FROM applications app
-       JOIN workspace_people wp ON wp.id = app.workspace_person_id
-      WHERE app.legacy_candidate_id = ?1
-      LIMIT 1`,
-  ).bind(candidateId).first<{ id: string }>();
-  if (!wp) return c.json({ personId: candidateId, query, hits: [] });
+  const identity = await loadCandidateLivingContextIdentity(db, candidateId);
+  if (!identity) return c.json({ personId: candidateId, query, hits: [] });
 
-  const result = await searchSourceContent(db, wp.id, query);
+  const result = await searchSourceContent(db, identity.workspacePersonId, query);
   return c.json(result);
 });
 
@@ -1633,18 +1454,12 @@ candidateOps.get('/:candidateId/living-context/timeline', requireGate('living_co
   ).bind(candidateId, userId).first<{ id: string }>();
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
 
-  const wp = await db.prepare(
-    `SELECT wp.id
-       FROM applications app
-       JOIN workspace_people wp ON wp.id = app.workspace_person_id
-      WHERE app.legacy_candidate_id = ?1
-      LIMIT 1`,
-  ).bind(candidateId).first<{ id: string }>();
-  if (!wp) return c.json({ workspacePersonId: null, totalEntries: 0, entries: [] });
+  const identity = await loadCandidateLivingContextIdentity(db, candidateId);
+  if (!identity) return c.json({ workspacePersonId: null, totalEntries: 0, entries: [] });
 
   const { loadPersonEvidenceTimeline } = await import('../../lib/livingContext');
   const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 100, 500) : 100;
-  const timeline = await loadPersonEvidenceTimeline(db, wp.id, { limit, before, after });
+  const timeline = await loadPersonEvidenceTimeline(db, identity.workspacePersonId, { limit, before, after });
   return c.json(timeline);
 });
 
@@ -1726,14 +1541,8 @@ candidateOps.get('/:candidateId/living-context/evidence-depth', requireGate('liv
   ).bind(candidateId, userId).first<{ id: string }>();
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
 
-  const wp = await db.prepare(
-    `SELECT wp.id
-       FROM applications app
-       JOIN workspace_people wp ON wp.id = app.workspace_person_id
-      WHERE app.legacy_candidate_id = ?1
-      LIMIT 1`,
-  ).bind(candidateId).first<{ id: string }>();
-  if (!wp) {
+  const identity = await loadCandidateLivingContextIdentity(db, candidateId);
+  if (!identity) {
     return c.json({
       candidateId,
       workspacePersonId: null,
@@ -1754,20 +1563,20 @@ candidateOps.get('/:candidateId/living-context/evidence-depth', requireGate('liv
         WHERE workspace_person_id = ?1
         GROUP BY interaction_type
         ORDER BY cnt DESC`,
-    ).bind(wp.id).all<{ interaction_type: string; cnt: number }>(),
+    ).bind(identity.workspacePersonId).all<{ interaction_type: string; cnt: number }>(),
     db.prepare(
       `SELECT COUNT(*) AS cnt FROM semantic_assertions WHERE workspace_person_id = ?1`,
-    ).bind(wp.id).first<{ cnt: number }>(),
+    ).bind(identity.workspacePersonId).first<{ cnt: number }>(),
     db.prepare(
       `SELECT COUNT(*) AS cnt
          FROM source_spans ss
          JOIN artifact_versions av ON av.id = ss.artifact_version_id
          JOIN artifacts a ON a.id = av.artifact_id
         WHERE a.workspace_person_id = ?1`,
-    ).bind(wp.id).first<{ cnt: number }>(),
+    ).bind(identity.workspacePersonId).first<{ cnt: number }>(),
     db.prepare(
       `SELECT COUNT(*) AS cnt FROM context_records WHERE workspace_person_id = ?1`,
-    ).bind(wp.id).first<{ cnt: number }>(),
+    ).bind(identity.workspacePersonId).first<{ cnt: number }>(),
     db.prepare(
       `SELECT c.canonical_key, c.label, COUNT(DISTINCT ac.assertion_id) AS evidence_count
          FROM concepts c
@@ -1777,7 +1586,7 @@ candidateOps.get('/:candidateId/living-context/evidence-depth', requireGate('liv
         GROUP BY c.id, c.canonical_key, c.label
         ORDER BY evidence_count DESC
         LIMIT 20`,
-    ).bind(wp.id).all<{ canonical_key: string; label: string; evidence_count: number }>(),
+    ).bind(identity.workspacePersonId).all<{ canonical_key: string; label: string; evidence_count: number }>(),
   ]);
 
   const sources: Record<string, number> = {};
@@ -1793,7 +1602,7 @@ candidateOps.get('/:candidateId/living-context/evidence-depth', requireGate('liv
 
   return c.json({
     candidateId,
-    workspacePersonId: wp.id,
+    workspacePersonId: identity.workspacePersonId,
     sourceDiversity,
     totalInteractions,
     totalAssertions: assertionCount?.cnt ?? 0,
@@ -2861,9 +2670,12 @@ candidateOps.get('/:candidateId', async (c) => {
     } as any, matchData, calendar);
   }
 
-  let identity: { personId: string; workspacePersonId: string; applicationId: string } | null = null;
+  let identity: { personId: string; workspacePersonId: string; applicationId: string | null } | null = null;
   try {
-    identity = await ensureCandidateLivingContext(db, candidateId);
+    identity = await loadCandidateLivingContextIdentity(db, candidateId);
+    if (!identity) {
+      identity = await ensureCandidateLivingContext(db, candidateId);
+    }
   } catch (err) {
     console.warn('[candidates] Candidate/person identity bridge unavailable:', err);
   }

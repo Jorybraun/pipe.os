@@ -112,12 +112,17 @@ export interface ResumeIngestionInput {
   extractorVersion?: string;
   /** When the resume was uploaded. */
   uploadedAt?: string | null;
+  /**
+   * Optional caller-provided identity. Undefined keeps the legacy candidate
+   * bridge behavior; null means no safe person projection is available.
+   */
+  identity?: ResumeLivingContextIdentity | null;
 }
 
 export interface ResumeIngestionResult {
   personId: string;
   workspacePersonId: string;
-  applicationId: string;
+  applicationId: string | null;
   interactionId: string;
   artifactId: string;
   artifactVersionId: string;
@@ -125,6 +130,12 @@ export interface ResumeIngestionResult {
   assertionCount: number;
   conceptCount: number;
   signalEvidenceCount: number;
+}
+
+export interface ResumeLivingContextIdentity {
+  personId: string;
+  workspacePersonId: string;
+  applicationId?: string | null;
 }
 
 interface CanonicalSection {
@@ -285,11 +296,14 @@ export async function ingestResumeToLivingContext(
   db: D1Database,
   input: ResumeIngestionInput,
 ): Promise<ResumeIngestionResult | null> {
-  const identity = await ensureCandidateLivingContext(db, input.candidateId);
+  const identity = input.identity === undefined
+    ? await ensureCandidateLivingContext(db, input.candidateId)
+    : input.identity;
   if (!identity) return null;
 
   const store = new LivingContextStore(db);
-  const { workspacePersonId, applicationId, personId } = identity;
+  const { workspacePersonId, personId } = identity;
+  const applicationId = identity.applicationId ?? null;
   const ingestionBase = `resume:${input.candidateId}:${input.storageKey}`;
 
   // 1. Create interaction

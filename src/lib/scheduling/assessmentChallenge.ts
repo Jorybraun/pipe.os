@@ -1,8 +1,9 @@
-import type { AssessmentSetupProjection } from './types';
+import type { AssessmentProgressSnapshot, AssessmentSetupProjection } from './types';
 
 export interface AssessmentChallengeSource {
-  exactText: string;
+  exactText?: string | null;
   locator: Record<string, unknown>;
+  summary?: Partial<AssessmentChallengeSummary> | null;
 }
 
 export interface AssessmentChallengeSummary {
@@ -10,6 +11,9 @@ export interface AssessmentChallengeSummary {
   githubPrNumber: number | null;
   baseCommitSha: string | null;
   task: string | null;
+  verificationCommand: string | null;
+  assessmentFit: string[];
+  matchProof: string[];
   successCriteria: string[];
   expectedEvidence: string[];
 }
@@ -19,6 +23,8 @@ export interface AssessmentAssignmentSummary {
   detail: string;
   tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
 }
+
+type AssessmentAssignmentTrust = NonNullable<AssessmentProgressSnapshot['assignmentTrust']>;
 
 function locatorString(locator: Record<string, unknown>, keys: string[]): string | null {
   for (const key of keys) {
@@ -45,7 +51,10 @@ function cleanListItem(line: string): string | null {
   return cleaned.length > 0 ? cleaned : null;
 }
 
-function collectSectionItems(lines: string[], header: 'success criteria' | 'expected evidence'): string[] {
+function collectSectionItems(
+  lines: string[],
+  header: 'assessment fit' | 'match proof' | 'success criteria' | 'expected evidence',
+): string[] {
   const items: string[] = [];
   let collecting = false;
 
@@ -69,17 +78,33 @@ export function summarizeAssessmentChallenge(
   challenge: AssessmentChallengeSource | null | undefined,
 ): AssessmentChallengeSummary | null {
   if (!challenge) return null;
-  const lines = challenge.exactText
+  const summaryInput = challenge.summary ?? {};
+  const lines = (challenge.exactText ?? '')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
   const summary: AssessmentChallengeSummary = {
-    repositoryUrl: locatorString(challenge.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']),
-    githubPrNumber: locatorNumber(challenge.locator, ['githubPrNumber', 'prNumber']),
-    baseCommitSha: locatorString(challenge.locator, ['baseCommitSha', 'baseCommit']),
-    task: null,
-    successCriteria: collectSectionItems(lines, 'success criteria'),
-    expectedEvidence: collectSectionItems(lines, 'expected evidence'),
+    repositoryUrl: summaryInput.repositoryUrl
+      ?? locatorString(challenge.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']),
+    githubPrNumber: summaryInput.githubPrNumber
+      ?? locatorNumber(challenge.locator, ['githubPrNumber', 'prNumber']),
+    baseCommitSha: summaryInput.baseCommitSha
+      ?? locatorString(challenge.locator, ['baseCommitSha', 'baseCommit']),
+    task: summaryInput.task ?? null,
+    verificationCommand: summaryInput.verificationCommand
+      ?? locatorString(challenge.locator, ['verificationCommand']),
+    assessmentFit: summaryInput.assessmentFit?.length
+      ? [...summaryInput.assessmentFit]
+      : collectSectionItems(lines, 'assessment fit'),
+    matchProof: summaryInput.matchProof?.length
+      ? [...summaryInput.matchProof]
+      : collectSectionItems(lines, 'match proof'),
+    successCriteria: summaryInput.successCriteria?.length
+      ? [...summaryInput.successCriteria]
+      : collectSectionItems(lines, 'success criteria'),
+    expectedEvidence: summaryInput.expectedEvidence?.length
+      ? [...summaryInput.expectedEvidence]
+      : collectSectionItems(lines, 'expected evidence'),
   };
 
   for (const line of lines) {
@@ -101,6 +126,11 @@ export function summarizeAssessmentChallenge(
     const taskMatch = line.match(/^task\s*:\s*(.+)$/i);
     if (taskMatch?.[1] && !summary.task) {
       summary.task = taskMatch[1].trim();
+      continue;
+    }
+    const verificationCommandMatch = line.match(/^verification command\s*:\s*(.+)$/i);
+    if (verificationCommandMatch?.[1] && !summary.verificationCommand) {
+      summary.verificationCommand = verificationCommandMatch[1].trim();
     }
   }
 
@@ -108,6 +138,9 @@ export function summarizeAssessmentChallenge(
     || summary.githubPrNumber
     || summary.baseCommitSha
     || summary.task
+    || summary.verificationCommand
+    || summary.assessmentFit.length > 0
+    || summary.matchProof.length > 0
     || summary.successCriteria.length > 0
     || summary.expectedEvidence.length > 0
     ? summary
@@ -119,11 +152,15 @@ export function summarizeAssessmentAssignment(
 ): AssessmentAssignmentSummary | null {
   if (!setup || setup.status === 'not_applicable') return null;
 
-  if (setup.source === 'matched_repo_id' || setup.kind === 'auto_match') {
+  if (
+    setup.source === 'matched_repo_id'
+    || setup.source === 'candidate_challenge_assignment'
+    || setup.kind === 'auto_match'
+  ) {
     if (setup.status === 'reviewable_task_assigned') {
       return {
         label: 'PIPE-matched challenge',
-        detail: 'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
+        detail: setup.message ?? 'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
         tone: 'matched',
       };
     }
@@ -180,4 +217,37 @@ export function summarizeAssessmentAssignment(
     detail: setup.message ?? 'Assessment setup state is available.',
     tone: setup.blocksPositiveAssessment ? 'blocked' : 'neutral',
   };
+}
+
+export function summarizeAssessmentAssignmentTrust(
+  trust: AssessmentAssignmentTrust | null | undefined,
+): AssessmentAssignmentSummary | null {
+  if (!trust) return null;
+  return {
+    label: trust.label,
+    detail: trust.detail,
+    tone: trust.tone,
+  };
+}
+
+export function summarizeResolvedAssessmentAssignment(input: {
+  setup: AssessmentSetupProjection | null | undefined;
+  assignmentTrust: AssessmentAssignmentTrust | null | undefined;
+}): AssessmentAssignmentSummary | null {
+  const progressAssignment = summarizeAssessmentAssignmentTrust(input.assignmentTrust);
+  const setupAssignment = summarizeAssessmentAssignment(input.setup);
+  if (input.assignmentTrust?.state === 'matched_challenge') {
+    if (
+      progressAssignment
+      && setupAssignment?.tone === 'matched'
+      && setupAssignment.detail !== progressAssignment.detail
+    ) {
+      return {
+        ...progressAssignment,
+        detail: `${progressAssignment.detail} ${setupAssignment.detail}`,
+      };
+    }
+    return progressAssignment;
+  }
+  return setupAssignment ?? progressAssignment;
 }

@@ -4,6 +4,13 @@ export type CandidateSafeMatchStatus =
   | 'NO_ROLE_SAFE_CHALLENGE';
 
 export type CandidateSafeQualityGateVerdict = 'PASSED' | 'NEEDS_REVIEW';
+export type CandidateSafeQualityGateDiagnostic =
+  | 'MISSING_CANDIDATE_SOURCE_EVIDENCE'
+  | 'MISSING_REPO_SOURCE_EVIDENCE'
+  | 'EMBEDDING_ONLY_MATCH_REJECTED'
+  | 'PROVENANCE_INCOMPLETE'
+  | 'MATCH_QUALITY_NOT_USABLE'
+  | 'CONTRAST_SEPARATION_UNVERIFIED';
 
 export interface CandidateSafeQualityGateInput {
   status: CandidateSafeMatchStatus;
@@ -22,6 +29,7 @@ export interface CandidateSafeQualityGateInput {
 export interface CandidateSafeQualityGate {
   verdict: CandidateSafeQualityGateVerdict;
   checks: string[];
+  diagnostics: CandidateSafeQualityGateDiagnostic[];
 }
 
 function assessmentQualityPasses(verdict: string | undefined): boolean {
@@ -52,6 +60,16 @@ export function candidateSafeQualityGateFor(
     ...(!contrastRequired && !contrastPassed ? ['contrast_separation_not_required_roleless'] : []),
     ...(input.validatorVerdict === 'PASSED' ? ['agent_validated_match'] : []),
   ];
+  const diagnostics: CandidateSafeQualityGateDiagnostic[] = [
+    ...(input.candidateSourceCount > 0 ? [] : ['MISSING_CANDIDATE_SOURCE_EVIDENCE' as const]),
+    ...(input.repoSourceCount > 0 ? [] : ['MISSING_REPO_SOURCE_EVIDENCE' as const]),
+    ...(input.status === 'MATCHED' && input.candidateSourceCount <= 0 && input.repoSourceCount <= 0
+      ? ['EMBEDDING_ONLY_MATCH_REJECTED' as const]
+      : []),
+    ...(validatorPassed ? [] : ['PROVENANCE_INCOMPLETE' as const]),
+    ...(qualityPassed ? [] : ['MATCH_QUALITY_NOT_USABLE' as const]),
+    ...(contrastAccepted ? [] : ['CONTRAST_SEPARATION_UNVERIFIED' as const]),
+  ];
 
   return {
     verdict: input.status === 'MATCHED'
@@ -63,5 +81,6 @@ export function candidateSafeQualityGateFor(
       ? 'PASSED'
       : 'NEEDS_REVIEW',
     checks,
+    diagnostics,
   };
 }

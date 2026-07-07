@@ -3,6 +3,7 @@ import {
   auditCodeReviewJudgeExamples,
   createRemoteQueryClient,
   loadRemoteRows,
+  parseWranglerD1Rows,
   parseArgs,
   type JudgeExampleRow,
 } from './verifyCodeReviewJudgeExamples';
@@ -84,6 +85,26 @@ describe('verifyCodeReviewJudgeExamples', () => {
   it('rejects remote database ids without remote mode', () => {
     expect(() => parseArgs(['--database-id', 'app-dev-d1']))
       .toThrow('--database-id requires --remote');
+  });
+
+  it('parses legacy Wrangler database name options for deployed judge verification', () => {
+    expect(parseArgs([
+      '--remote',
+      '--remote-database',
+      'pipe-db-test',
+      '--remote-env',
+      'dev',
+      '--require-replay-ready',
+      '--json',
+    ])).toEqual({
+      remote: true,
+      remoteDatabaseName: 'pipe-db-test',
+      remoteEnv: 'dev',
+      limit: 200,
+      json: true,
+      requireReplayReady: true,
+      requireCalibration: false,
+    });
   });
 
   it('loads and normalizes remote D1 judge example rows', async () => {
@@ -228,5 +249,31 @@ describe('verifyCodeReviewJudgeExamples', () => {
       'improvement use: cross_model_calibration',
       'source table: challenge_submissions',
     ]));
+  });
+
+  it('parses Wrangler D1 JSON envelopes into judge example rows', () => {
+    const rows = parseWranglerD1Rows([{
+      results: [{
+        id: 'example_remote',
+        session_id: 'sess_remote',
+        status: 'LABELLED',
+        prompt_input_json: '{}',
+        expected_output_json: '{}',
+        judge_feedback_json: '{}',
+        provenance_json: '{}',
+        updated_at: '2026-07-03T13:33:10.562Z',
+      }],
+    }]);
+
+    expect(rows).toEqual([{
+      id: 'example_remote',
+      sessionId: 'sess_remote',
+      status: 'LABELLED',
+      promptInputJson: '{}',
+      expectedOutputJson: '{}',
+      judgeFeedbackJson: '{}',
+      provenanceJson: '{}',
+      updatedAt: '2026-07-03T13:33:10.562Z',
+    }]);
   });
 });

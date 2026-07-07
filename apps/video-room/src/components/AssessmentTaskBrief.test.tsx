@@ -11,7 +11,16 @@ const packet: RoomWorkspaceChallengePacket = {
   exactText: [
     'Repo: https://github.com/pipe/source-backed-worker',
     'Base commit: dddddddddddddddddddddddddddddddddddddddd',
+    'Pull request URL: https://github.com/pipe/source-backed-worker/pull/144',
     'Task: Fix the source-backed worker retry path.',
+    'Verification command: npm test -- retry-worker',
+    'Match proof:',
+    '- Review packet quality 92% from source-backed repo analysis.',
+    '- 2 source-backed repo demands in the selected PR packet.',
+    'Assessment fit:',
+    '- focused review calibrated for senior candidates.',
+    '- 30 minute target from deterministic engineering prior.',
+    '- No issue context in the source-backed PR packet; assess from code demand evidence.',
     'Success criteria:',
     '- Retry order remains deterministic',
     '- Existing worker tests pass',
@@ -22,6 +31,7 @@ const packet: RoomWorkspaceChallengePacket = {
   locator: {
     repositoryUrl: 'https://github.com/pipe/source-backed-worker',
     githubPrNumber: 144,
+    pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/144',
     baseCommitSha: 'dddddddddddddddddddddddddddddddddddddddd',
   },
   contentHash: 'sha256:packet-content-hash',
@@ -165,10 +175,22 @@ describe('AssessmentTaskBrief', () => {
     expect(briefText).toContain('Open-source implementation');
     expect(briefText).toContain('pipe/source-backed-worker');
     expect(briefText).toContain('#144');
+    expect(screen.getByRole('link', { name: '#144' }).getAttribute('href')).toBe(
+      'https://github.com/pipe/source-backed-worker/pull/144',
+    );
     expect(briefText).toContain('dddddddddd');
     expect(briefText).toContain('pipe-assessment/retry-path');
     expect(briefText).toContain('Required challenge, work, commit, and source evidence are captured.');
     expect(briefText).toContain('Fix the source-backed worker retry path.');
+    expect(briefText).toContain('Verification command');
+    expect(briefText).toContain('npm test -- retry-worker');
+    expect(briefText).toContain('Match proof');
+    expect(briefText).toContain('Review packet quality 92% from source-backed repo analysis.');
+    expect(briefText).toContain('2 source-backed repo demands in the selected PR packet.');
+    expect(briefText).toContain('Assessment fit');
+    expect(briefText).toContain('focused review calibrated for senior candidates.');
+    expect(briefText).toContain('30 minute target from deterministic engineering prior.');
+    expect(briefText).toContain('No issue context in the source-backed PR packet; assess from code demand evidence.');
     expect(briefText).toContain('Retry order remains deterministic');
     expect(briefText).toContain('Existing worker tests pass');
     expect(briefText).toContain('Commit SHA on assessment branch');
@@ -189,13 +211,57 @@ describe('AssessmentTaskBrief', () => {
     expect(briefText).toContain('Assessment branch commit: Captured');
     expect(briefText).toContain('Tests or verification note: Captured');
     expect(briefText).toContain('Candidate explanation: Captured');
+    expect(briefText).toContain('AI-use transparency: Captured');
+    expect(briefText).toContain('AI prompts, responses, or bridge traces are part of the source-backed evidence trail.');
     expect(briefText).toContain('Commit cccccccccc');
+    expect(screen.getByTestId('assessment-brief-open-submission').textContent).toContain('Review Submission');
+    expect(screen.getByTestId('assessment-brief-open-submission').textContent).not.toContain('Submit work');
     expect(briefText).not.toContain('sha256:packet-content-hash');
 
     fireEvent.click(screen.getByTestId('assessment-brief-open-workspace'));
     fireEvent.click(screen.getByTestId('assessment-brief-open-submission'));
     expect(onOpenWorkspace).toHaveBeenCalledTimes(1);
     expect(onOpenSubmission).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows source-backed replay context without exposing the solution PR link', () => {
+    render(
+      <AssessmentTaskBrief
+        packet={{
+          ...packet,
+          sourceRefType: 'review_challenge_packet',
+          locator: {
+            ...packet.locator,
+            headCommitSha: 'e'.repeat(40),
+          },
+        }}
+        workspace={{
+          ...workspace,
+          challenge: {
+            ...workspace.challenge,
+            status: 'repo_task_assigned',
+            kind: 'repo_only',
+            source: 'scheduled_interview.challenge_packet',
+          },
+        }}
+        progress={{
+          ...progress,
+          assignmentTrust: {
+            state: 'matched_challenge',
+            label: 'PIPE-matched challenge',
+            detail: 'Selected from source-backed repo and candidate evidence.',
+            tone: 'matched',
+          },
+        }}
+        workspaceReady
+      />,
+    );
+
+    const briefText = screen.getByTestId('assessment-task-brief').textContent ?? '';
+    expect(briefText).toContain('Source-backed replay');
+    expect(briefText).toContain('Fix the source-backed worker retry path.');
+    expect(briefText).not.toContain('#144');
+    expect(screen.queryByRole('link', { name: '#144' })).toBeNull();
   });
 
   it('shows a diagnostic instead of inventing a task when the packet is missing', () => {
@@ -290,6 +356,7 @@ describe('AssessmentTaskBrief', () => {
           },
         }}
         workspaceReady
+        onOpenSubmission={vi.fn()}
       />,
     );
 
@@ -303,7 +370,69 @@ describe('AssessmentTaskBrief', () => {
     expect(screen.queryByTestId('assessment-task-brief-submission')).toBeNull();
   });
 
-  it('shows evaluated workspace submissions as report-ready without exposing recruiter-only scoring', () => {
+  it('explains blocked AI prompts without counting them as agent help', () => {
+    render(
+      <AssessmentTaskBrief
+        packet={packet}
+        workspace={workspace}
+        progress={{
+          ...progress,
+          hasAiInteraction: true,
+          sourceRefCounts: [
+            { kind: 'ai_user_prompt_blocked', count: 1 },
+            { kind: 'test_run', count: 1 },
+          ],
+          readiness: undefined,
+        }}
+        workspaceReady
+      />,
+    );
+
+    const proof = screen.getByTestId('assessment-task-brief-proof');
+    expect(proof.textContent).toContain('AI-use transparency: Captured');
+    expect(proof.textContent).toContain('A prompt was blocked or the bridge was unavailable; no agent response is counted as assistance.');
+    expect(proof.textContent).not.toContain('Agent messages or responses are captured as assessment evidence.');
+  });
+
+  it('preserves precise AI transparency copy when server readiness is present', () => {
+    render(
+      <AssessmentTaskBrief
+        packet={packet}
+        workspace={workspace}
+        progress={{
+          ...progress,
+          hasAiInteraction: true,
+          sourceRefCounts: [
+            { kind: 'ai_user_prompt_blocked', count: 1 },
+            { kind: 'test_run', count: 1 },
+          ],
+          readiness: {
+            ...progress.readiness!,
+            confidence: [
+              ...progress.readiness!.confidence,
+              {
+                id: 'ai_usage_transparency',
+                label: 'AI-use transparency',
+                required: false,
+                satisfied: true,
+                sourceRefTypes: ['ai_user_prompt_blocked'],
+                missingImpact: 'If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly. Silence is not proof of no AI use.',
+              },
+            ],
+          },
+        }}
+        workspaceReady
+      />,
+    );
+
+    const proof = screen.getByTestId('assessment-task-brief-proof');
+    expect(proof.textContent).toContain('AI-use transparency: Captured');
+    expect(proof.textContent).toContain('1 blocked prompt captured.');
+    expect(proof.textContent).toContain('no agent response is counted as assistance.');
+    expect(proof.textContent).not.toContain('AI-use transparency: CapturedCaptured as source-backed assessment evidence.');
+  });
+
+  it('keeps evaluated workspace reports reachable even after the workspace stops', () => {
     render(
       <AssessmentTaskBrief
         packet={packet}
@@ -320,9 +449,73 @@ describe('AssessmentTaskBrief', () => {
             summary: 'Source-backed report is ready.',
             recommendation: 'strong_evidence_to_advance',
             createdAt: '2026-06-29T22:03:00.000Z',
+            reviewPacket: {
+              schemaVersion: 'repo-task-review-packet-v1',
+              challenge: {
+                focus: 'Fix the source-backed worker retry path.',
+                repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+                baseCommitSha: 'd'.repeat(40),
+                pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/144',
+                assignmentTrust: {
+                  state: 'matched_challenge',
+                  label: 'PIPE-matched challenge',
+                  detail: 'Selected from source-backed repo and candidate evidence.',
+                  tone: 'matched',
+                },
+                contract: {
+                  schemaVersion: 'challenge-packet-contract-v1',
+                  isComplete: true,
+                  missingFields: [],
+                },
+              },
+              submission: {
+                repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+                forkRepositoryUrl: 'https://github.com/candidate/source-backed-worker',
+                branchName: 'pipe-assessment/retry-path',
+                commitSha: 'c'.repeat(40),
+                commitUrl: `https://github.com/candidate/source-backed-worker/commit/${'c'.repeat(40)}`,
+                submissionSourceLabel: 'Workspace-captured commit',
+                changedFileCount: 1,
+                integrity: {
+                  status: 'workspace_captured',
+                  label: 'Workspace-captured commit',
+                  detail: 'Commit metadata was captured from the controlled workspace.',
+                  tone: 'verified',
+                },
+                challengeBinding: {
+                  status: 'bound_to_assigned_challenge',
+                  label: 'Bound to assigned challenge',
+                  detail: 'The submitted commit is bound to the assigned challenge packet.',
+                  tone: 'verified',
+                },
+              },
+              evidence: {
+                sourceRefCount: 4,
+                sourceRefTypeCounts: {
+                  git_commit: 1,
+                  code_diff: 1,
+                  test_run: 1,
+                  room_chat_message: 1,
+                },
+                readiness: {
+                  status: 'EVALUATED',
+                  label: 'Evaluated',
+                  detail: 'Required challenge, work, commit, and source evidence are captured.',
+                  isReadyForEvaluation: true,
+                  isUsableHiringSignal: true,
+                  missingRequiredCount: 0,
+                },
+              },
+              evaluation: {
+                recommendation: 'strong_evidence_to_advance',
+                claimCount: 2,
+                diagnosticCount: 1,
+              },
+            },
           },
         }}
-        workspaceReady
+        workspaceReady={false}
+        onOpenSubmission={vi.fn()}
       />,
     );
 
@@ -333,6 +526,70 @@ describe('AssessmentTaskBrief', () => {
     expect(submission.textContent).toContain('cccccccccc');
     expect(submission.textContent).toContain('Verification gap captured');
     expect(submission.textContent).not.toContain('strong_evidence_to_advance');
+
+    const finalPacket = screen.getByTestId('assessment-final-review-packet');
+    expect(finalPacket.textContent).toContain('Source-backed report ready');
+    expect(finalPacket.textContent).toContain('repo-task-review-packet-v1');
+    expect(finalPacket.textContent).toContain('PIPE-matched challenge');
+    expect(finalPacket.textContent).toContain('pipe/source-backed-worker');
+    expect(finalPacket.textContent).toContain('Base dddddddddd');
+    expect(finalPacket.textContent).not.toContain('#144');
+    expect(finalPacket.textContent).toContain('Commit cccccccccc');
+    expect(finalPacket.textContent).toContain('pipe-assessment/retry-path');
+    expect(finalPacket.textContent).toContain('Workspace-captured commit');
+    expect(finalPacket.textContent).toContain('Bound to assigned challenge');
+    expect(finalPacket.textContent).toContain('4 source refs');
+    expect(finalPacket.textContent).toContain('2 claims');
+    expect(finalPacket.textContent).toContain('1 diagnostic');
+    expect(finalPacket.textContent).toContain('Git Commit');
+    expect(finalPacket.textContent).not.toContain('assessment_evaluation_report_');
+    expect(finalPacket.textContent).not.toContain('internal');
+    expect(screen.getByTestId('assessment-brief-open-submission').textContent).toContain('Report Ready');
+    expect(screen.getByTestId('assessment-brief-open-submission').textContent).not.toContain('Submit work');
+  });
+
+  it('shows evaluator diagnostics instead of hiding an unavailable AI evaluator state', () => {
+    render(
+      <AssessmentTaskBrief
+        packet={packet}
+        workspace={workspace}
+        progress={{
+          ...progress,
+          stage: 'NEEDS_ATTENTION',
+          nextAction: 'RESOLVE_DIAGNOSTIC',
+          nextActionLabel: 'Resolve the blocking diagnostic before continuing.',
+          evaluation: {
+            status: 'AI_DEVELOPER_UNAVAILABLE',
+            summary: 'Workers AI is not configured for source-backed repo-task evaluation.',
+            recommendation: 'insufficient_evidence',
+            createdAt: '2026-06-29T22:03:00.000Z',
+            diagnostics: [
+              {
+                id: 'diagnostic-ai-unavailable',
+                code: 'AI_DEVELOPER_UNAVAILABLE',
+                severity: 'blocking',
+                message: 'Workers AI is not configured for source-backed repo-task evaluation.',
+                sourceRefCount: 1,
+                sourceRefTypes: ['assessment_evaluation_request'],
+              },
+            ],
+          },
+        }}
+        workspaceReady
+      />,
+    );
+
+    const submission = screen.getByTestId('assessment-task-brief-submission');
+    expect(submission.textContent).toContain('Evaluation needs attention');
+    expect(submission.textContent).toContain('Workers AI is not configured for source-backed repo-task evaluation.');
+    expect(submission.textContent).not.toContain('Assessment report ready');
+
+    const diagnostics = screen.getByTestId('assessment-task-brief-diagnostics');
+    expect(diagnostics.textContent).toContain('Evaluator cautions');
+    expect(diagnostics.textContent).toContain('Blocking: AI Developer Unavailable');
+    expect(diagnostics.textContent).toContain('Workers AI is not configured for source-backed repo-task evaluation.');
+    expect(diagnostics.textContent).toContain('1 source ref: Assessment Evaluation Request');
+    expect(diagnostics.textContent).not.toContain('diagnostic-ai-unavailable');
   });
 
   it('shows exactly which challenge packet fields are missing', () => {

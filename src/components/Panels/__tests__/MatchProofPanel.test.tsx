@@ -197,4 +197,35 @@ describe('MatchProofPanel', () => {
     expect(readableReason).toHaveTextContent('without claiming CV fit');
     expect(readableReason).not.toHaveTextContent('your profile evidence maps');
   });
+
+  it('surfaces source-backed match diagnostics separately from passing proof checks', () => {
+    const matchExplanation: CodeReviewMatchExplanation = {
+      status: 'MATCHED',
+      summary: 'Embedding recall selected a challenge without source-backed alignment.',
+      score: 0.7,
+      candidateSourceCount: 0,
+      repoSourceCount: 0,
+      roleSourceCount: 0,
+      qualityGate: {
+        verdict: 'NEEDS_REVIEW',
+        checks: ['assessment_quality_verified'],
+        diagnostics: [
+          'MISSING_CANDIDATE_SOURCE_EVIDENCE',
+          'MISSING_REPO_SOURCE_EVIDENCE',
+          'EMBEDDING_ONLY_MATCH_REJECTED',
+        ],
+      },
+      evidence: [],
+      evidenceHyperedges: [],
+    };
+
+    render(<MatchProofPanel matchExplanation={matchExplanation} />);
+
+    expect(screen.getByText('ASSESSMENT QUALITY')).toBeTruthy();
+
+    const diagnostics = screen.getByTestId('code-review-match-diagnostics');
+    expect(diagnostics).toHaveTextContent('MISSING CANDIDATE SOURCE EVIDENCE');
+    expect(diagnostics).toHaveTextContent('MISSING REPO SOURCE EVIDENCE');
+    expect(diagnostics).toHaveTextContent('EMBEDDING ONLY MATCH REJECTED');
+  });
 });

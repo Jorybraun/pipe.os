@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Circle, MessageSquare, Monitor, SquareTerminal, Upload, X } from 'lucide-react';
+import { CheckCircle2, Circle, MessageSquare, Monitor, SquareTerminal, Upload, X } from 'lucide-react';
 import type { ToolSurfaceManagerApi, ToolSurfaceState } from '../hooks/useToolSurfaceManager';
 
 interface StandardLayoutProps {
@@ -11,6 +11,7 @@ interface StandardLayoutProps {
   recordingActive?: boolean;
   modeLabel?: string;
   primarySurface?: 'video' | 'workspace';
+  submissionActionLabel?: string;
 }
 
 export function StandardLayout({
@@ -22,6 +23,7 @@ export function StandardLayout({
   recordingActive,
   modeLabel = 'Standard call',
   primarySurface = 'video',
+  submissionActionLabel = 'Submit Work',
 }: StandardLayoutProps): JSX.Element {
   const [chatOpen, setChatOpen] = useState(false);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
@@ -34,6 +36,7 @@ export function StandardLayout({
 
   const hasWorkspace = Boolean(workspaceSurface);
   const workspaceIsPrimary = primarySurface === 'workspace' && Boolean(workspaceSurface);
+  const submissionCaptured = submissionActionLabel !== 'Submit Work';
   const primarySurfaceState = workspaceIsPrimary ? workspaceSurface : videoSurface;
   const utilitySurfaces = toolSurfaces.surfaces.filter((surface) => (
     surface.surfaceType !== 'video'
@@ -112,12 +115,12 @@ export function StandardLayout({
           <button
             className={`standard-control-btn is-submit${activeTool?.id === submissionSurface.id ? ' is-active' : ''}`}
             onClick={() => selectTool(submissionSurface)}
-            title="Open Submit Work"
-            aria-label="Open Submit Work"
+            title={`Open ${submissionActionLabel}`}
+            aria-label={`Open ${submissionActionLabel}`}
             data-testid="standard-open-submission"
           >
-            <Upload size={18} />
-            <span>Submit Work</span>
+            {submissionCaptured ? <CheckCircle2 size={18} /> : <Upload size={18} />}
+            <span>{submissionActionLabel}</span>
           </button>
         )}
         <button
