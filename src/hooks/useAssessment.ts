@@ -5,8 +5,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 // ============================================================================
 
 export interface ResolvedCandidate {
-  id: string;
-  pipelineId: string | null;
+  id?: string;
+  pipelineId?: string | null;
   status: string | null;
   name?: string | null;
   email?: string | null;
@@ -351,8 +351,6 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       } else {
         // Resolve token via Workers RPC
         const resolved = await rpcPost<{
-          id: string;
-          pipelineId: string | null;
           status: string;
           name: string | null;
           sessionToken: string;
@@ -360,17 +358,13 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
         sessionTokenRef.current = resolved.sessionToken;
         sessionStorage.setItem('pipe_session_token', resolved.sessionToken);
-        if (normalizedInviteToken) {
-          sessionStorage.setItem('pipe_session_invite_token', normalizedInviteToken);
-        }
+        sessionStorage.removeItem('pipe_session_invite_token');
+        sessionStorage.removeItem('pipe_session_candidate');
 
         candidate = {
-          id: resolved.id,
-          pipelineId: resolved.pipelineId,
           status: resolved.status,
           name: resolved.name,
         };
-        sessionStorage.setItem('pipe_session_candidate', JSON.stringify(candidate));
       }
 
       if (candidate.status === 'COMPLETED') {
@@ -495,7 +489,6 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           ...prev.candidate,
           status: result.status ?? prev.candidate.status,
         };
-        sessionStorage.setItem('pipe_session_candidate', JSON.stringify(candidate));
         return { ...prev, candidate, error: null };
       });
     } catch (err) {

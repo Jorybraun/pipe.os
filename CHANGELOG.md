@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Candidate assessment security
+
+- Candidate assessment invite resolution now issues opaque server-side session handles instead of returning or signing raw candidate IDs, pipeline IDs, or invite tokens into the browser session contract.
+
 ### Fixed — CODE_REVIEW scoring
 
 - Role-backed CODE_REVIEW smoke proof now records the current app-dev auto-match result against the broadened review-packet corpus, including matched `mui/base-ui#973`, strong assessment quality, and measured contrast separation.
