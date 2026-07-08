@@ -161,6 +161,12 @@ export function useClerkAuth(): AuthProvider {
   const { getToken } = useClerkAuthHook();
   const { signOut: clerkSignOut } = useClerk();
 
+  // Warm the API client token when userId is available
+  useEffect(() => {
+    if (!userId) return;
+    warmApiClientToken(getToken, userId);
+  }, [getToken, userId]);
+
   return {
     currentUser: userId
       ? {
@@ -219,13 +225,7 @@ export function useClerkAuth(): AuthProvider {
  */
 export function ClerkAuthWrapper({ children }: { children: React.ReactNode }): JSX.Element {
   const auth = useClerkAuth();
-  const { getToken, userId } = useClerkAuthHook();
   const setAuth = useSetAuth();
-
-  useEffect(() => {
-    if (!userId) return;
-    warmApiClientToken(getToken, userId);
-  }, [getToken, userId]);
 
   useEffect(() => {
     setAuth(auth);

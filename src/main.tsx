@@ -9,7 +9,7 @@ import { prefetchDevProxyApiJson } from "./lib/api/devProxyPrefetch";
 
 // Amplify providers removed in migration; Cloudflare providers not yet wired.
 // Hooks (useData, useStorage) throw a clear error at call time if unavailable.
-// Clerk authentication fix deployed 2026-07-08 v5 - removed useAuth from ClerkAuthGate
+// Clerk authentication fix deployed 2026-07-08 v6 - moved token warming to useClerkAuth
 const providers = {} as PipeProviders;
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 const useDevProxyAuthBypass = isDevProxyRecruiterAuthBypassEnabled();
