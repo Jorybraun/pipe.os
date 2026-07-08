@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — CODE_REVIEW challenge surface copy pass
+
+- De-jargonized the candidate CODE_REVIEW challenge surface by replacing seven internal packet and empty-state tokens with human copy, adding an expected-time hint, a strong-review checklist, and an AI-use transparency note on the challenge screen.
+- Updated the CODE_REVIEW smoke coverage in `e2e/code-review-assess-smoke.unauth.spec.ts` and the co-located `src/components/Assessment/__tests__/CodeReviewChallenge.test.tsx` assertions in lockstep with the surface copy changes.
+- Replaced the candidate review-profile `TARGET_TIME` label with `Expected time` so the smoke and visible challenge copy stay human-readable.
+- Moved the strong-review checklist onto the active review-session right panel so the ready render smoke can verify the comprehension aid on the candidate-visible review screen.
+
+### Added — CODE_REVIEW experience repair handoff
+
+- Added a drafted, unwired `CodeReviewAssessmentReport` recruiter component (recommendation-first readout with evidence summary, risks, AI-use framing, next action, and collapsed audit trail) plus a self-contained cloud handoff brief (`docs/plans/handoff-code-review-experience-repair.md`) covering the Pass 1/Pass 2 execution plan, verified data map, and local environment runbook for the CODE_REVIEW assessment experience work.
+- Wired the recruiter `CodeReviewAssessmentReport` into `src/pages/InterviewDetailPage.tsx` and added smoke coverage in `e2e/code-review-recruiter-detail-smoke.spec.ts` to prove the report appears in both the matched and blocked-with-decision recruiter paths.
+- Candidate CODE_REVIEW handoff now preserves `STALE_INVITE_TOKEN` as its own terminal invite state and replaces the waiting-screen diagnostics grid with plain-language progress, with Playwright and component coverage proving the stale-link and waiting-copy flows.
+- De-jargonized the candidate-facing `MatchProofPanel` (`src/components/Panels/ProblemPanel.tsx`): plain-language headings ('Why you got this pull request', 'The match in plain language', 'What this review focuses on', 'How this assignment was checked', 'Independent verification', 'Supporting evidence'), humanized evidence-node labels ('From your profile/role/repo'), and hid the graph-internal Score/Person/Repo/Role count grid and PERSON_ROLE_REPO/CANDIDATE_REPO mode badges from candidates while keeping the readable match reason and all `code-review-match-*` testids; updated `e2e/code-review-assess-smoke.unauth.spec.ts`, `e2e/standalone-code-review-mvp.spec.ts`, and `src/components/Panels/__tests__/MatchProofPanel.test.tsx` in lockstep.
+- Candidate WelcomeScreen now surfaces an `Expected time: ~N minutes` estimate via the optional `expectedTimeMinutes` prop from the review profile, and ReviewSessionPage now explains the post-submission pipeline in plain language (review scored from evidence, team reviews the report, recruiter follow-up) with co-located WelcomeScreen/ReviewSessionPage tests plus a golden-path Playwright assertion covering the new completion copy.
+
 ### Fixed — Candidate ingestion
 
 - CODE_REVIEW invite creation now keeps backend-delivered `/assess/:token` links visible and copyable when no room URL exists.
@@ -301,7 +316,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The CODE_REVIEW reliability suite now validates lane-specific summary contracts, failing the wrapper if parsed proof no longer shows manual `MATCHED` PRs, `PROFILE_RECEIVED` handoffs, scored role-backed submissions, non-MUI Workers SDK matching, or zero-failure match-quality readiness.
 - The full app-dev CODE_REVIEW reliability suite now includes the manual source-backed PR ready-assignment smoke by default, so recruiter-selected `mui/base-ui#973` readiness is proven alongside blocked handoff, automatic matching, scoring, and match-quality gates.
 - The manual-ready CODE_REVIEW reliability lane now verifies the recruiter-displayed candidate assessment link resolves without claiming the one-use token before the direct candidate smoke proves the standalone `/assess` code-review surface.
-- CODE_REVIEW app-dev browser smokes now honor the same `PIPE_APP_DEV_BASIC_AUTH_*` and `APP_DEV_BASIC_AUTH_*` aliases as the setup API calls, preventing candidate `/assess` proof from stopping at the Basic Auth wall.
+- CODE*REVIEW app-dev browser smokes now honor the same `PIPE_APP_DEV_BASIC_AUTH*_`and`APP*DEV_BASIC_AUTH*_`aliases as the setup API calls, preventing candidate`/assess` proof from stopping at the Basic Auth wall.
 - CODE_REVIEW recruiter browser smokes can now reuse an existing Playwright recruiter storage state with `PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP=1`, skipping the Clerk setup project without weakening the recruiter detail browser assertion.
 - Added `npm run smoke:code-review-reliability-dev`, a full app-dev reliability suite that runs the candidate-safe blocked handoff, role-backed full-submit/scoring, non-MUI Workers SDK matching, and latest expert-labelled match-quality readiness gate with stored lane artifacts.
 - Documented the latest `workers-matrix` app-dev proof that automatic CODE_REVIEW matching can select a non-MUI `cloudflare/workers-sdk` source-backed PR with a passed quality gate.
@@ -1027,6 +1042,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repo-task assessment evaluation claims now preserve caller-supplied confidence through the facade into canonical assessment persistence instead of dropping the qualifier.
 - Repo-task assessment diagnostic routes now return the persisted diagnostic row id and evaluation report id, keeping standalone diagnostics traceable to their canonical report.
 - Repo-task assessment diagnostics now preserve caller-supplied diagnostic ids in persisted report diagnostics JSON for deterministic projection rebuilds.
+
 ### Added — Match run history endpoint + panel (criteria #6, #8)
 
 - `GET /api/v1/candidates/:id/living-context/match-history` — returns chronological match run history with inter-run deltas (status changes, score improvements, new top challenges). Gated by `living_context_read` rollout gate.
@@ -1278,6 +1294,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bootstrap progression (disabled → internal_only) proceeds without evaluation; subsequent stages require passing evaluation readiness checks at increasing threshold levels.
 - Supports `dryRun` mode to preview progression decisions without mutating gates.
 - Added 5 new tests covering bootstrap, blocking, terminal state, dry-run, and full progression with evaluation.
+
 ### Added — Real-time living context ingestion on resume upload
 
 - Wired `ingestResumeToLivingContext` into `processResumeFromR2` so resumes enter the living context graph immediately upon upload — no longer deferred to scheduled backfill cron. Both recruiter upload and candidate INTAKE submission paths now trigger real-time ingestion.
@@ -1323,6 +1340,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `scheduleFullProjectionRebuild()` to the projection module — enqueues rebuild jobs for all workspace persons through the projection outbox. D1 remains the source of truth; Neo4j projections can be deleted and reconstructed at any time.
 - Added `POST /api/v1/internal/living-context-rebuild-projections` endpoint for triggering a full projection rebuild via the outbox cron.
 - Added 2 new tests for projection rebuild endpoint; test suite now at 1515 tests across 166 files, 0 failures.
+
 ### Added — Staged rollout proof (criterion #8 completion)
 
 - Added `stagedRolloutProof.test.ts` (10 tests) — comprehensive integration test proving the full shadow → canary → production promotion flow: expert-labelled corpus validation, evaluation metrics at all stages, D1-backed gate transitions with immutable audit trail, backfill orchestrator completion before promotion, rollback verification, determinism proof through comparison run fingerprints.

@@ -315,7 +315,8 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
     error.message === 'INVALID_TOKEN' ||
     error.message === 'ALREADY_COMPLETED' ||
     error.message === 'SESSION_EXPIRED' ||
-    error.message === 'TOKEN_ALREADY_CLAIMED'
+    error.message === 'TOKEN_ALREADY_CLAIMED' ||
+    error.message === 'STALE_INVITE_TOKEN'
   );
 
   if (isTerminalError) {
@@ -323,6 +324,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
     const isCompleted = error.message === 'ALREADY_COMPLETED';
     const isSessionExpired = error.message === 'SESSION_EXPIRED';
     const isTokenClaimed = error.message === 'TOKEN_ALREADY_CLAIMED';
+    const isStaleInvite = error.message === 'STALE_INVITE_TOKEN';
 
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e', padding: 24 }}>
@@ -333,6 +335,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
             {isInvalid ? 'Invalid Invite Link'
               : isCompleted ? 'Assessment Completed'
               : isSessionExpired ? 'Session Expired'
+              : isStaleInvite ? 'This link has been replaced'
               : isTokenClaimed ? 'Assessment Already Started'
               : 'Connection Error'}
           </h2>
@@ -340,10 +343,21 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
             {isInvalid ? 'This invitation link is invalid or has expired. Please contact your recruiter for a new link.'
               : isCompleted ? 'You have already submitted this assessment. Thank you for your time!'
               : isSessionExpired ? 'Your session has expired. Please contact your recruiter for a new invite link.'
+              : isStaleInvite ? 'A newer invite is active for this assessment, so this link can no longer start your review.'
               : isTokenClaimed ? 'This one-use assessment link has already started. Please contact your recruiter if you need a fresh link.'
               : 'There was an error connecting to our secure servers. Please try refreshing the page or clicking the button below.'}
           </p>
-          {!isCompleted && !isTokenClaimed && (
+          {isStaleInvite && (
+            <div style={{ display: 'grid', gap: 10, textAlign: 'left', marginBottom: 8, fontSize: 13, lineHeight: 1.6, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
+              <div>
+                <strong style={{ color: 'var(--pipe-text, #fff)' }}>Next action:</strong> Open the latest invite link from your recruiter.
+              </div>
+              <div>
+                <strong style={{ color: 'var(--pipe-text, #fff)' }}>Owner:</strong> Ask your recruiter for the latest invite link — a newer link for this assessment was issued after this one.
+              </div>
+            </div>
+          )}
+          {!isCompleted && !isTokenClaimed && !isStaleInvite && (
             <button onClick={() => reset()} style={{
               padding: '12px 24px', background: 'var(--pipe-surface-hover)',
               border: '1px solid var(--pipe-border)', color: 'var(--pipe-text, #fff)',
