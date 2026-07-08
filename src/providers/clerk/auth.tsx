@@ -26,7 +26,6 @@ import { useSetAuth } from '../DataContext';
 import type { AuthProvider } from '../types';
 import { AppBackground } from '../../components/ui/AppBackground';
 import { LoadingSplash } from '../../components/ui/LoadingSplash';
-import { warmApiClientToken } from '../../hooks/useApiClient';
 import { DEV_PROXY_RECRUITER_USER_ID } from '../../lib/auth/devProxyAuth';
 
 // ─── ClerkAuthGate ────────────────────────────────────────────────────────────
@@ -59,12 +58,10 @@ export function ClerkAuthGate({ children }: { children: React.ReactNode }): JSX.
     <>
       <AppBackground />
       {showSplash && <LoadingSplash fadingOut={fadingOut} />}
-      <>
-        <Show when="signed-out">
-          <ClerkSignInScreen />
-        </Show>
-        <Show when="signed-in">{children}</Show>
-      </>
+      <Show when="signed-out">
+        <ClerkSignInScreen />
+      </Show>
+      <Show when="signed-in">{children}</Show>
     </>
   );
 }
