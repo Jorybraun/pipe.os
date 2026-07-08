@@ -124,6 +124,48 @@ describe('InviteCreationModal open-source challenge packets', () => {
     expect(screen.queryByText('Send a controlled workspace room link')).toBeNull();
   });
 
+  it('makes delivered code review assessment links visible and copyable', async () => {
+    mocks.useSchedulingConnection.mockReturnValue({
+      connection: null,
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: { writeText },
+    });
+    const onCreateInvite = vi.fn().mockResolvedValue({
+      id: 'interview-code-review-1',
+      meetingUrl: null,
+      deliveredUrl: 'https://app-dev.hire-pipe.com/assess/recruiter-visible-token',
+      emailSent: true,
+    });
+
+    render(
+      <InviteCreationModal
+        isOpen
+        onClose={vi.fn()}
+        onCreateInvite={onCreateInvite}
+        initialInterviewType="CODE_REVIEW"
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText('Jane Doe'), {
+      target: { value: 'Ada Lovelace' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('jane@example.com'), {
+      target: { value: 'ada@example.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'CREATE ASSESSMENT INVITE' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('https://app-dev.hire-pipe.com/assess/recruiter-visible-token')).toBeInTheDocument();
+    });
+
+    const copyButton = screen.getByRole('button', { name: 'COPY' });
+    expect(copyButton).toBeEnabled();
+    fireEvent.click(copyButton);
+    expect(writeText).toHaveBeenCalledWith('https://app-dev.hire-pipe.com/assess/recruiter-visible-token');
+  });
+
   it('submits a complete manual open-source challenge packet for assessment invites', async () => {
     mocks.useSchedulingConnection.mockReturnValue({
       connection: null,

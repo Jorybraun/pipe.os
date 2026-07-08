@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Candidate assessment invite resolution now issues opaque server-side session handles instead of returning or signing raw candidate IDs, pipeline IDs, or invite tokens into the browser session contract.
 
+### Fixed — Candidate ingestion
+
+- CODE_REVIEW invite creation now keeps backend-delivered `/assess/:token` links visible and copyable when no room URL exists.
+- Talent Pool readiness coverage now seeds review-profile-ready challenge packets, keeping the candidate dashboard gate aligned with the production source-backed packet contract.
+
 ### Fixed — CODE_REVIEW scoring
 
 - Role-backed CODE_REVIEW smoke proof now records the current app-dev auto-match result against the broadened review-packet corpus, including matched `mui/base-ui#973`, strong assessment quality, and measured contrast separation.
