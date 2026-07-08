@@ -163,7 +163,7 @@ export function useClerkAuth(): AuthProvider {
   // Warm the API client token when userId is available
   useEffect(() => {
     if (!userId) return;
-    warmApiClientToken(() => clerk.session?.getToken(), userId);
+    warmApiClientToken(() => clerk.session?.getToken() ?? Promise.resolve(null), userId);
   }, [clerk.session, userId]);
 
   return {
@@ -183,7 +183,8 @@ export function useClerkAuth(): AuthProvider {
      */
     getSessionToken: async (): Promise<string | null> => {
       try {
-        return await clerk.session?.getToken() ?? null;
+        const token = await clerk.session?.getToken();
+        return token ?? null;
       } catch {
         return null;
       }
@@ -225,18 +226,42 @@ export function useClerkAuth(): AuthProvider {
 export function ClerkAuthWrapper({ children }: { children: React.ReactNode }): JSX.Element {
   const setAuth = useSetAuth();
   const [auth, setAuthState] = useState<AuthProvider | null>(null);
+  const clerk = useClerk();
 
   useEffect(() => {
-    // Only call useClerkAuth when we're inside Clerk context
-    // This is a workaround to avoid calling Clerk hooks outside provider
-    try {
-      const clerkAuth = useClerkAuth();
-      setAuthState(clerkAuth);
-    } catch (error) {
-      // If we're not in Clerk context yet, that's fine
-      // The auth will be set when the context is available
+    if (clerk.loaded && clerk.user) {
+      const userId = clerk.user.id;
+      const newAuth: AuthProvider = {
+        currentUser: userId
+          ? {
+              userId,
+              username: userId,
+            }
+          : null,
+        isLoading: !clerk.loaded,
+        signOut: async (): Promise<void> => {
+          await clerk.signOut();
+        },
+        getSessionToken: async (): Promise<string | null> => {
+          try {
+            const token = await clerk.session?.getToken();
+            return token ?? null;
+          } catch {
+            return null;
+          }
+        },
+        getToken: async (): Promise<string> => {
+          const token = await clerk.session?.getToken();
+          if (!token) {
+            throw new Error('No token available');
+          }
+          return token;
+        },
+        userId,
+      };
+      setAuthState(newAuth);
     }
-  }, []);
+  }, [clerk.loaded, clerk.user, clerk.session]);
 
   useEffect(() => {
     if (auth) {
