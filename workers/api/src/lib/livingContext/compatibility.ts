@@ -46,6 +46,10 @@ function isMissingTableError(error: unknown, tableName: string): boolean {
   return String(error instanceof Error ? error.message : error).includes(`no such table: ${tableName}`);
 }
 
+function isMissingColumnError(error: unknown, columnName: string): boolean {
+  return String(error instanceof Error ? error.message : error).includes(`no such column: ${columnName}`);
+}
+
 function jsonValue(value: unknown): JsonValue | undefined {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
@@ -155,6 +159,7 @@ export async function resolveCandidateWorkspacePersonId(
     if (
       isMissingTableError(error, 'candidates')
       || isMissingTableError(error, 'workspace_people')
+      || isMissingColumnError(error, 'c.owner_id')
     ) {
       return null;
     }

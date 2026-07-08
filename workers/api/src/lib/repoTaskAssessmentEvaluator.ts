@@ -294,11 +294,10 @@ export function createRepoTaskAssessmentProviders(
   const configuredModel = stringValue(env.CLOUDFLARE_AI_MODEL);
   if (configuredModel) {
     pushUniqueProvider(providers, new CloudflareAIProvider(env.AI, configuredModel));
+    return providers;
   }
 
-  for (const model of REPO_TASK_ASSESSMENT_WORKERS_AI_MODELS) {
-    pushUniqueProvider(providers, new CloudflareAIProvider(env.AI, model));
-  }
+  pushUniqueProvider(providers, new CloudflareAIProvider(env.AI, REPO_TASK_ASSESSMENT_WORKERS_AI_MODELS[0]));
 
   return providers;
 }
@@ -2213,6 +2212,7 @@ export async function evaluateRepoTaskAssessmentSession(
   }
 
   if (!aiOutput) {
+    const fallbackReasonCode = attemptDiagnostics.at(-1)?.code ?? 'AI_EVALUATOR_UNUSABLE';
     const fallback = await createDeterministicFallbackReport({
       store: input.store,
       sessionId: input.sessionId,
@@ -2226,9 +2226,9 @@ export async function evaluateRepoTaskAssessmentSession(
       provider,
       rawResponse,
       diagnostics: attemptDiagnostics,
-      fallback: 'deterministic_source_evidence_after_ai_failure',
+      fallback: 'deterministic_source_evidence',
       fallbackReason: 'No configured AI evaluator produced parseable JSON after source-backed evidence was captured.',
-      fallbackReasonCode: 'AI_EVALUATOR_UNUSABLE',
+      fallbackReasonCode,
       transitionReason: 'PIPE produced a conservative source-backed assessment report after AI evaluator failure.',
     });
     if (fallback) return fallback;

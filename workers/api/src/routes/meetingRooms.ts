@@ -110,7 +110,8 @@ interface RoomLifecycleEvidenceCaptureResult {
 }
 
 const WHISPER_TRANSCRIPTION_TIMEOUT_MS = 30_000;
-const MEETING_ANALYSIS_TIMEOUT_MS = 30_000;
+const MEETING_ANALYSIS_TIMEOUT_MS = 10_000;
+const TRANSCRIPT_FALLBACK_SUMMARY_MAX_CHARS = 500;
 const E2E_DEEPGRAM_RESPONSE_HEADER = 'X-Pipe-E2E-Deepgram-Response';
 const E2E_MEETING_ANALYSIS_HEADER = 'X-Pipe-E2E-Meeting-Analysis';
 const E2E_TRANSCRIPT_OVERRIDE_MAX_BYTES = 24 * 1024;
@@ -1167,13 +1168,34 @@ function parseAnalysis(
     }
   }
   return {
-    summary: transcript.slice(0, 500),
+    summary: fallbackMeetingSummary(transcript),
     decisions: [],
     actionItems: [],
     topics: [],
     followUps: [],
     semanticAssertions: [],
   };
+}
+
+function fallbackMeetingSummary(transcript: string): string {
+  const normalized = transcript.replace(/\s+/g, ' ').trim();
+  if (!normalized) return 'Transcript captured without enough speech to summarize.';
+  return normalized.slice(0, TRANSCRIPT_FALLBACK_SUMMARY_MAX_CHARS);
+}
+
+function fallbackMeetingAnalysis(transcript: string): MeetingAnalysis {
+  return {
+    summary: fallbackMeetingSummary(transcript),
+    decisions: [],
+    actionItems: [],
+    topics: [],
+    followUps: [],
+    semanticAssertions: [],
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function parsePositiveIntEnv(value: string | undefined, fallback: number): number {
@@ -1690,14 +1712,6 @@ async function processRecording(
         ? 'deepgram-multichannel'
         : 'deepgram-multichannel-summary-only'
       : 'workers-ai-whisper-summary-only';
-
-    const analysis = overrides.analysisJson
-      ? parseAnalysis(overrides.analysisJson, transcript, segments)
-      : await withTimeout(
-          analyzeMeeting(env.AI, transcript, segments),
-          MEETING_ANALYSIS_TIMEOUT_MS,
-          'Meeting transcript analysis',
-        );
     const personContextMode = hasAttributedGuestAudio ? 'attributed' : 'summary_only';
     const personContextReason = hasAttributedGuestAudio
       ? null
@@ -1708,6 +1722,34 @@ async function processRecording(
             ? 'guest_audio_channel_missing'
             : 'guest_contact_id_missing'
         : 'mixed_audio_without_speaker_attribution';
+    let analysisStatus: 'ready' | 'fallback' | 'summary_only' = 'ready';
+    let analysisError: string | null = null;
+    let analysisSkippedReason: string | null = null;
+    let analysis: MeetingAnalysis;
+    if (overrides.analysisJson) {
+      analysis = parseAnalysis(overrides.analysisJson, transcript, segments);
+    } else if (!hasAttributedGuestAudio) {
+      analysisStatus = 'summary_only';
+      analysisSkippedReason = personContextReason;
+      analysis = fallbackMeetingAnalysis(transcript);
+    } else {
+      try {
+        analysis = await withTimeout(
+          analyzeMeeting(env.AI, transcript, segments),
+          MEETING_ANALYSIS_TIMEOUT_MS,
+          'Meeting transcript analysis',
+        );
+      } catch (error) {
+        analysisStatus = 'fallback';
+        analysisError = errorMessage(error);
+        console.warn(`${logPrefix} Meeting analysis unavailable; storing transcript with fallback summary`, {
+          message: analysisError,
+          transcriptionSourceKey,
+          recordingKey,
+        });
+        analysis = fallbackMeetingAnalysis(transcript);
+      }
+    }
     const semanticAssertionsForStorage = hasAttributedGuestAudio
       ? analysis.semanticAssertions
       : [];
@@ -1716,6 +1758,9 @@ async function processRecording(
       : analysis.semanticAssertions.length;
     const analysisForStorage = {
       ...analysis,
+      analysisStatus,
+      analysisError,
+      analysisSkippedReason,
       semanticAssertions: semanticAssertionsForStorage,
       semanticAssertionsSuppressed,
       semanticAssertionsSuppressedReason: semanticAssertionsSuppressed > 0
@@ -1777,7 +1822,7 @@ async function processRecording(
       personContextReason,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     const stack = error instanceof Error ? error.stack : undefined;
     const failedAt = new Date().toISOString();
     console.error(`${logPrefix} Recording processing failed`, {
@@ -3152,17 +3197,20 @@ meetingRooms.post('/:token/recording', async (c) => {
   const token = c.req.param('token');
   const room = await resolveRoom(c.env.DB, token);
   if (!room) {
-    console.warn('[meetingRooms] Recording upload: room not found', { token });
+    console.warn('[meetingRooms] Recording upload: room not found');
     return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
   }
   if (room.role !== 'HOST') {
-    console.warn('[meetingRooms] Recording upload: non-host role', { token, role: room.role });
+    console.warn('[meetingRooms] Recording upload: non-host role', {
+      meetingId: room.meeting_id,
+      roomId: room.room_id,
+      role: room.role,
+    });
     return apiError(c, 'FORBIDDEN', 'Only the host can upload a room recording.');
   }
 
   const contentLength = Number(c.req.header('Content-Length') ?? '0');
   console.log('[meetingRooms] Recording upload started', {
-    token,
     meetingId: room.meeting_id,
     roomId: room.room_id,
     contentLength,

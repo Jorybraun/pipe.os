@@ -4907,9 +4907,10 @@ describe('InterviewDetailPage', () => {
     expect(personContextSection?.style.order).toBe('40');
 
     const reviewProfile = screen.getByTestId('code-review-review-profile');
-    expect(reviewProfile).toHaveTextContent('WHAT TO EXPECT');
-    expect(reviewProfile).toHaveTextContent('ADVANCED');
-    expect(reviewProfile).toHaveTextContent('STAFF');
+    expect(reviewProfile).toHaveTextContent('Assessment fit');
+    expect(reviewProfile).not.toHaveTextContent('ASSESSMENT_FIT');
+    expect(reviewProfile).toHaveTextContent('Advanced');
+    expect(reviewProfile).toHaveTextContent('Staff');
     expect(reviewProfile).toHaveTextContent('75 min');
     expect(reviewProfile).toHaveTextContent('443');
     expect(reviewProfile).toHaveTextContent('28');
@@ -5007,7 +5008,8 @@ describe('InterviewDetailPage', () => {
     await flushAsyncUpdates();
     const hyperedges = screen.getByTestId('interview-code-review-match-hyperedges');
     expect(hyperedges).toHaveTextContent('candidate evidence -> repo challenge');
-    expect(hyperedges).toHaveTextContent('CANDIDATE_REPO');
+    expect(hyperedges).toHaveTextContent('Candidate and repo evidence');
+    expect(hyperedges).not.toHaveTextContent('CANDIDATE_REPO');
     expect(hyperedges).not.toHaveTextContent('PERSON_ROLE_REPO');
     expect(hyperedges).toHaveTextContent('Candidate source evidence');
     expect(hyperedges).toHaveTextContent('Repo challenge evidence');
@@ -5218,9 +5220,10 @@ describe('InterviewDetailPage', () => {
 
     await flushAsyncUpdates();
     const reviewProfile = screen.getByTestId('code-review-review-profile');
-    expect(reviewProfile).toHaveTextContent('WHAT TO EXPECT');
-    expect(reviewProfile).toHaveTextContent('ADVANCED');
-    expect(reviewProfile).toHaveTextContent('STAFF');
+    expect(reviewProfile).toHaveTextContent('Assessment fit');
+    expect(reviewProfile).not.toHaveTextContent('ASSESSMENT_FIT');
+    expect(reviewProfile).toHaveTextContent('Advanced');
+    expect(reviewProfile).toHaveTextContent('Staff');
     expect(reviewProfile).toHaveTextContent('75 min');
     expect(reviewProfile).toHaveTextContent('443');
     expect(reviewProfile).toHaveTextContent('28');
@@ -5303,7 +5306,8 @@ describe('InterviewDetailPage', () => {
     await flushAsyncUpdates();
     const hyperedges = screen.getByTestId('interview-code-review-match-hyperedges');
     expect(hyperedges).toHaveTextContent('candidate evidence -> repo challenge');
-    expect(hyperedges).toHaveTextContent('CANDIDATE_REPO');
+    expect(hyperedges).toHaveTextContent('Candidate and repo evidence');
+    expect(hyperedges).not.toHaveTextContent('CANDIDATE_REPO');
     expect(hyperedges).not.toHaveTextContent('PERSON_ROLE_REPO');
     expect(hyperedges).toHaveTextContent('Implemented popover trigger click handling');
     expect(hyperedges).toHaveTextContent('Ignore impatient trigger clicks');

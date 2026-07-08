@@ -132,6 +132,8 @@ async function init(
     challengeBranch?: string | null;
     baseCommitSha?: string | null;
     agentType?: string | null;
+    pipeApiUrl?: string | null;
+    roomToken?: string | null;
   },
 ): Promise<Response> {
   return instance.fetch(
@@ -142,6 +144,8 @@ async function init(
         repoGitUrl: null,
         challengeBranch: null,
         baseCommitSha: null,
+        pipeApiUrl: null,
+        roomToken: null,
         ...payload,
       }),
     }),
@@ -230,6 +234,52 @@ describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () =>
     const ready = updates.find((c) => c.params[0] === 'READY');
     expect(ready?.params[2]).toEqual(expect.any(String));
     expect(ready?.params[5]).toBe('sess_start');
+  });
+
+  it('routes local Worker callback URLs through the Docker host gateway', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env) as SpyableDO;
+
+    const res = await init(instance, {
+      sessionId: 'sess_local_pipe_api_url',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+      pipeApiUrl: 'http://localhost:8787',
+      roomToken: 'room_token_for_callback',
+    });
+
+    expect(res.status).toBe(200);
+    const [startArg] = instance.__startCalls[0] as [
+      {
+        startOptions: { envVars: Record<string, string> };
+      },
+    ];
+    expect(startArg.startOptions.envVars.PIPE_API_URL).toBe('http://host.docker.internal:8787');
+    expect(startArg.startOptions.envVars.ROOM_TOKEN).toBe('room_token_for_callback');
+  });
+
+  it('keeps deployed Worker callback URLs unchanged', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env) as SpyableDO;
+
+    const res = await init(instance, {
+      sessionId: 'sess_remote_pipe_api_url',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+      pipeApiUrl: 'https://api-dev.hire-pipe.com',
+      roomToken: 'room_token_for_callback',
+    });
+
+    expect(res.status).toBe(200);
+    const [startArg] = instance.__startCalls[0] as [
+      {
+        startOptions: { envVars: Record<string, string> };
+      },
+    ];
+    expect(startArg.startOptions.envVars.PIPE_API_URL).toBe('https://api-dev.hire-pipe.com');
+    expect(startArg.startOptions.envVars.ROOM_TOKEN).toBe('room_token_for_callback');
   });
 
   it('passes the exact challenge base commit to the container entrypoint', async () => {

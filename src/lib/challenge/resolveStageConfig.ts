@@ -21,6 +21,7 @@ export interface RawChallenge {
   devContainerRepoUrl?: string | null;
   matchExplanation?: unknown;
   reviewProfile?: unknown;
+  challengePacket?: unknown;
   issueBody?: { title?: string | null; body?: string | null; labels?: string[] } | null;
 }
 
@@ -273,6 +274,7 @@ function resolveChallengeNode(raw: RawChallenge, stageTimeLimit?: number | null)
     ...(raw.devContainerRepoUrl != null ? { devContainerRepoUrl: raw.devContainerRepoUrl } : {}),
     ...(raw.matchExplanation != null ? { matchExplanation: raw.matchExplanation } : {}),
     ...(raw.reviewProfile != null ? { reviewProfile: raw.reviewProfile } : {}),
+    ...(raw.challengePacket != null ? { challengePacket: raw.challengePacket } : {}),
     ...(raw.issueBody != null ? { issueBody: raw.issueBody } : {}),
   };
 

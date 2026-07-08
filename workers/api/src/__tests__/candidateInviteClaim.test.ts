@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { rpcAuth, rpcPublic } from '../routes/rpc';
+import { signJwt, verifyJwt } from '../lib/jwt';
 import type { Env } from '../types';
 
 interface CandidateRow {
@@ -27,6 +28,13 @@ interface FakeD1 extends D1Database {
   candidate: CandidateRow;
   scheduledInterviews: ScheduledInterviewRow[];
   inviteDeliveries: InviteDeliveryRow[];
+  candidateSessions: Array<{
+    id: string;
+    candidate_id: string;
+    pipeline_id: string | null;
+    invite_token: string | null;
+    expires_at: string;
+  }>;
 }
 
 function fakeD1(
@@ -38,6 +46,7 @@ function fakeD1(
     candidate,
     scheduledInterviews,
     inviteDeliveries,
+    candidateSessions: [],
     prepare(sql: string): D1PreparedStatement {
       const statement = {
         params: [] as unknown[],
@@ -46,6 +55,19 @@ function fakeD1(
           return this as unknown as D1PreparedStatement;
         },
         async first() {
+          if (sql.includes('FROM candidate_session_handles')) {
+            const sessionId = this.params[0];
+            const row = db.candidateSessions.find((session) => session.id === sessionId);
+            return row
+              ? {
+                  candidate_id: row.candidate_id,
+                  pipeline_id: row.pipeline_id,
+                  invite_token: row.invite_token,
+                  expires_at: row.expires_at,
+                }
+              : null;
+          }
+
           if (sql.includes('WHERE invite_token = ?1')) {
             const inviteToken = this.params[0];
             if (db.candidate.invite_token !== inviteToken) return null;
@@ -62,6 +84,15 @@ function fakeD1(
             if (db.candidate.id !== candidateId) return null;
             return {
               invite_token: db.candidate.invite_token,
+              status: db.candidate.status,
+            };
+          }
+
+          if (sql.includes('SELECT id, status FROM candidates WHERE id = ?1')) {
+            const candidateId = this.params[0];
+            if (db.candidate.id !== candidateId) return null;
+            return {
+              id: db.candidate.id,
               status: db.candidate.status,
             };
           }
@@ -102,6 +133,18 @@ function fakeD1(
           return { results: [], success: true, meta: {} };
         },
         async run() {
+          if (sql.includes('INSERT INTO candidate_session_handles')) {
+            const [id, candidateId, pipelineId, inviteToken, , expiresAt] = this.params;
+            db.candidateSessions.push({
+              id: String(id),
+              candidate_id: String(candidateId),
+              pipeline_id: typeof pipelineId === 'string' ? pipelineId : null,
+              invite_token: typeof inviteToken === 'string' ? inviteToken : null,
+              expires_at: String(expiresAt),
+            });
+            return { success: true, meta: { changes: 1 } };
+          }
+
           if (sql.includes('UPDATE candidates') && sql.includes('status = CASE') && sql.includes('AND invite_token = ?4')) {
             const [claimedToken, , candidateId, inviteToken] = this.params;
             if (db.candidate.id === candidateId && db.candidate.invite_token === inviteToken) {
@@ -184,6 +227,75 @@ describe('candidate invite claiming', () => {
     expect(body.status).toBe('INVITED');
     expect(env.DB.candidate.invite_token).toBe('invite-token-1');
     expect(env.DB.candidate.status).toBe('INVITED');
+  });
+
+  it('returns an opaque session token without candidate ids, pipeline ids, or invite tokens', async () => {
+    const env = buildEnv({
+      id: 'candidate-1',
+      pipeline_id: 'pipeline-1',
+      invite_token: 'invite-token-1',
+      status: 'INVITED',
+      name: 'Ada',
+    });
+
+    const response = await rpcPublic.request('/resolve-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inviteToken: 'invite-token-1' }),
+    }, env);
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as Record<string, unknown>;
+    expect(body).toEqual({
+      status: 'INVITED',
+      name: 'Ada',
+      sessionToken: expect.any(String),
+    });
+
+    const serializedBody = JSON.stringify(body);
+    expect(serializedBody).not.toContain('candidate-1');
+    expect(serializedBody).not.toContain('pipeline-1');
+    expect(serializedBody).not.toContain('invite-token-1');
+
+    const payload = await verifyJwt(String(body.sessionToken), env.SESSION_TOKEN_SECRET);
+    expect(payload?.sub).toMatch(/^cand_sess_/);
+    expect(payload?.pid).toBeNull();
+    expect(payload?.itk).toBeNull();
+    expect(payload?.sub).not.toContain('candidate-1');
+    expect(payload?.sub).not.toContain('pipeline-1');
+    expect(payload?.sub).not.toContain('invite-token-1');
+  });
+
+  it('refreshes legacy candidate tokens into opaque session tokens', async () => {
+    const env = buildEnv({
+      id: 'candidate-1',
+      pipeline_id: 'pipeline-1',
+      invite_token: 'invite-token-1',
+      status: 'IN_PROGRESS',
+      name: 'Ada',
+    });
+    const legacyToken = await signJwt(
+      { sub: 'candidate-1', pid: 'pipeline-1', itk: 'invite-token-1' },
+      env.SESSION_TOKEN_SECRET,
+      -10,
+    );
+
+    const response = await rpcPublic.request('/refresh-session', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${legacyToken}` },
+    }, env);
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as Record<string, unknown>;
+    expect(body).toEqual({ sessionToken: expect.any(String) });
+    expect(JSON.stringify(body)).not.toContain('candidate-1');
+    expect(JSON.stringify(body)).not.toContain('pipeline-1');
+    expect(JSON.stringify(body)).not.toContain('invite-token-1');
+
+    const payload = await verifyJwt(String(body.sessionToken), env.SESSION_TOKEN_SECRET);
+    expect(payload?.sub).toMatch(/^cand_sess_/);
+    expect(payload?.pid).toBeNull();
+    expect(payload?.itk).toBeNull();
   });
 
   it('claims the one-use invite only when the assessment is started', async () => {

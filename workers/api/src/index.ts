@@ -137,7 +137,7 @@ app.use(
       // Deny by returning undefined — hono/cors will omit the CORS headers.
       return undefined;
     },
-    allowHeaders: ['Content-Type', 'Authorization'],
+    allowHeaders: ['Content-Type', 'Authorization', 'Cache-Control'],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     maxAge: 86400,
   }),

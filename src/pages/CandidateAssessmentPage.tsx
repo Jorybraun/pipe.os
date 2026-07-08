@@ -71,6 +71,7 @@ function CodeReviewAssessmentView(): JSX.Element {
         cachedMetadata: currentChallenge.data.cachedMetadata,
         matchExplanation: asCodeReviewMatchExplanation(currentChallenge.data.matchExplanation),
         reviewProfile: currentChallenge.data.reviewProfile,
+        challengePacket: currentChallenge.data.challengePacket,
       }}
       diff={diff.files.length > 0 ? diff : null}
       isFetchingDiff={false}
@@ -126,6 +127,7 @@ function buildRawStage(
         devContainerRepoUrl: (content.devContainerRepoUrl as string) ?? null,
         matchExplanation: content.matchExplanation ?? null,
         reviewProfile: content.reviewProfile ?? null,
+        challengePacket: content.challengePacket ?? null,
         issueBody: content.issueBody ?? null,
       };
     }
@@ -254,9 +256,10 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
 
   // Candidate IDs for VideoInterviewStep (must be before early returns)
   const candidateIds = useMemo(() => {
-    if (!candidate?.id || !stageConfig?.stageId) return null;
-    return { candidateId: candidate.id, stageId: stageConfig.stageId };
-  }, [candidate?.id, stageConfig?.stageId]);
+    const candidateId = stageConfig?.candidateId ?? candidate?.id;
+    if (!candidateId || !stageConfig?.stageId) return null;
+    return { candidateId, stageId: stageConfig.stageId };
+  }, [candidate?.id, stageConfig?.candidateId, stageConfig?.stageId]);
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -298,7 +301,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
         <div style={{ textAlign: 'center', zIndex: 1 }}>
           <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
           <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
-            PREPARING YOUR SESSION...
+            INITIALIZING_SECURE_SESSION...
           </div>
         </div>
       </div>
@@ -329,7 +332,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e', padding: 24 }}>
         <ChromeMeshGrid />
-        <LiquidMetalCard data-testid="assessment-terminal-error" variant="mercury" style={{ maxWidth: 480, padding: 48, textAlign: 'center', zIndex: 1 }}>
+        <LiquidMetalCard variant="mercury" style={{ maxWidth: 480, padding: 48, textAlign: 'center', zIndex: 1 }}>
           <AlertCircle size={48} color="rgba(255,100,100,0.5)" style={{ marginBottom: 24 }} />
           <h2 style={{ fontSize: 24, fontWeight: 700, color: 'var(--pipe-text, #fff)', marginBottom: 16 }}>
             {isInvalid ? 'Invalid Invite Link'
@@ -362,7 +365,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
               padding: '12px 24px', background: 'var(--pipe-surface-hover)',
               border: '1px solid var(--pipe-border)', color: 'var(--pipe-text, #fff)',
               fontSize: 10, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer'
-            }}>RETRY CONNECTION</button>
+            }}>RETRY_CONNECTION</button>
           )}
         </LiquidMetalCard>
       </div>
@@ -384,7 +387,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
             padding: '12px 24px', background: 'var(--pipe-surface-hover)',
             border: '1px solid var(--pipe-border)', color: 'var(--pipe-text, #fff)',
             fontSize: 10, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer'
-          }}>RETRY CONNECTION</button>
+          }}>RETRY_CONNECTION</button>
         </LiquidMetalCard>
       </div>
     );
@@ -426,7 +429,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
         <div style={{ textAlign: 'center', zIndex: 1 }}>
           <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
           <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
-            LOADING YOUR TASK...
+            LOADING_CHALLENGE...
           </div>
         </div>
       </div>
@@ -510,7 +513,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
           padding: '10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'center',
           gap: 8, fontSize: 10, letterSpacing: '0.15em', fontWeight: 700,
           fontFamily: '"Space Mono", monospace', color: '#fbbf24',
-        }}>PREVIEW MODE — This is a preview. Responses will not be scored or saved.</div>
+        }}>PREVIEW_MODE — This is a preview. Responses will not be scored or saved.</div>
       )}
 
       {/* Inline submission error banner — shown when submit fails mid-assessment */}
@@ -536,7 +539,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
         >
           <AlertCircle size={18} color="#f87171" />
           <span style={{ fontSize: 12, color: '#f87171', fontFamily: '"Space Mono", monospace', fontWeight: 700, letterSpacing: '0.05em' }}>
-            Submission failed — {error.message}. Please try again.
+            Submission failed: {error.message}. Please try again.
           </span>
         </div>
       )}
@@ -575,7 +578,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
                   <div data-testid="review-session-loader" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
                     <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
                     <span style={{ fontSize: 10, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
-                      PREPARING YOUR REVIEW SESSION...
+                      Initializing review session...
                     </span>
                   </div>
                 ) : isReviewSessionV2 ? (

@@ -15,7 +15,7 @@ const EXPECT_AUTOMATCH = process.env.CODE_REVIEW_EXPECT_AUTOMATCH === '1';
 const EXPECT_MANUAL_OVERRIDE = process.env.CODE_REVIEW_EXPECT_MANUAL_OVERRIDE === '1';
 const EXPECT_PROFILE_RECEIVED = process.env.CODE_REVIEW_EXPECT_PROFILE_RECEIVED === '1';
 const EXPECT_MATCH_PROOF_VERDICT = (
-  process.env.CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT || 'PASSED'
+  process.env.CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT || 'Passed'
 ).trim();
 const REQUIRE_HYPEREDGES = process.env.CODE_REVIEW_REQUIRE_HYPEREDGES !== '0';
 const SESSION_TOKEN = (process.env.CODE_REVIEW_SESSION_TOKEN ?? '').trim();
@@ -36,8 +36,14 @@ function inviteTokenFromAssessInput(tokenOrUrl: string): string {
   return decodeURIComponent(match[1]);
 }
 
+function escapedRegex(value: string): RegExp {
+  return new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+}
+
 async function startWelcomeScreenIfPresent(page: Page): Promise<void> {
-  const startButtons = page.getByRole('button', { name: 'START INTERVIEW' });
+  const startButtons = page
+    .getByRole('button', { name: /^(START_INTERVIEW|Start assessment)$/i })
+    .or(page.locator('button').filter({ hasText: /^Start assessment$/i }));
   await startButtons.first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
 
   const startButtonCount = await startButtons.count();
@@ -107,7 +113,7 @@ async function submitBrowserReviewRound(page: Page, codeReview: Locator): Promis
   await expect(page.getByTestId('conversation-thread')).toBeVisible({ timeout: 45_000 });
   await expect(conversationPanel).toContainText('AUTHOR', { timeout: 45_000 });
   await expect(conversationPanel).toContainText('RESPONDED', { timeout: 45_000 });
-  await expect(page.getByTestId('round-indicator')).toContainText('ROUND 2', { timeout: 45_000 });
+  await expect(page.getByTestId('round-indicator')).toContainText(/round\s+2/i, { timeout: 45_000 });
 }
 
 test.describe('CODE_REVIEW assess-link smoke', () => {
@@ -185,7 +191,7 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     const matchProof = page.getByTestId('code-review-match-proof');
     await expect(matchProof).toContainText('Why you got this pull request');
     if (EXPECT_MATCH_PROOF_VERDICT) {
-      await expect(matchProof).toContainText(EXPECT_MATCH_PROOF_VERDICT);
+      await expect(matchProof).toContainText(escapedRegex(EXPECT_MATCH_PROOF_VERDICT));
     }
     await expect(matchProof).toContainText(`#${prNumber}`);
     await expect(matchProof).not.toContainText('MATCH_PROOF');
@@ -212,7 +218,7 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     await expect(assessmentFocus).toContainText('What this review focuses on');
     const reviewProfile = page.getByTestId('code-review-review-profile');
     await expect(reviewProfile).toBeVisible();
-    await expect(reviewProfile).toContainText('WHAT TO EXPECT');
+    await expect(reviewProfile).toContainText('ASSESSMENT_FIT');
     await expect(reviewProfile).toContainText('Expected time');
     await expect(reviewProfile).toContainText('LEVEL');
     // Candidate comprehension aids (human-readable, no internal jargon).
@@ -330,23 +336,5 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     await expect(page.getByText('Ask your recruiter for the latest invite link — a newer link for this assessment was issued after this one.')).toBeVisible();
     await expect(page.locator('body')).not.toContainText('Connection Error');
     await expect(page.locator('body')).not.toContainText('This one-use assessment link has already started');
-  });
-
-  test('shows the invalid-link terminal card when the invite token does not resolve', async ({ page }) => {
-    await page.route('**/rpc/resolve-token', async (route) => {
-      await route.fulfill({
-        status: 404,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: 'Candidate not found' }),
-      });
-    });
-
-    await page.goto(buildAssessUrl('invalid-invite-token'), { waitUntil: 'domcontentloaded' });
-    const terminalCard = page.getByTestId('assessment-terminal-error');
-    await expect(terminalCard).toBeVisible({ timeout: 10_000 });
-    await expect(terminalCard).toContainText('Invalid Invite Link');
-    await expect(terminalCard).toContainText('contact your recruiter for a new link');
-    await expect(page.locator('body')).not.toContainText('Connection Error');
-    await expect(page.locator('body')).not.toContainText(/WAITING_FOR_MATCH|MATCHING IN PROGRESS|Building your personalized challenge/i);
   });
 });

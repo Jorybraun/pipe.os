@@ -225,7 +225,8 @@ describe('SubmissionPanel', () => {
       
       fireEvent.click(screen.getByTestId('verdict-approve'));
       // Verify the verdict button is selected and shows the text
-      expect(screen.getAllByText('APPROVE').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Approve').length).toBeGreaterThan(0);
+      expect(screen.queryByText('APPROVE')).toBeNull();
     });
   });
 
@@ -356,8 +357,9 @@ describe('SubmissionPanel', () => {
       fireEvent.click(screen.getByTestId('submit-button'));
       
       await waitFor(() => {
-        expect(screen.getByText('REVIEW SUBMITTED')).toBeTruthy();
+        expect(screen.getByText('Review submitted')).toBeTruthy();
       });
+      expect(screen.queryByText('REVIEW_SUBMITTED')).toBeNull();
     });
 
     it('should show loading state during submission', async () => {
@@ -378,7 +380,8 @@ describe('SubmissionPanel', () => {
       fillReadySubmission();
       fireEvent.click(screen.getByTestId('submit-button'));
       
-      expect(screen.getByText('SUBMITTING...')).toBeTruthy();
+      expect(screen.getByText('Submitting...')).toBeTruthy();
+      expect(screen.queryByText('SUBMITTING...')).toBeNull();
     });
   });
 
@@ -465,7 +468,8 @@ describe('SubmissionPanel', () => {
         />
       );
       
-      expect(screen.getByTestId('ready-status')).toHaveTextContent('COMPLETE FORM TO CONTINUE');
+      expect(screen.getByTestId('ready-status')).toHaveTextContent('Choose a verdict and add a summary');
+      expect(screen.getByTestId('ready-status')).not.toHaveTextContent('COMPLETE_FORM_TO_CONTINUE');
     });
 
     it('should show ready status when form is complete', () => {
@@ -484,7 +488,8 @@ describe('SubmissionPanel', () => {
       fireEvent.click(screen.getByTestId('verdict-approve'));
       fireEvent.change(screen.getByTestId('summary-textarea'), { target: { value: 'Good code' } });
       
-      expect(screen.getByTestId('ready-status')).toHaveTextContent('READY TO SUBMIT');
+      expect(screen.getByTestId('ready-status')).toHaveTextContent('Ready to submit');
+      expect(screen.getByTestId('ready-status')).not.toHaveTextContent('READY_TO_SUBMIT');
     });
   });
 

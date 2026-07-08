@@ -1053,7 +1053,7 @@ test.describe('§MVP.3 — Standalone candidate sees intake before code review',
 
     await page.goto(`${APP_BASE}/assess/${textIntakeCandidate.inviteToken}`);
     await expect(page.getByText('Code Review · Review a pull request and leave feedback')).toBeVisible({ timeout: 30000 });
-    await page.getByRole('button', { name: 'START INTERVIEW' }).click();
+    await page.getByRole('button', { name: 'START_INTERVIEW' }).click();
 
     const resumeText = page.getByPlaceholder('Paste resume text, recent project notes, or a short profile summary.');
     await expect(resumeText).toBeVisible({ timeout: 30000 });
@@ -1182,7 +1182,7 @@ test.describe('§MVP.5 — Candidate opens /assess/:token for standalone code re
     // Should see intake intro — not a direct code review.
     await expect(page.getByText('UPLOAD YOUR CV · GETTING STARTED')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Profile & Resume')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'START INTERVIEW' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'START_INTERVIEW' })).toBeVisible();
 
     // Must NOT immediately show a code review diff
     const hasDiff = await page
@@ -1531,19 +1531,19 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
     });
 
     await page.goto(`${APP_BASE}/assess/${uiCandidate.inviteToken}`);
-    const startButton = page.getByRole('button', { name: 'START INTERVIEW' });
+    const startButton = page.getByRole('button', { name: 'START_INTERVIEW' });
     if (await startButton.isVisible({ timeout: 3000 }).catch(() => false)) {
       await startButton.click();
     }
 
     const codeReview = page.getByTestId('code-review-challenge');
     await expect(codeReview).toBeVisible({ timeout: 30000 });
-    await expect(codeReview).toContainText('PULL REQUEST');
+    await expect(codeReview).toContainText('PULL_REQUEST');
     await expect(codeReview).toContainText(fixture.repoFullName);
     await expect(codeReview).toContainText(`#${fixture.prNumber}`);
     await expect(codeReview).toContainText('[Wrangler] Improve deploy warn for workflows with repeated names');
     await expect(codeReview).toContainText('check-workflow-conflicts.ts');
-    await expect(page.getByTestId('conversation-panel')).toContainText('REVIEW CONVERSATION');
+    await expect(page.getByTestId('conversation-panel')).toContainText('Review conversation');
     await expect(page.getByTestId('pierre-diff-viewer')).toBeVisible({ timeout: 30000 });
     const reviewLine = codeReview
       .locator('[aria-label="Comment on diff line 5"]')
@@ -1574,8 +1574,8 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
     await expect(page.getByTestId('code-review-match-proof')).not.toContainText('agent_validated_match');
     await expect(page.getByTestId('code-review-match-validator')).toContainText('Independent verification');
     await expect(page.getByTestId('code-review-match-validator')).toContainText('deterministic');
-    await expect(page.getByTestId('code-review-match-validator')).toContainText('PASSED');
-    await expect(page.getByTestId('code-review-match-validator')).toContainText('ELIGIBLE MATCH');
+    await expect(page.getByTestId('code-review-match-validator')).toContainText('Passed');
+    await expect(page.getByTestId('code-review-match-validator')).toContainText('Eligible match');
     await expect(page.getByTestId('code-review-match-validator')).not.toContainText('eligible_match');
     await expect(page.locator('body')).not.toContainText('JOIN VIDEO');
     await expect(page.locator('body')).not.toContainText('Video Waiting Room');
@@ -2199,7 +2199,7 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await expect(detailMatch).toContainText('Source coverage');
     await expect(detailMatch).toContainText('Validator agent');
     await expect(detailMatch).toContainText('deterministic');
-    await expect(detailMatch).toContainText('PASSED');
+    await expect(detailMatch).toContainText('Passed');
     await expect(detailMatch).toContainText('source-backed demand');
     await expect(detailMatch).toContainText('Person sources');
     await expect(detailMatch).toContainText('Role sources');

@@ -259,7 +259,7 @@ export function ReviewSessionPage({
               borderRadius: 4,
             }}
           >
-            CONTINUE
+            Continue
           </button>
         </div>
       </div>
@@ -300,7 +300,7 @@ export function ReviewSessionPage({
       >
         <div style={{ padding: 24, borderBottom: `1px solid ${BRAND_BORDER}` }}>
           <div style={{ fontSize: 9, letterSpacing: '0.2em', color: BRAND_DIM, marginBottom: 12, fontFamily: LABEL_FONT }}>
-            INSTRUCTIONS
+            Instructions
           </div>
           <h3 style={{ fontSize: 14, fontWeight: 700, color: '#f4f8ff', margin: 0, marginBottom: 12, lineHeight: 1.5 }}>
             Code Review
@@ -314,7 +314,7 @@ export function ReviewSessionPage({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <GitPullRequest size={12} color="#34d399" />
             <span style={{ fontSize: 9, letterSpacing: '0.2em', color: BRAND_DIM, fontFamily: LABEL_FONT }}>
-              PULL REQUEST
+              Pull request
             </span>
           </div>
 
@@ -329,7 +329,7 @@ export function ReviewSessionPage({
           >
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 8, letterSpacing: '0.16em', color: BRAND_DIM, fontFamily: LABEL_FONT, marginBottom: 4 }}>
-                REPOSITORY
+                Repository
               </div>
               {pr.repoUrl ? (
                 <a
@@ -350,7 +350,7 @@ export function ReviewSessionPage({
             {pr.prNumber != null && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                 <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: '0.15em', padding: '3px 8px', background: 'rgba(52, 211, 153, 0.1)', border: '1px solid rgba(52, 211, 153, 0.2)', color: '#34d399', borderRadius: 4, fontFamily: LABEL_FONT }}>
-                  OPEN
+                  Open
                 </span>
                 {prUrl ? (
                   <a
@@ -443,7 +443,7 @@ export function ReviewSessionPage({
               fontFamily: LABEL_FONT,
             }}
           >
-            Something went wrong: {error}
+            Error: {error}
           </div>
         )}
         {pr.reviewProfile && (
@@ -463,7 +463,7 @@ export function ReviewSessionPage({
                 fontFamily: BODY_FONT,
               }}
             >
-              You may use AI tools during this review. Any AI use captured in this workspace is recorded transparently alongside your submission — nothing beyond that record is assumed either way.
+              Your use of AI tools during this review is captured transparently — unobserved AI use is treated as unobserved, not absent.
             </p>
           </div>
         )}
@@ -491,7 +491,7 @@ export function ReviewSessionPage({
                 fontFamily: LABEL_FONT,
               }}
             >
-              PREPARING YOUR REVIEW SESSION...
+              Initializing review session...
             </span>
           </div>
         )}

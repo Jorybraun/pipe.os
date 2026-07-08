@@ -12,11 +12,11 @@
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface JwtPayload {
-  /** Subject — candidateId */
+  /** Subject — opaque candidate session handle for new sessions; legacy candidateId tokens are still accepted during rollout. */
   sub: string;
-  /** Pipeline ID (null for talent-pool / standalone candidates) */
+  /** Legacy pipeline ID (null for opaque candidate sessions). */
   pid: string | null;
-  /** Original one-use invite token this session may claim when the assessment starts. */
+  /** Legacy one-use invite token (null for opaque candidate sessions). */
   itk?: string | null;
   /** Issued at (unix seconds) */
   iat: number;
@@ -73,7 +73,7 @@ const HEADER = base64urlEncodeString(JSON.stringify({ alg: 'HS256', typ: 'JWT' }
 /**
  * Sign a JWT with HMAC-SHA256 using Web Crypto API.
  *
- * @param payload - Must contain `sub` (candidateId) and `pid` (pipelineId).
+ * @param payload - Must contain `sub` (opaque session handle or legacy candidateId) and `pid`.
  * @param secret  - HMAC signing secret (SESSION_TOKEN_SECRET env var).
  * @param ttlSeconds - Token lifetime in seconds (default: 7200 = 2 hours).
  */

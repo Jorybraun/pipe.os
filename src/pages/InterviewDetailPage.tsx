@@ -2415,7 +2415,9 @@ function hyperedgePathLabel(edges: CodeReviewMatchHyperedge[]): string {
 }
 
 function hyperedgeRelationBadge(edge: CodeReviewMatchHyperedge): string {
-  return hyperedgeHasRoleSource(edge) ? 'PERSON_ROLE_REPO' : 'CANDIDATE_REPO';
+  return hyperedgeHasRoleSource(edge)
+    ? 'Candidate, role, and repo evidence'
+    : 'Candidate and repo evidence';
 }
 
 function providerEventLabel(value: string | null | undefined): string | null {

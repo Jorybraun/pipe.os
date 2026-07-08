@@ -73,8 +73,8 @@ describe('DiffPanel', () => {
 
     it('should show correct file status badges', () => {
       render(<DiffPanel diff={mockDiff} />);
-      expect(screen.getByTestId('file-tab-0')).toHaveTextContent('MOD');
-      expect(screen.getByTestId('file-tab-1')).toHaveTextContent('NEW');
+      expect(screen.getByTestId('file-tab-0')).toHaveTextContent('Modified');
+      expect(screen.getByTestId('file-tab-1')).toHaveTextContent('New');
     });
 
     it('should display file statistics', () => {

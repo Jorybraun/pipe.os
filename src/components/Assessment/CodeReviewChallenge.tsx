@@ -90,7 +90,7 @@ export interface CodeReviewChallengeProps {
 const VERDICT_OPTIONS = [
   {
     key: 'approve' as const,
-    label: 'APPROVE',
+    label: 'Approve',
     icon: CheckCircle2,
     color: '#34d399',
     bg: 'rgba(52,211,153,0.08)',
@@ -99,7 +99,7 @@ const VERDICT_OPTIONS = [
   },
   {
     key: 'request_changes' as const,
-    label: 'REQUEST CHANGES',
+    label: 'Request changes',
     icon: XCircle,
     color: '#f87171',
     bg: 'rgba(248,113,113,0.08)',
@@ -108,7 +108,7 @@ const VERDICT_OPTIONS = [
   },
   {
     key: 'comment_only' as const,
-    label: 'COMMENT',
+    label: 'Comment only',
     icon: MessageSquare,
     color: '#fbbf24',
     bg: 'rgba(251,191,36,0.08)',
@@ -173,6 +173,14 @@ function commitLabel(commitSha: string | null): string {
   return commitSha ? commitSha.slice(0, 12) : 'Not provided';
 }
 
+function formatEnumLabel(value: string): string {
+  return value
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
 export function asCodeReviewReviewProfile(value: unknown): CodeReviewReviewProfile | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -205,7 +213,7 @@ function reviewProfileTone(profile: CodeReviewReviewProfile): {
 } {
   if (profile.difficultyBand === 'oversized') {
     return {
-      label: 'LARGER THAN TYPICAL',
+      label: 'Calibration risk',
       color: '#f87171',
       background: 'rgba(248,113,113,0.08)',
       border: 'rgba(248,113,113,0.22)',
@@ -213,14 +221,14 @@ function reviewProfileTone(profile: CodeReviewReviewProfile): {
   }
   if (profile.difficultyBand === 'advanced') {
     return {
-      label: 'ADVANCED',
+      label: 'Advanced',
       color: '#fbbf24',
       background: 'rgba(251,191,36,0.08)',
       border: 'rgba(251,191,36,0.22)',
     };
   }
   return {
-    label: profile.difficultyBand.toUpperCase(),
+    label: formatEnumLabel(profile.difficultyBand),
     color: '#34d399',
     background: 'rgba(52,211,153,0.08)',
     border: 'rgba(52,211,153,0.2)',
@@ -251,7 +259,7 @@ export function ReviewProfileCard({ profile }: { profile: CodeReviewReviewProfil
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
         <span style={{ fontSize: 8, letterSpacing: '0.16em', color: BRAND_DIM, fontFamily: LABEL_FONT }}>
-          WHAT TO EXPECT
+          Assessment fit
         </span>
         <span
           style={{
@@ -281,10 +289,10 @@ export function ReviewProfileCard({ profile }: { profile: CodeReviewReviewProfil
         </div>
         <div>
           <div style={{ fontSize: 8, color: BRAND_DIM, fontFamily: LABEL_FONT, marginBottom: 3 }}>
-            LEVEL
+            Level
           </div>
           <div style={{ fontSize: 13, color: '#f4f8ff', fontWeight: 800 }}>
-            {profile.expectedSeniority.toUpperCase()}
+            {formatEnumLabel(profile.expectedSeniority)}
           </div>
         </div>
       </div>
@@ -438,7 +446,7 @@ function CodeReviewTaskPacketCard({
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
         <div>
           <div style={{ fontSize: 8, color: BRAND_DIM, fontFamily: LABEL_FONT, marginBottom: 3 }}>
-            REPOSITORY
+            Repository
           </div>
           <div style={{ fontSize: 11, color: '#f4f8ff', fontWeight: 800, overflowWrap: 'anywhere' }}>
             {repoLabelFromUrl(repositoryUrl)}
@@ -446,7 +454,7 @@ function CodeReviewTaskPacketCard({
         </div>
         <div>
           <div style={{ fontSize: 8, color: BRAND_DIM, fontFamily: LABEL_FONT, marginBottom: 3 }}>
-            BASE COMMIT
+            Base commit
           </div>
           <div style={{ fontSize: 11, color: '#f4f8ff', fontWeight: 800, fontFamily: LABEL_FONT }}>
             {commitLabel(packet.baseCommitSha)}
@@ -463,7 +471,7 @@ function CodeReviewTaskPacketCard({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <TaskPacketList title="What a strong review covers" items={packet.successCriteria} />
         <TaskPacketList title="What to include" items={packet.expectedEvidence} />
-        <TaskPacketList title="Constraints" items={packet.constraints} />
+        <TaskPacketList title="CONSTRAINTS" items={packet.constraints} />
         <TaskPacketList title="Still being prepared" items={packet.missingFields} />
       </div>
     </div>
@@ -591,7 +599,7 @@ export function CodeReviewChallenge({
               fontFamily: LABEL_FONT,
             }}
           >
-            INSTRUCTIONS
+            Instructions
           </div>
           <h3
             style={{
@@ -636,7 +644,7 @@ export function CodeReviewChallenge({
               fontFamily: BODY_FONT,
             }}
           >
-            You may use AI tools during this review. Any AI use captured in this workspace is recorded transparently alongside your submission — nothing beyond that record is assumed either way.
+            Your use of AI tools during this review is captured transparently — unobserved AI use is treated as unobserved, not absent.
           </p>
           {challenge.githubPrDescription && (
             <p
@@ -674,7 +682,7 @@ export function CodeReviewChallenge({
                 fontFamily: LABEL_FONT,
               }}
             >
-              PULL REQUEST
+              Pull request
             </span>
           </div>
 
@@ -704,7 +712,7 @@ export function CodeReviewChallenge({
                   fontFamily: LABEL_FONT,
                 }}
               >
-                REPOSITORY
+                Repository
               </span>
               {repoUrl ? (
                 <a
@@ -745,7 +753,7 @@ export function CodeReviewChallenge({
                   fontFamily: LABEL_FONT,
                 }}
               >
-                OPEN
+                  Open
               </span>
               {prNumber != null && (prUrl ? (
                 <a
@@ -874,7 +882,7 @@ export function CodeReviewChallenge({
             }}
           >
             <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
-            <div style={{ fontSize: 10, letterSpacing: '0.15em' }}>LOADING CODE CHANGES...</div>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em' }}>Loading diff...</div>
           </div>
         )}
 
@@ -945,7 +953,7 @@ export function CodeReviewChallenge({
                 fontFamily: LABEL_FONT,
               }}
             >
-              YOUR VERDICT
+              Your verdict
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1029,7 +1037,7 @@ export function CodeReviewChallenge({
                 fontFamily: LABEL_FONT,
               }}
             >
-              YOUR SUMMARY
+              Review summary
             </div>
 
             <textarea
@@ -1061,7 +1069,7 @@ export function CodeReviewChallenge({
                 fontFamily: LABEL_FONT,
               }}
             >
-              <span>MAX 1000 CHARACTERS</span>
+              <span>Max 1000 characters</span>
               <span>
                 {summary.length} / 1000
               </span>
@@ -1079,7 +1087,7 @@ export function CodeReviewChallenge({
                 fontFamily: LABEL_FONT,
               }}
             >
-              SUBMISSION CHECKLIST
+              Submission checklist
             </div>
 
             <div
@@ -1116,7 +1124,7 @@ export function CodeReviewChallenge({
                   }}
                 >
                   {verdict
-                    ? verdict.replace('_', ' ').toUpperCase()
+                    ? verdict.replace('_', ' ')
                     : '—'}
                 </span>
               </div>
@@ -1129,7 +1137,7 @@ export function CodeReviewChallenge({
                     color: summary.trim() ? '#34d399' : 'rgba(255,255,255,0.15)',
                   }}
                 >
-                  {summary.trim() ? 'PROVIDED' : '—'}
+                  {summary.trim() ? 'Ready' : '—'}
                 </span>
               </div>
             </div>
@@ -1162,7 +1170,7 @@ export function CodeReviewChallenge({
               }}
             >
               <CheckCircle2 size={13} />
-              READY TO SUBMIT — click SUBMIT below
+              Review ready. Submit when you're done.
             </div>
           ) : (
             <div
@@ -1175,7 +1183,7 @@ export function CodeReviewChallenge({
                 fontFamily: LABEL_FONT,
               }}
             >
-              SELECT VERDICT + ADD SUMMARY TO ENABLE SUBMIT
+              Choose a verdict and add a summary to enable submit
             </div>
           )}
         </div>

@@ -45,10 +45,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - De-jargonized the candidate-facing `MatchProofPanel` (`src/components/Panels/ProblemPanel.tsx`): plain-language headings ('Why you got this pull request', 'The match in plain language', 'What this review focuses on', 'How this assignment was checked', 'Independent verification', 'Supporting evidence'), humanized evidence-node labels ('From your profile/role/repo'), and hid the graph-internal Score/Person/Repo/Role count grid and PERSON_ROLE_REPO/CANDIDATE_REPO mode badges from candidates while keeping the readable match reason and all `code-review-match-*` testids; updated `e2e/code-review-assess-smoke.unauth.spec.ts`, `e2e/standalone-code-review-mvp.spec.ts`, and `src/components/Panels/__tests__/MatchProofPanel.test.tsx` in lockstep.
 - Candidate WelcomeScreen now surfaces an `Expected time: ~N minutes` estimate via the optional `expectedTimeMinutes` prop from the review profile, and ReviewSessionPage now explains the post-submission pipeline in plain language (review scored from evidence, team reviews the report, recruiter follow-up) with co-located WelcomeScreen/ReviewSessionPage tests plus a golden-path Playwright assertion covering the new completion copy.
 
+### Fixed — Frontend type gate
+
+- Removed the unused `hyperedgeRelationBadge` helper left in `src/components/Panels/ProblemPanel.tsx` by the PR #265 merge resolution, restoring a clean `npx tsc --noEmit` on main.
+
+### Fixed — Candidate assessment security
+
+- Candidate assessment invite resolution now issues opaque server-side session handles instead of returning or signing raw candidate IDs, pipeline IDs, or invite tokens into the browser session contract.
+
 ### Fixed — Candidate ingestion
 
 - CODE_REVIEW invite creation now keeps backend-delivered `/assess/:token` links visible and copyable when no room URL exists.
 - Talent Pool readiness coverage now seeds review-profile-ready challenge packets, keeping the candidate dashboard gate aligned with the production source-backed packet contract.
+
+### Fixed — CODE_REVIEW assessment UX
+
+- Code-review match proof now accepts structured quality-gate checks and diagnostics without crashing the candidate assessment page, and renders them with candidate-safe labels.
+- Candidate code-review loading and match-validation copy now avoids protocol-style labels such as `VALIDATOR_AGENT`, `FETCHING_DIFF`, and `INITIALISING_REVIEW_SESSION`.
+- CODE_REVIEW assess-link smoke specs now assert the human-facing match proof, selection reason, assessment fit, and validation labels instead of the old internal protocol tokens.
+- Candidate code-review surfaces now use human-readable task, verdict, summary, submission, and match-proof labels instead of internal protocol tokens, and tests lock the source-backed packet and match-proof copy against leaking internal ids or source refs.
+- Talent Pool ready-assignment and standalone open-source route coverage now seed complete source-backed packet proof, keeping challenge readiness aligned with the production packet materializer.
+
+### Fixed — Candidate graph evidence
+
+- Roleless contact/candidate evidence-depth reads now aggregate same-person workspace evidence without fabricating candidate-submitted profile context from recruiter-authored invite messages.
+- Candidate living-context readiness now handles lean schemas without the legacy candidate owner column, returning an empty readiness report instead of a 500.
+
+### Fixed — Video meeting privacy
+
+- Meeting recording upload logs no longer include bearer room tokens when uploads start, fail room lookup, or are rejected for a non-host role.
+
+### Fixed — Video meeting reliability
+
+- Meeting recording processing now preserves a ready transcript with fallback analysis metadata when post-transcription meeting analysis fails, instead of marking the whole recording as failed after useful transcript evidence has already been captured.
+- Video-room dev smoke now waits for transcript readiness, fails on transcript processing failure, reports real ICE/TURN provider state, and injects a local-only structured transcript override so browser E2E validates the post-transcription path without unsupported local AI bindings.
+- Room clients can now preflight no-store TURN credential fetches because the Worker CORS policy allows the browser `Cache-Control` request header.
+
+### Fixed — Open-source assessment evaluator
+
+- Repo-task assessment evaluation now performs one bounded Workers AI attempt before producing the deterministic source-backed fallback report, preventing multi-model retry loops from burning Worker time on unparseable or timed-out evaluator responses.
 
 ### Fixed — CODE_REVIEW scoring
 
@@ -62,7 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Interview scheduling
 
 - Invite creation no longer loses the open invite modal mid-create: `SchedulingDashboard` now renders `InviteCreationModal` in its loading and error branches too, so the post-create refetch (and SSE-notification refetches) can no longer unmount the modal and silently discard the success view with the assessment/guest link. Proven by the new "keeps the open invite modal mounted while the interview list refetches" unit test in `SchedulingDashboard.test.tsx`.
-
+- Local open-source assessment containers now receive a Docker-reachable Worker callback URL, so workspace finalization can persist submitted commit evidence during app-dev smokes.
 - Open-source workspace dev smoke now accepts source-backed AI bridge traces as captured AI transparency proof instead of requiring the missing-AI-use limitation when real bridge telemetry exists.
 - Devin auth-needed smoke coverage now fails unless recruiter detail and list progress expose persisted `agent_status` evidence, protecting AI-use transparency from silently falling back to diagnostic-only proof.
 - Devin bridge `AGENT_STATUS` messages are now persisted from the real container bridge as source-backed `agent_status` evidence, so auth-needed or unavailable AI states appear in recruiter assessment progress without counting as fake agent assistance.

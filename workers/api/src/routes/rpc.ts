@@ -16,6 +16,10 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { signJwt, verifyJwt } from '../lib/jwt';
 import { candidateAuth, type CandidateVariables } from '../middleware/candidateAuth';
+import {
+  createCandidateSessionHandle,
+  resolveCandidateSessionPayload,
+} from '../lib/candidateSessionHandles';
 import { review } from './assessment/review';
 import { repo } from './assessment/repo';
 import { devContainer, devContainerProxyPublic } from './assessment/devContainer';
@@ -3047,15 +3051,19 @@ rpcPublic.post('/resolve-token', async (c) => {
     return c.json({ error: { code: 'INTERNAL_ERROR', message: 'Auth not configured.' } }, 500);
   }
 
-  // Issue JWT session token
+  // Issue an opaque JWT session token. Candidate/pipeline/invite identifiers
+  // stay server-side in D1 and are resolved by candidateAuth.
+  const sessionHandle = await createCandidateSessionHandle(c.env.DB, {
+    candidateId: candidate.id,
+    pipelineId: candidate.pipeline_id,
+    inviteToken: trimmed,
+  });
   const sessionToken = await signJwt(
-    { sub: candidate.id, pid: candidate.pipeline_id, itk: trimmed },
+    { sub: sessionHandle.id, pid: null, itk: null },
     secret,
   );
 
   return c.json({
-    id: candidate.id,
-    pipelineId: candidate.pipeline_id,
     status: candidate.status,
     name: candidate.name,
     sessionToken,
@@ -3087,11 +3095,16 @@ rpcPublic.post('/refresh-session', async (c) => {
     return c.json({ error: { code: 'UNAUTHORIZED', message: 'Invalid session token.' } }, 401);
   }
 
+  const identity = await resolveCandidateSessionPayload(c.env.DB, payload);
+  if (!identity) {
+    return c.json({ error: { code: 'UNAUTHORIZED', message: 'Invalid session token.' } }, 401);
+  }
+
   // Check candidate still exists and is not completed
   const candidate = await c.env.DB.prepare(
     `SELECT id, status FROM candidates WHERE id = ?1`,
   )
-    .bind(payload.sub)
+    .bind(identity.candidateId)
     .first<{ id: string; status: string }>();
 
   if (!candidate) {
@@ -3104,9 +3117,11 @@ rpcPublic.post('/refresh-session', async (c) => {
     }, 403);
   }
 
-  // Issue fresh JWT
+  const sessionHandle = await createCandidateSessionHandle(c.env.DB, identity);
+
+  // Issue fresh opaque JWT
   const sessionToken = await signJwt(
-    { sub: payload.sub, pid: payload.pid, itk: payload.itk ?? null },
+    { sub: sessionHandle.id, pid: null, itk: null },
     secret,
   );
 

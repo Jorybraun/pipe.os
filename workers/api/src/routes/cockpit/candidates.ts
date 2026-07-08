@@ -1556,33 +1556,43 @@ candidateOps.get('/:candidateId/living-context/evidence-depth', requireGate('liv
     });
   }
 
+  const personWorkspaceScopeSql = `SELECT wp_scope.id
+          FROM workspace_people wp_scope
+          JOIN workspace_people wp_target ON wp_target.person_id = wp_scope.person_id
+         WHERE wp_target.id = ?1
+           AND wp_scope.workspace_id = wp_target.workspace_id`;
+
   const [interactionBreakdown, assertionCount, sourceSpanCount, contextRecordCount, topConcepts] = await Promise.all([
     db.prepare(
       `SELECT interaction_type, COUNT(*) AS cnt
          FROM interactions
-        WHERE workspace_person_id = ?1
+        WHERE workspace_person_id IN (${personWorkspaceScopeSql})
         GROUP BY interaction_type
         ORDER BY cnt DESC`,
     ).bind(identity.workspacePersonId).all<{ interaction_type: string; cnt: number }>(),
     db.prepare(
-      `SELECT COUNT(*) AS cnt FROM semantic_assertions WHERE workspace_person_id = ?1`,
+      `SELECT COUNT(*) AS cnt
+         FROM semantic_assertions
+        WHERE workspace_person_id IN (${personWorkspaceScopeSql})`,
     ).bind(identity.workspacePersonId).first<{ cnt: number }>(),
     db.prepare(
       `SELECT COUNT(*) AS cnt
          FROM source_spans ss
          JOIN artifact_versions av ON av.id = ss.artifact_version_id
          JOIN artifacts a ON a.id = av.artifact_id
-        WHERE a.workspace_person_id = ?1`,
+        WHERE a.workspace_person_id IN (${personWorkspaceScopeSql})`,
     ).bind(identity.workspacePersonId).first<{ cnt: number }>(),
     db.prepare(
-      `SELECT COUNT(*) AS cnt FROM context_records WHERE workspace_person_id = ?1`,
+      `SELECT COUNT(*) AS cnt
+         FROM context_records
+        WHERE workspace_person_id IN (${personWorkspaceScopeSql})`,
     ).bind(identity.workspacePersonId).first<{ cnt: number }>(),
     db.prepare(
       `SELECT c.canonical_key, c.label, COUNT(DISTINCT ac.assertion_id) AS evidence_count
          FROM concepts c
          JOIN assertion_concepts ac ON ac.concept_id = c.id
          JOIN semantic_assertions sa ON sa.id = ac.assertion_id
-        WHERE sa.workspace_person_id = ?1
+        WHERE sa.workspace_person_id IN (${personWorkspaceScopeSql})
         GROUP BY c.id, c.canonical_key, c.label
         ORDER BY evidence_count DESC
         LIMIT 20`,

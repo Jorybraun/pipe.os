@@ -353,10 +353,10 @@ export function CandidateIntakeModal({
               fontFamily: "Space Mono",
               marginBottom: 4
             }}>
-              CANDIDATE_INTAKE_PROTOCOL
+              Candidate profile
             </div>
             <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--pipe-text, #fff)", margin: 0 }}>
-              {step === "CONFIRM" ? "INTAKE_COMPLETE" : "CREATE_NEW_CANDIDATE"}
+              {step === "CONFIRM" ? "Profile received" : "Add candidate"}
             </h2>
           </div>
           <button 
