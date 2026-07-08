@@ -5784,6 +5784,123 @@ describe('meeting room recording living-context route', () => {
     )).toBe(true);
   });
 
+  it('keeps a structured recording transcript ready when meeting analysis fails', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
+    env.AI = {
+      run: vi.fn(async () => {
+        throw new Error('analysis provider unavailable');
+      }),
+    } as unknown as Ai;
+
+    const personEmail = 'analysis-fallback@example.com';
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Analysis Fallback Person',
+        recipientEmail: personEmail,
+        title: 'Analysis fallback interview',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      meeting: { id: string; contactId: string };
+      hostToken: string;
+    };
+
+    const inviteRes = await app.request(`/meetings/${created.meeting.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: personEmail }),
+    }, env, ctx);
+    expect(inviteRes.status).toBe(200);
+
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'STARTED' }),
+    }, env, ctx);
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'RECORDING_STARTED' }),
+    }, env, ctx);
+
+    const form = new FormData();
+    form.append(
+      'recording',
+      new Blob([new Uint8Array([4, 5, 6])], { type: 'video/webm' }),
+      'recording.webm',
+    );
+    form.append(
+      'transcriptionAudio',
+      new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
+      'transcription-audio.webm',
+    );
+    form.append('speakerMetadata', JSON.stringify(defaultRecordingSpeakerMetadataForTest()));
+
+    const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
+      method: 'POST',
+      body: form,
+    }, env, ctx);
+    expect(recordingRes.status).toBe(202);
+    await waitUntilAll();
+
+    const recordingKey = `meetings/owner-1/${created.meeting.id}/recording.webm`;
+    const meetingRow = sqlite.prepare(
+      `SELECT transcript_status, transcript_summary, transcript_error,
+              transcript_json, transcript_analysis_json, recording_r2_key
+         FROM meetings
+        WHERE id = ?`,
+    ).get(created.meeting.id) as {
+      transcript_status: string;
+      transcript_summary: string;
+      transcript_error: string | null;
+      transcript_json: string;
+      transcript_analysis_json: string;
+      recording_r2_key: string;
+    };
+    expect(meetingRow).toMatchObject({
+      transcript_status: 'READY',
+      transcript_summary: 'What system did you improve? I implemented lattice replay buffers for ecommerce order recovery.',
+      transcript_error: null,
+      recording_r2_key: recordingKey,
+    });
+    expect(JSON.parse(meetingRow.transcript_analysis_json)).toMatchObject({
+      analysisStatus: 'fallback',
+      analysisError: 'analysis provider unavailable',
+      personContextMode: 'attributed',
+      semanticAssertions: [],
+    });
+    expect(JSON.parse(meetingRow.transcript_json)).toContainEqual(expect.objectContaining({
+      stable_segment_id: 'utterance-0002',
+      role: 'guest',
+      contact_id: created.meeting.contactId,
+      text: 'I implemented lattice replay buffers for ecommerce order recovery.',
+    }));
+
+    const transcriptRecord = sqlite.prepare(
+      `SELECT cr.predicate, COUNT(crss.source_span_id) AS source_count
+         FROM context_records cr
+         LEFT JOIN context_record_source_spans crss
+           ON crss.context_record_id = cr.id
+        WHERE cr.record_type = 'meeting_transcript'
+        GROUP BY cr.id, cr.predicate`,
+    ).get() as { predicate: string; source_count: number };
+    expect(transcriptRecord).toMatchObject({
+      predicate: 'preserves meeting transcript',
+      source_count: 2,
+    });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records
+        WHERE record_type = 'meeting_transcript_assertion'`,
+    ).get()).toEqual({ count: 0 });
+  });
+
   it('retries transcript processing from an existing saved room recording', async () => {
     const app = mountApp();
     const { ctx, waitUntilAll } = buildCtx();

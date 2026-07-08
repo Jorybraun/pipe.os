@@ -2,6 +2,25 @@ import { describe, expect, it, vi } from 'vitest';
 import worker from '../index';
 
 describe('worker health routes', () => {
+  it('allows room clients to preflight no-store TURN credential fetches', async () => {
+    const res = await worker.fetch(
+      new Request('http://pipe.test/api/v1/meeting-rooms/token/turn-credentials', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'http://127.0.0.1:5175',
+          'Access-Control-Request-Method': 'GET',
+          'Access-Control-Request-Headers': 'cache-control',
+        },
+      }),
+      {} as never,
+      {} as never,
+    );
+
+    expect(res.status).toBe(204);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('http://127.0.0.1:5175');
+    expect(res.headers.get('Access-Control-Allow-Headers')?.toLowerCase()).toContain('cache-control');
+  });
+
   it('serves both legacy and api-prefixed health checks', async () => {
     for (const path of ['/health', '/api/health']) {
       const res = await worker.fetch(

@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Meeting recording upload logs no longer include bearer room tokens when uploads start, fail room lookup, or are rejected for a non-host role.
 
+### Fixed — Video meeting reliability
+
+- Meeting recording processing now preserves a ready transcript with fallback analysis metadata when post-transcription meeting analysis fails, instead of marking the whole recording as failed after useful transcript evidence has already been captured.
+- Video-room dev smoke now waits for transcript readiness, fails on transcript processing failure, reports real ICE/TURN provider state, and injects a local-only structured transcript override so browser E2E validates the post-transcription path without unsupported local AI bindings.
+- Room clients can now preflight no-store TURN credential fetches because the Worker CORS policy allows the browser `Cache-Control` request header.
+
 ### Fixed — Open-source assessment evaluator
 
 - Repo-task assessment evaluation now performs one bounded Workers AI attempt before producing the deterministic source-backed fallback report, preventing multi-model retry loops from burning Worker time on unparseable or timed-out evaluator responses.
