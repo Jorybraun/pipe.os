@@ -79,7 +79,7 @@ export function StageShell({
 
           <div>
             <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 4, fontFamily: 'Space Mono' }}>
-              ASSESSMENT_STAGE
+              ASSESSMENT STAGE
             </div>
             <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--pipe-text, #fff)', margin: 0, letterSpacing: '-0.01em' }}>
               {title}
@@ -156,12 +156,12 @@ export function StageShell({
           {canAdvance ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#34d399' }}>
               <CheckCircle size={16} />
-              <span style={{ fontSize: 10, fontWeight: 700, fontFamily: 'Space Mono' }}>READY_TO_PROCEED</span>
+              <span style={{ fontSize: 10, fontWeight: 700, fontFamily: 'Space Mono' }}>READY TO PROCEED</span>
             </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255,255,255,0.2)' }}>
               <AlertCircle size={16} />
-              <span style={{ fontSize: 10, fontWeight: 700, fontFamily: 'Space Mono' }}>COMPLETE_CHALLENGE_TO_CONTINUE</span>
+              <span style={{ fontSize: 10, fontWeight: 700, fontFamily: 'Space Mono' }}>COMPLETE THIS STEP TO CONTINUE</span>
             </div>
           )}
         </div>
@@ -186,7 +186,7 @@ export function StageShell({
             transition: 'all 0.2s'
           }}
         >
-          {isSubmitting ? 'UPLOADING...' : isLastChallenge ? 'FINAL_SUBMIT' : 'NEXT_CHALLENGE'}
+          {isSubmitting ? 'SUBMITTING...' : isLastChallenge ? 'SUBMIT' : 'NEXT'}
           <ChevronRight size={16} />
         </button>
       </footer>}

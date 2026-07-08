@@ -356,7 +356,7 @@ describe('SubmissionPanel', () => {
       fireEvent.click(screen.getByTestId('submit-button'));
       
       await waitFor(() => {
-        expect(screen.getByText('REVIEW_SUBMITTED')).toBeTruthy();
+        expect(screen.getByText('REVIEW SUBMITTED')).toBeTruthy();
       });
     });
 
@@ -465,7 +465,7 @@ describe('SubmissionPanel', () => {
         />
       );
       
-      expect(screen.getByTestId('ready-status')).toHaveTextContent('COMPLETE_FORM_TO_CONTINUE');
+      expect(screen.getByTestId('ready-status')).toHaveTextContent('COMPLETE FORM TO CONTINUE');
     });
 
     it('should show ready status when form is complete', () => {
@@ -484,7 +484,7 @@ describe('SubmissionPanel', () => {
       fireEvent.click(screen.getByTestId('verdict-approve'));
       fireEvent.change(screen.getByTestId('summary-textarea'), { target: { value: 'Good code' } });
       
-      expect(screen.getByTestId('ready-status')).toHaveTextContent('READY_TO_SUBMIT');
+      expect(screen.getByTestId('ready-status')).toHaveTextContent('READY TO SUBMIT');
     });
   });
 

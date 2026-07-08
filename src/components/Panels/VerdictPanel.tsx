@@ -38,7 +38,7 @@ const VERDICT_OPTIONS = [
   },
   {
     key: 'request_changes' as const,
-    label: 'REQUEST_CHANGES',
+    label: 'REQUEST CHANGES',
     icon: XCircle,
     color: '#f87171',
     bg: 'rgba(248,113,113,0.08)',
@@ -92,7 +92,7 @@ export function VerdictPanel({
         {/* Verdict */}
         <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)' }}>
           <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 16 }}>
-            REVIEW_VERDICT
+            YOUR VERDICT
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {VERDICT_OPTIONS.map((opt) => {
@@ -135,7 +135,7 @@ export function VerdictPanel({
         {/* Summary */}
         <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)', display: 'flex', flexDirection: 'column' }}>
           <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12 }}>
-            REVIEW_SUMMARY
+            YOUR SUMMARY
           </div>
           <textarea
             value={localSummary}
@@ -164,7 +164,7 @@ export function VerdictPanel({
         {/* Stats */}
         <div style={{ padding: 24 }}>
           <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12 }}>
-            SUBMISSION_STATS
+            SUBMISSION CHECKLIST
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--pipe-surface)', border: '1px solid var(--pipe-border)', borderRadius: 4 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -198,7 +198,7 @@ export function VerdictPanel({
             borderRadius: 4, fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', color: '#34d399',
           }}>
             <CheckCircle2 size={13} />
-            REVIEW_READY — click SUBMIT below
+            READY TO SUBMIT — click SUBMIT below
           </div>
         ) : (
           <div style={{ padding: '10px 16px', fontSize: 9, color: 'var(--pipe-text-dim)', textAlign: 'center', letterSpacing: '0.08em' }}>

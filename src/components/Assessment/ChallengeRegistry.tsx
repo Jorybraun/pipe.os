@@ -289,7 +289,7 @@ export function ChallengeRegistry({
               fontFamily: '"Space Mono", monospace',
             }}
           >
-            GENERATING_QUESTIONS...
+            PREPARING QUESTIONS...
           </div>
         </div>
       );
@@ -367,7 +367,7 @@ export function ChallengeRegistry({
   if (challenge.type === 'WAITING_FOR_MATCH') {
     return (
       <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', fontSize: 11 }}>
-        WAITING_FOR_MATCH_RENDERED_AT_PAGE_LEVEL
+        Your review is being prepared.
       </div>
     );
   }

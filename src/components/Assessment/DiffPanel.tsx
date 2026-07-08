@@ -264,7 +264,7 @@ export function DiffPanel({
         data-testid="view-mode-longform"
       >
         <AlignJustify size={11} />
-        LONG_FORM
+        LONG FORM
       </button>
     </div>
   );

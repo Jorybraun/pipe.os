@@ -314,7 +314,7 @@ export function ReviewSessionPage({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <GitPullRequest size={12} color="#34d399" />
             <span style={{ fontSize: 9, letterSpacing: '0.2em', color: BRAND_DIM, fontFamily: LABEL_FONT }}>
-              PULL_REQUEST
+              PULL REQUEST
             </span>
           </div>
 
@@ -443,7 +443,7 @@ export function ReviewSessionPage({
               fontFamily: LABEL_FONT,
             }}
           >
-            ERROR: {error}
+            Something went wrong: {error}
           </div>
         )}
         {pr.reviewProfile && (
@@ -463,7 +463,7 @@ export function ReviewSessionPage({
                 fontFamily: BODY_FONT,
               }}
             >
-              Your use of AI tools during this review is captured transparently — unobserved AI use is treated as unobserved, not absent.
+              You may use AI tools during this review. Any AI use captured in this workspace is recorded transparently alongside your submission — nothing beyond that record is assumed either way.
             </p>
           </div>
         )}
@@ -491,7 +491,7 @@ export function ReviewSessionPage({
                 fontFamily: LABEL_FONT,
               }}
             >
-              INITIALISING_REVIEW_SESSION...
+              PREPARING YOUR REVIEW SESSION...
             </span>
           </div>
         )}

@@ -60,7 +60,7 @@ vi.mock('../components/Assessment/WelcomeScreen', () => ({
       {challenges.map((challenge) => <div key={challenge.title}>{challenge.title}</div>)}
       {startError && <div role="alert">{startError}</div>}
       <button data-testid="start-interview-btn" disabled={isStarting} onClick={onStart}>
-        {isStarting ? 'STARTING...' : 'START_INTERVIEW'}
+        {isStarting ? 'STARTING...' : 'START INTERVIEW'}
       </button>
     </div>
   ),
@@ -111,7 +111,7 @@ describe('CandidateAssessmentPage', () => {
     expect(screen.getByRole('heading', { name: 'Assessment Already Started' })).toBeInTheDocument();
     expect(screen.getByText('This one-use assessment link has already started. Please contact your recruiter if you need a fresh link.')).toBeInTheDocument();
     expect(screen.queryByText('Link Already Used')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'RETRY_CONNECTION' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'RETRY CONNECTION' })).not.toBeInTheDocument();
   });
 
   it('requires an explicit start before claiming a fresh direct code-review assessment', async () => {

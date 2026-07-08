@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — CODE_REVIEW candidate jargon sweep
+
+- Removed the remaining internal SCREAMING_SNAKE labels from candidate-facing code review surfaces: `ASSESSMENT_FIT` → `WHAT TO EXPECT`, `CALIBRATION_RISK` → `LARGER THAN TYPICAL`, `PULL_REQUEST` → `PULL REQUEST`, `BASE_COMMIT`/`REVIEW_VERDICT`/`REVIEW_SUMMARY`/`SUBMISSION_STATS`/`REVIEW_READY`/`FETCHING_DIFF` → plain labels (`CodeReviewChallenge`, `VerdictPanel`, `ConversationPanel`, `SubmissionPanel`, `ReviewSessionPage`, `ProblemPanel`, `DiffPanel`, `PierreDiffViewer`, `DiffReviewCanvas`, `ReviewLeftPanel`).
+- Candidate flow chrome now reads as product copy instead of enum codes: welcome button `START INTERVIEW`, stage header `ASSESSMENT STAGE`, footer `SUBMIT`/`NEXT`/`READY TO PROCEED`, loaders `PREPARING YOUR SESSION…`/`LOADING YOUR TASK…`/`PREPARING YOUR REVIEW SESSION…`, retry button `RETRY CONNECTION`, inline `Submission failed — …` (`StageShell`, `CandidateAssessmentPage`, `WelcomeScreen`), and the intake stage drops `CANDIDATE_INTAKE_PROTOCOL`/`INTAKE_STATUS` for `GETTING STARTED`/`STATUS`.
+- Replaced the latent candidate-visible `WAITING_FOR_MATCH_RENDERED_AT_PAGE_LEVEL` guard string in `ChallengeRegistry` with candidate-safe copy, and reworded the candidate AI-use note so it explains transparent capture without circular phrasing (kept the asserted `AI tools` copy).
+- Added an `assessment-terminal-error` testid to the terminal invite-error card (via an optional `data-testid` passthrough on `LiquidMetalCard`) plus a mocked invalid-link Playwright scenario, so the 404 terminal state (`Invalid Invite Link`) is provable alongside the stale-link card.
+- Updated every asserting spec in lockstep: `e2e/code-review-assess-smoke.unauth.spec.ts`, `e2e/standalone-code-review-mvp.spec.ts`, `e2e/code-review-recruiter-detail-smoke.spec.ts`, `e2e/multi-turn-e2e.spec.ts`, `e2e/candidate-assessment.spec.ts`, `src/pages/InterviewDetailPage.test.tsx`, `src/pages/CandidateAssessmentPage.test.tsx`, `src/components/Assessment/__tests__/SubmissionPanel.test.tsx`.
+- Added `docs/plans/acceptance-code-review-experience.md`, the Playwright acceptance checklist mapping the candidate <30s / recruiter <60s criteria, state coverage, and hard-rule negative assertions to executable specs and smoke lanes.
+
 ### Added — CODE_REVIEW challenge surface copy pass
 
 - De-jargonized the candidate CODE_REVIEW challenge surface by replacing seven internal packet and empty-state tokens with human copy, adding an expected-time hint, a strong-review checklist, and an AI-use transparency note on the challenge screen.

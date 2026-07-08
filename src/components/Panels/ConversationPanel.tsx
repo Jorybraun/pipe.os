@@ -96,7 +96,7 @@ const VERDICT_OPTIONS: Array<{ key: ReviewVerdict; label: string; description: s
   },
   {
     key: 'request_changes',
-    label: 'REQUEST_CHANGES',
+    label: 'REQUEST CHANGES',
     description: 'Changes needed before merge',
     icon: XCircle,
     color: '#f87171',
@@ -268,7 +268,7 @@ function CodeChangeBlock({ code }: { code: string }): JSX.Element {
       >
         <Code2 size={10} color="#34d399" />
         <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.1em', color: '#34d399', fontFamily: '"Space Mono", monospace' }}>
-          UPDATED_CODE
+          UPDATED CODE
         </span>
         <span style={{ fontSize: 8, color: 'rgba(52,211,153,0.5)', fontFamily: '"Space Mono", monospace' }}>
           {lines.length} lines
@@ -696,7 +696,7 @@ export function ConversationPanel({
         }}
       >
         <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontWeight: 700 }}>
-          REVIEW_CONVERSATION
+          REVIEW CONVERSATION
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {hasUnread && (
@@ -764,7 +764,7 @@ export function ConversationPanel({
               }}
             >
               <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12, fontWeight: 700 }}>
-                REVIEW_VERDICT
+                YOUR VERDICT
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {VERDICT_OPTIONS.map((opt) => {
@@ -813,7 +813,7 @@ export function ConversationPanel({
               }}
             >
               <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 10, fontWeight: 700 }}>
-                REVIEW_SUMMARY
+                YOUR SUMMARY
               </div>
               <textarea
                 data-testid="verdict-summary"
@@ -912,7 +912,7 @@ export function ConversationPanel({
             {submitLabel === 'SUBMIT_VERDICT' && isVerdictReady && <CheckCircle2 size={12} />}
             {submitLabel === 'SUBMIT_REVIEW' && <ChevronRight size={12} />}
             {submitLabel === 'SUBMIT_RESPONSE' && <ChevronRight size={12} />}
-            {submitLabel}
+            {submitLabel.replace(/_/g, ' ')}
           </button>
         ) : (
           <div

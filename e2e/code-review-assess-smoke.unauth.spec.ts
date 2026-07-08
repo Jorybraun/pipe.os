@@ -37,7 +37,7 @@ function inviteTokenFromAssessInput(tokenOrUrl: string): string {
 }
 
 async function startWelcomeScreenIfPresent(page: Page): Promise<void> {
-  const startButtons = page.getByRole('button', { name: 'START_INTERVIEW' });
+  const startButtons = page.getByRole('button', { name: 'START INTERVIEW' });
   await startButtons.first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
 
   const startButtonCount = await startButtons.count();
@@ -212,7 +212,7 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     await expect(assessmentFocus).toContainText('What this review focuses on');
     const reviewProfile = page.getByTestId('code-review-review-profile');
     await expect(reviewProfile).toBeVisible();
-    await expect(reviewProfile).toContainText('ASSESSMENT_FIT');
+    await expect(reviewProfile).toContainText('WHAT TO EXPECT');
     await expect(reviewProfile).toContainText('Expected time');
     await expect(reviewProfile).toContainText('LEVEL');
     // Candidate comprehension aids (human-readable, no internal jargon).
@@ -330,5 +330,23 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     await expect(page.getByText('Ask your recruiter for the latest invite link — a newer link for this assessment was issued after this one.')).toBeVisible();
     await expect(page.locator('body')).not.toContainText('Connection Error');
     await expect(page.locator('body')).not.toContainText('This one-use assessment link has already started');
+  });
+
+  test('shows the invalid-link terminal card when the invite token does not resolve', async ({ page }) => {
+    await page.route('**/rpc/resolve-token', async (route) => {
+      await route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Candidate not found' }),
+      });
+    });
+
+    await page.goto(buildAssessUrl('invalid-invite-token'), { waitUntil: 'domcontentloaded' });
+    const terminalCard = page.getByTestId('assessment-terminal-error');
+    await expect(terminalCard).toBeVisible({ timeout: 10_000 });
+    await expect(terminalCard).toContainText('Invalid Invite Link');
+    await expect(terminalCard).toContainText('contact your recruiter for a new link');
+    await expect(page.locator('body')).not.toContainText('Connection Error');
+    await expect(page.locator('body')).not.toContainText(/WAITING_FOR_MATCH|MATCHING IN PROGRESS|Building your personalized challenge/i);
   });
 });

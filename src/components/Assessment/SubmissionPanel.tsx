@@ -117,7 +117,7 @@ export function SubmissionPanel({
     },
     {
       key: 'request_changes' as const,
-      label: 'REQUEST_CHANGES',
+      label: 'REQUEST CHANGES',
       icon: XCircle,
       color: '#f87171',
       bg: 'rgba(248,113,113,0.08)',
@@ -179,7 +179,7 @@ export function SubmissionPanel({
             textAlign: 'center',
             letterSpacing: '0.05em',
           }}>
-            REVIEW_SUBMITTED
+            REVIEW SUBMITTED
           </h3>
           <p style={{
             fontSize: 11,
@@ -215,7 +215,7 @@ export function SubmissionPanel({
               marginBottom: 4,
               letterSpacing: '0.1em',
             }}>
-              SUBMISSION_FAILED
+              SUBMISSION FAILED
             </h4>
             <p style={{
               fontSize: 11,
@@ -253,7 +253,7 @@ export function SubmissionPanel({
           {/* Verdict */}
           <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)' }}>
             <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 16 }}>
-              REVIEW_VERDICT
+              YOUR VERDICT
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -309,7 +309,7 @@ export function SubmissionPanel({
           {/* Summary */}
           <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)', flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12 }}>
-              REVIEW_SUMMARY
+              YOUR SUMMARY
             </div>
 
             <textarea
@@ -354,7 +354,7 @@ export function SubmissionPanel({
           {/* Stats */}
           <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)' }}>
             <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12 }}>
-              SUBMISSION_STATS
+              SUBMISSION CHECKLIST
             </div>
 
             <div style={{
@@ -415,7 +415,7 @@ export function SubmissionPanel({
             ) : (
               <AlertTriangle size={14} />
             )}
-            {isReady ? 'READY_TO_SUBMIT' : 'COMPLETE_FORM_TO_CONTINUE'}
+            {isReady ? 'READY TO SUBMIT' : 'COMPLETE FORM TO CONTINUE'}
           </div>
         </div>
       )}
@@ -459,7 +459,7 @@ export function SubmissionPanel({
               </>
             ) : (
               <>
-                SUBMIT_REVIEW
+                SUBMIT REVIEW
                 <Send size={14} />
               </>
             )}

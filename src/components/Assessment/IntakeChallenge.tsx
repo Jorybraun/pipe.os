@@ -167,7 +167,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
                 marginBottom: 12,
               }}
             >
-              CANDIDATE_INTAKE_PROTOCOL
+              GETTING STARTED
             </div>
             <h2
               style={{
@@ -177,7 +177,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
                 margin: '0 0 8px 0',
               }}
             >
-              INTAKE_COMPLETE
+              PROFILE RECEIVED
             </h2>
           </div>
 
@@ -222,7 +222,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
             }}
           >
             <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginBottom: 4 }}>
-              <Mail size={10} style={{ marginRight: 6, display: 'inline' }} /> INTAKE_STATUS
+              <Mail size={10} style={{ marginRight: 6, display: 'inline' }} /> STATUS
             </div>
             <div style={{ fontSize: 12, color: '#34d399', fontFamily: 'Space Mono' }}>
               ✓ Your profile has been received
@@ -270,7 +270,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
               marginBottom: 12,
             }}
           >
-            CANDIDATE_INTAKE_PROTOCOL
+            GETTING STARTED
           </div>
           <h2
             style={{
@@ -550,7 +550,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
           {isSubmitting ? (
             <>
               <Loader2 size={16} className="animate-spin" />
-              BUILDING_PROFILE...
+              BUILDING PROFILE...
             </>
           ) : (
             <>

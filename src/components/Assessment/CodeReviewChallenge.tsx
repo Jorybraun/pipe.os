@@ -99,7 +99,7 @@ const VERDICT_OPTIONS = [
   },
   {
     key: 'request_changes' as const,
-    label: 'REQUEST_CHANGES',
+    label: 'REQUEST CHANGES',
     icon: XCircle,
     color: '#f87171',
     bg: 'rgba(248,113,113,0.08)',
@@ -205,7 +205,7 @@ function reviewProfileTone(profile: CodeReviewReviewProfile): {
 } {
   if (profile.difficultyBand === 'oversized') {
     return {
-      label: 'CALIBRATION_RISK',
+      label: 'LARGER THAN TYPICAL',
       color: '#f87171',
       background: 'rgba(248,113,113,0.08)',
       border: 'rgba(248,113,113,0.22)',
@@ -251,7 +251,7 @@ export function ReviewProfileCard({ profile }: { profile: CodeReviewReviewProfil
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
         <span style={{ fontSize: 8, letterSpacing: '0.16em', color: BRAND_DIM, fontFamily: LABEL_FONT }}>
-          ASSESSMENT_FIT
+          WHAT TO EXPECT
         </span>
         <span
           style={{
@@ -446,7 +446,7 @@ function CodeReviewTaskPacketCard({
         </div>
         <div>
           <div style={{ fontSize: 8, color: BRAND_DIM, fontFamily: LABEL_FONT, marginBottom: 3 }}>
-            BASE_COMMIT
+            BASE COMMIT
           </div>
           <div style={{ fontSize: 11, color: '#f4f8ff', fontWeight: 800, fontFamily: LABEL_FONT }}>
             {commitLabel(packet.baseCommitSha)}
@@ -463,7 +463,7 @@ function CodeReviewTaskPacketCard({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <TaskPacketList title="What a strong review covers" items={packet.successCriteria} />
         <TaskPacketList title="What to include" items={packet.expectedEvidence} />
-        <TaskPacketList title="CONSTRAINTS" items={packet.constraints} />
+        <TaskPacketList title="Constraints" items={packet.constraints} />
         <TaskPacketList title="Still being prepared" items={packet.missingFields} />
       </div>
     </div>
@@ -636,7 +636,7 @@ export function CodeReviewChallenge({
               fontFamily: BODY_FONT,
             }}
           >
-            Your use of AI tools during this review is captured transparently — unobserved AI use is treated as unobserved, not absent.
+            You may use AI tools during this review. Any AI use captured in this workspace is recorded transparently alongside your submission — nothing beyond that record is assumed either way.
           </p>
           {challenge.githubPrDescription && (
             <p
@@ -674,7 +674,7 @@ export function CodeReviewChallenge({
                 fontFamily: LABEL_FONT,
               }}
             >
-              PULL_REQUEST
+              PULL REQUEST
             </span>
           </div>
 
@@ -874,7 +874,7 @@ export function CodeReviewChallenge({
             }}
           >
             <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
-            <div style={{ fontSize: 10, letterSpacing: '0.15em' }}>FETCHING_DIFF...</div>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em' }}>LOADING CODE CHANGES...</div>
           </div>
         )}
 
@@ -945,7 +945,7 @@ export function CodeReviewChallenge({
                 fontFamily: LABEL_FONT,
               }}
             >
-              REVIEW_VERDICT
+              YOUR VERDICT
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1029,7 +1029,7 @@ export function CodeReviewChallenge({
                 fontFamily: LABEL_FONT,
               }}
             >
-              REVIEW_SUMMARY
+              YOUR SUMMARY
             </div>
 
             <textarea
@@ -1079,7 +1079,7 @@ export function CodeReviewChallenge({
                 fontFamily: LABEL_FONT,
               }}
             >
-              SUBMISSION_STATS
+              SUBMISSION CHECKLIST
             </div>
 
             <div
@@ -1162,7 +1162,7 @@ export function CodeReviewChallenge({
               }}
             >
               <CheckCircle2 size={13} />
-              REVIEW_READY — click SUBMIT below
+              READY TO SUBMIT — click SUBMIT below
             </div>
           ) : (
             <div

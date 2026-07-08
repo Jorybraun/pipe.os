@@ -728,7 +728,7 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
   const hasSourceBridge = Boolean(roleSource || candidateSource || repoSource);
   const checks = matchExplanation.qualityGate?.checks ?? [];
   const diagnostics = matchExplanation.qualityGate?.diagnostics ?? [];
-  const verdict = matchExplanation.qualityGate?.verdict ?? matchExplanation.status ?? 'SOURCE_BACKED';
+  const verdict = matchExplanation.qualityGate?.verdict ?? matchExplanation.status ?? 'SOURCE-BACKED';
   const validatorAgent = matchExplanation.validatorAgent;
   const validatorChecks = validatorAgent?.checks ?? [];
   const assessmentQuality = matchExplanation.assessmentQuality;
@@ -1013,7 +1013,7 @@ export function ProblemPanel({
       {prDescription && (
         <div style={{ marginBottom: 40, padding: 24, background: 'rgba(96, 165, 250, 0.05)', border: '1px solid rgba(96, 165, 250, 0.1)', borderRadius: 8 }}>
           <div style={{ fontSize: 9, letterSpacing: '0.1em', color: '#60a5fa', marginBottom: 12, fontFamily: 'Space Mono', fontWeight: 700 }}>
-            PULL_REQUEST_DESCRIPTION
+            ABOUT THIS PULL REQUEST
           </div>
           <div style={{ maxWidth: 'none', fontSize: 14 }}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -1027,7 +1027,7 @@ export function ProblemPanel({
       {issueBody && (issueBody.title || issueBody.body) && (
         <div style={{ marginBottom: 40, padding: 24, background: 'rgba(74, 222, 128, 0.05)', border: '1px solid rgba(74, 222, 128, 0.12)', borderRadius: 8 }}>
           <div style={{ fontSize: 9, letterSpacing: '0.1em', color: '#4ade80', marginBottom: 12, fontFamily: 'Space Mono', fontWeight: 700 }}>
-            OPEN_SOURCE_ISSUE
+            LINKED ISSUE
           </div>
           {issueBody.title && (
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12, fontFamily: 'Space Mono' }}>

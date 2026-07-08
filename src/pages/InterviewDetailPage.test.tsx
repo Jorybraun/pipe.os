@@ -4907,7 +4907,7 @@ describe('InterviewDetailPage', () => {
     expect(personContextSection?.style.order).toBe('40');
 
     const reviewProfile = screen.getByTestId('code-review-review-profile');
-    expect(reviewProfile).toHaveTextContent('ASSESSMENT_FIT');
+    expect(reviewProfile).toHaveTextContent('WHAT TO EXPECT');
     expect(reviewProfile).toHaveTextContent('ADVANCED');
     expect(reviewProfile).toHaveTextContent('STAFF');
     expect(reviewProfile).toHaveTextContent('75 min');
@@ -5218,7 +5218,7 @@ describe('InterviewDetailPage', () => {
 
     await flushAsyncUpdates();
     const reviewProfile = screen.getByTestId('code-review-review-profile');
-    expect(reviewProfile).toHaveTextContent('ASSESSMENT_FIT');
+    expect(reviewProfile).toHaveTextContent('WHAT TO EXPECT');
     expect(reviewProfile).toHaveTextContent('ADVANCED');
     expect(reviewProfile).toHaveTextContent('STAFF');
     expect(reviewProfile).toHaveTextContent('75 min');

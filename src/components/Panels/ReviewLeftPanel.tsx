@@ -40,7 +40,7 @@ function ConnectedBrief(): JSX.Element {
           borderRadius: 8,
         }}>
           <div style={{ fontSize: 9, letterSpacing: '0.15em', color: '#60a5fa', marginBottom: 8, fontFamily: "'Space Mono', monospace" }}>
-            PR_DESCRIPTION
+            PR DESCRIPTION
           </div>
           <div style={{ whiteSpace: 'pre-wrap' }}>{prDescription}</div>
         </div>

@@ -183,7 +183,7 @@ function basicAuthHeader(credentials: { username: string; password: string } | u
 }
 
 async function startCandidateAssessmentIfPresent(page: Page): Promise<void> {
-  const startButtons = page.getByRole('button', { name: 'START_INTERVIEW' });
+  const startButtons = page.getByRole('button', { name: 'START INTERVIEW' });
   await startButtons.first().waitFor({ state: 'visible', timeout: 8_000 }).catch(() => undefined);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const count = await startButtons.count();
