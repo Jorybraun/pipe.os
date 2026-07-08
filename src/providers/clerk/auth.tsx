@@ -20,7 +20,6 @@ import { useEffect, useState } from 'react';
 import {
   Show,
   SignInButton,
-  useUser,
   useAuth as useClerkAuthHook,
   useClerk,
 } from '@clerk/react';
@@ -160,18 +159,15 @@ function ClerkSignInScreen(): JSX.Element {
  * ClerkAuthGate) so that Clerk's user state is available.
  */
 export function useClerkAuth(): AuthProvider {
-  const { isLoaded, user } = useUser();
+  const { isLoaded, userId } = useClerkAuthHook();
   const { getToken } = useClerkAuthHook();
   const { signOut: clerkSignOut } = useClerk();
 
-  const email = user?.primaryEmailAddress?.emailAddress;
-
   return {
-    currentUser: user
+    currentUser: userId
       ? {
-          userId: user.id,
-          username: email ?? user.id,
-          ...(email !== undefined ? { email } : {}),
+          userId,
+          username: userId,
         }
       : null,
     isLoading: !isLoaded,
@@ -202,7 +198,7 @@ export function useClerkAuth(): AuthProvider {
     /**
      * The current user's ID from Clerk.
      */
-    userId: user?.id ?? '',
+    userId: userId ?? '',
   };
 }
 
