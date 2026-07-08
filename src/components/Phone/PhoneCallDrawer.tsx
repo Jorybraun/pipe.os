@@ -13,7 +13,7 @@ import React, { useState, useCallback } from 'react';
 import {
   Phone, PhoneOff, Mic, MicOff, X, Loader, Delete,
 } from 'lucide-react';
-import { useAuth } from '@clerk/react';
+import { useClerkAuth } from '../../providers/clerk';
 import { useTwilioDevice } from '../../hooks/useTwilioDevice';
 import { createApiClient } from '../../lib/api/client';
 
@@ -40,7 +40,7 @@ export function PhoneCallDrawer({
   onClose,
   onCallComplete,
 }: PhoneCallDrawerProps): React.ReactElement {
-  const { getToken } = useAuth();
+  const { getToken } = useClerkAuth();
   const twilio = useTwilioDevice();
   const [view, setView] = useState<DrawerView>('pre-call');
   const [callId, setCallId] = useState<string | null>(null);

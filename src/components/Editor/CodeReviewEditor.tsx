@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useAuth as useClerkAuth } from '@clerk/react';
+import { useClerkAuth } from '../../providers/clerk';
 import { Shield, ChevronDown, Github, ExternalLink, RefreshCw, FileText, MessageSquare, GitBranch, HelpCircle, Loader, Settings } from 'lucide-react';
 import { GitHubPRFetcherV2 } from '../Assessment/GitHubPRFetcherV2';
 import { GroundTruthAnnotationEditor } from '../Assessment/GroundTruthAnnotationEditor';

@@ -13,6 +13,8 @@ function wrapper({ children }: { children: ReactNode }): JSX.Element {
     isLoading: false,
     signOut: async () => {},
     getSessionToken,
+    getToken: async () => 'test-token',
+    userId: 'user_1',
   };
   return createElement(PipeProviderRoot, {
     providers: {

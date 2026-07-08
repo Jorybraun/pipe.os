@@ -53,7 +53,7 @@ const AiUsagePage = lazy(() => import("./pages/admin/AiUsagePage"));
 import { ArrowLeft, Plus, LogOut, Loader2 } from "lucide-react";
 import Logo from "./components/ui/Logo";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
-import { useAuth as useClerkAuth } from "@clerk/react";
+import { useClerkAuth } from "./providers/clerk";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { RecruiterCallDrawer } from "./components/Video/RecruiterCallDrawer";
 import { SidebarPortalProvider } from "./contexts/SidebarPortalContext";

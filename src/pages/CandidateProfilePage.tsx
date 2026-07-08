@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useAuth as useClerkAuth } from "@clerk/react";
+import { useClerkAuth } from "../providers/clerk";
 import {
   Calendar,
   FileDown,

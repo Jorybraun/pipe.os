@@ -15,7 +15,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import { useAuth as useClerkAuth } from '@clerk/react';
+import { useClerkAuth } from '../providers/clerk';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 

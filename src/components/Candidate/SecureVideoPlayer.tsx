@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useAuth as useClerkAuth } from '@clerk/react';
+import { useClerkAuth } from '../../providers/clerk';
 
 export function SecureVideoPlayer({ candidateId, r2Key }: { candidateId: string; r2Key: string }): JSX.Element {
   const { getToken } = useClerkAuth();

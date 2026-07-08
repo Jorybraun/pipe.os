@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useAuth } from '@clerk/react';
+import { useClerkAuth } from '../providers/clerk';
 import { createApiClient } from '../lib/api/client';
 
 type TwilioDevice = import('@twilio/voice-sdk').Device;
@@ -27,7 +27,7 @@ export interface UseTwilioDeviceReturn {
 }
 
 export function useTwilioDevice(): UseTwilioDeviceReturn {
-  const { getToken } = useAuth();
+  const { getToken } = useClerkAuth();
   const deviceRef = useRef<TwilioDevice | null>(null);
   const callRef = useRef<TwilioCall | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);

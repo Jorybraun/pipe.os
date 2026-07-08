@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth as useClerkAuth } from '@clerk/react';
+import { useClerkAuth } from '../providers/clerk';
 import { createApiClient } from '../lib/api/client';
 import type { StageDetail } from '../lib/api/types';
 import { ApiError } from '../lib/api/types';

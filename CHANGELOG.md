@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Clerk authentication context error
+
+- Fixed `useAuth can only be used within the <ClerkProvider /> component` error by ensuring all components use the local `useClerkAuth` from the providers module instead of directly importing from `@clerk/react`.
+- Updated `AuthProvider` interface to include optional `getToken` and `userId` properties to support Clerk-specific auth methods.
+- Updated all affected files: `App.tsx`, `CandidateIntakeModal.tsx`, `CodeReviewEditor.tsx`, `SecureVideoPlayer.tsx`, `PhoneCallDrawer.tsx`, `IntegrationsSettings.tsx`, `StageConfigPanel.tsx`, and all hooks using Clerk auth.
+- Updated test mocks in `useApiClient.test.ts`, `useBookingNotifications.test.ts`, `useRoomStatusNotifications.test.ts`, and `providers.test.ts` to include the new optional properties.
+
 ### Fixed — CODE_REVIEW candidate jargon sweep
 
 - Removed the remaining internal SCREAMING_SNAKE labels from candidate-facing code review surfaces: `ASSESSMENT_FIT` → `WHAT TO EXPECT`, `CALIBRATION_RISK` → `LARGER THAN TYPICAL`, `PULL_REQUEST` → `PULL REQUEST`, `BASE_COMMIT`/`REVIEW_VERDICT`/`REVIEW_SUMMARY`/`SUBMISSION_STATS`/`REVIEW_READY`/`FETCHING_DIFF` → plain labels (`CodeReviewChallenge`, `VerdictPanel`, `ConversationPanel`, `SubmissionPanel`, `ReviewSessionPage`, `ProblemPanel`, `DiffPanel`, `PierreDiffViewer`, `DiffReviewCanvas`, `ReviewLeftPanel`).

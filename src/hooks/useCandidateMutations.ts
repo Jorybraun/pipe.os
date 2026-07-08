@@ -6,7 +6,7 @@
  */
 
 import { useCallback } from 'react';
-import { useAuth as useClerkAuth } from '@clerk/react';
+import { useClerkAuth } from '../providers/clerk';
 import { createApiClient } from '../lib/api/client';
 import type { CreateCandidateResponse } from '../lib/api/types';
 import { ApiError } from '../lib/api/types';

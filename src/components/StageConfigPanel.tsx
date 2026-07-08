@@ -15,7 +15,7 @@ import { STAGE_TYPE_CONFIGS, STAGE_TYPES, type StageType } from '../lib/stageTem
 import { useStageMutations } from '../hooks/useStageMutations';
 import { useStageDetail } from '../hooks/useStageDetail';
 import { useChallengeMutations } from '../hooks/useChallengeMutations';
-import { useAuth as useClerkAuth } from '@clerk/react';
+import { useClerkAuth } from '../providers/clerk';
 
 /** Minimal shape needed to create a challenge */
 interface StagedItem {

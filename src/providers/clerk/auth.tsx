@@ -189,6 +189,20 @@ export function useClerkAuth(): AuthProvider {
         return null;
       }
     },
+    /**
+     * Synchronously get the current Clerk session token.
+     */
+    getToken: async (): Promise<string> => {
+      const token = await getToken();
+      if (!token) {
+        throw new Error('No token available');
+      }
+      return token;
+    },
+    /**
+     * The current user's ID from Clerk.
+     */
+    userId: user?.id ?? '',
   };
 }
 
@@ -240,6 +254,8 @@ export function DevProxyAuthWrapper({ children }: { children: React.ReactNode })
       isLoading: false,
       signOut: async (): Promise<void> => {},
       getSessionToken: async (): Promise<string | null> => null,
+      getToken: async (): Promise<string> => '',
+      userId: DEV_PROXY_RECRUITER_USER_ID,
     });
   }, [setAuth]);
 

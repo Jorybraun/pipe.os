@@ -31,6 +31,17 @@ export interface AuthProvider {
    * Returns null for providers that manage tokens internally (e.g. Amplify).
    */
   getSessionToken: () => Promise<string | null>;
+  /**
+   * Synchronously get the current session token.
+   * For Clerk-based auth, this calls Clerk's getToken() method.
+   * For other providers, this may return null or throw.
+   */
+  getToken: () => Promise<string>;
+  /**
+   * The current user's ID from the auth provider.
+   * For Clerk, this is the user.id. For Cognito, this is the userId.
+   */
+  userId: string;
 }
 
 // ─── Data ────────────────────────────────────────────────────────────────────
