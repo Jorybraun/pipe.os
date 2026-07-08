@@ -569,4 +569,12 @@ describe('resolveInviteCreationGuestLink', () => {
       deliveredUrl: 'https://calendly.com/pipe/interview?a1=abc',
     })).toBe('https://room-dev.hire-pipe.com/room/guest-token');
   });
+
+  it('returns delivered assessment URLs when no room URL exists', () => {
+    expect(resolveInviteCreationGuestLink({
+      meetingUrl: null,
+      schedulingUrl: null,
+      deliveredUrl: 'https://app-dev.hire-pipe.com/assess/recruiter-visible-token',
+    })).toBe('https://app-dev.hire-pipe.com/assess/recruiter-visible-token');
+  });
 });

@@ -256,9 +256,10 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
 
   // Candidate IDs for VideoInterviewStep (must be before early returns)
   const candidateIds = useMemo(() => {
-    if (!candidate?.id || !stageConfig?.stageId) return null;
-    return { candidateId: candidate.id, stageId: stageConfig.stageId };
-  }, [candidate?.id, stageConfig?.stageId]);
+    const candidateId = stageConfig?.candidateId ?? candidate?.id;
+    if (!candidateId || !stageConfig?.stageId) return null;
+    return { candidateId, stageId: stageConfig.stageId };
+  }, [candidate?.id, stageConfig?.candidateId, stageConfig?.stageId]);
 
   // ---------------------------------------------------------------------------
   // Handlers
