@@ -62,11 +62,6 @@ function hyperedgeHasRoleSource(edge: MatchEvidenceHyperedge): boolean {
   return (edge.nodes ?? []).some((node) => node.kind === 'role_source');
 }
 
-function hyperedgeRelationBadge(edge: MatchEvidenceHyperedge): string {
-  if (hyperedgeHasRoleSource(edge)) return 'Candidate, role, and repo evidence';
-  return 'Candidate and repo evidence';
-}
-
 function humanizeMatchToken(value: string | null | undefined): string {
   if (!value) return 'Check';
   return value

@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - De-jargonized the candidate-facing `MatchProofPanel` (`src/components/Panels/ProblemPanel.tsx`): plain-language headings ('Why you got this pull request', 'The match in plain language', 'What this review focuses on', 'How this assignment was checked', 'Independent verification', 'Supporting evidence'), humanized evidence-node labels ('From your profile/role/repo'), and hid the graph-internal Score/Person/Repo/Role count grid and PERSON_ROLE_REPO/CANDIDATE_REPO mode badges from candidates while keeping the readable match reason and all `code-review-match-*` testids; updated `e2e/code-review-assess-smoke.unauth.spec.ts`, `e2e/standalone-code-review-mvp.spec.ts`, and `src/components/Panels/__tests__/MatchProofPanel.test.tsx` in lockstep.
 - Candidate WelcomeScreen now surfaces an `Expected time: ~N minutes` estimate via the optional `expectedTimeMinutes` prop from the review profile, and ReviewSessionPage now explains the post-submission pipeline in plain language (review scored from evidence, team reviews the report, recruiter follow-up) with co-located WelcomeScreen/ReviewSessionPage tests plus a golden-path Playwright assertion covering the new completion copy.
 
+### Fixed — Frontend type gate
+
+- Removed the unused `hyperedgeRelationBadge` helper left in `src/components/Panels/ProblemPanel.tsx` by the PR #265 merge resolution, restoring a clean `npx tsc --noEmit` on main.
+
 ### Fixed — Candidate assessment security
 
 - Candidate assessment invite resolution now issues opaque server-side session handles instead of returning or signing raw candidate IDs, pipeline IDs, or invite tokens into the browser session contract.
