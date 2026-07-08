@@ -108,7 +108,7 @@
     "eslint-plugin-local-rules": "^3.0.2",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.6",
-    "jsdom": "^27.4.0",
+    "jsdom": "26.1.0",
     "playwright": "^1.57.0",
     "postcss": "^8.5.15",
     "storybook": "^10.1.10",

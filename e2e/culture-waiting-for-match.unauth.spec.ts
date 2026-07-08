@@ -46,13 +46,13 @@ test.describe("WAITING_FOR_MATCH gate flow", () => {
             stageTitle: "Technical Assessment",
             mode: "ASYNC",
             challenges: [
-              { type: "WAITING_FOR_MATCH", title: "Building your personalized challenge", order: 0 },
+              { type: "WAITING_FOR_MATCH", title: "Preparing your review", order: 0 },
             ],
             currentIndex: 0,
             waitingChallenge: {
               id: "waiting-for-match",
               type: "WAITING_FOR_MATCH",
-              title: "Building your personalized challenge",
+              title: "Preparing your review",
               instructions: "We are analyzing your profile to find the best open-source project match. This takes 2–3 minutes.",
               config: {
                 autoRefresh: true,
@@ -102,12 +102,12 @@ test.describe("WAITING_FOR_MATCH gate flow", () => {
     await page.goto(`${APP_BASE}/assess/${MOCK_TOKEN}`, { waitUntil: "domcontentloaded" });
 
     // Waiting screen appears
-    await expect(page.getByText(/Building your personalized challenge/i)).toBeVisible({
+    await expect(page.getByRole('heading', { name: /Analyzing your background/i })).toBeVisible({
       timeout: 10_000,
     });
 
     // Status label is visible (no fake countdown timer)
-    await expect(page.getByText(/MATCHING IN PROGRESS/i)).toBeVisible();
+    await expect(page.getByTestId('code-review-pipeline-status')).toHaveText(/Analyzing your background/i);
 
     // Wait for auto-refresh (2 second interval + buffer)
     await page.waitForTimeout(4000);
@@ -150,13 +150,13 @@ test.describe("WAITING_FOR_MATCH gate flow", () => {
             stageTitle: "Technical Assessment",
             mode: "ASYNC",
             challenges: [
-              { type: "WAITING_FOR_MATCH", title: "Building your personalized challenge", order: 0 },
+              { type: "WAITING_FOR_MATCH", title: "Preparing your review", order: 0 },
             ],
             currentIndex: 0,
             waitingChallenge: {
               id: "waiting-for-match",
               type: "WAITING_FOR_MATCH",
-              title: "Building your personalized challenge",
+              title: "Preparing your review",
               instructions: "We are analyzing your profile to find the best open-source project match. This takes 2–3 minutes.",
               config: {
                 autoRefresh: false,
@@ -203,7 +203,7 @@ test.describe("WAITING_FOR_MATCH gate flow", () => {
     await page.goto(`${APP_BASE}/assess/${MOCK_TOKEN}`, { waitUntil: "domcontentloaded" });
 
     // Waiting screen appears
-    await expect(page.getByText(/Building your personalized challenge/i)).toBeVisible({
+    await expect(page.getByRole('heading', { name: /Analyzing your background/i })).toBeVisible({
       timeout: 10_000,
     });
 

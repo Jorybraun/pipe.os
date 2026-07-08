@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useApiClient } from '../hooks/useApiClient';
 import { ApiError } from '../lib/api/types';
+import { CodeReviewAssessmentReport } from '../components/Assessment/CodeReviewAssessmentReport';
 import { asCodeReviewReviewProfile, ReviewProfileCard } from '../components/Assessment/CodeReviewChallenge';
 import {
   summarizeResolvedAssessmentAssignment,
@@ -4919,7 +4920,7 @@ export default function InterviewDetailPage(): JSX.Element {
         challengeLabel: codeReviewExplanation.selectedChallenge,
         challengeUrl: interview.githubRepoUrl && typeof interview.githubPrNumber === 'number'
           ? `${interview.githubRepoUrl.replace(/\/$/, '')}/pull/${interview.githubPrNumber}`
-          : interview.githubRepoUrl,
+          : interview.githubRepoUrl ?? null,
         narrative: codeReviewScoreDetail ?? codeReviewExplanation.whyThisChallenge,
         strengths: codeReviewScore?.strengths.slice(0, 2) ?? [],
         probes: codeReviewScore?.growthAreas.slice(0, 2) ?? codeReviewDecisionRisk.missingContext.slice(0, 2),
@@ -4937,6 +4938,77 @@ export default function InterviewDetailPage(): JSX.Element {
         })),
       }
     : null;
+  const humanDecisionFormNode: ReactNode = canRecordHumanAssessmentDecision ? (
+    <form
+      data-testid="interview-human-decision-form"
+      style={HUMAN_DECISION_FORM}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void recordHumanAssessmentDecision();
+      }}
+    >
+      <div style={FIELD_LABEL}>Human review</div>
+      <div style={ROOM_LINK_TEXT}>
+        Record the final reviewer decision after checking the source-backed report, commit, diff, and evidence trail.
+      </div>
+      <div style={HUMAN_DECISION_FORM_GRID}>
+        <label style={HUMAN_DECISION_FIELD}>
+          <span style={FIELD_LABEL}>Decision</span>
+          <select
+            value={humanDecisionValue}
+            onChange={(event) => {
+              setHumanDecisionValue(event.currentTarget.value as HumanAssessmentDecisionValue);
+              setHumanDecisionError(null);
+              setHumanDecisionNotice(null);
+            }}
+            style={WORKSPACE_INPUT}
+          >
+            {HUMAN_ASSESSMENT_DECISION_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <label style={HUMAN_DECISION_FIELD}>
+          <span style={FIELD_LABEL}>Decision summary</span>
+          <input
+            value={humanDecisionSummary}
+            onChange={(event) => {
+              setHumanDecisionSummary(event.currentTarget.value);
+              setHumanDecisionError(null);
+              setHumanDecisionNotice(null);
+            }}
+            placeholder="Why this is the right hiring decision from the evidence"
+            style={WORKSPACE_INPUT}
+          />
+        </label>
+      </div>
+      <label style={HUMAN_DECISION_FIELD}>
+        <span style={FIELD_LABEL}>Review notes</span>
+        <textarea
+          value={humanDecisionNotes}
+          onChange={(event) => {
+            setHumanDecisionNotes(event.currentTarget.value);
+            setHumanDecisionError(null);
+            setHumanDecisionNotice(null);
+          }}
+          placeholder="Optional calibration notes for the hiring team"
+          style={HUMAN_DECISION_TEXTAREA}
+        />
+      </label>
+      <div style={HUMAN_DECISION_ACTION_ROW}>
+        <button
+          type="submit"
+          disabled={isRecordingHumanDecision || humanDecisionSummary.trim().length === 0}
+          style={PRIMARY_BUTTON}
+        >
+          {isRecordingHumanDecision
+            ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+            : <CheckCircle size={14} />}
+          RECORD HUMAN DECISION
+        </button>
+      </div>
+    </form>
+  ) : null;
   const codeReviewHiringReadout = [
     {
       label: 'Decision',
@@ -5795,77 +5867,7 @@ export default function InterviewDetailPage(): JSX.Element {
                   </span>
                 </div>
               )}
-              {canRecordHumanAssessmentDecision && (
-                <form
-                  data-testid="interview-human-decision-form"
-                  style={HUMAN_DECISION_FORM}
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void recordHumanAssessmentDecision();
-                  }}
-                >
-                  <div style={FIELD_LABEL}>Human review</div>
-                  <div style={ROOM_LINK_TEXT}>
-                    Record the final reviewer decision after checking the source-backed report, commit, diff, and evidence trail.
-                  </div>
-                  <div style={HUMAN_DECISION_FORM_GRID}>
-                    <label style={HUMAN_DECISION_FIELD}>
-                      <span style={FIELD_LABEL}>Decision</span>
-                      <select
-                        value={humanDecisionValue}
-                        onChange={(event) => {
-                          setHumanDecisionValue(event.currentTarget.value as HumanAssessmentDecisionValue);
-                          setHumanDecisionError(null);
-                          setHumanDecisionNotice(null);
-                        }}
-                        style={WORKSPACE_INPUT}
-                      >
-                        {HUMAN_ASSESSMENT_DECISION_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label style={HUMAN_DECISION_FIELD}>
-                      <span style={FIELD_LABEL}>Decision summary</span>
-                      <input
-                        value={humanDecisionSummary}
-                        onChange={(event) => {
-                          setHumanDecisionSummary(event.currentTarget.value);
-                          setHumanDecisionError(null);
-                          setHumanDecisionNotice(null);
-                        }}
-                        placeholder="Why this is the right hiring decision from the evidence"
-                        style={WORKSPACE_INPUT}
-                      />
-                    </label>
-                  </div>
-                  <label style={HUMAN_DECISION_FIELD}>
-                    <span style={FIELD_LABEL}>Review notes</span>
-                    <textarea
-                      value={humanDecisionNotes}
-                      onChange={(event) => {
-                        setHumanDecisionNotes(event.currentTarget.value);
-                        setHumanDecisionError(null);
-                        setHumanDecisionNotice(null);
-                      }}
-                      placeholder="Optional calibration notes for the hiring team"
-                      style={HUMAN_DECISION_TEXTAREA}
-                    />
-                  </label>
-                  <div style={HUMAN_DECISION_ACTION_ROW}>
-                    <button
-                      type="submit"
-                      disabled={isRecordingHumanDecision || humanDecisionSummary.trim().length === 0}
-                      style={PRIMARY_BUTTON}
-                    >
-                      {isRecordingHumanDecision
-                        ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                        : <CheckCircle size={14} />}
-                      RECORD HUMAN DECISION
-                    </button>
-                  </div>
-                </form>
-              )}
+              {!selectedCodeReviewDecision && humanDecisionFormNode}
               {assessmentEvaluationClaims.length > 0 && (
                 <div
                   data-testid="interview-assessment-evaluation-claims"
@@ -6064,6 +6066,17 @@ export default function InterviewDetailPage(): JSX.Element {
       )}
 
       <main style={EVIDENCE_GRID}>
+        {selectedCodeReviewDecision && (
+          <CodeReviewAssessmentReport
+            decision={selectedCodeReviewDecision}
+            outcome={codeReviewOutcome}
+            nextStepTone={codeReviewNextStep.tone}
+            validityTone={codeReviewAssessmentValidity.tone}
+            progress={assessmentProgress}
+            defenseThreads={codeReviewSubmission?.defenseThreads ?? []}
+            decisionFormSlot={humanDecisionFormNode}
+          />
+        )}
         {isCodeReviewInterview && (codeReviewMatch || codeReviewSubmission) && (
           <Section
             title="Recruiter decision"

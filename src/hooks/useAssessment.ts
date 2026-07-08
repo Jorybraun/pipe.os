@@ -215,6 +215,13 @@ function profileReceivedMessageFromPayload(payload: unknown): string | null {
   return '';
 }
 
+function rpcErrorCodeFromPayload(payload: unknown): string | null {
+  if (!isRecord(payload)) return null;
+  const error = payload.error;
+  if (!isRecord(error) || typeof error.code !== 'string') return null;
+  return error.code;
+}
+
 function normalizeInviteToken(inviteToken: string): string {
   return inviteToken.startsWith('CLAIMED::')
     ? inviteToken.slice('CLAIMED::'.length)
@@ -264,6 +271,9 @@ async function rpcPost<T>(
     const profileReceivedMessage = profileReceivedMessageFromPayload(data);
     if (profileReceivedMessage !== null) {
       throw new ProfileReceivedHandoffError(profileReceivedMessage);
+    }
+    if (rpcErrorCodeFromPayload(data) === 'STALE_INVITE_TOKEN') {
+      throw new Error('STALE_INVITE_TOKEN');
     }
     throw new Error('TOKEN_ALREADY_CLAIMED');
   }
@@ -384,7 +394,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         return;
       }
       
-      // Handle 409 CONFLICT (token already claimed) with a user-friendly message
+      // Handle 409 CONFLICT (token already claimed or stale) with a user-friendly message
       if (error.message.includes('409') || error.message.includes('CONFLICT')) {
         const conflictError = new Error('TOKEN_ALREADY_CLAIMED');
         console.error('[useAssessment] Token already claimed:', error);

@@ -33,6 +33,13 @@ export interface WelcomeScreenProps {
   onStart: () => void | Promise<void>;
   isStarting?: boolean;
   startError?: string | null;
+  /**
+   * Expected time for the upcoming work, in minutes. When provided (and > 0)
+   * the welcome surface shows an "Expected time: ~N minutes" estimate so a
+   * first-time candidate knows the effort involved before starting. Sourced
+   * from the review profile's `expectedTimeMinutes`; callers wire it through.
+   */
+  expectedTimeMinutes?: number | null;
 }
 
 // ============================================================================
@@ -160,6 +167,7 @@ export function WelcomeScreen({
   onStart,
   isStarting = false,
   startError = null,
+  expectedTimeMinutes = null,
 }: WelcomeScreenProps): JSX.Element {
   const realChallenges = challenges.filter(
     (c) => c.type !== 'WELCOME' && c.type !== 'LIVE_VIDEO',
@@ -167,6 +175,8 @@ export function WelcomeScreen({
   const reqs = getRequirements(realChallenges);
   const totalTime = totalDuration(realChallenges);
   const challengeCount = realChallenges.length;
+  const hasExpectedTime =
+    typeof expectedTimeMinutes === 'number' && expectedTimeMinutes > 0;
 
   return (
     <div
@@ -236,6 +246,29 @@ export function WelcomeScreen({
           your own pace — your progress is saved as you go. There are no trick
           questions; we want to see how you think.
         </p>
+
+        {hasExpectedTime && (
+          <div
+            data-testid="welcome-expected-time"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              marginBottom: 28,
+              padding: '10px 14px',
+              border: '1px solid var(--pipe-border-light)',
+              borderRadius: 6,
+              background: 'var(--pipe-surface)',
+              color: 'var(--pipe-text-muted)',
+              fontSize: 12,
+              fontWeight: 700,
+              fontFamily: '"Space Mono", monospace',
+            }}
+          >
+            <Clock size={10} />
+            <span>Expected time: ~{expectedTimeMinutes} minutes</span>
+          </div>
+        )}
 
         {/* Challenge list */}
         {realChallenges.length > 0 && (
