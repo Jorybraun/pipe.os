@@ -515,8 +515,8 @@ describe('CandidateAssessmentPage', () => {
     expect(screen.queryByTestId('waiting-for-match')).not.toBeInTheDocument();
   });
 
-  it('shows a start error when a fresh direct code-review assessment cannot be claimed', async () => {
-    const claimAssessmentStart = vi.fn().mockRejectedValue(new Error('This invite link is no longer current.'));
+  it('shows a terminal stale-link card when a fresh direct code-review assessment cannot be claimed', async () => {
+    const claimAssessmentStart = vi.fn().mockRejectedValue(new Error('STALE_INVITE_TOKEN'));
     useAssessmentMock.mockReturnValue({
       candidate: {
         id: 'candidate-1',
@@ -545,9 +545,9 @@ describe('CandidateAssessmentPage', () => {
       },
       currentOrder: 0,
       isLoading: false,
-      error: null,
+      error: new Error('STALE_INVITE_TOKEN'),
       isSubmitted: false,
-      hasStarted: true,
+      hasStarted: false,
       followUpQuestions: null,
       followUpLoading: false,
       lastChallengeSubmissionId: null,
@@ -567,10 +567,9 @@ describe('CandidateAssessmentPage', () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByTestId('start-interview-btn'));
-
-    await waitFor(() => expect(claimAssessmentStart).toHaveBeenCalledTimes(1));
-    expect(await screen.findByRole('alert')).toHaveTextContent('This invite link is no longer current.');
+    expect(await screen.findByText('This link has been replaced')).toBeInTheDocument();
+    expect(screen.getByText('Ask your recruiter for the latest invite link — a newer link for this assessment was issued after this one.')).toBeInTheDocument();
     expect(screen.queryByTestId('code-review-challenge')).not.toBeInTheDocument();
+    expect(claimAssessmentStart).not.toHaveBeenCalled();
   });
 });

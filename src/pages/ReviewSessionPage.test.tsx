@@ -73,4 +73,20 @@ describe('ReviewSessionPage', () => {
     expect(screen.getByText(/respond to the implementation author/i)).toBeInTheDocument();
     expect(screen.queryByText(/AI developer/i)).not.toBeInTheDocument();
   });
+
+  it('shows completion pipeline copy when already complete', () => {
+    render(
+      <ReviewSessionPage
+        sessionId="review-session-1"
+        pr={{ diff: sampleDiff }}
+        maxRounds={4}
+        initialCompleted={true}
+        onComplete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('review-session-completion')).toBeInTheDocument();
+    expect(screen.getByText(/scored from the evidence/i)).toBeInTheDocument();
+    expect(screen.getByText(/hear back through your recruiter/i)).toBeInTheDocument();
+  });
 });

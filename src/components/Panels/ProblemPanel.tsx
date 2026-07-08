@@ -225,9 +225,16 @@ function firstHyperedgeSource(
   return null;
 }
 
+const HYPEREDGE_NODE_LABELS: Record<string, string> = {
+  person_evidence: 'From your profile',
+  role_source: 'From the role',
+  repo_challenge: 'From the repo',
+};
+
 function formatHyperedgeNodeLabel(node: MatchEvidenceHyperedgeNode): string {
-  const label = node.label ?? node.kind ?? 'Evidence';
-  return humanizeMatchToken(label);
+  const mapped = node.kind ? HYPEREDGE_NODE_LABELS[node.kind] : undefined;
+  if (mapped) return mapped;
+  return (node.label ?? node.kind ?? 'Evidence').replace(/_/g, ' ');
 }
 
 function normalizeConceptLabel(concept: string): string {
@@ -380,13 +387,8 @@ function MatchHyperedges({ hyperedges }: { hyperedges: MatchEvidenceHyperedge[] 
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
         <div style={{ fontSize: 9, letterSpacing: '0.12em', color: '#b9ddff', fontFamily: 'Space Mono', fontWeight: 700 }}>
-          Evidence bridges
+          Supporting evidence
         </div>
-        <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.48)', fontFamily: 'Space Mono' }}>
-          {visibleHyperedges.some((edge) => hyperedgeHasRoleSource(edge))
-            ? 'Candidate, role, and repo evidence'
-            : 'Candidate and repo evidence'}
-        </span>
       </div>
 
       <div style={{ display: 'grid', gap: 10 }}>
@@ -407,9 +409,6 @@ function MatchHyperedges({ hyperedges }: { hyperedges: MatchEvidenceHyperedge[] 
                   {formatMatchScore(edge.pairScore)}
                 </span>
                           )}
-                        </div>
-                        <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.42)', fontFamily: 'Space Mono', marginBottom: 8 }}>
-                          {hyperedgeRelationBadge(edge)}
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
               {(edge.nodes ?? []).map((node, nodeIndex) => (
@@ -581,12 +580,9 @@ function WhyThisPrPanel({
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
         <div style={{ fontSize: 9, letterSpacing: '0.12em', color: '#b9ddff', fontFamily: 'Space Mono', fontWeight: 700 }}>
-          Why this pull request
+          The match in plain language
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <span style={{ fontSize: 8, color: '#b9ddff', border: '1px solid rgba(185,221,255,0.18)', borderRadius: 4, padding: '3px 6px', fontFamily: 'Space Mono', fontWeight: 700 }}>
-            {mode}
-          </span>
           {quality && (
             <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.72)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4, padding: '3px 6px', fontFamily: 'Space Mono' }}>
               {quality}
@@ -608,7 +604,7 @@ function WhyThisPrPanel({
         }}
       >
         <div style={{ fontSize: 9, letterSpacing: '0.12em', color: '#6cc3ff', fontFamily: 'Space Mono', fontWeight: 700 }}>
-          Selection reason
+          Summary
         </div>
         <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.84)', lineHeight: 1.5 }}>
           {readableReason}
@@ -688,12 +684,12 @@ function AssessmentFocusPanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
           <Target size={12} color="#4ade80" />
           <div style={{ fontSize: 9, letterSpacing: '0.12em', color: '#4ade80', fontFamily: 'Space Mono', fontWeight: 700 }}>
-            Assessment focus
+            What this review focuses on
           </div>
         </div>
         {concepts.length > 0 && (
           <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.58)', fontFamily: 'Space Mono', whiteSpace: 'nowrap' }}>
-            Source topics
+            Topics
           </span>
         )}
       </div>
@@ -790,7 +786,7 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
           <Network size={15} color="#6cc3ff" />
           <div style={{ fontSize: 9, letterSpacing: '0.14em', color: '#6cc3ff', fontFamily: 'Space Mono', fontWeight: 700 }}>
-            Source-backed match
+            Why you got this pull request
           </div>
         </div>
         <div
@@ -848,7 +844,7 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: assessmentMetrics.length > 0 ? 10 : 0 }}>
             <div style={{ fontSize: 9, letterSpacing: '0.12em', color: '#b9ddff', fontFamily: 'Space Mono', fontWeight: 700 }}>
-              Assessment quality
+              How this assignment was checked
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               {assessmentQuality.verdict && (
@@ -909,7 +905,7 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: validatorAgent.rationale ? 8 : 0 }}>
             <div style={{ fontSize: 9, letterSpacing: '0.12em', color: '#6cc3ff', fontFamily: 'Space Mono', fontWeight: 700 }}>
-              Validation
+              Independent verification
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 }}>
               {validatorAgent.mode && (
@@ -952,27 +948,6 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
           )}
         </div>
       )}
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-          gap: 8,
-          marginBottom: 14,
-        }}
-      >
-        {[
-          ['Score', formatMatchScore(matchExplanation.score)],
-          ['Person', String(matchExplanation.candidateSourceCount ?? 0)],
-          ['Repo', String(matchExplanation.repoSourceCount ?? 0)],
-          ['Role', String(matchExplanation.roleSourceCount ?? 0)],
-        ].map(([label, value]) => (
-          <div key={label} style={{ padding: '8px 6px', background: 'rgba(12,12,14,0.35)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 5 }}>
-            <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Mono', marginBottom: 3 }}>{label}</div>
-            <div style={{ fontSize: 12, color: '#fff', fontFamily: 'Space Mono', fontWeight: 700 }}>{value}</div>
-          </div>
-        ))}
-      </div>
 
       {checks.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: diagnostics.length > 0 || hasSourceBridge ? 10 : 0 }}>
