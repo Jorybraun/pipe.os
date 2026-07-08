@@ -9,6 +9,7 @@
 
 import { createMiddleware } from 'hono/factory';
 import { verifyJwt } from '../lib/jwt';
+import { resolveCandidateSessionPayload } from '../lib/candidateSessionHandles';
 import type { Env } from '../types';
 
 export interface CandidateVariables {
@@ -61,9 +62,18 @@ export const candidateAuth = createMiddleware<{
     return;
   }
 
-  c.set('candidateId', payload.sub);
-  c.set('pipelineId', payload.pid);
-  c.set('inviteToken', payload.itk ?? null);
+  const identity = await resolveCandidateSessionPayload(c.env.DB, payload);
+  if (!identity) {
+    c.res = c.json(
+      { error: { code: 'UNAUTHORIZED', message: 'Invalid or expired session token.' } },
+      401,
+    );
+    return;
+  }
+
+  c.set('candidateId', identity.candidateId);
+  c.set('pipelineId', identity.pipelineId);
+  c.set('inviteToken', identity.inviteToken);
 
   await next();
 });

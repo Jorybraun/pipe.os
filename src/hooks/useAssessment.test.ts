@@ -13,8 +13,6 @@ describe('useAssessment', () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          id: 'candidate-1',
-          pipelineId: null,
           status: 'INVITED',
           name: 'Ada Candidate',
           sessionToken: 'session-token',
@@ -24,10 +22,18 @@ describe('useAssessment', () => {
 
     const { result } = renderHook(() => useAssessment('CLAIMED::invite-token'));
 
-    await waitFor(() => expect(result.current.candidate?.id).toBe('candidate-1'));
+    await waitFor(() => expect(result.current.candidate?.name).toBe('Ada Candidate'));
 
     expect(result.current.error).toBeNull();
-    expect(sessionStorage.getItem('pipe_session_invite_token')).toBe('invite-token');
+    expect(result.current.candidate).toEqual({
+      status: 'INVITED',
+      name: 'Ada Candidate',
+    });
+    expect(sessionStorage.getItem('pipe_session_invite_token')).toBeNull();
+    expect(sessionStorage.getItem('pipe_session_candidate')).toBeNull();
+    expect(JSON.stringify(sessionStorage)).not.toContain('candidate-1');
+    expect(JSON.stringify(sessionStorage)).not.toContain('pipeline-1');
+    expect(JSON.stringify(sessionStorage)).not.toContain('invite-token');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/rpc/resolve-token'),
