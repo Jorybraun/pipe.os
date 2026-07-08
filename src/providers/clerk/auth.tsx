@@ -41,14 +41,14 @@ import { DEV_PROXY_RECRUITER_USER_ID } from '../../lib/auth/devProxyAuth';
  * Drop-in replacement for <AmplifyAuthGate> in App.tsx.
  */
 export function ClerkAuthGate({ children }: { children: React.ReactNode }): JSX.Element {
-  const { isLoaded } = useClerkAuthHook();
   const [showSplash, setShowSplash] = useState(true);
   const [fadingOut, setFadingOut] = useState(false);
 
   useEffect(() => {
-    if (!isLoaded) return;
-    setFadingOut(true);
-  }, [isLoaded]);
+    // Start fading out after a short delay
+    const timer = setTimeout(() => setFadingOut(true), 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (!fadingOut) return;
@@ -60,14 +60,12 @@ export function ClerkAuthGate({ children }: { children: React.ReactNode }): JSX.
     <>
       <AppBackground />
       {showSplash && <LoadingSplash fadingOut={fadingOut} />}
-      {isLoaded && (
-        <>
-          <Show when="signed-out">
-            <ClerkSignInScreen />
-          </Show>
-          <Show when="signed-in">{children}</Show>
-        </>
-      )}
+      <>
+        <Show when="signed-out">
+          <ClerkSignInScreen />
+        </Show>
+        <Show when="signed-in">{children}</Show>
+      </>
     </>
   );
 }
