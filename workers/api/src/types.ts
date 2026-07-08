@@ -151,6 +151,14 @@ export interface Env {
   };
   /** Default top-domain sender for app transactional email. */
   OUTBOUND_EMAIL_FROM?: string;
+  /** Founder/ops inbox notified on every marketing-site waitlist signup. Alerts are skipped when unset. */
+  WAITLIST_NOTIFY_EMAIL?: string;
+  /** Public booking URL for pilot sales calls, included in the waitlist auto-reply when set. */
+  PILOT_BOOKING_URL?: string;
+  /** Workspace owner that self-serve talent-pool joins are created under. Join is disabled (503) when unset. */
+  TALENT_POOL_HOUSE_OWNER_ID?: string;
+  /** Cloudflare Turnstile secret. When set, /rpc/talent/join requires a verified turnstileToken. */
+  TURNSTILE_SECRET_KEY?: string;
   /** Optional public URL for email logo rendering. Defaults to the API asset route. */
   PUBLIC_EMAIL_LOGO_URL?: string;
   /** Public API base URL used for provider webhook callbacks. */

@@ -93,17 +93,19 @@
 		"APP_BASE_URL": "http://localhost:5173",
 		"API_BASE_URL": "http://localhost:8787",
 		"OUTBOUND_EMAIL_FROM": "no-reply@hire-pipe.com",
+		// Self-serve talent pool join (local dev): house candidates land under the dev bypass user.
+		// Production requires TALENT_POOL_HOUSE_OWNER_ID to be set explicitly or /rpc/talent/join returns 503.
+		"TALENT_POOL_HOUSE_OWNER_ID": "dev-user",
 		"DEV_CONTAINER_DEFAULT_TTL_SECONDS": "3600",
 		"DEV_CONTAINER_MAX_TTL_SECONDS": "7200",
 		"DEV_CONTAINER_WARN_BEFORE_SECONDS": "60",
 		"PRIMARY_MATCH_STORE": "neo4j"
 	},
-	"send_email": [
-		{
-			"name": "EMAIL",
-			"allowed_sender_addresses": ["no-reply@hire-pipe.com"]
-		}
-	],
+	// No send_email binding in local dev on purpose: `wrangler dev` only
+	// simulates the binding (reports success, writes an .eml locally, delivers
+	// nothing), which masked real invite emails. Locally sendTransactionalEmail
+	// falls through to Resend via RESEND_API_KEY in .dev.vars. The dev and
+	// production environments below keep the real EMAIL binding.
 	"env": {
 		"dev": {
 			"name": "pipe-api-dev",

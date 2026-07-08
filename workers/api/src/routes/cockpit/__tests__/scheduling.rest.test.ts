@@ -446,6 +446,7 @@ describe('GET /interviews/:id detail', () => {
         matched_repo_id INTEGER,
         github_repo_url TEXT,
         github_pr_number INTEGER,
+        job_description TEXT,
         submission_json TEXT,
         completed_at TEXT,
         created_at TEXT,
@@ -6384,6 +6385,133 @@ describe('GET /interviews/:id detail', () => {
     expect(detailBody.interview.livingContext?.contextRecords).toEqual([]);
   });
 
+  it('persists an optional job description and returns it on the created interview', async () => {
+    seedInterviewDetailFixture();
+    const app = mountSchedulingApp();
+
+    const jobDescription = 'Senior Frontend Engineer.\nOwns the design system. React + TypeScript, strict mode.';
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Ada Lovelace',
+        recipientEmail: 'ada@example.com',
+        interviewType: 'CODE_REVIEW',
+        jobDescription,
+      }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      interview: { id: string; jobDescription: string | null };
+    };
+    expect(body.interview.jobDescription).toBe(jobDescription);
+
+    const row = sqlite!.prepare(
+      'SELECT job_description FROM scheduled_interviews WHERE id = ?',
+    ).get(body.interview.id) as { job_description: string | null };
+    expect(row.job_description).toBe(jobDescription);
+  });
+
+  it('rejects a job description above the size limit', async () => {
+    seedInterviewDetailFixture();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Ada Lovelace',
+        recipientEmail: 'ada@example.com',
+        interviewType: 'CODE_REVIEW',
+        jobDescription: 'x'.repeat(20001),
+      }),
+    });
+    expect(response.status).toBe(422);
+  });
+
+  it('creates a standalone candidate at creation time for assessment-type invites', async () => {
+    seedInterviewDetailFixture();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Barbara Liskov',
+        recipientEmail: 'barbara@example.com',
+        interviewType: 'CODE_REVIEW',
+      }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      interview: { id: string; candidateId: string | null };
+    };
+    expect(body.interview.candidateId).toEqual(expect.any(String));
+
+    const candidateRow = sqlite!.prepare(
+      'SELECT id, owner_id, name, email, invite_token, pipeline_id FROM candidates WHERE id = ?',
+    ).get(body.interview.candidateId) as {
+      id: string;
+      owner_id: string;
+      name: string;
+      email: string;
+      invite_token: string;
+      pipeline_id: string | null;
+    };
+    expect(candidateRow).toMatchObject({
+      owner_id: 'owner-1',
+      name: 'Barbara Liskov',
+      email: 'barbara@example.com',
+      pipeline_id: null,
+    });
+    expect(candidateRow.invite_token).toEqual(expect.any(String));
+
+    const interviewRow = sqlite!.prepare(
+      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
+    ).get(body.interview.id) as { candidate_id: string | null };
+    expect(interviewRow.candidate_id).toBe(body.interview.candidateId);
+  });
+
+  it('keeps plain video invites contact-only unless a resume is expected', async () => {
+    seedInterviewDetailFixture();
+    const app = mountSchedulingApp();
+
+    const withoutResume = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Grace Hopper',
+        recipientEmail: 'grace-video@example.com',
+        interviewType: 'VIDEO',
+      }),
+    });
+    expect(withoutResume.status).toBe(201);
+    const withoutResumeBody = await withoutResume.json() as {
+      interview: { candidateId: string | null };
+    };
+    expect(withoutResumeBody.interview.candidateId).toBeNull();
+
+    const withResume = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Grace Hopper',
+        recipientEmail: 'grace-video@example.com',
+        interviewType: 'VIDEO',
+        expectsResume: true,
+      }),
+    });
+    expect(withResume.status).toBe(201);
+    const withResumeBody = await withResume.json() as {
+      interview: { id: string; candidateId: string | null };
+    };
+    expect(withResumeBody.interview.candidateId).toEqual(expect.any(String));
+    const interviewRow = sqlite!.prepare(
+      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
+    ).get(withResumeBody.interview.id) as { candidate_id: string | null };
+    expect(interviewRow.candidate_id).toBe(withResumeBody.interview.candidateId);
+  });
+
   it('keeps repeated same-email interviews as distinct meetings under one person context', async () => {
     seedInterviewDetailFixture();
     const app = mountSchedulingApp();
@@ -7108,7 +7236,7 @@ describe('GET /interviews/:id detail', () => {
     });
     expect(deliveryRecord?.exact_text.split('\n')).toEqual(expect.arrayContaining([
       'Recipient email: barbara@example.com',
-      expect.stringMatching(/^Subject: Assessment invitation — Interview \(.+\)$/),
+      'Subject: Code review invitation',
       `Delivered URL: ${inviteBody.deliveredUrl}`,
       'Room URL: none',
       'Custom message: Please join prepared code review discussion.',
@@ -7223,7 +7351,7 @@ describe('GET /interviews/:id detail', () => {
     expect(sentMessages[0]).toMatchObject({
       to: 'margaret@example.com',
       from: { email: 'no-reply@hire-pipe.com', name: 'PIPE' },
-      subject: 'Video call invitation — Interview',
+      subject: 'Video interview invitation',
     });
     expect(sentMessages[0]?.html).toContain(inviteBody.meetingUrl);
     expect(sentMessages[0]?.html).toContain('/assets/email/pipe-logo.png');
@@ -7352,7 +7480,7 @@ describe('GET /interviews/:id detail', () => {
     expect(sentMessages[0]).toMatchObject({
       to: 'grace@example.com',
       from: { email: 'no-reply@hire-pipe.com', name: 'PIPE' },
-      subject: 'Schedule interview — Interview',
+      subject: 'Schedule your interview',
     });
     expect(sentMessages[0]?.html).toContain(`a1=${created.interview.id}`);
     expect(sentMessages[0]?.html).toContain('email=grace%40example.com');
@@ -7392,7 +7520,7 @@ describe('GET /interviews/:id detail', () => {
     ).get('grace@example.com') as { exact_text: string } | undefined;
     expect(deliverySource?.exact_text.split('\n')).toEqual(expect.arrayContaining([
       'Recipient email: grace@example.com',
-      'Subject: Schedule interview — Interview',
+      'Subject: Schedule your interview',
       `Delivered URL: ${inviteBody.deliveredUrl}`,
       `Room URL: ${inviteBody.meetingUrl}`,
       'Email sent: yes',
@@ -7474,7 +7602,7 @@ describe('GET /interviews/:id detail', () => {
     ).get('frances@example.com') as { exact_text: string } | undefined;
     expect(deliverySource?.exact_text.split('\n')).toEqual(expect.arrayContaining([
       'Recipient email: frances@example.com',
-      'Subject: Assessment invitation — Interview',
+      'Subject: Code review invitation',
       `Delivered URL: ${inviteBody.deliveredUrl}`,
       'Room URL: none',
       'Email sent: no',
@@ -8331,6 +8459,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         matched_repo_id INTEGER,
         github_repo_url TEXT,
         github_pr_number INTEGER,
+        job_description TEXT,
         submission_json TEXT,
         completed_at TEXT,
         created_at TEXT,
@@ -8716,7 +8845,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     };
     expect(created.interview).toMatchObject({
       interviewType: 'CODE_REVIEW',
-      candidateId: null,
+      candidateId: expect.any(String),
       assessmentSetup: {
         status: 'waiting_for_candidate_evidence',
         nextAction: 'COLLECT_CANDIDATE_EVIDENCE',
@@ -8822,7 +8951,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       };
     };
     expect(created.interview).toMatchObject({
-      candidateId: null,
+      candidateId: expect.any(String),
       interviewType: 'OPEN_SOURCE_BUG_FIX',
       assessmentSetup: {
         status: 'reviewable_task_assigned',
@@ -8883,7 +9012,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       room_id: string;
       session_id: string;
     } | undefined;
-    expect(row?.candidate_id).toBeNull();
+    expect(row?.candidate_id).toEqual(expect.any(String));
     expect(row?.meeting_url).toBe(invited.deliveredUrl);
     expect(row?.invite_link_sent_at).toBeTruthy();
     expect(row?.workspace_enabled).toBe(1);
@@ -8951,7 +9080,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(body.interview.githubPrNumber).toBe(101);
     expect(body.interview.matchedRepoId).toBeNull();
     expect(body.interview.pipelineId).toBeNull();
-    expect(body.interview.candidateId).toBeNull();
+    expect(body.interview.candidateId).toEqual(expect.any(String));
     expect(body.interview.contactId).not.toBeNull();
     expect(body.interview.assessmentSetup).toMatchObject({
       status: 'reviewable_task_assigned',
@@ -8979,7 +9108,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(row.github_pr_number).toBe(101);
     expect(row.matched_repo_id).toBeNull();
     expect(row.pipeline_id).toBeNull();
-    expect(row.candidate_id).toBeNull();
+    expect(row.candidate_id).toEqual(expect.any(String));
     expect(row.recipient_name).toBe('Margaret Hamilton');
     expect(row.recipient_email).toBe('margaret@example.com');
   });
@@ -9754,7 +9883,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     const created = await createResponse.json() as {
       interview: { id: string; candidateId: string | null };
     };
-    expect(created.interview.candidateId).toBeNull();
+    expect(created.interview.candidateId).toEqual(expect.any(String));
 
     const inviteResponse = await app.request(`/interviews/${created.interview.id}/invite`, {
       method: 'POST',
@@ -9806,7 +9935,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       github_repo_url: 'https://github.com/hash-pipe/open-source-task',
       github_pr_number: 101,
     });
-    expect(row.candidate_id).toBeNull();
+    expect(row.candidate_id).toEqual(expect.any(String));
     expect(row.meeting_url).toBe(inviteBody.deliveredUrl);
     expect(row.workspace_enabled).toBe(1);
     expect(row.room_id).toBe(inviteBody.room?.id);
@@ -9833,7 +9962,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     const firstCreated = await firstCreateResponse.json() as {
       interview: { id: string; candidateId: string | null };
     };
-    expect(firstCreated.interview.candidateId).toBeNull();
+    expect(firstCreated.interview.candidateId).toEqual(expect.any(String));
 
     const secondCreateResponse = await app.request('/interviews', {
       method: 'POST',
@@ -9851,7 +9980,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     const secondCreated = await secondCreateResponse.json() as {
       interview: { id: string; candidateId: string | null };
     };
-    expect(secondCreated.interview.candidateId).toBeNull();
+    expect(secondCreated.interview.candidateId).toEqual(expect.any(String));
 
     const firstInviteResponse = await app.request(`/interviews/${firstCreated.interview.id}/invite`, {
       method: 'POST',
@@ -9905,8 +10034,9 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     ]);
     expect(rows[0]?.candidate_id).toEqual(expect.any(String));
     expect(rows[0]?.invite_token).toEqual(expect.any(String));
-    expect(rows[1]?.candidate_id).toBeNull();
-    expect(rows[1]?.invite_token).toBeNull();
+    expect(rows[1]?.candidate_id).toEqual(expect.any(String));
+    expect(rows[1]?.candidate_id).not.toBe(rows[0]?.candidate_id);
+    expect(rows[1]?.invite_token).toEqual(expect.any(String));
     expect(rows[1]?.meeting_url).toBe(secondInvite.deliveredUrl);
     expect(firstInvite.deliveredUrl).toContain(`/assess/${rows[0]?.invite_token}`);
 
@@ -10094,7 +10224,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(body.interview.matchedRepoId).toBeNull();
     // Person-first: no pipeline/role container required.
     expect(body.interview.pipelineId).toBeNull();
-    expect(body.interview.candidateId).toBeNull();
+    expect(body.interview.candidateId).toEqual(expect.any(String));
     expect(body.interview.contactId).not.toBeNull();
 
     const row = sqlite!.prepare(
@@ -10116,7 +10246,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(row.github_pr_number).toBe(42);
     expect(row.matched_repo_id).toBeNull();
     expect(row.pipeline_id).toBeNull();
-    expect(row.candidate_id).toBeNull();
+    expect(row.candidate_id).toEqual(expect.any(String));
     expect(row.recipient_name).toBe('Linus Torvalds');
     expect(row.recipient_email).toBe('linus@example.com');
   });
@@ -10371,5 +10501,95 @@ describe('Transcript artifact model', () => {
     // which links to recipient/person nodes via candidate_id or recipient_email
     expect(artifactWithGraphLink.scheduledInterviewId).toBe('interview-456');
     expect(artifactWithGraphLink.scheduledInterviewId).toBeTruthy();
+  });
+});
+
+// ─── Invite email preview tests ─────────────────────────────────────────────
+
+describe('POST /invite-email-preview', () => {
+  function mountPreviewApp(): Hono<{ Bindings: Env; Variables: Variables }> {
+    const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+    app.use('*', async (c, next) => {
+      c.env = {
+        DB: {} as D1Database,
+        CLERK_SECRET_KEY: 'test',
+        DEV_AUTH_BYPASS: 'true',
+        DEV_BYPASS_USER_ID: 'owner-1',
+        APP_BASE_URL: 'http://localhost:5173',
+      } as unknown as Env;
+      await next();
+    });
+    app.route('/', schedulingAuth);
+    return app;
+  }
+
+  it('renders the exact code-review subject and html with a placeholder link', async () => {
+    const app = mountPreviewApp();
+    const response = await app.request('/invite-email-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        interviewType: 'CODE_REVIEW',
+        recipientName: 'Jane Doe',
+        roleTitle: 'Senior Frontend Engineer',
+        customMessage: 'No prep needed.',
+      }),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as { subject: string; html: string };
+    expect(body.subject).toBe('Code review invitation — Senior Frontend Engineer');
+    expect(body.html).toContain('Hi Jane Doe,');
+    expect(body.html).toContain('No prep needed.');
+    expect(body.html).toContain('START CODE REVIEW');
+    expect(body.html).toContain('generated when the invite is sent');
+    expect(body.html).not.toContain('href="null"');
+  });
+
+  it('derives the scheduling delivery for provider-backed video invites', async () => {
+    const app = mountPreviewApp();
+    const response = await app.request('/invite-email-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        interviewType: 'VIDEO',
+        recipientName: 'Grace Hopper',
+        schedulingProvider: 'CALENDLY',
+      }),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as { subject: string; html: string };
+    expect(body.subject).toBe('Schedule your interview');
+    expect(body.html).toContain('PICK A TIME');
+    expect(body.html).toContain('Pick any time that works for you');
+  });
+
+  it('escapes recruiter-provided values in the rendered preview', async () => {
+    const app = mountPreviewApp();
+    const response = await app.request('/invite-email-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        interviewType: 'CODE_REVIEW',
+        recipientName: '<script>alert(1)</script>',
+        customMessage: '<img src=x onerror=alert(1)>',
+      }),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as { subject: string; html: string };
+    expect(body.html).not.toContain('<script>alert(1)</script>');
+    expect(body.html).not.toContain('<img src=x onerror=alert(1)>');
+    expect(body.html).toContain('&lt;script&gt;');
+  });
+
+  it('rejects a preview request without a recipient name', async () => {
+    const app = mountPreviewApp();
+    const response = await app.request('/invite-email-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ interviewType: 'CODE_REVIEW' }),
+    });
+    expect(response.status).toBe(422);
+    const body = await response.json() as { error: { code: string } };
+    expect(body.error.code).toBe('VALIDATION_ERROR');
   });
 });

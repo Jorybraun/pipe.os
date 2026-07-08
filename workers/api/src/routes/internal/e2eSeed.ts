@@ -1189,6 +1189,52 @@ export async function loadExistingRepoChallenge(input: {
   };
 }
 
+/**
+ * POST /api/v1/internal/e2e/talent-join-token
+ *
+ * E2E-only bridge for the self-serve talent pool join flow: the public
+ * /rpc/talent/join endpoint intentionally delivers the invite token by email
+ * only, so specs use this recruiter-authed, local/test-gated endpoint to
+ * retrieve the token for a candidate the authed owner controls.
+ */
+e2eSeed.post('/talent-join-token', async (c) => {
+  if (!isLocalOrTestRequest(c.env, c.req.url)) {
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Not found.' } }, 404);
+  }
+
+  let email: string;
+  try {
+    email = requireString(requireRecord(await c.req.json(), 'body'), 'email').toLowerCase();
+  } catch (err) {
+    return c.json({
+      error: {
+        code: 'BAD_REQUEST',
+        message: err instanceof Error ? err.message : 'email is required.',
+      },
+    }, 400);
+  }
+
+  const houseOwnerId = c.env.TALENT_POOL_HOUSE_OWNER_ID?.trim();
+  if (!houseOwnerId) {
+    return c.json({ error: { code: 'JOIN_NOT_OPEN', message: 'TALENT_POOL_HOUSE_OWNER_ID is not configured.' } }, 503);
+  }
+
+  const row = await c.env.DB.prepare(
+    `SELECT invite_token FROM candidates
+      WHERE owner_id = ?1 AND lower(email) = ?2 AND pipeline_id IS NULL
+      ORDER BY created_at ASC
+      LIMIT 1`,
+  )
+    .bind(houseOwnerId, email)
+    .first<{ invite_token: string }>();
+
+  if (!row) {
+    return c.json({ error: { code: 'NOT_FOUND', message: 'No candidate for that email.' } }, 404);
+  }
+
+  return c.json({ inviteToken: row.invite_token });
+});
+
 e2eSeed.post('/standalone-review-match-fixture', async (c) => {
   if (!isLocalOrTestRequest(c.env, c.req.url)) {
     return c.json({ error: { code: 'NOT_FOUND', message: 'Not found.' } }, 404);

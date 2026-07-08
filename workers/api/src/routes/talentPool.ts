@@ -8,6 +8,7 @@ import {
 import { runCandidateIngestion } from '../lib/candidateDiscovery/orchestrate';
 import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
 import { loadMatchedOpenSourceChallengePacket } from '../lib/openSourceChallengeSessions';
+import { sendTransactionalEmail } from '../lib/transactionalEmail';
 import {
   ensureRolelessTalentPoolIdentity,
   removeRolelessTalentPoolApplicationBridge,
@@ -170,7 +171,7 @@ function errorResponse(
   c: TalentContext,
   code: string,
   message: string,
-  status: 400 | 404 | 413 | 415 | 500,
+  status: 400 | 403 | 404 | 413 | 415 | 500 | 502 | 503,
 ): Response {
   return c.json({ error: { code, message } }, status);
 }
@@ -779,6 +780,136 @@ async function ensureChallengeDesignQueueItem(
     )
     .run();
 }
+
+const joinSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(320),
+  name: optionalText(120),
+  turnstileToken: optionalText(2048),
+});
+
+function generateInviteToken(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function verifyTurnstile(secret: string, token: string, remoteIp: string | undefined): Promise<boolean> {
+  const body = new URLSearchParams({ secret, response: token });
+  if (remoteIp) body.set('remoteip', remoteIp);
+  try {
+    const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      body,
+    });
+    const outcome = await res.json() as { success?: boolean };
+    return outcome.success === true;
+  } catch (err) {
+    console.error('[talentPool/join] Turnstile verification failed:', err instanceof Error ? err.message : String(err));
+    return false;
+  }
+}
+
+/** Mirrors e2eSeed's local/test gate: lenient email handling only for local dev and the test env. */
+function isLocalOrTestJoinRequest(env: Env, requestUrl: string): boolean {
+  if (env.ENV === 'test') return true;
+  const url = new URL(requestUrl);
+  const localHost = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+  const appBase = env.APP_BASE_URL ?? '';
+  const localApp = appBase.startsWith('http://localhost:') || appBase.startsWith('http://127.0.0.1:');
+  return localHost && localApp;
+}
+
+function talentIntakeLink(env: Env, inviteToken: string): string {
+  const baseUrl = (env.APP_BASE_URL ?? 'https://pipe.build').replace(/\/$/, '');
+  return `${baseUrl}/talent/${inviteToken}`;
+}
+
+async function sendJoinLinkEmail(
+  env: Env,
+  input: { email: string; name: string | null; inviteToken: string },
+): Promise<void> {
+  const link = talentIntakeLink(env, input.inviteToken);
+  const greeting = input.name ? `Hi ${input.name},` : 'Hi,';
+
+  const text =
+    `${greeting}\n\n` +
+    `Welcome to the PIPE talent pool. Your private intake link:\n\n` +
+    `${link}\n\n` +
+    `What happens next:\n` +
+    `1. Share your profile (resume, GitHub, LinkedIn) at the link above.\n` +
+    `2. We match you to a real code-review challenge based on your experience.\n` +
+    `3. Complete it and your verified work joins the pool that hiring teams search.\n\n` +
+    `The link is yours alone — do not share it.\n\n` +
+    `— PIPE`;
+
+  await sendTransactionalEmail(env, {
+    to: input.email,
+    subject: 'Your PIPE talent pool link',
+    text,
+  });
+}
+
+route.post('/join', async (c) => {
+  const parsed = joinSchema.safeParse(await readJson(c));
+  if (!parsed.success) {
+    return errorResponse(c, 'BAD_REQUEST', 'A valid email address is required.', 400);
+  }
+
+  const houseOwnerId = c.env.TALENT_POOL_HOUSE_OWNER_ID?.trim();
+  if (!houseOwnerId) {
+    return errorResponse(c, 'JOIN_NOT_OPEN', 'Self-serve talent pool join is not open yet.', 503);
+  }
+
+  const turnstileSecret = c.env.TURNSTILE_SECRET_KEY?.trim();
+  if (turnstileSecret) {
+    const token = parsed.data.turnstileToken;
+    const remoteIp = c.req.header('CF-Connecting-IP');
+    if (!token || !(await verifyTurnstile(turnstileSecret, token, remoteIp))) {
+      return errorResponse(c, 'FORBIDDEN', 'Verification failed. Please retry the challenge.', 403);
+    }
+  }
+
+  const { email } = parsed.data;
+  const name = parsed.data.name ?? null;
+
+  const existing = await c.env.DB.prepare(
+    `SELECT id, invite_token FROM candidates
+      WHERE owner_id = ?1 AND lower(email) = ?2 AND pipeline_id IS NULL
+      ORDER BY created_at ASC
+      LIMIT 1`,
+  )
+    .bind(houseOwnerId, email)
+    .first<{ id: string; invite_token: string }>();
+
+  let inviteToken: string;
+  if (existing) {
+    inviteToken = existing.invite_token;
+  } else {
+    inviteToken = generateInviteToken();
+    await c.env.DB.prepare(
+      `INSERT INTO candidates (
+         id, owner_id, name, email, invite_token, status, pipeline_id,
+         created_at, updated_at
+       )
+       VALUES (?1, ?2, ?3, ?4, ?5, 'INVITED', NULL, datetime('now'), datetime('now'))`,
+    )
+      .bind(crypto.randomUUID(), houseOwnerId, name, email, inviteToken)
+      .run();
+  }
+
+  try {
+    await sendJoinLinkEmail(c.env, { email, name, inviteToken });
+  } catch (err) {
+    console.error('[talentPool/join] intake link email failed:', err instanceof Error ? err.message : String(err));
+    if (!isLocalOrTestJoinRequest(c.env, c.req.url)) {
+      return errorResponse(c, 'EMAIL_FAILED', 'We could not send your link. Please try again.', 502);
+    }
+    // Local/test only: sending is best-effort; surface the link in the worker log instead.
+    console.error(`[talentPool/join] local fallback — intake link for ${email}: ${talentIntakeLink(c.env, inviteToken)}`);
+  }
+
+  return c.json({ ok: true, email }, existing ? 200 : 201);
+});
 
 route.post('/resolve-token', async (c) => {
   const parsed = resolveSchema.safeParse(await readJson(c));

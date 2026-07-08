@@ -22,6 +22,12 @@ import { streamSSE } from 'hono/streaming';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { sendTransactionalEmail } from '../../lib/transactionalEmail';
+import {
+  composeInviteEmail,
+  formatInviteScheduledTimeLabel,
+  isInviteEmailInterviewType,
+  resolveInviteEmailDelivery,
+} from '../../lib/inviteEmail';
 import { buildPipeEmailLogoImg, resolvePipeEmailLogoUrl } from '../../lib/emailAssets';
 import { ensureUsableCandidateInviteToken, isClaimedInviteToken } from '../../lib/candidateInviteTokens';
 import { ensureMeetingRoomLinks, withDevBasicAuth } from '../meetingRooms';
@@ -792,6 +798,8 @@ const createInterviewSchema = z.object({
   challengeExpectedEvidence: z.array(z.string().trim().min(1).max(500)).min(1).max(12).optional(),
   challengeVerificationCommand: z.string().trim().min(1).max(1000).optional(),
   recruiterNotes: z.string().trim().max(5000).optional(),
+  jobDescription: z.string().trim().min(1).max(20000).nullable().optional(),
+  expectsResume: z.boolean().optional(),
 }).superRefine((value, ctx) => {
   const hasCandidate = Boolean(value.candidateId);
   const hasRecipient = Boolean(value.recipientName && value.recipientEmail);
@@ -8774,6 +8782,8 @@ schedulingAuth.post('/interviews', async (c) => {
     challengeExpectedEvidence,
     challengeVerificationCommand,
     recruiterNotes,
+    jobDescription,
+    expectsResume,
   } = parsed.data;
 
   let candidate: { id: string; pipeline_id: string | null } | null = null;
@@ -8897,8 +8907,8 @@ schedulingAuth.post('/interviews', async (c) => {
         interview_type, meeting_type, scheduled_at, scheduling_provider,
         scheduling_url, recipient_name, recipient_email, sync_source,
         matched_repo_id, github_repo_url, github_pr_number,
-        recruiter_notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?, ?, ?, ?, ?)`
+        recruiter_notes, job_description, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id, candidateId ?? null, pipelineId ?? null, stageId ?? null, userId,
@@ -8907,10 +8917,31 @@ schedulingAuth.post('/interviews', async (c) => {
       schedulingProvider ?? null, sanitizedSchedulingUrl,
       recipientName ?? null, recipientEmail?.trim().toLowerCase() ?? null,
       matchedRepoId ?? null, effectiveGithubRepoUrl, effectiveGithubPrNumber,
-      recruiterNotes ?? null,
+      recruiterNotes ?? null, jobDescription ?? null,
       now, now,
     )
     .run();
+
+  // Standalone assessment invites (and any invite expecting a resume upload)
+  // get their candidate minted at creation time so the caller can attach a
+  // resume immediately and the assessment session links to a real candidate.
+  // The invite email path reuses this candidate's invite token.
+  let standaloneCandidateId: string | null = null;
+  if (
+    !candidateId
+    && recipientName
+    && recipientEmail
+    && (isWorkspaceAssessmentInterviewType(effectiveInterviewType) || expectsResume === true)
+  ) {
+    const standalone = await ensureStandaloneCandidateForInterview(
+      db,
+      userId,
+      { name: recipientName, email: recipientEmail },
+      id,
+    );
+    standaloneCandidateId = standalone.candidateId;
+  }
+  const effectiveCandidateId = candidateId ?? standaloneCandidateId;
 
   if (contactId && recipientName && recipientEmail) {
     await persistContactFirstInterviewInviteContext(db, {
@@ -8934,7 +8965,7 @@ schedulingAuth.post('/interviews', async (c) => {
     assessmentProgress = await createManualOpenSourceChallengeAssessmentSession(db, {
       interviewId: id,
       userId,
-      candidateId: candidateId ?? null,
+      candidateId: effectiveCandidateId,
       repositoryUrl: githubRepoUrl!,
       githubPrNumber: githubPrNumber ?? null,
       baseCommitSha: challengeBaseCommitSha!,
@@ -8949,7 +8980,7 @@ schedulingAuth.post('/interviews', async (c) => {
     assessmentProgress = await createMatchedOpenSourceChallengeAssessmentSession(db, {
       interviewId: id,
       userId,
-      candidateId: candidateId ?? null,
+      candidateId: effectiveCandidateId,
       matchedRepoId,
       packet: matchedOpenSourceChallengePacket,
       createdAt: now,
@@ -8960,7 +8991,7 @@ schedulingAuth.post('/interviews', async (c) => {
   return c.json({
     interview: {
       id,
-      candidateId: candidateId ?? null,
+      candidateId: effectiveCandidateId,
       contactId,
       pipelineId: pipelineId ?? null,
       stageId: stageId ?? null,
@@ -8978,6 +9009,7 @@ schedulingAuth.post('/interviews', async (c) => {
       githubRepoUrl: effectiveGithubRepoUrl,
       githubPrNumber: effectiveGithubPrNumber,
       recruiterNotes: recruiterNotes ?? null,
+      jobDescription: jobDescription ?? null,
       assessmentSetup,
       assessmentProgress,
     },
@@ -9373,6 +9405,43 @@ schedulingAuth.patch('/interviews/:id', async (c) => {
   return c.json({ success: true });
 });
 
+const inviteEmailPreviewSchema = z.object({
+  interviewType: z.enum(INTERVIEW_TYPE_VALUES).optional(),
+  recipientName: z.string().trim().min(1).max(200),
+  roleTitle: z.string().trim().min(1).max(240).nullable().optional(),
+  customMessage: z.string().trim().min(1).max(1000).nullable().optional(),
+  scheduledAt: z.string().nullable().optional(),
+  schedulingProvider: z.enum(['CALENDLY', 'CAL_COM']).nullable().optional(),
+});
+
+// POST /invite-email-preview — render the exact invite email (subject + HTML)
+// for the recruiter before anything is created or sent. Uses the same
+// composition as the send path; the candidate link is a placeholder.
+schedulingAuth.post('/invite-email-preview', async (c) => {
+  const body = await c.req.json();
+  const parsed = inviteEmailPreviewSchema.safeParse(body);
+  if (!parsed.success) {
+    return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
+  }
+
+  const interviewType = parsed.data.interviewType ?? 'VIDEO';
+  const email = composeInviteEmail({
+    interviewType,
+    delivery: resolveInviteEmailDelivery({
+      interviewType,
+      hasSchedulingUrl: Boolean(parsed.data.schedulingProvider),
+    }),
+    candidateName: parsed.data.recipientName,
+    roleTitle: parsed.data.roleTitle ?? null,
+    customMessage: parsed.data.customMessage ?? null,
+    scheduledTimeLabel: formatInviteScheduledTimeLabel(parsed.data.scheduledAt),
+    link: null,
+    logoImg: emailLogoImgForRequest(c),
+  });
+
+  return c.json({ subject: email.subject, html: email.html });
+});
+
 // POST /interviews/:id/invite — send a video call invitation email
 schedulingAuth.post('/interviews/:id/invite', async (c) => {
   const userId = c.var.userId;
@@ -9504,81 +9573,19 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   if (!deliveredUrl) {
     return apiError(c, 'INTERNAL_ERROR', 'Could not create an invite link for this interview.');
   }
-  const inviteVerb = needsAssessmentLink
-    ? 'start your assessment'
-    : needsRoomBackedWorkspace
-      ? 'join your assessment workspace'
-      : effectiveSchedulingInviteUrl
-        ? 'schedule an interview'
-        : 'join a video call';
-  const inviteCta = needsAssessmentLink
-    ? 'START ASSESSMENT'
-    : needsRoomBackedWorkspace
-      ? 'JOIN ASSESSMENT WORKSPACE'
-      : effectiveSchedulingInviteUrl
-        ? 'SCHEDULE INTERVIEW'
-        : 'JOIN VIDEO CALL';
-  const linkLabel = effectiveSchedulingInviteUrl ? 'Scheduling link' : 'Link';
-
-  const scheduledTime = interview.scheduled_at
-    ? new Date(interview.scheduled_at).toLocaleString('en-US', {
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-        hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
-      })
-    : null;
-
-  const escapeHtml = (str: string): string =>
-    str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-
-  const candidateName = escapeHtml(
-    interview.candidate_name
-    ?? interview.recipient_name
-    ?? email.split('@')[0]
-    ?? 'there',
-  );
-  const pipelineTitle = escapeHtml(interview.pipeline_title ?? 'Interview');
-  const stageTitle = escapeHtml(interview.stage_title ?? '');
-  const safeDeliveredUrl = escapeHtml(deliveredUrl);
-
-  // Build HTML email
-  const customBlock = customMessage
-    ? `<p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px; padding: 16px; background: rgba(255,255,255,0.05); border-left: 3px solid rgba(96,165,250,0.4); border-radius: 4px;">${escapeHtml(customMessage)}</p>`
-    : '';
-
-  const timeBlock = scheduledTime
-    ? `<p style="font-size: 14px; margin: 0 0 8px 0;"><strong style="color: #888;">When:</strong> ${scheduledTime}</p>`
-    : '';
-
-  const html = `<div style="font-family: 'Space Mono', monospace; max-width: 600px; margin: 0 auto; padding: 40px 20px; color: #e0e0e0; background: #0c0c0e;">
-  ${emailLogoImgForRequest(c)}
-  <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 24px; color: #ffffff;">Hi ${candidateName},</h1>
-  <p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
-    You've been invited to ${inviteVerb} for <strong>${pipelineTitle}</strong>.
-  </p>
-  ${customBlock}
-  <div style="padding: 20px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); margin-bottom: 32px;">
-    ${stageTitle ? `<p style="font-size: 14px; margin: 0 0 8px 0;"><strong style="color: #888;">Stage:</strong> ${stageTitle}</p>` : ''}
-    ${timeBlock}
-    <p style="font-size: 14px; margin: 0;"><strong style="color: #888;">${linkLabel}:</strong> <a href="${safeDeliveredUrl}" style="color: #60a5fa;">${escapeHtml(inviteCta)}</a></p>
-  </div>
-  <a href="${safeDeliveredUrl}" style="display: inline-block; padding: 14px 32px; background: #ffffff; color: #0c0c0e; text-decoration: none; font-weight: 700; font-size: 14px; letter-spacing: 0.5px; border: none;">
-    ${escapeHtml(inviteCta)} →
-  </a>
-  <p style="font-size: 12px; color: #666; margin-top: 40px;">
-    If the button doesn't work, copy this link:<br/>
-    <a href="${safeDeliveredUrl}" style="color: #888;">${escapeHtml(deliveredUrl)}</a>
-  </p>
-</div>`;
-
-  const rawPipelineTitle = interview.pipeline_title ?? 'Interview';
-  const subjectPrefix = effectiveSchedulingInviteUrl
-    ? 'Schedule interview'
-    : workspaceAssessment
-      ? 'Assessment invitation'
-      : 'Video call invitation';
-  const subject = scheduledTime
-    ? `${subjectPrefix} — ${rawPipelineTitle} (${scheduledTime})`
-    : `${subjectPrefix} — ${rawPipelineTitle}`;
+  const { subject, html } = composeInviteEmail({
+    interviewType: isInviteEmailInterviewType(interview.interview_type) ? interview.interview_type : 'VIDEO',
+    delivery: resolveInviteEmailDelivery({
+      interviewType: interview.interview_type,
+      hasSchedulingUrl: Boolean(effectiveSchedulingInviteUrl),
+    }),
+    candidateName: interview.candidate_name ?? interview.recipient_name ?? email.split('@')[0] ?? 'there',
+    roleTitle: interview.pipeline_title,
+    customMessage: customMessage ?? null,
+    scheduledTimeLabel: formatInviteScheduledTimeLabel(interview.scheduled_at),
+    link: deliveredUrl,
+    logoImg: emailLogoImgForRequest(c),
+  });
   const now = new Date().toISOString();
 
   if (!shouldSendEmail) {
