@@ -3,11 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { WaitingForMatch } from '../WaitingForMatch';
 
 describe('WaitingForMatch', () => {
-  it('shows the exact code-review pipeline phase instead of generic matching copy', () => {
+  it('shows plain-language progress instead of raw matching diagnostics', () => {
     render(
       <WaitingForMatch
-        title="Building your personalized challenge"
-        instructions="We are preparing your code review."
+        title="Preparing your review"
+        instructions="PIPE is organizing the next step."
         config={{
           autoRefresh: false,
           refreshIntervalSeconds: 30,
@@ -19,12 +19,12 @@ describe('WaitingForMatch', () => {
             matchableNodeCount: 0,
             rawNodeCount: 2,
             pipeline: [
-              { id: 'intake', label: 'CV intake', status: 'complete' },
-              { id: 'decomposition', label: 'Evidence decomposition', status: 'active', detail: 'decompose_resume' },
-              { id: 'repo_matching', label: 'Repo matching', status: 'pending' },
-              { id: 'challenge', label: 'Challenge assignment', status: 'pending' },
-              { id: 'review', label: 'Candidate review', status: 'pending' },
-              { id: 'scoring', label: 'Scoring', status: 'pending' },
+              { id: 'intake', label: 'Analyzing your background', status: 'complete' },
+              { id: 'decomposition', label: 'Analyzing your background', status: 'active', detail: 'PIPE is reviewing your background.' },
+              { id: 'repo_matching', label: 'Finding a real project that fits', status: 'pending' },
+              { id: 'challenge', label: 'Preparing your review', status: 'pending' },
+              { id: 'review', label: 'Preparing your review', status: 'pending' },
+              { id: 'scoring', label: 'Preparing your review', status: 'pending' },
             ],
           },
         }}
@@ -32,20 +32,22 @@ describe('WaitingForMatch', () => {
       />,
     );
 
-    expect(screen.getByTestId('code-review-pipeline-status')).toHaveTextContent('EVIDENCE DECOMPOSITION ACTIVE');
-    expect(screen.getByTestId('code-review-pipeline')).toHaveTextContent('CV intake');
-    expect(screen.getByTestId('code-review-pipeline')).toHaveTextContent('Evidence decomposition');
-    expect(screen.getByTestId('code-review-pipeline')).toHaveTextContent('Repo matching');
+    expect(screen.getByRole('heading', { name: 'Analyzing your background' })).toBeInTheDocument();
+    expect(screen.getByText('PIPE is analyzing your background, finding a real project that fits, and preparing your review.')).toBeInTheDocument();
+    expect(screen.getByTestId('code-review-pipeline-status')).toHaveTextContent('Analyzing your background');
+    expect(screen.getByTestId('code-review-pipeline')).toHaveTextContent('Analyzing your background');
+    expect(screen.getByTestId('code-review-pipeline')).toHaveTextContent('Finding a real project that fits');
+    expect(screen.getByTestId('code-review-pipeline')).toHaveTextContent('Preparing your review');
     expect(screen.queryByText(/MATCHING IN PROGRESS/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'VIEW PROFILE' })).toBeNull();
-    expect(screen.getByText('Profile appears after evidence decomposition.')).toBeInTheDocument();
+    expect(screen.getByText('Profile appears after PIPE finishes reviewing your background.')).toBeInTheDocument();
   });
 
   it('shows blocked repo matching as an attention state', () => {
     render(
       <WaitingForMatch
-        title="Challenge needs attention"
-        instructions="We could not pick a PR."
+        title="Finding a real project that fits"
+        instructions="PIPE is checking for a source-backed match."
         config={{
           autoRefresh: false,
           refreshIntervalSeconds: 30,
@@ -57,12 +59,12 @@ describe('WaitingForMatch', () => {
             matchableNodeCount: 16,
             rawNodeCount: 16,
             pipeline: [
-              { id: 'intake', label: 'CV intake', status: 'complete' },
-              { id: 'decomposition', label: 'Evidence decomposition', status: 'complete' },
-              { id: 'repo_matching', label: 'Repo matching', status: 'blocked', detail: 'No quality-gated PR' },
-              { id: 'challenge', label: 'Challenge assignment', status: 'pending' },
-              { id: 'review', label: 'Candidate review', status: 'pending' },
-              { id: 'scoring', label: 'Scoring', status: 'pending' },
+              { id: 'intake', label: 'Analyzing your background', status: 'complete' },
+              { id: 'decomposition', label: 'Analyzing your background', status: 'complete' },
+              { id: 'repo_matching', label: 'Finding a real project that fits', status: 'blocked', detail: 'A recruiter review is needed.' },
+              { id: 'challenge', label: 'Preparing your review', status: 'pending' },
+              { id: 'review', label: 'Preparing your review', status: 'pending' },
+              { id: 'scoring', label: 'Preparing your review', status: 'pending' },
             ],
           },
         }}
@@ -71,8 +73,9 @@ describe('WaitingForMatch', () => {
       />,
     );
 
-    expect(screen.getByTestId('code-review-pipeline-status')).toHaveTextContent('REPO MATCHING NEEDS ATTENTION');
-    expect(screen.getByTestId('code-review-pipeline')).toHaveTextContent('No quality-gated PR');
+    expect(screen.getByRole('heading', { name: 'Finding a real project that fits' })).toBeInTheDocument();
+    expect(screen.getByTestId('code-review-pipeline-status')).toHaveTextContent('Finding a real project that fits needs attention');
+    expect(screen.getByTestId('code-review-pipeline')).toHaveTextContent('Finding a real project that fits');
     expect(screen.queryByRole('button', { name: 'VIEW PROFILE' })).toBeNull();
     expect(screen.getByText('Profile is unavailable while matching needs recruiter attention.')).toBeInTheDocument();
   });
@@ -81,8 +84,8 @@ describe('WaitingForMatch', () => {
     const onRefresh = vi.fn().mockResolvedValue(undefined);
     render(
       <WaitingForMatch
-        title="Building your personalized challenge"
-        instructions="We are preparing your code review."
+        title="Preparing your review"
+        instructions="PIPE is organizing the next step."
         config={{
           autoRefresh: false,
           refreshIntervalSeconds: 30,
@@ -112,8 +115,8 @@ describe('WaitingForMatch', () => {
     const onRefresh = vi.fn().mockRejectedValue(new Error('refresh failed'));
     render(
       <WaitingForMatch
-        title="Building your personalized challenge"
-        instructions="We are preparing your code review."
+        title="Preparing your review"
+        instructions="PIPE is organizing the next step."
         config={{
           autoRefresh: false,
           refreshIntervalSeconds: 30,
@@ -148,8 +151,8 @@ describe('WaitingForMatch', () => {
 
     render(
       <WaitingForMatch
-        title="Building your personalized challenge"
-        instructions="We are preparing your code review."
+        title="Preparing your review"
+        instructions="PIPE is organizing the next step."
         config={{
           autoRefresh: false,
           refreshIntervalSeconds: 30,
@@ -170,7 +173,7 @@ describe('WaitingForMatch', () => {
     fireEvent.click(screen.getByRole('button', { name: 'VIEW PROFILE' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Profile is not ready yet. Evidence decomposition has not produced a candidate profile.')).toBeInTheDocument();
+      expect(screen.getByText('Profile is not ready yet. PIPE is still reviewing your background.')).toBeInTheDocument();
     });
     globalThis.fetch = originalFetch;
   });

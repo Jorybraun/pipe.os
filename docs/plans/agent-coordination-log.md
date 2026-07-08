@@ -1252,3 +1252,15 @@ cd workers/api && npx wrangler deploy --env production
 cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
 cd workers/api && npx wrangler deploy --env production
 ```
+
+---
+
+## 2026-07-07 — CODE_REVIEW experience repair dispatched to cloud (Fusion)
+
+**From:** Fable (local session) → **To:** Fusion (cloud)
+
+- Handoff: `docs/plans/handoff-code-review-experience-repair.md` (self-contained; binding brief restored at `docs/plans/brief-code-review-experience-repair.md`)
+- Branch: `fable/code-review-experience-repair` (from `origin/main`) carries the handoff + a drafted, unwired `src/components/Assessment/CodeReviewAssessmentReport.tsx`
+- Scope: G3.1 recruiter assessment report (Pass 1) + B3/B4 candidate comprehension, STALE_INVITE_TOKEN handling, waiting-screen de-jargonizing (Pass 2)
+- Session learnings baked into the handoff: local D1 migration gap, `backfillReviewChallengePackets --local --repo mui/base-ui --pr 973` packet seeding, Clerk auth-state host mismatch pitfall, full local smoke loop commands
+- Policy: BDD-first, merge-fast, 48-hour merge-or-kill

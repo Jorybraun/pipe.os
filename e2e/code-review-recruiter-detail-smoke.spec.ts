@@ -107,6 +107,20 @@ async function expectDetailsClosed(details: Locator): Promise<void> {
   expect(isOpen).toBe(false);
 }
 
+async function expectCodeReviewAssessmentReport(page: Page): Promise<void> {
+  const report = page.getByTestId('interview-code-review-assessment-report');
+  await expect(report).toBeVisible();
+  await expect(report).toContainText('Assessment report');
+  const firstSection = report.locator('[data-testid^="assessment-report-"]').first();
+  await expect(firstSection).toHaveAttribute('data-testid', 'assessment-report-recommendation');
+  await expect(report.getByTestId('assessment-report-evidence')).toContainText('Evidence summary');
+  await expect(report.getByTestId('assessment-report-risks')).toContainText('Risks & uncertainty');
+  await expect(report.getByTestId('assessment-report-ai-use')).toContainText('AI use');
+  await expect(report.getByTestId('assessment-report-next-action')).toContainText('Next action');
+  await expectDetailsClosed(report.getByTestId('assessment-report-audit-trail'));
+  await expect(report).not.toContainText(HIRING_READOUT_INTERNAL_ID_PATTERN);
+}
+
 function urlOrigin(value: string): string | null {
   try {
     return new URL(value).origin;
@@ -589,6 +603,7 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
     }
 
     await expect(page.getByText('Recruiter decision')).toBeVisible();
+    await expectCodeReviewAssessmentReport(page);
     const priorityCockpit = page.getByTestId('interview-code-review-priority-cockpit');
     await expect(priorityCockpit).toBeVisible();
     await expect(priorityCockpit).toContainText('Decision cockpit');
@@ -633,6 +648,7 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
       );
       await expect(scoreValidity).toContainText('Do not rely on score yet');
       await expect(scoreValidity).toContainText('Repo fit is not source-backed');
+      await expectCodeReviewAssessmentReport(page);
 
       const evidencePlan = page.getByTestId('interview-code-review-evidence-plan');
       if (await evidencePlan.count() > 0) {

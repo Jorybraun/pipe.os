@@ -9,7 +9,11 @@ import {
 } from '../components/Assessment/DiffPanel';
 import { ConversationPanel } from '../components/Panels/ConversationPanel';
 import { MatchProofPanel, type CodeReviewMatchExplanation } from '../components/Panels/ProblemPanel';
-import { ReviewProfileCard, type CodeReviewReviewProfile } from '../components/Assessment/CodeReviewChallenge';
+import {
+  GoodReviewChecklist,
+  ReviewProfileCard,
+  type CodeReviewReviewProfile,
+} from '../components/Assessment/CodeReviewChallenge';
 import { useReviewSessionV2 } from '../hooks/useReviewSessionV2';
 import type { ReviewVerdict, ReviewRound } from '../types/conversation';
 import { buildThreadsFromRounds } from '../types/conversation';
@@ -213,15 +217,32 @@ export function ReviewSessionPage({
           </h2>
           <p
             style={{
-              fontSize: 14,
+              fontSize: 13,
               color: 'var(--pipe-text-muted)',
-              lineHeight: 1.6,
+              lineHeight: 1.7,
+              fontFamily: '"Space Mono", monospace',
+              textAlign: 'left',
+              marginBottom: 0,
+            }}
+          >
+            Your code review has been delivered. Here's what happens next:
+          </p>
+          <ol
+            style={{
+              marginTop: 20,
+              marginBottom: 0,
+              paddingLeft: 22,
+              fontSize: 13,
+              lineHeight: 1.7,
+              textAlign: 'left',
+              color: 'var(--pipe-text-muted)',
               fontFamily: '"Space Mono", monospace',
             }}
           >
-            Your code review has been delivered. The team will review your submission and get back
-            to you soon.
-          </p>
+            <li>Your review is scored from the evidence in your comments and verdict.</li>
+            <li>Our team reviews the resulting report.</li>
+            <li>You'll hear back through your recruiter.</li>
+          </ol>
           <button
             data-testid="review-session-continue-btn"
             onClick={onComplete}
@@ -423,6 +444,27 @@ export function ReviewSessionPage({
             }}
           >
             ERROR: {error}
+          </div>
+        )}
+        {pr.reviewProfile && (
+          <div style={{ padding: '24px 24px 0' }}>
+            <GoodReviewChecklist />
+            <p
+              data-testid="code-review-ai-use-note"
+              style={{
+                margin: '12px 0 0',
+                padding: '10px 12px',
+                borderRadius: 4,
+                background: 'rgba(244,248,255,0.04)',
+                border: `1px solid ${BRAND_BORDER}`,
+                fontSize: 10,
+                lineHeight: 1.6,
+                color: BRAND_DIM,
+                fontFamily: BODY_FONT,
+              }}
+            >
+              Your use of AI tools during this review is captured transparently — unobserved AI use is treated as unobserved, not absent.
+            </p>
           </div>
         )}
         {isLoading && rounds.length === 0 && (

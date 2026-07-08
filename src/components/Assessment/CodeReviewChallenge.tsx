@@ -273,7 +273,7 @@ export function ReviewProfileCard({ profile }: { profile: CodeReviewReviewProfil
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
         <div>
           <div style={{ fontSize: 8, color: BRAND_DIM, fontFamily: LABEL_FONT, marginBottom: 3 }}>
-            TARGET_TIME
+            Expected time
           </div>
           <div style={{ fontSize: 13, color: '#f4f8ff', fontWeight: 800 }}>
             {profile.expectedTimeMinutes} min
@@ -316,6 +316,48 @@ export function ReviewProfileCard({ profile }: { profile: CodeReviewReviewProfil
   );
 }
 
+export function GoodReviewChecklist(): JSX.Element {
+  return (
+    <div
+      data-testid="code-review-good-review-checklist"
+      style={{
+        padding: 12,
+        borderRadius: 4,
+        background: BRAND_SURFACE_SOFT,
+        border: `1px solid ${BRAND_BORDER}`,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9,
+          letterSpacing: '0.2em',
+          color: BRAND_DIM,
+          marginBottom: 10,
+          fontFamily: LABEL_FONT,
+        }}
+      >
+        What makes a strong review
+      </div>
+      <ul
+        style={{
+          margin: 0,
+          paddingLeft: 16,
+          color: BRAND_MUTED,
+          fontSize: 10,
+          lineHeight: 1.6,
+          display: 'grid',
+          gap: 6,
+        }}
+      >
+        <li>Check correctness against the actual code paths and expected behavior.</li>
+        <li>Weight severity by risk, not just by style preferences or volume.</li>
+        <li>Leave actionable comments that point to specific changes or follow-up steps.</li>
+        <li>State a clear verdict rationale so the final decision is easy to understand.</li>
+      </ul>
+    </div>
+  );
+}
+
 function TaskPacketList({
   title,
   items,
@@ -351,7 +393,7 @@ function CodeReviewTaskPacketCard({
   const prNumber = packet.githubPrNumber ?? fallbackPrNumber;
   const pullRequestUrl = packet.pullRequestUrl
     ?? (repositoryUrl && prNumber ? `${repositoryUrl.replace(/\/$/, '')}/pull/${prNumber}` : null);
-  const statusLabel = packet.isComplete ? 'TASK_PACKET' : 'PACKET_INCOMPLETE';
+  const statusLabel = packet.isComplete ? 'Your task' : 'Your task — being finalized';
 
   return (
     <div
@@ -419,10 +461,10 @@ function CodeReviewTaskPacketCard({
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <TaskPacketList title="SUCCESS_CRITERIA" items={packet.successCriteria} />
-        <TaskPacketList title="EXPECTED_EVIDENCE" items={packet.expectedEvidence} />
+        <TaskPacketList title="What a strong review covers" items={packet.successCriteria} />
+        <TaskPacketList title="What to include" items={packet.expectedEvidence} />
         <TaskPacketList title="CONSTRAINTS" items={packet.constraints} />
-        <TaskPacketList title="MISSING_FIELDS" items={packet.missingFields} />
+        <TaskPacketList title="Still being prepared" items={packet.missingFields} />
       </div>
     </div>
   );
@@ -581,6 +623,21 @@ export function CodeReviewChallenge({
                 : challenge.instructions}
             </p>
           )}
+          <p
+            data-testid="code-review-ai-use-note"
+            style={{
+              fontSize: 11,
+              color: BRAND_DIM,
+              lineHeight: 1.7,
+              margin: 0,
+              marginTop: 10,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              fontFamily: BODY_FONT,
+            }}
+          >
+            Your use of AI tools during this review is captured transparently — unobserved AI use is treated as unobserved, not absent.
+          </p>
           {challenge.githubPrDescription && (
             <p
               style={{
@@ -770,6 +827,18 @@ export function CodeReviewChallenge({
 
         {reviewProfile && (
           <div style={{ padding: '0 24px 24px' }}>
+            <div
+              data-testid="code-review-expected-time"
+              style={{
+                marginBottom: 10,
+                fontSize: 11,
+                color: BRAND_DIM,
+                fontFamily: BODY_FONT,
+                lineHeight: 1.5,
+              }}
+            >
+              Expected time: ~{reviewProfile.expectedTimeMinutes} minutes
+            </div>
             <ReviewProfileCard profile={reviewProfile} />
           </div>
         )}
@@ -834,8 +903,8 @@ export function CodeReviewChallenge({
             <GitPullRequest size={32} color="rgba(255,255,255,0.1)" />
             <div style={{ fontSize: 11, letterSpacing: '0.1em', color: 'var(--pipe-text-muted)' }}>
               {isPlaceholderInstructions
-                ? 'PULL_REQUEST_NOT_YET_ASSIGNED'
-                : 'DIFF_UNAVAILABLE'}
+                ? 'Your pull request is still being prepared'
+                : 'Diff unavailable — contact your recruiter'}
             </div>
             <div style={{ fontSize: 10, maxWidth: 360, lineHeight: 1.6 }}>
               {isPlaceholderInstructions
@@ -861,6 +930,10 @@ export function CodeReviewChallenge({
         }}
       >
         <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div style={{ padding: 24, borderBottom: `1px solid ${BRAND_BORDER}` }}>
+            <GoodReviewChecklist />
+          </div>
+
           {/* Verdict */}
           <div style={{ padding: 24, borderBottom: `1px solid ${BRAND_BORDER}` }}>
             <div
