@@ -71,6 +71,7 @@ function CodeReviewAssessmentView(): JSX.Element {
         cachedMetadata: currentChallenge.data.cachedMetadata,
         matchExplanation: asCodeReviewMatchExplanation(currentChallenge.data.matchExplanation),
         reviewProfile: currentChallenge.data.reviewProfile,
+        challengePacket: currentChallenge.data.challengePacket,
       }}
       diff={diff.files.length > 0 ? diff : null}
       isFetchingDiff={false}
@@ -126,6 +127,7 @@ function buildRawStage(
         devContainerRepoUrl: (content.devContainerRepoUrl as string) ?? null,
         matchExplanation: content.matchExplanation ?? null,
         reviewProfile: content.reviewProfile ?? null,
+        challengePacket: content.challengePacket ?? null,
         issueBody: content.issueBody ?? null,
       };
     }
@@ -537,7 +539,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
         >
           <AlertCircle size={18} color="#f87171" />
           <span style={{ fontSize: 12, color: '#f87171', fontFamily: '"Space Mono", monospace', fontWeight: 700, letterSpacing: '0.05em' }}>
-            SUBMISSION_FAILED — {error.message}. Please try again.
+            Submission failed: {error.message}. Please try again.
           </span>
         </div>
       )}
@@ -576,7 +578,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
                   <div data-testid="review-session-loader" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
                     <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
                     <span style={{ fontSize: 10, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
-                      INITIALISING_REVIEW_SESSION...
+                      Initializing review session...
                     </span>
                   </div>
                 ) : isReviewSessionV2 ? (

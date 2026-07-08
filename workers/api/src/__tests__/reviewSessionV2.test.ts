@@ -55,6 +55,31 @@ vi.mock('../lib/challengeMatching', async (importOriginal) => {
   };
 });
 
+vi.mock('../lib/openSourceChallengeSessions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/openSourceChallengeSessions')>();
+  return {
+    ...actual,
+    ensureMatchedOpenSourceChallengeAssessmentSession: vi.fn(async (
+      _db: D1Database,
+      input: {
+        repositoryUrl?: string | null;
+        githubPrNumber?: number | null;
+      },
+    ) => {
+      if (!input.repositoryUrl || typeof input.githubPrNumber !== 'number') {
+        return null;
+      }
+      return {
+        hasChallengePacket: true,
+        challengePacketContract: {
+          isComplete: true,
+          missingFields: [],
+        },
+      } as unknown as Awaited<ReturnType<typeof actual.ensureMatchedOpenSourceChallengeAssessmentSession>>;
+    }),
+  };
+});
+
 vi.mock('../lib/candidateDiscovery/orchestrate', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/candidateDiscovery/orchestrate')>();
   return {

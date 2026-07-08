@@ -25,6 +25,16 @@ export interface SubmissionPayload {
   summary: string;
 }
 
+function formatVerdictLabel(verdict: SubmissionState['verdict']): string {
+  if (!verdict) {
+    return '-';
+  }
+  return verdict
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 interface SubmissionState {
   verdict: 'approve' | 'request_changes' | 'comment_only' | null;
   summary: string;
@@ -108,7 +118,7 @@ export function SubmissionPanel({
   const verdictOptions = [
     {
       key: 'approve' as const,
-      label: 'APPROVE',
+      label: 'Approve',
       icon: CheckCircle2,
       color: '#34d399',
       bg: 'rgba(52,211,153,0.08)',
@@ -117,7 +127,7 @@ export function SubmissionPanel({
     },
     {
       key: 'request_changes' as const,
-      label: 'REQUEST_CHANGES',
+      label: 'Request changes',
       icon: XCircle,
       color: '#f87171',
       bg: 'rgba(248,113,113,0.08)',
@@ -126,7 +136,7 @@ export function SubmissionPanel({
     },
     {
       key: 'comment_only' as const,
-      label: 'COMMENT',
+      label: 'Comment only',
       icon: MessageSquare,
       color: '#fbbf24',
       bg: 'rgba(251,191,36,0.08)',
@@ -179,7 +189,7 @@ export function SubmissionPanel({
             textAlign: 'center',
             letterSpacing: '0.05em',
           }}>
-            REVIEW_SUBMITTED
+            Review submitted
           </h3>
           <p style={{
             fontSize: 11,
@@ -215,7 +225,7 @@ export function SubmissionPanel({
               marginBottom: 4,
               letterSpacing: '0.1em',
             }}>
-              SUBMISSION_FAILED
+              Submission failed
             </h4>
             <p style={{
               fontSize: 11,
@@ -241,7 +251,7 @@ export function SubmissionPanel({
               }}
               data-testid="dismiss-error-btn"
             >
-              DISMISS
+              Dismiss
             </button>
           </div>
         </div>
@@ -253,7 +263,7 @@ export function SubmissionPanel({
           {/* Verdict */}
           <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)' }}>
             <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 16 }}>
-              REVIEW_VERDICT
+              Your verdict
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -309,7 +319,7 @@ export function SubmissionPanel({
           {/* Summary */}
           <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)', flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12 }}>
-              REVIEW_SUMMARY
+              Review summary
             </div>
 
             <textarea
@@ -354,7 +364,7 @@ export function SubmissionPanel({
           {/* Stats */}
           <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)' }}>
             <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12 }}>
-              SUBMISSION_STATS
+              Submission checklist
             </div>
 
             <div style={{
@@ -383,7 +393,7 @@ export function SubmissionPanel({
                   fontWeight: 700,
                   color: state.verdict ? '#34d399' : 'rgba(255,255,255,0.15)',
                 }}>
-                  {state.verdict ? state.verdict.replace('_', ' ').toUpperCase() : '—'}
+                  {formatVerdictLabel(state.verdict)}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -393,7 +403,7 @@ export function SubmissionPanel({
                   fontWeight: 700,
                   color: state.summary.trim() ? '#34d399' : 'rgba(255,255,255,0.15)',
                 }}>
-                  {state.summary.trim() ? 'PROVIDED' : '—'}
+                  {state.summary.trim() ? 'Ready' : '-'}
                 </span>
               </div>
             </div>
@@ -415,7 +425,7 @@ export function SubmissionPanel({
             ) : (
               <AlertTriangle size={14} />
             )}
-            {isReady ? 'READY_TO_SUBMIT' : 'COMPLETE_FORM_TO_CONTINUE'}
+            {isReady ? 'Ready to submit' : 'Choose a verdict and add a summary'}
           </div>
         </div>
       )}
@@ -455,11 +465,11 @@ export function SubmissionPanel({
             {state.isLoading ? (
               <>
                 <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                SUBMITTING...
+                Submitting...
               </>
             ) : (
               <>
-                SUBMIT_REVIEW
+                Submit review
                 <Send size={14} />
               </>
             )}

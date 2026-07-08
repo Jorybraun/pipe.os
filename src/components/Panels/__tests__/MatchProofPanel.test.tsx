@@ -13,7 +13,11 @@ describe('MatchProofPanel', () => {
       roleSourceCount: 1,
       qualityGate: {
         verdict: 'PASSED',
-        checks: ['candidate_source_evidence', 'repo_source_spans', 'role_context_alignment'],
+        checks: [
+          { id: 'candidate_source_evidence', passed: true, reason: 'Candidate source evidence is present.' },
+          { id: 'repo_source_spans', passed: true, reason: 'Repo source spans are present.' },
+          'role_context_alignment',
+        ],
       },
       assessmentQuality: {
         verdict: 'STRONG',
@@ -95,6 +99,9 @@ describe('MatchProofPanel', () => {
     expect(assessmentFocus).toHaveTextContent('TypeScript review evidence matches the PR stack');
     expect(assessmentFocus).toHaveTextContent('concrete behavioral decision');
     expect(assessmentFocus).toHaveTextContent('typescript');
+    expect(screen.getAllByText('Candidate evidence').length).toBeGreaterThan(0);
+    expect(screen.getByText('Repo source spans')).toBeTruthy();
+    expect(screen.getByText('Role alignment')).toBeTruthy();
 
     const hyperedges = screen.getByTestId('code-review-match-hyperedges');
     expect(hyperedges).toHaveTextContent('Supporting evidence');
@@ -104,6 +111,9 @@ describe('MatchProofPanel', () => {
     expect(hyperedges).toHaveTextContent('Implemented workflow conflict warning copy');
     expect(hyperedges).toHaveTextContent('Review TypeScript PRs that improve Wrangler deploy warnings');
     expect(hyperedges).toHaveTextContent('Workflow names must be unique per account.');
+    expect(why).not.toHaveTextContent(/WHY_THIS_PR|PERSON_ROLE_REPO|MATCH_REASON/);
+    expect(assessmentFocus).not.toHaveTextContent('ASSESSMENT_FOCUS');
+    expect(hyperedges).not.toHaveTextContent('EVIDENCE_HYPEREDGES');
   });
 
   it('labels roleless evidence hyperedges as candidate-to-repo matches', () => {
@@ -221,11 +231,12 @@ describe('MatchProofPanel', () => {
 
     render(<MatchProofPanel matchExplanation={matchExplanation} />);
 
-    expect(screen.getByText('ASSESSMENT QUALITY')).toBeTruthy();
+    expect(screen.getByText('Assessment quality')).toBeTruthy();
 
     const diagnostics = screen.getByTestId('code-review-match-diagnostics');
-    expect(diagnostics).toHaveTextContent('MISSING CANDIDATE SOURCE EVIDENCE');
-    expect(diagnostics).toHaveTextContent('MISSING REPO SOURCE EVIDENCE');
-    expect(diagnostics).toHaveTextContent('EMBEDDING ONLY MATCH REJECTED');
+    expect(diagnostics).toHaveTextContent('Missing Candidate Source Evidence');
+    expect(diagnostics).toHaveTextContent('Missing Repo Source Evidence');
+    expect(diagnostics).toHaveTextContent('Embedding Only Match Rejected');
+    expect(diagnostics).not.toHaveTextContent(/MISSING_CANDIDATE_SOURCE_EVIDENCE|MISSING_REPO_SOURCE_EVIDENCE|EMBEDDING_ONLY_MATCH_REJECTED/);
   });
 });

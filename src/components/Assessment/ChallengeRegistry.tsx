@@ -45,6 +45,7 @@ interface ChallengeRegistryProps {
     cachedMetadata?: unknown;
     matchExplanation?: unknown;
     reviewProfile?: unknown;
+    challengePacket?: unknown;
   };
   stageTimeLimit?: number | null;
   onSubmissionChange: (submission: unknown) => void;
@@ -229,6 +230,7 @@ export function ChallengeRegistry({
         challenge={{
           ...challenge,
           matchExplanation: asCodeReviewMatchExplanation(challenge.matchExplanation),
+          challengePacket: challenge.challengePacket,
         }}
         diff={localDiff}
         isFetchingDiff={isFetchingDiff}

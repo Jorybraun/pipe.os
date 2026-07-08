@@ -1543,7 +1543,7 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
     await expect(codeReview).toContainText(`#${fixture.prNumber}`);
     await expect(codeReview).toContainText('[Wrangler] Improve deploy warn for workflows with repeated names');
     await expect(codeReview).toContainText('check-workflow-conflicts.ts');
-    await expect(page.getByTestId('conversation-panel')).toContainText('REVIEW_CONVERSATION');
+    await expect(page.getByTestId('conversation-panel')).toContainText('Review conversation');
     await expect(page.getByTestId('pierre-diff-viewer')).toBeVisible({ timeout: 30000 });
     const reviewLine = codeReview
       .locator('[aria-label="Comment on diff line 5"]')
@@ -1574,8 +1574,8 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
     await expect(page.getByTestId('code-review-match-proof')).not.toContainText('agent_validated_match');
     await expect(page.getByTestId('code-review-match-validator')).toContainText('Independent verification');
     await expect(page.getByTestId('code-review-match-validator')).toContainText('deterministic');
-    await expect(page.getByTestId('code-review-match-validator')).toContainText('PASSED');
-    await expect(page.getByTestId('code-review-match-validator')).toContainText('ELIGIBLE MATCH');
+    await expect(page.getByTestId('code-review-match-validator')).toContainText('Passed');
+    await expect(page.getByTestId('code-review-match-validator')).toContainText('Eligible match');
     await expect(page.getByTestId('code-review-match-validator')).not.toContainText('eligible_match');
     await expect(page.locator('body')).not.toContainText('JOIN VIDEO');
     await expect(page.locator('body')).not.toContainText('Video Waiting Room');
@@ -2199,7 +2199,7 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await expect(detailMatch).toContainText('Source coverage');
     await expect(detailMatch).toContainText('Validator agent');
     await expect(detailMatch).toContainText('deterministic');
-    await expect(detailMatch).toContainText('PASSED');
+    await expect(detailMatch).toContainText('Passed');
     await expect(detailMatch).toContainText('source-backed demand');
     await expect(detailMatch).toContainText('Person sources');
     await expect(detailMatch).toContainText('Role sources');

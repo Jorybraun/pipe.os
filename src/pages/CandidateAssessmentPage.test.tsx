@@ -9,6 +9,8 @@ vi.mock('../hooks/useAssessment', () => ({
   useAssessment: vi.fn(),
 }));
 
+const codeReviewChallengeSpy = vi.hoisted(() => vi.fn());
+
 vi.mock('@codesandbox/sandpack-react', () => ({
   SandpackProvider: ({ children }: { children: ReactNode }) => <div data-testid="sandpack-provider">{children}</div>,
   SandpackLayout: ({ children }: { children: ReactNode }) => <div data-testid="sandpack-layout">{children}</div>,
@@ -28,7 +30,10 @@ vi.mock('../components/Assessment/TimerContext', () => ({
 }));
 
 vi.mock('../components/Assessment/CodeReviewChallenge', () => ({
-  CodeReviewChallenge: () => <div data-testid="code-review-challenge" />,
+  CodeReviewChallenge: (props: unknown) => {
+    codeReviewChallengeSpy(props);
+    return <div data-testid="code-review-challenge" />;
+  },
   asCodeReviewReviewProfile: () => null,
 }));
 
@@ -78,6 +83,7 @@ const useAssessmentMock = vi.mocked(useAssessment);
 
 describe('CandidateAssessmentPage', () => {
   beforeEach(() => {
+    codeReviewChallengeSpy.mockClear();
     useAssessmentMock.mockReturnValue({
       candidate: null,
       stageConfig: null,
@@ -176,6 +182,19 @@ describe('CandidateAssessmentPage', () => {
   });
 
   it('skips the start gate when a direct code-review assessment is already in progress', () => {
+    const challengePacket = {
+      repositoryUrl: 'https://github.com/acme/edge-runtime',
+      pullRequestUrl: 'https://github.com/acme/edge-runtime/pull/42',
+      githubPrNumber: 42,
+      baseCommitSha: '1111111111111111111111111111111111111111',
+      headCommitSha: '2222222222222222222222222222222222222222',
+      task: 'Review PR #42: Prevent duplicate retry terminal events.',
+      successCriteria: ['Call out reliability risks tied to the changed scheduler logic.'],
+      expectedEvidence: ['A final verdict and summary.'],
+      constraints: ['Review only the assigned diff.'],
+      isComplete: true,
+      missingFields: [],
+    };
     useAssessmentMock.mockReturnValue({
       candidate: {
         id: 'candidate-1',
@@ -201,6 +220,7 @@ describe('CandidateAssessmentPage', () => {
         instructions: 'Review the pull request.',
         config: {},
         cachedDiffJson: { files: [] },
+        challengePacket,
       },
       currentOrder: 0,
       isLoading: false,
@@ -228,6 +248,11 @@ describe('CandidateAssessmentPage', () => {
 
     expect(screen.queryByRole('heading', { name: 'Ready to begin?' })).not.toBeInTheDocument();
     expect(screen.getByTestId('code-review-challenge')).toBeInTheDocument();
+    expect(codeReviewChallengeSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      challenge: {
+        challengePacket,
+      },
+    });
   });
 
   it('shows profile received instead of a waiting matcher screen when code review assignment is not ready', () => {

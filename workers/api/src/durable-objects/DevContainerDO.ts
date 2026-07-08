@@ -41,6 +41,25 @@ interface InitPayload {
   roomToken?: string | null;
 }
 
+function pipeApiUrlForContainer(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    if (
+      url.hostname === 'localhost'
+      || url.hostname === '127.0.0.1'
+      || url.hostname === '0.0.0.0'
+      || url.hostname === '::1'
+      || url.hostname === '[::1]'
+    ) {
+      url.hostname = 'host.docker.internal';
+      return url.toString().replace(/\/$/, '');
+    }
+  } catch {
+    return rawUrl;
+  }
+  return rawUrl;
+}
+
 function buildEnvVars(payload: InitPayload): Record<string, string> {
   const agentType = payload.agentType?.trim();
   const env: Record<string, string> = {
@@ -58,7 +77,7 @@ function buildEnvVars(payload: InitPayload): Record<string, string> {
   if (payload.verificationCommand) env.PIPE_TEST_COMMAND = payload.verificationCommand;
   if (payload.agentApiKey) env.DEVIN_API_KEY = payload.agentApiKey;
   if (payload.agentOrgId) env.DEVIN_ORG_ID = payload.agentOrgId;
-  if (payload.pipeApiUrl) env.PIPE_API_URL = payload.pipeApiUrl;
+  if (payload.pipeApiUrl) env.PIPE_API_URL = pipeApiUrlForContainer(payload.pipeApiUrl);
   if (payload.roomToken) env.ROOM_TOKEN = payload.roomToken;
   return env;
 }

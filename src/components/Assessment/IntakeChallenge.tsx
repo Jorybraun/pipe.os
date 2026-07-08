@@ -167,7 +167,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
                 marginBottom: 12,
               }}
             >
-              CANDIDATE_INTAKE_PROTOCOL
+              Candidate profile
             </div>
             <h2
               style={{
@@ -177,7 +177,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
                 margin: '0 0 8px 0',
               }}
             >
-              INTAKE_COMPLETE
+              Profile received
             </h2>
           </div>
 
@@ -270,7 +270,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
               marginBottom: 12,
             }}
           >
-            CANDIDATE_INTAKE_PROTOCOL
+            Candidate profile
           </div>
           <h2
             style={{
@@ -280,7 +280,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
               margin: '0 0 8px 0',
             }}
           >
-            BUILD YOUR PROFILE
+            Build your profile
           </h2>
           <p
             style={{

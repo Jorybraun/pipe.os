@@ -31,6 +31,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CODE_REVIEW invite creation now keeps backend-delivered `/assess/:token` links visible and copyable when no room URL exists.
 - Talent Pool readiness coverage now seeds review-profile-ready challenge packets, keeping the candidate dashboard gate aligned with the production source-backed packet contract.
 
+### Fixed — CODE_REVIEW assessment UX
+
+- Code-review match proof now accepts structured quality-gate checks and diagnostics without crashing the candidate assessment page, and renders them with candidate-safe labels.
+- Candidate code-review loading and match-validation copy now avoids protocol-style labels such as `VALIDATOR_AGENT`, `FETCHING_DIFF`, and `INITIALISING_REVIEW_SESSION`.
+- CODE_REVIEW assess-link smoke specs now assert the human-facing match proof, selection reason, assessment fit, and validation labels instead of the old internal protocol tokens.
+- Candidate code-review surfaces now use human-readable task, verdict, summary, submission, and match-proof labels instead of internal protocol tokens, and tests lock the source-backed packet and match-proof copy against leaking internal ids or source refs.
+- Talent Pool ready-assignment and standalone open-source route coverage now seed complete source-backed packet proof, keeping challenge readiness aligned with the production packet materializer.
+
+### Fixed — Candidate graph evidence
+
+- Roleless contact/candidate evidence-depth reads now aggregate same-person workspace evidence without fabricating candidate-submitted profile context from recruiter-authored invite messages.
+- Candidate living-context readiness now handles lean schemas without the legacy candidate owner column, returning an empty readiness report instead of a 500.
+
+### Fixed — Video meeting privacy
+
+- Meeting recording upload logs no longer include bearer room tokens when uploads start, fail room lookup, or are rejected for a non-host role.
+
+### Fixed — Video meeting reliability
+
+- Meeting recording processing now preserves a ready transcript with fallback analysis metadata when post-transcription meeting analysis fails, instead of marking the whole recording as failed after useful transcript evidence has already been captured.
+- Video-room dev smoke now waits for transcript readiness, fails on transcript processing failure, reports real ICE/TURN provider state, and injects a local-only structured transcript override so browser E2E validates the post-transcription path without unsupported local AI bindings.
+- Room clients can now preflight no-store TURN credential fetches because the Worker CORS policy allows the browser `Cache-Control` request header.
+
+### Fixed — Open-source assessment evaluator
+
+- Repo-task assessment evaluation now performs one bounded Workers AI attempt before producing the deterministic source-backed fallback report, preventing multi-model retry loops from burning Worker time on unparseable or timed-out evaluator responses.
+
 ### Fixed — CODE_REVIEW scoring
 
 - Role-backed CODE_REVIEW smoke proof now records the current app-dev auto-match result against the broadened review-packet corpus, including matched `mui/base-ui#973`, strong assessment quality, and measured contrast separation.
@@ -42,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Local open-source assessment containers now receive a Docker-reachable Worker callback URL, so workspace finalization can persist submitted commit evidence during app-dev smokes.
 - Open-source workspace dev smoke now accepts source-backed AI bridge traces as captured AI transparency proof instead of requiring the missing-AI-use limitation when real bridge telemetry exists.
 - Devin auth-needed smoke coverage now fails unless recruiter detail and list progress expose persisted `agent_status` evidence, protecting AI-use transparency from silently falling back to diagnostic-only proof.
 - Devin bridge `AGENT_STATUS` messages are now persisted from the real container bridge as source-backed `agent_status` evidence, so auth-needed or unavailable AI states appear in recruiter assessment progress without counting as fake agent assistance.

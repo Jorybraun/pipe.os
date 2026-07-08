@@ -56,11 +56,56 @@ interface MatchEvidenceHyperedge {
   };
 }
 
+function hyperedgeHasRoleSource(edge: MatchEvidenceHyperedge): boolean {
+  if (edge.relation === 'candidate_role_repo_alignment') return true;
+  if (edge.relation === 'candidate_repo_evidence_alignment') return false;
+  return (edge.nodes ?? []).some((node) => node.kind === 'role_source');
+}
+
 function hyperedgeRelationBadge(edge: MatchEvidenceHyperedge): string {
-  if (edge.relation === 'candidate_repo_evidence_alignment') return 'CANDIDATE_REPO';
-  if (edge.relation === 'candidate_role_repo_alignment') return 'PERSON_ROLE_REPO';
-  const hasRoleSource = (edge.nodes ?? []).some((node) => node.kind === 'role_source');
-  return hasRoleSource ? 'PERSON_ROLE_REPO' : 'CANDIDATE_REPO';
+  if (hyperedgeHasRoleSource(edge)) return 'Candidate, role, and repo evidence';
+  return 'Candidate and repo evidence';
+}
+
+function humanizeMatchToken(value: string | null | undefined): string {
+  if (!value) return 'Check';
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+interface MatchQualityGateEntryObject {
+  id?: string;
+  code?: string;
+  label?: string;
+  message?: string;
+  passed?: boolean;
+  reason?: string;
+}
+
+type MatchQualityGateEntry = string | MatchQualityGateEntryObject;
+
+function isMatchQualityGateEntryObject(value: MatchQualityGateEntry): value is MatchQualityGateEntryObject {
+  return typeof value === 'object' && value !== null;
+}
+
+function matchQualityGateEntryLabel(entry: MatchQualityGateEntry): string {
+  if (typeof entry === 'string') return formatMatchCheckLabel(entry);
+  return entry.label
+    ?? formatMatchCheckLabel(entry.id ?? entry.code ?? entry.message ?? entry.reason);
+}
+
+function matchQualityGateEntryKey(entry: MatchQualityGateEntry, index: number, prefix: string): string {
+  if (typeof entry === 'string') return `${prefix}:${entry}:${index}`;
+  return `${prefix}:${entry.id ?? entry.code ?? entry.label ?? entry.message ?? entry.reason ?? 'entry'}:${index}`;
+}
+
+function humanizeVerdict(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return humanizeMatchToken(value);
 }
 
 interface MatchValidatorAgent {
@@ -107,8 +152,8 @@ export interface CodeReviewMatchExplanation {
   assessmentQuality?: MatchAssessmentQuality;
   qualityGate?: {
     verdict?: string;
-    checks?: string[];
-    diagnostics?: string[];
+    checks?: MatchQualityGateEntry[];
+    diagnostics?: MatchQualityGateEntry[];
   };
   candidateSourceCount?: number;
   repoSourceCount?: number;
@@ -146,21 +191,21 @@ function formatQualityMetricScore(score: number | undefined, maxScore: number | 
 }
 
 const MATCH_CHECK_LABELS: Record<string, string> = {
-  agent_validated_match: 'AGENT VALIDATED',
-  assessment_quality_verified: 'ASSESSMENT QUALITY',
-  bounded_stretch: 'BOUNDED STRETCH',
-  candidate_source_evidence: 'CANDIDATE EVIDENCE',
-  contrast_separation_verified: 'CONTRAST SEPARATION',
-  eligible_match: 'ELIGIBLE MATCH',
-  provenance_complete: 'PROVENANCE COMPLETE',
-  repo_source_spans: 'REPO SOURCE SPANS',
-  role_context_alignment: 'ROLE ALIGNMENT',
-  source_backed_manual_override: 'MANUAL OVERRIDE',
+  agent_validated_match: 'Agent validated',
+  assessment_quality_verified: 'Assessment quality',
+  bounded_stretch: 'Bounded stretch',
+  candidate_source_evidence: 'Candidate evidence',
+  contrast_separation_verified: 'Contrast separation',
+  eligible_match: 'Eligible match',
+  provenance_complete: 'Provenance complete',
+  repo_source_spans: 'Repo source spans',
+  role_context_alignment: 'Role alignment',
+  source_backed_manual_override: 'Manual override',
 };
 
 function formatMatchCheckLabel(checkId: string | null | undefined): string {
   if (!checkId) return 'CHECK';
-  return MATCH_CHECK_LABELS[checkId] ?? checkId.replace(/_/g, ' ').toUpperCase();
+  return MATCH_CHECK_LABELS[checkId] ?? humanizeMatchToken(checkId);
 }
 
 function firstSource(refs: MatchSourceRef[] | undefined): MatchSourceRef | null {
@@ -249,11 +294,6 @@ function MatchSourceSnippet({
         <div style={{ fontSize: 9, color: '#6cc3ff', fontFamily: 'Space Mono', fontWeight: 700, marginBottom: 4 }}>
           {label}
         </div>
-        {sourceRef.locator && (
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.38)', fontFamily: 'Space Mono', marginBottom: 4, wordBreak: 'break-word' }}>
-            {sourceRef.locator}
-          </div>
-        )}
         {sourceRef.exactText && (
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.72)', lineHeight: 1.55, wordBreak: 'break-word' }}>
             {sourceRef.exactText}
@@ -275,7 +315,7 @@ function MatchSourceSnippet({
                   wordBreak: 'break-word',
                 }}
               >
-                {concept}
+                {normalizeConceptLabel(concept)}
               </span>
             ))}
           </div>
@@ -300,11 +340,6 @@ function MatchHyperedgeNodeCard({ node }: { node: MatchEvidenceHyperedgeNode }):
       <div style={{ fontSize: 8, color: '#b9ddff', fontFamily: 'Space Mono', fontWeight: 700, letterSpacing: '0.1em', marginBottom: 5 }}>
         {formatHyperedgeNodeLabel(node)}
       </div>
-      {node.sourceRef.locator && (
-        <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.34)', fontFamily: 'Space Mono', marginBottom: 5, wordBreak: 'break-word' }}>
-          {node.sourceRef.locator}
-        </div>
-      )}
       {node.sourceRef.exactText && (
         <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.68)', lineHeight: 1.45, wordBreak: 'break-word' }}>
           {node.sourceRef.exactText}
@@ -324,7 +359,7 @@ function MatchHyperedgeNodeCard({ node }: { node: MatchEvidenceHyperedgeNode }):
                 fontFamily: 'Space Mono',
               }}
             >
-              {concept}
+              {normalizeConceptLabel(concept)}
             </span>
           ))}
         </div>
@@ -405,10 +440,10 @@ function matchModeLabel(
   hyperedges: MatchEvidenceHyperedge[],
   roleSource: MatchSourceRef | null,
 ): string {
-  if (roleSource) return 'PERSON_ROLE_REPO';
-  return hyperedges.some((edge) => hyperedgeRelationBadge(edge) === 'PERSON_ROLE_REPO')
-    ? 'PERSON_ROLE_REPO'
-    : 'CANDIDATE_REPO';
+  if (roleSource) return 'Candidate, role, and repo evidence';
+  return hyperedges.some((edge) => hyperedgeHasRoleSource(edge))
+    ? 'Candidate, role, and repo evidence'
+    : 'Candidate and repo evidence';
 }
 
 function topicPhrase(concepts: string[]): string | null {
@@ -446,7 +481,7 @@ function buildReadableMatchReason({
     return `A recruiter selected this PR, and PIPE verified it as a ${qualityText}source-backed review packet. This path validates reviewability without claiming CV fit.`;
   }
 
-  if (mode === 'PERSON_ROLE_REPO' && candidateSource && roleSource && repoSource) {
+  if (mode === 'Candidate, role, and repo evidence' && candidateSource && roleSource && repoSource) {
     return topics
       ? `We selected this PR because the source evidence points at ${topics}, and this PR asks you to review that same engineering surface.`
       : 'We selected this PR because your profile evidence, the role context, and the PR all point at the same reviewable engineering decision.';
@@ -521,7 +556,7 @@ function WhyThisPrPanel({
   if (!hasAnySource && !summary) return null;
 
   const mode = matchModeLabel(evidenceHyperedges, roleSource);
-  const quality = assessmentQuality?.verdict ?? null;
+  const quality = humanizeVerdict(assessmentQuality?.verdict) ?? null;
   const readableReason = buildReadableMatchReason({
     summary,
     mode,
@@ -728,7 +763,7 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
   const hasSourceBridge = Boolean(roleSource || candidateSource || repoSource);
   const checks = matchExplanation.qualityGate?.checks ?? [];
   const diagnostics = matchExplanation.qualityGate?.diagnostics ?? [];
-  const verdict = matchExplanation.qualityGate?.verdict ?? matchExplanation.status ?? 'SOURCE_BACKED';
+  const verdict = humanizeVerdict(matchExplanation.qualityGate?.verdict ?? matchExplanation.status ?? 'SOURCE_BACKED');
   const validatorAgent = matchExplanation.validatorAgent;
   const validatorChecks = validatorAgent?.checks ?? [];
   const assessmentQuality = matchExplanation.assessmentQuality;
@@ -814,7 +849,7 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               {assessmentQuality.verdict && (
                 <span style={{ fontSize: 8, color: '#b9ddff', border: '1px solid rgba(185,221,255,0.18)', borderRadius: 4, padding: '3px 6px', fontFamily: 'Space Mono', fontWeight: 700 }}>
-                  {assessmentQuality.verdict}
+                  {humanizeVerdict(assessmentQuality.verdict)}
                 </span>
               )}
               <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.68)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4, padding: '3px 6px', fontFamily: 'Space Mono' }}>
@@ -880,7 +915,7 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
               )}
               {validatorAgent.verdict && (
                 <span style={{ fontSize: 8, color: '#34d399', border: '1px solid rgba(52,211,153,0.22)', background: 'rgba(52,211,153,0.08)', borderRadius: 4, padding: '3px 6px', fontFamily: 'Space Mono', fontWeight: 700 }}>
-                  {validatorAgent.verdict}
+                  {humanizeVerdict(validatorAgent.verdict)}
                 </span>
               )}
             </div>
@@ -916,20 +951,23 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
 
       {checks.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: diagnostics.length > 0 || hasSourceBridge ? 10 : 0 }}>
-          {checks.map((check) => (
+          {checks.map((check, index) => (
             <span
-              key={check}
+              key={matchQualityGateEntryKey(check, index, 'check')}
+              title={isMatchQualityGateEntryObject(check) ? check.reason : undefined}
               style={{
                 fontSize: 8,
                 fontFamily: 'Space Mono',
-                color: 'rgba(255,255,255,0.62)',
-                border: '1px solid rgba(255,255,255,0.08)',
+                color: isMatchQualityGateEntryObject(check) && check.passed === false ? '#fca5a5' : 'rgba(255,255,255,0.62)',
+                border: isMatchQualityGateEntryObject(check) && check.passed === false
+                  ? '1px solid rgba(248,113,113,0.28)'
+                  : '1px solid rgba(255,255,255,0.08)',
                 borderRadius: 4,
                 padding: '3px 6px',
                 wordBreak: 'break-word',
               }}
             >
-              {formatMatchCheckLabel(check)}
+              {matchQualityGateEntryLabel(check)}
             </span>
           ))}
         </div>
@@ -944,9 +982,10 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
             marginBottom: hasSourceBridge ? 10 : 0,
           }}
         >
-          {diagnostics.map((diagnostic) => (
+          {diagnostics.map((diagnostic, index) => (
             <span
-              key={diagnostic}
+              key={matchQualityGateEntryKey(diagnostic, index, 'diagnostic')}
+              title={isMatchQualityGateEntryObject(diagnostic) ? diagnostic.reason : undefined}
               style={{
                 fontSize: 8,
                 fontFamily: 'Space Mono',
@@ -958,7 +997,7 @@ export function MatchProofPanel({ matchExplanation }: { matchExplanation: CodeRe
                 wordBreak: 'break-word',
               }}
             >
-              {formatMatchCheckLabel(diagnostic)}
+              {matchQualityGateEntryLabel(diagnostic)}
             </span>
           ))}
         </div>
@@ -1013,7 +1052,7 @@ export function ProblemPanel({
       {prDescription && (
         <div style={{ marginBottom: 40, padding: 24, background: 'rgba(96, 165, 250, 0.05)', border: '1px solid rgba(96, 165, 250, 0.1)', borderRadius: 8 }}>
           <div style={{ fontSize: 9, letterSpacing: '0.1em', color: '#60a5fa', marginBottom: 12, fontFamily: 'Space Mono', fontWeight: 700 }}>
-            PULL_REQUEST_DESCRIPTION
+            Pull request description
           </div>
           <div style={{ maxWidth: 'none', fontSize: 14 }}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -1027,7 +1066,7 @@ export function ProblemPanel({
       {issueBody && (issueBody.title || issueBody.body) && (
         <div style={{ marginBottom: 40, padding: 24, background: 'rgba(74, 222, 128, 0.05)', border: '1px solid rgba(74, 222, 128, 0.12)', borderRadius: 8 }}>
           <div style={{ fontSize: 9, letterSpacing: '0.1em', color: '#4ade80', marginBottom: 12, fontFamily: 'Space Mono', fontWeight: 700 }}>
-            OPEN_SOURCE_ISSUE
+            Linked issue
           </div>
           {issueBody.title && (
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12, fontFamily: 'Space Mono' }}>
@@ -1092,7 +1131,7 @@ export function ProblemPanel({
       {constraints && constraints.length > 0 && (
         <div style={{ marginTop: 40 }}>
           <h3 style={{ fontSize: 11, letterSpacing: '0.1em', color: 'var(--pipe-text-dim)', marginBottom: 16, fontFamily: 'Space Mono' }}>
-            CONSTRAINTS
+            Constraints
           </h3>
           <ul style={{ paddingLeft: 16, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
             {constraints.map((c, i) => (

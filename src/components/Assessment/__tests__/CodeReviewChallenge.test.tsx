@@ -76,6 +76,8 @@ describe('CodeReviewChallenge challenge packet', () => {
     expect(packet).toHaveTextContent('Leave line-level annotations tied to concrete code risks.');
     expect(packet).toHaveTextContent('Inline annotations with file and line references.');
     expect(packet).toHaveTextContent('Review only the assigned source-backed diff.');
+    expect(packet).not.toHaveTextContent('TASK_PACKET');
+    expect(packet).not.toHaveTextContent('MATCH_REASON');
     expect(packet).not.toHaveTextContent('internal-packet-id');
     expect(packet).not.toHaveTextContent('repo-source-span-secret');
   });
@@ -97,6 +99,7 @@ describe('CodeReviewChallenge challenge packet', () => {
     expect(packet).toHaveTextContent('base commit SHA');
     expect(packet).toHaveTextContent('success criteria');
     expect(packet).toHaveTextContent('expected evidence');
+    expect(packet).not.toHaveTextContent('PACKET_INCOMPLETE');
     expect(packet).not.toHaveTextContent('Line-level annotations tied to concrete code risks.');
   });
 });
