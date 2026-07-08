@@ -1,4 +1,4 @@
-import { setupClerkTestingToken } from "@clerk/testing/playwright";
+import { clerk, setupClerkTestingToken } from "@clerk/testing/playwright";
 import { test as setup, expect, type Page } from "@playwright/test";
 import path from "path";
 import fs from "fs";
@@ -62,6 +62,17 @@ async function waitForSessionCookie(page: Page, timeoutMs: number): Promise<void
   throw new Error("[auth.setup] Clerk session cookie was not issued after sign-in.");
 }
 
+async function signInWithClerkTestingEmail(page: Page): Promise<void> {
+  const email = process.env.E2E_EMAIL?.trim() || "e2e-test@pipe.dev";
+  await clerk.signIn({
+    page,
+    emailAddress: email,
+    setupClerkTestingTokenOptions: {
+      debug: process.env.NODE_ENV === "development",
+    },
+  });
+}
+
 /**
  * Authenticate via Clerk sign-in using testing tokens.
  * @clerk/testing bypasses bot detection and device verification.
@@ -80,54 +91,54 @@ setup("authenticate via Clerk", async ({ page }) => {
   }
 
   if (hasUsableSessionCookie()) {
-    await page.context().storageState({ path: authFile });
-    return;
+    try {
+      const state = JSON.parse(fs.readFileSync(authFile, "utf-8")) as {
+        cookies?: StorageStateCookie[];
+      };
+      if (state.cookies?.length) {
+        await page.context().addCookies(state.cookies);
+      }
+      if (await getSessionCookie(page)) {
+        await page.context().storageState({ path: authFile });
+        return;
+      }
+    } catch (error) {
+      console.warn("[auth.setup] Failed to restore auth fixture:", error);
+    }
   }
 
-  // Step 1: Click the SIGN IN button on the custom gate
-  const signInButton = page.getByTestId("auth-gate-sign-in");
   const alreadySignedIn = page.getByRole("button", { name: /sign out/i });
   const recruiterShell = page.getByRole("button", { name: /new interview/i }).first();
-  const visibleState = async (locator: ReturnType<Page["locator"]>, state: string): Promise<string> => {
-    await locator.waitFor({ state: "visible", timeout: AUTH_GATE_TIMEOUT_MS });
-    return state;
-  };
-  const authState = await Promise.race([
-    visibleState(signInButton, "auth-gate").catch(() => "missing"),
-    visibleState(alreadySignedIn, "signed-in").catch(() => "missing"),
-    visibleState(recruiterShell, "signed-in").catch(() => "missing"),
-  ]);
 
-  if (authState === "signed-in") {
+  if ((await alreadySignedIn.count()) > 0 || (await recruiterShell.count()) > 0) {
     await page.context().storageState({ path: authFile });
     return;
   }
 
-  await expect(signInButton).toBeVisible({ timeout: AUTH_GATE_TIMEOUT_MS });
   try {
-    await signInButton.click({ timeout: 5_000 });
+    await signInWithClerkTestingEmail(page);
   } catch {
-    // Fallback when overlays/animation keep the button from behaving like a normal click.
-    await signInButton.dispatchEvent("click");
+    // Fallback to explicit UI flow if direct helper sign-in fails.
+    const signInButton = page.getByTestId("auth-gate-sign-in");
+    await expect(signInButton).toBeVisible({ timeout: AUTH_GATE_TIMEOUT_MS });
+    try {
+      await signInButton.click({ timeout: 5_000 });
+    } catch {
+      await signInButton.dispatchEvent("click");
+    }
+
+    const emailInput = page.locator('input[name="identifier"]');
+    await expect(emailInput).toBeVisible({ timeout: 15_000 });
+    const email = process.env.E2E_EMAIL?.trim() || "e2e-test@pipe.dev";
+    await emailInput.fill(email);
+    await page.locator('button:has-text("Continue")').click();
+
+    const password = process.env.E2E_PASSWORD?.trim() || "PipeE2E_Test2026!";
+    const passwordInput = page.locator('input[name="password"]');
+    await expect(passwordInput).toBeVisible({ timeout: 10_000 });
+    await passwordInput.fill(password);
+    await page.locator('button:has-text("Continue")').click();
   }
-
-  // Step 2: Clerk modal opens — fill email
-  const emailInput = page.locator('input[name="identifier"]');
-  await expect(emailInput).toBeVisible({ timeout: 15_000 });
-  const email = process.env.E2E_EMAIL?.trim() || "e2e-test@pipe.dev";
-  await emailInput.fill(email);
-
-  // Step 3: Click continue
-  await page.locator('button:has-text("Continue")').click();
-
-  // Step 4: Fill password
-  const passwordInput = page.locator('input[name="password"]');
-  await expect(passwordInput).toBeVisible({ timeout: 10000 });
-  const password = process.env.E2E_PASSWORD?.trim() || "PipeE2E_Test2026!";
-  await passwordInput.fill(password);
-
-  // Step 5: Submit
-  await page.locator('button:has-text("Continue")').click();
 
   // Step 6: Wait for the auth artifact every authenticated test actually uses.
   await waitForSessionCookie(page, 30_000);

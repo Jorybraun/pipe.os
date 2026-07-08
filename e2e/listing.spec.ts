@@ -99,7 +99,7 @@ async function teardownPipeline(
 test.describe("Listing Page — navigation", () => {
   test.beforeEach(async ({ page }) => {
     await ensureClerkAuthReady(page);
-    await page.goto("/roles");
+    await page.goto("/roles", { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("domcontentloaded");
   });
 
@@ -120,7 +120,7 @@ test.describe("Listing Page — with seeded pipelines", () => {
 
   test.beforeEach(async ({ page }) => {
     await ensureClerkAuthReady(page);
-    await page.goto("/roles");
+    await page.goto("/roles", { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("domcontentloaded");
   });
 
@@ -140,7 +140,7 @@ test.describe("Listing Page — with seeded pipelines", () => {
     });
     seededIds.push(pipeline.id);
 
-    await page.goto("/roles");
+    await page.goto("/roles", { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("domcontentloaded");
 
     // Title visible in listing
@@ -160,7 +160,7 @@ test.describe("Listing Page — with seeded pipelines", () => {
     const backend = await seedPipeline(request, authToken, { title: uniqueBackend, status: "DRAFT" });
     seededIds.push(frontend.id, backend.id);
 
-    await page.goto("/roles");
+    await page.goto("/roles", { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("domcontentloaded");
 
     const searchInput = page.locator('input[placeholder="Search interview plans..."]');
@@ -177,7 +177,7 @@ test.describe("Listing Page — with seeded pipelines", () => {
     const pipeline = await seedPipeline(request, authToken, { title: uniqueTitle });
     seededIds.push(pipeline.id);
 
-    await page.goto("/roles");
+    await page.goto("/roles", { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("domcontentloaded");
 
     // Confirm pipeline is visible
