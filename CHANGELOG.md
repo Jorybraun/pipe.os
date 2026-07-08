@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Local open-source assessment containers now receive a Docker-reachable Worker callback URL, so workspace finalization can persist submitted commit evidence during app-dev smokes.
 - Open-source workspace dev smoke now accepts source-backed AI bridge traces as captured AI transparency proof instead of requiring the missing-AI-use limitation when real bridge telemetry exists.
 - Devin auth-needed smoke coverage now fails unless recruiter detail and list progress expose persisted `agent_status` evidence, protecting AI-use transparency from silently falling back to diagnostic-only proof.
 - Devin bridge `AGENT_STATUS` messages are now persisted from the real container bridge as source-backed `agent_status` evidence, so auth-needed or unavailable AI states appear in recruiter assessment progress without counting as fake agent assistance.
