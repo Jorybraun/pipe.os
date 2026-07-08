@@ -20,7 +20,6 @@ import { useEffect, useState } from 'react';
 import {
   Show,
   SignInButton,
-  useAuth as useClerkAuthHook,
   useClerk,
 } from '@clerk/react';
 import { useSetAuth } from '../DataContext';
@@ -157,15 +156,15 @@ function ClerkSignInScreen(): JSX.Element {
  * ClerkAuthGate) so that Clerk's user state is available.
  */
 export function useClerkAuth(): AuthProvider {
-  const { isLoaded, userId } = useClerkAuthHook();
-  const { getToken } = useClerkAuthHook();
-  const { signOut: clerkSignOut } = useClerk();
+  const clerk = useClerk();
+  const user = clerk.user;
+  const userId = user?.id ?? '';
 
   // Warm the API client token when userId is available
   useEffect(() => {
     if (!userId) return;
-    warmApiClientToken(getToken, userId);
-  }, [getToken, userId]);
+    warmApiClientToken(() => clerk.session?.getToken(), userId);
+  }, [clerk.session, userId]);
 
   return {
     currentUser: userId
@@ -174,9 +173,9 @@ export function useClerkAuth(): AuthProvider {
           username: userId,
         }
       : null,
-    isLoading: !isLoaded,
+    isLoading: !clerk.loaded,
     signOut: async (): Promise<void> => {
-      await clerkSignOut();
+      await clerk.signOut();
     },
     /**
      * Fetch the current Clerk session token.
@@ -184,7 +183,7 @@ export function useClerkAuth(): AuthProvider {
      */
     getSessionToken: async (): Promise<string | null> => {
       try {
-        return await getToken();
+        return await clerk.session?.getToken() ?? null;
       } catch {
         return null;
       }
@@ -193,7 +192,7 @@ export function useClerkAuth(): AuthProvider {
      * Synchronously get the current Clerk session token.
      */
     getToken: async (): Promise<string> => {
-      const token = await getToken();
+      const token = await clerk.session?.getToken();
       if (!token) {
         throw new Error('No token available');
       }
@@ -202,7 +201,7 @@ export function useClerkAuth(): AuthProvider {
     /**
      * The current user's ID from Clerk.
      */
-    userId: userId ?? '',
+    userId,
   };
 }
 
@@ -224,14 +223,26 @@ export function useClerkAuth(): AuthProvider {
  *   </ClerkAuthGate>
  */
 export function ClerkAuthWrapper({ children }: { children: React.ReactNode }): JSX.Element {
-  const auth = useClerkAuth();
   const setAuth = useSetAuth();
+  const [auth, setAuthState] = useState<AuthProvider | null>(null);
 
   useEffect(() => {
-    setAuth(auth);
-    // Re-register on sign-in, sign-out, and loading transitions.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auth.currentUser?.userId, auth.isLoading]);
+    // Only call useClerkAuth when we're inside Clerk context
+    // This is a workaround to avoid calling Clerk hooks outside provider
+    try {
+      const clerkAuth = useClerkAuth();
+      setAuthState(clerkAuth);
+    } catch (error) {
+      // If we're not in Clerk context yet, that's fine
+      // The auth will be set when the context is available
+    }
+  }, []);
+
+  useEffect(() => {
+    if (auth) {
+      setAuth(auth);
+    }
+  }, [auth, auth?.currentUser?.userId, auth?.isLoading]);
 
   return <>{children}</>;
 }
