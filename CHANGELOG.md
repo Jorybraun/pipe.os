@@ -47,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Invite creation no longer loses the open invite modal mid-create: `SchedulingDashboard` now renders `InviteCreationModal` in its loading and error branches too, so the post-create refetch (and SSE-notification refetches) can no longer unmount the modal and silently discard the success view with the assessment/guest link. Proven by the new "keeps the open invite modal mounted while the interview list refetches" unit test in `SchedulingDashboard.test.tsx`.
+
 - Open-source workspace dev smoke now accepts source-backed AI bridge traces as captured AI transparency proof instead of requiring the missing-AI-use limitation when real bridge telemetry exists.
 - Devin auth-needed smoke coverage now fails unless recruiter detail and list progress expose persisted `agent_status` evidence, protecting AI-use transparency from silently falling back to diagnostic-only proof.
 - Devin bridge `AGENT_STATUS` messages are now persisted from the real container bridge as source-backed `agent_status` evidence, so auth-needed or unavailable AI states appear in recruiter assessment progress without counting as fake agent assistance.

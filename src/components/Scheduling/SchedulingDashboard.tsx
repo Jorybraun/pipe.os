@@ -489,21 +489,101 @@ export function SchedulingDashboard(): JSX.Element {
   // Render
   // ---------------------------------------------------------------------------
 
+  // Contact-first interview invite. Rendered in every branch (loading/error/
+  // loaded) so an open modal — including its post-create success view with the
+  // invite link — survives the list refetch triggered by invite creation.
+  const inviteModalNode = (
+    <InviteCreationModal
+      isOpen={showInviteModal}
+      onClose={() => setShowInviteModal(false)}
+      initialRecipientName={invitePrefill.recipientName}
+      initialRecipientEmail={invitePrefill.recipientEmail}
+      initialInterviewType={invitePrefill.interviewType}
+      initialRecruiterNotes={invitePrefill.recruiterNotes}
+      onCreateInvite={async (data: {
+        title?: string;
+        description?: string;
+        recipientName: string;
+        recipientEmail: string;
+        meetingType: MeetingType;
+        interviewType: InterviewType;
+        recruiterNotes?: string;
+        scheduledAt?: string;
+        schedulingProvider?: SchedulingProvider;
+        schedulingUrl?: string;
+        githubRepoUrl?: string | null;
+        githubPrNumber?: number | null;
+        challengeBaseCommitSha?: string;
+        challengeTitle?: string;
+        challengeInstructions?: string;
+        challengeSuccessCriteria?: string[];
+        challengeExpectedEvidence?: string[];
+        challengeVerificationCommand?: string;
+        features?: {
+          videoEnabled: boolean;
+          workspaceEnabled: boolean;
+          recordingEnabled: boolean;
+          aiAssistantEnabled: boolean;
+        };
+      }) => {
+        const result = await api.post<{
+          interview: {
+            id: string;
+            assessmentSetup?: AssessmentSetupProjection | null;
+          };
+        }>(
+          '/api/v1/scheduling/interviews',
+          data,
+        );
+        let inviteResult: InviteResponse | null = null;
+        let inviteError: string | undefined;
+        try {
+          inviteResult = await withTimeout(
+            api.post<InviteResponse>(
+              `/api/v1/scheduling/interviews/${result.interview.id}/invite`,
+              { email: data.recipientEmail },
+            ),
+            INVITE_DELIVERY_TIMEOUT_MS,
+            'Interview created, but invite delivery is taking longer than expected. Open the interview to copy or resend the link.',
+          );
+        } catch (err) {
+          inviteError = err instanceof Error ? err.message : 'Invite email could not be sent.';
+        }
+        void refetch().catch((err: unknown) => {
+          console.error('[SchedulingDashboard] Failed to refresh interviews after invite creation:', err);
+        });
+        return {
+          id: result.interview.id,
+          meetingUrl: resolveInviteCreationGuestLink(inviteResult),
+          emailSent: inviteResult?.emailSent ?? false,
+          emailQueued: inviteResult?.emailQueued ?? false,
+          provider: inviteResult?.provider,
+          emailError: inviteResult?.emailError ?? inviteError,
+          assessmentSetup: result.interview.assessmentSetup ?? null,
+        };
+      }}
+    />
+  );
+
   if (isLoading) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {[1, 2, 3].map((i) => (
           <Skeleton key={i} height={64} style={{ borderRadius: 8 }} />
         ))}
+        {inviteModalNode}
       </div>
     );
   }
 
   if (error) {
     return (
-      <p style={{ color: '#f87171', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
-        Failed to load interviews: {error.message}
-      </p>
+      <div>
+        <p style={{ color: '#f87171', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
+          Failed to load interviews: {error.message}
+        </p>
+        {inviteModalNode}
+      </div>
     );
   }
 
@@ -838,77 +918,7 @@ export function SchedulingDashboard(): JSX.Element {
         </div>
       )}
 
-      {/* Contact-first interview invite */}
-      <InviteCreationModal
-        isOpen={showInviteModal}
-        onClose={() => setShowInviteModal(false)}
-        initialRecipientName={invitePrefill.recipientName}
-        initialRecipientEmail={invitePrefill.recipientEmail}
-        initialInterviewType={invitePrefill.interviewType}
-        initialRecruiterNotes={invitePrefill.recruiterNotes}
-        onCreateInvite={async (data: {
-          title?: string;
-          description?: string;
-          recipientName: string;
-          recipientEmail: string;
-          meetingType: MeetingType;
-          interviewType: InterviewType;
-          recruiterNotes?: string;
-          scheduledAt?: string;
-          schedulingProvider?: SchedulingProvider;
-          schedulingUrl?: string;
-          githubRepoUrl?: string | null;
-          githubPrNumber?: number | null;
-          challengeBaseCommitSha?: string;
-          challengeTitle?: string;
-          challengeInstructions?: string;
-          challengeSuccessCriteria?: string[];
-          challengeExpectedEvidence?: string[];
-          challengeVerificationCommand?: string;
-          features?: {
-            videoEnabled: boolean;
-            workspaceEnabled: boolean;
-            recordingEnabled: boolean;
-            aiAssistantEnabled: boolean;
-          };
-        }) => {
-          const result = await api.post<{
-            interview: {
-              id: string;
-              assessmentSetup?: AssessmentSetupProjection | null;
-            };
-          }>(
-            '/api/v1/scheduling/interviews',
-            data,
-          );
-          let inviteResult: InviteResponse | null = null;
-          let inviteError: string | undefined;
-          try {
-            inviteResult = await withTimeout(
-              api.post<InviteResponse>(
-                `/api/v1/scheduling/interviews/${result.interview.id}/invite`,
-                { email: data.recipientEmail },
-              ),
-              INVITE_DELIVERY_TIMEOUT_MS,
-              'Interview created, but invite delivery is taking longer than expected. Open the interview to copy or resend the link.',
-            );
-          } catch (err) {
-            inviteError = err instanceof Error ? err.message : 'Invite email could not be sent.';
-          }
-          void refetch().catch((err: unknown) => {
-            console.error('[SchedulingDashboard] Failed to refresh interviews after invite creation:', err);
-          });
-          return {
-            id: result.interview.id,
-            meetingUrl: resolveInviteCreationGuestLink(inviteResult),
-            emailSent: inviteResult?.emailSent ?? false,
-            emailQueued: inviteResult?.emailQueued ?? false,
-            provider: inviteResult?.provider,
-            emailError: inviteResult?.emailError ?? inviteError,
-            assessmentSetup: result.interview.assessmentSetup ?? null,
-          };
-        }}
-      />
+      {inviteModalNode}
     </div>
   );
 }
