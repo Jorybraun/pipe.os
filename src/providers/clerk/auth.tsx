@@ -16,9 +16,9 @@
  * Consumer code accesses auth state via useAuth() from 'providers', not here.
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Show,
+  useAuth as useClerkAuthState,
   SignInButton,
   useClerk,
 } from '@clerk/react';
@@ -26,7 +26,7 @@ import { useSetAuth } from '../DataContext';
 import type { AuthProvider } from '../types';
 import { AppBackground } from '../../components/ui/AppBackground';
 import { LoadingSplash } from '../../components/ui/LoadingSplash';
-import { DEV_PROXY_RECRUITER_USER_ID } from '../../lib/auth/devProxyAuth';
+import { warmApiClientToken } from '../../hooks/useApiClient';
 
 // ─── ClerkAuthGate ────────────────────────────────────────────────────────────
 
@@ -41,6 +41,7 @@ import { DEV_PROXY_RECRUITER_USER_ID } from '../../lib/auth/devProxyAuth';
 export function ClerkAuthGate({ children }: { children: React.ReactNode }): JSX.Element {
   const [showSplash, setShowSplash] = useState(true);
   const [fadingOut, setFadingOut] = useState(false);
+  const [showAuthFallback, setShowAuthFallback] = useState(false);
 
   useEffect(() => {
     // Start fading out after a short delay
@@ -54,14 +55,33 @@ export function ClerkAuthGate({ children }: { children: React.ReactNode }): JSX.
     return () => clearTimeout(timer);
   }, [fadingOut]);
 
+  const auth = useClerkAuth();
+
+  useEffect(() => {
+    if (!auth.isLoading) {
+      setShowAuthFallback(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setShowAuthFallback(true);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [auth.isLoading]);
+
+  if (auth.isLoading && !showAuthFallback) {
+    return (
+      <>
+        <AppBackground />
+        {showSplash && <LoadingSplash fadingOut={fadingOut} />}
+      </>
+    );
+  }
+
   return (
     <>
       <AppBackground />
       {showSplash && <LoadingSplash fadingOut={fadingOut} />}
-      <Show when="signed-out">
-        <ClerkSignInScreen />
-      </Show>
-      <Show when="signed-in">{children}</Show>
+      {auth.currentUser ? children : <ClerkSignInScreen />}
     </>
   );
 }
@@ -149,58 +169,58 @@ function ClerkSignInScreen(): JSX.Element {
 /**
  * useClerkAuth — builds an AuthProvider snapshot from Clerk's hooks.
  *
- * Must be called inside the <Show when="signed-in"> boundary (i.e. inside
- * ClerkAuthGate) so that Clerk's user state is available.
+ * Internal to the Clerk auth implementation; only ClerkAuthGate calls this.
+ * Consumer code must use `useAuth()` from the providers barrel.
  */
-export function useClerkAuth(): AuthProvider {
+function useClerkAuth(): AuthProvider {
   const clerk = useClerk();
-  const user = clerk.user;
-  const userId = user?.id ?? '';
+  const clerkAuth = useClerkAuthState();
+  const userId = clerkAuth.userId ?? '';
+  const isLoaded = clerkAuth.isLoaded;
+
+  const signOut = useCallback(async (): Promise<void> => {
+    await clerk.signOut();
+  }, [clerk]);
+
+  const getSessionToken = useCallback(async (): Promise<string | null> => {
+    try {
+      const token = await clerkAuth.getToken();
+      return token ?? null;
+    } catch {
+      return null;
+    }
+  }, [clerkAuth]);
+
+  const getToken = useCallback(async (): Promise<string> => {
+    const token = await clerkAuth.getToken();
+    if (!token) {
+      throw new Error('No token available');
+    }
+    return token;
+  }, [clerkAuth]);
 
   // Warm the API client token when userId is available
   useEffect(() => {
     if (!userId) return;
-    warmApiClientToken(() => clerk.session?.getToken() ?? Promise.resolve(null), userId);
-  }, [clerk.session, userId]);
+    warmApiClientToken(getSessionToken, userId);
+  }, [getSessionToken, userId]);
 
-  return {
-    currentUser: userId
-      ? {
-          userId,
-          username: userId,
-        }
-      : null,
-    isLoading: !clerk.loaded,
-    signOut: async (): Promise<void> => {
-      await clerk.signOut();
-    },
-    /**
-     * Fetch the current Clerk session token.
-     * Returns null on error (e.g. session expired or not loaded).
-     */
-    getSessionToken: async (): Promise<string | null> => {
-      try {
-        const token = await clerk.session?.getToken();
-        return token ?? null;
-      } catch {
-        return null;
-      }
-    },
-    /**
-     * Synchronously get the current Clerk session token.
-     */
-    getToken: async (): Promise<string> => {
-      const token = await clerk.session?.getToken();
-      if (!token) {
-        throw new Error('No token available');
-      }
-      return token;
-    },
-    /**
-     * The current user's ID from Clerk.
-     */
-    userId,
-  };
+  return useMemo(
+    () => ({
+      currentUser: userId
+        ? {
+            userId,
+            username: userId,
+          }
+        : null,
+      isLoading: !isLoaded,
+      signOut,
+      getSessionToken,
+      getToken,
+      userId,
+    }),
+    [userId, isLoaded, signOut, getSessionToken, getToken],
+  );
 }
 
 // ─── ClerkAuthWrapper ─────────────────────────────────────────────────────────
@@ -222,69 +242,58 @@ export function useClerkAuth(): AuthProvider {
  */
 export function ClerkAuthWrapper({ children }: { children: React.ReactNode }): JSX.Element {
   const setAuth = useSetAuth();
-  const [auth, setAuthState] = useState<AuthProvider | null>(null);
+  const lastAuthKey = useRef('');
   const clerk = useClerk();
+  const clerkAuth = useClerkAuthState();
+  const userId = clerkAuth.userId ?? '';
+  const isLoaded = clerkAuth.isLoaded;
+  const isSignedIn = clerkAuth.isSignedIn;
 
-  useEffect(() => {
-    if (clerk.loaded && clerk.user) {
-      const userId = clerk.user.id;
-      const newAuth: AuthProvider = {
-        currentUser: userId
-          ? {
-              userId,
-              username: userId,
-            }
-          : null,
-        isLoading: !clerk.loaded,
-        signOut: async (): Promise<void> => {
-          await clerk.signOut();
-        },
-        getSessionToken: async (): Promise<string | null> => {
-          try {
-            const token = await clerk.session?.getToken();
-            return token ?? null;
-          } catch {
-            return null;
-          }
-        },
-        getToken: async (): Promise<string> => {
-          const token = await clerk.session?.getToken();
-          if (!token) {
-            throw new Error('No token available');
-          }
-          return token;
-        },
-        userId,
-      };
-      setAuthState(newAuth);
+  const signOut = useCallback(async (): Promise<void> => {
+    await clerk.signOut();
+  }, [clerk]);
+
+  const getSessionToken = useCallback(async (): Promise<string | null> => {
+    try {
+      const token = await clerkAuth.getToken();
+      return token ?? null;
+    } catch {
+      return null;
     }
-  }, [clerk.loaded, clerk.user, clerk.session]);
+  }, [clerkAuth]);
 
-  useEffect(() => {
-    if (auth) {
-      setAuth(auth);
+  const getToken = useCallback(async (): Promise<string> => {
+    const token = await clerkAuth.getToken();
+    if (!token) {
+      throw new Error('No token available');
     }
-  }, [auth, auth?.currentUser?.userId, auth?.isLoading]);
+    return token;
+  }, [clerkAuth]);
 
-  return <>{children}</>;
-}
-
-export function DevProxyAuthWrapper({ children }: { children: React.ReactNode }): JSX.Element {
-  const setAuth = useSetAuth();
+  const newAuth: AuthProvider | null = useMemo(() => {
+    if (!isLoaded || !isSignedIn) return null;
+    return {
+      currentUser: userId
+        ? {
+            userId,
+            username: userId,
+          }
+        : null,
+      isLoading: !isLoaded,
+      signOut,
+      getSessionToken,
+      getToken,
+      userId,
+    };
+  }, [isLoaded, isSignedIn, userId, signOut, getSessionToken, getToken]);
 
   useEffect(() => {
-    setAuth({
-      currentUser: {
-        userId: DEV_PROXY_RECRUITER_USER_ID,
-        username: 'PIPE app-dev recruiter',
-      },
-      isLoading: false,
-      signOut: async (): Promise<void> => {},
-      getSessionToken: async (): Promise<string | null> => null,
-      getToken: async (): Promise<string> => '',
-      userId: DEV_PROXY_RECRUITER_USER_ID,
-    });
-  }, [setAuth]);
+    if (!newAuth) return;
+    const authKey = `${newAuth.userId}|${String(newAuth.isLoading)}`;
+    if (lastAuthKey.current === authKey) return;
+    lastAuthKey.current = authKey;
+    setAuth(newAuth);
+  }, [newAuth, setAuth]);
 
   return <>{children}</>;
 }

@@ -61,18 +61,17 @@ describe('main auth bootstrap', () => {
     window.history.pushState({}, '', '/');
   });
 
-  it('skips ClerkProvider when the dev proxy auth bypass is enabled', async () => {
-    await loadMainAt('/interviews?devProxyAuth=1', 'pk_test_dev');
-
-    expect(screen.getByTestId('pipe-provider')).toBeTruthy();
-    expect(screen.queryByTestId('clerk-provider')).toBeNull();
-    expect(screen.getByTestId('app-root')).toHaveAttribute('data-auth-missing', 'false');
-  });
-
-  it('keeps ClerkProvider when a Clerk key exists outside the dev proxy bypass', async () => {
+  it('keeps ClerkProvider when a Clerk key exists', async () => {
     await loadMainAt('/interviews', 'pk_test_dev');
 
     expect(screen.getByTestId('clerk-provider')).toBeTruthy();
     expect(screen.getByTestId('app-root')).toHaveAttribute('data-auth-missing', 'false');
+  });
+
+  it('shows missing auth when no Clerk key is configured', async () => {
+    await loadMainAt('/interviews', undefined);
+
+    expect(screen.queryByTestId('clerk-provider')).toBeNull();
+    expect(screen.getByTestId('app-root')).toHaveAttribute('data-auth-missing', 'true');
   });
 });

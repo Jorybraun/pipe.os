@@ -33,18 +33,6 @@ describe('useApiClient', () => {
     window.history.pushState({}, '', '/');
   });
 
-  it('does not attach a bearer token when dev proxy auth bypass is enabled', async () => {
-    window.history.pushState({}, '', '/interviews?devProxyAuth=1');
-    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const { result } = renderHook(() => useApiClient(), { wrapper });
-    await result.current.get('/api/v1/interviews');
-
-    expect(getSessionToken).not.toHaveBeenCalled();
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty('Authorization');
-  });
-
   it('uses PIPE auth on normal recruiter routes', async () => {
     window.history.pushState({}, '', '/interviews');
     const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));

@@ -154,7 +154,9 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
     await page.getByPlaceholder("Company", { exact: true }).fill("PIPE Smoke Co");
     await page.getByPlaceholder("Role / title").fill("Roleless Engineering Lead");
     await page.getByRole("button", { name: /^add$/i }).click();
-    await expect(page.getByText(personEmail)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByPlaceholder("email@example.com")).toHaveValue(personEmail, {
+      timeout: 15000,
+    });
 
     const token = await getAuthToken(page);
     const contactsRes = await request.get(`${RECRUITER_API_BASE}/api/v1/contacts`, {

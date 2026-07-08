@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — Removed frontend dev proxy auth bypass
+
+- Deleted `src/lib/auth/devProxyAuth.ts`, `src/lib/api/devProxyPrefetch.ts`, and their tests.
+- Removed the `?devProxyAuth=1` query-param bypass path from `main.tsx`, `App.tsx`, `ClerkAuthWrapper`, `useApiClient`, `createApiClient`, and the SSE notification hooks. The app now requires `VITE_CLERK_PUBLISHABLE_KEY` and authenticates through Clerk for recruiter routes.
+- Re-exported `useAuth` from `providers/clerk` as `useClerkAuth` so consumers receive stable auth context instead of rebuilding Clerk-derived `getToken` closures on every render.
+- Added ADR-055 documenting the removal and rationale.
+
 ### Fixed — Clerk authentication context error
 
 - Fixed `useAuth can only be used within the <ClerkProvider /> component` error by ensuring all components use the local `useClerkAuth` from the providers module instead of directly importing from `@clerk/react`.

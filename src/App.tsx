@@ -11,7 +11,7 @@ import {
   useParams,
   useLocation,
 } from "react-router-dom";
-import { ClerkAuthGate, ClerkAuthWrapper, DevProxyAuthWrapper } from "./providers/clerk";
+import { ClerkAuthGate, ClerkAuthWrapper } from "./providers/clerk";
 import { useAuth } from "./providers";
 import { Layout, SidebarNav } from "./components";
 import { AgentDrawerProvider, useAgentDrawer } from "./contexts/AgentDrawerContext";
@@ -58,7 +58,6 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { RecruiterCallDrawer } from "./components/Video/RecruiterCallDrawer";
 import { SidebarPortalProvider } from "./contexts/SidebarPortalContext";
 import { StageRefetchProvider } from "./contexts/StageRefetchContext";
-import { isDevProxyRecruiterAuthBypassEnabled } from "./lib/auth/devProxyAuth";
 
 /**
  * SubHeader - Main interactive UI for navigation and context
@@ -517,16 +516,6 @@ function RecruiterRouteTree({ syncClerkTheme }: { syncClerkTheme: boolean }): JS
 }
 
 function RecruiterApp(): JSX.Element {
-  if (isDevProxyRecruiterAuthBypassEnabled()) {
-    return (
-      <ThemeProvider forceMode="pipe-blue">
-        <DevProxyAuthWrapper>
-          <RecruiterRouteTree syncClerkTheme={false} />
-        </DevProxyAuthWrapper>
-      </ThemeProvider>
-    );
-  }
-
   return (
     <ThemeProvider forceMode="pipe-blue">
       <ClerkAuthGate>

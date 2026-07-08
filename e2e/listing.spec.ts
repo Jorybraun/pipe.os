@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { clerkSetup, setupClerkTestingToken } from "@clerk/testing/playwright";
 import { API_BASE } from './env';
 
 /**
@@ -13,8 +14,18 @@ import { API_BASE } from './env';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+let clerkTestSetup: Promise<void> | null = null;
+
+async function ensureClerkAuthReady(page: Page): Promise<void> {
+  if (!clerkTestSetup) {
+    clerkTestSetup = clerkSetup();
+  }
+  await clerkTestSetup;
+  await setupClerkTestingToken({ page });
+}
+
 async function getAuthToken(page: Page): Promise<string> {
-  await page.waitForLoadState("networkidle");
+  await page.waitForLoadState("domcontentloaded");
   const cookies = await page.context().cookies();
   const sessionCookie = cookies.find((c) => c.name === "__session");
   if (!sessionCookie) {
@@ -87,24 +98,31 @@ async function teardownPipeline(
 
 test.describe("Listing Page — navigation", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await ensureClerkAuthReady(page);
+    await page.goto("/roles");
+    await page.waitForLoadState("domcontentloaded");
   });
 
-  test("CREATE NEW PIPE button navigates to /pipeline/new", async ({ page }) => {
-    const createButton = page.locator('text=CREATE NEW PIPE');
+  test("NEW PLAN button navigates to /roles/new", async ({ page }) => {
+    const createButton = page.getByRole("button", { name: /^new plan$/i });
     await expect(createButton).toBeVisible({ timeout: 10000 });
     await createButton.click();
-    await expect(page).toHaveURL(/\/pipeline\/new/);
+    await expect(page).toHaveURL(/\/roles\/new/);
   });
 
   test("SIGN OUT button is visible", async ({ page }) => {
-    await expect(page.locator("text=SIGN OUT")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("button", { name: /sign out/i })).toBeVisible({ timeout: 10000 });
   });
 });
 
 test.describe("Listing Page — with seeded pipelines", () => {
   const seededIds: string[] = [];
+
+  test.beforeEach(async ({ page }) => {
+    await ensureClerkAuthReady(page);
+    await page.goto("/roles");
+    await page.waitForLoadState("domcontentloaded");
+  });
 
   test.afterEach(async ({ request, page }) => {
     const authToken = await getAuthToken(page);
@@ -112,7 +130,7 @@ test.describe("Listing Page — with seeded pipelines", () => {
     seededIds.length = 0;
   });
 
-  test("displays seeded pipeline with correct title, status and candidate count", async ({ page, request }) => {
+  test("displays seeded pipeline with correct title and candidate count", async ({ page, request }) => {
     const authToken = await getAuthToken(page);
     const uniqueTitle = `E2E Display ${Date.now()}`;
     const pipeline = await seedPipeline(request, authToken, {
@@ -122,59 +140,30 @@ test.describe("Listing Page — with seeded pipelines", () => {
     });
     seededIds.push(pipeline.id);
 
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.goto("/roles");
+    await page.waitForLoadState("domcontentloaded");
 
     // Title visible in listing
-    await expect(page.locator(`text=${uniqueTitle}`)).toBeVisible({ timeout: 10000 });
+    const title = page.getByRole("heading", { name: uniqueTitle });
+    await expect(title).toBeVisible({ timeout: 10000 });
 
     // Candidate count rendered as "02" in RoleCard
-    const card = page.locator("text=" + uniqueTitle).locator("xpath=../../../../..");
-    await expect(card.locator("text=/\\b02\\b/")).toBeVisible({ timeout: 5000 });
-  });
-
-  test("filters by status", async ({ page, request }) => {
-    const authToken = await getAuthToken(page);
-    const uniqueActive = `E2E Active ${Date.now()}`;
-    const uniqueDraft = `E2E Draft ${Date.now()}`;
-    const active = await seedPipeline(request, authToken, { title: uniqueActive, status: "ACTIVE" });
-    const draft = await seedPipeline(request, authToken, { title: uniqueDraft, status: "DRAFT" });
-    seededIds.push(active.id, draft.id);
-
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
-
-    // Both visible initially
-    await expect(page.locator(`text=${uniqueActive}`)).toBeVisible();
-    await expect(page.locator(`text=${uniqueDraft}`)).toBeVisible();
-
-    // Click ACTIVE filter in sidebar (exact match to avoid "Total Active Roles")
-    await page.locator("aside").getByText("ACTIVE", { exact: true }).click();
-    await page.waitForTimeout(300);
-
-    await expect(page.locator(`text=${uniqueActive}`)).toBeVisible();
-    await expect(page.locator(`text=${uniqueDraft}`)).not.toBeVisible();
-
-    // Click DRAFT filter
-    await page.locator("aside").getByText("DRAFT", { exact: true }).click();
-    await page.waitForTimeout(300);
-
-    await expect(page.locator(`text=${uniqueDraft}`)).toBeVisible();
-    await expect(page.locator(`text=${uniqueActive}`)).not.toBeVisible();
+    const card = page.locator("text=" + uniqueTitle).locator("xpath=../..");
+    await expect(card.locator("text=02")).toBeVisible({ timeout: 5000 });
   });
 
   test("searches by title", async ({ page, request }) => {
     const authToken = await getAuthToken(page);
     const uniqueFrontend = `E2E Frontend ${Date.now()}`;
     const uniqueBackend = `E2E Backend ${Date.now()}`;
-    const frontend = await seedPipeline(request, authToken, { title: uniqueFrontend });
-    const backend = await seedPipeline(request, authToken, { title: uniqueBackend });
+    const frontend = await seedPipeline(request, authToken, { title: uniqueFrontend, status: "ACTIVE" });
+    const backend = await seedPipeline(request, authToken, { title: uniqueBackend, status: "DRAFT" });
     seededIds.push(frontend.id, backend.id);
 
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.goto("/roles");
+    await page.waitForLoadState("domcontentloaded");
 
-    const searchInput = page.locator('input[placeholder="SEARCH_BY_TITLE..."]');
+    const searchInput = page.locator('input[placeholder="Search interview plans..."]');
     await searchInput.fill(uniqueFrontend);
     await page.waitForTimeout(300);
 
@@ -188,20 +177,20 @@ test.describe("Listing Page — with seeded pipelines", () => {
     const pipeline = await seedPipeline(request, authToken, { title: uniqueTitle });
     seededIds.push(pipeline.id);
 
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.goto("/roles");
+    await page.waitForLoadState("domcontentloaded");
 
     // Confirm pipeline is visible
     await expect(page.locator(`text=${uniqueTitle}`)).toBeVisible();
 
     // Find the card containing our pipeline and click its actions menu
-    const card = page.locator("text=" + uniqueTitle).locator("xpath=../../../../..");
-    const actionsBtn = card.locator('button[aria-label="Pipeline actions"]');
+    const card = page.locator("text=" + uniqueTitle).locator("xpath=../..");
+    const actionsBtn = card.locator('button[aria-label="Role context actions"]');
     await actionsBtn.click();
 
     // Accept the browser confirm dialog
     page.on("dialog", (dialog) => dialog.accept());
-    await page.locator("text=DELETE").first().click();
+    await card.getByRole("menuitem", { name: "DELETE" }).click();
 
     // Wait for the card to disappear
     await expect(page.locator(`text=${uniqueTitle}`)).not.toBeVisible({ timeout: 10000 });

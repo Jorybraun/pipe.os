@@ -1,15 +1,14 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePipelineIngestion } from './usePipelineIngestion';
+import { PipeProviderRoot } from '../providers/DataContext';
+import type { AuthProvider, DataProviderFactory, StorageProvider } from '../providers/types';
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   getToken: vi.fn(async () => 'test-token'),
-}));
-
-vi.mock('@clerk/react', () => ({
-  useAuth: () => ({ getToken: apiMocks.getToken }),
 }));
 
 vi.mock('../lib/api/client', () => ({
@@ -22,6 +21,26 @@ vi.mock('../lib/api/client', () => ({
     postStream: vi.fn(),
   }),
 }));
+
+const auth: AuthProvider = {
+  currentUser: { userId: 'user_1', username: 'test@example.com', email: 'test@example.com' },
+  isLoading: false,
+  signOut: async () => {},
+  getSessionToken: apiMocks.getToken,
+  getToken: apiMocks.getToken,
+  userId: 'user_1',
+};
+
+function wrapper({ children }: { children: ReactNode }): JSX.Element {
+  return createElement(PipeProviderRoot, {
+    providers: {
+      data: {} as DataProviderFactory,
+      storage: {} as StorageProvider,
+      auth,
+    },
+    children,
+  });
+}
 
 describe('usePipelineIngestion', () => {
   beforeEach(() => {
@@ -45,7 +64,7 @@ describe('usePipelineIngestion', () => {
       ],
     });
 
-    const { result } = renderHook(() => usePipelineIngestion('pipeline-1'));
+    const { result } = renderHook(() => usePipelineIngestion('pipeline-1'), { wrapper });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -99,7 +118,7 @@ describe('usePipelineIngestion', () => {
       },
     });
 
-    const { result } = renderHook(() => usePipelineIngestion('pipeline-1'));
+    const { result } = renderHook(() => usePipelineIngestion('pipeline-1'), { wrapper });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
