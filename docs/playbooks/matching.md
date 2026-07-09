@@ -25,7 +25,7 @@ For the architecture behind this, see [`knowledge/docs/ops/repo-matching-flow.md
   --app-base https://app-dev.hire-pipe.com
   --rpc-base https://api-dev.hire-pipe.com
   ```
-- Recruiter test credentials are in [`e2e/auth.setup.ts`](../../e2e/auth.setup.ts) (`E2E_EMAIL` / `E2E_PASSWORD` fallbacks). Do not use a real user account for dogfood.
+- Recruiter test credentials are documented in [`AGENTS.md`](../../AGENTS.md#local-e2e--dogfood-credentials) and in [`e2e/auth.setup.ts`](../../e2e/auth.setup.ts) as fallbacks. Use `e2e-test@pipe.dev` / `PipeE2E_Test2026!` (or `E2E_EMAIL` / `E2E_PASSWORD` overrides). Do not use a real user account for dogfood.
 
 ## Fast automated check (local, mocked)
 
@@ -41,6 +41,7 @@ npx playwright test \
 ```
 
 **Pass criteria**
+
 - All selected tests pass.
 - `assess-session-isolation` proves the URL invite resolves cleanly when a stale candidate session exists.
 - `code-review-assess-smoke` proves the candidate sees a source-backed code-review surface, not a generic placeholder.
@@ -151,14 +152,14 @@ In a passing run, the response includes `evidence` and `evidenceHyperedges` wher
 
 ## Pass/fail criteria
 
-| Checkpoint | Pass | Fail |
-|---|---|---|
-| Candidate intake accepts resume | 200/success | 4xx/5xx or validation error |
-| Matching gate returns `WAITING_FOR_MATCH` initially | status shows waiting | immediate generic `CODE_REVIEW` with no repo |
-| Deployed: gate resolves to `CODE_REVIEW` within 2 minutes | real `githubPrTitle`/`githubRepoUrl` | stays `WAITING_FOR_MATCH` or `BLOCKED` |
-| Challenge UI shows human-readable source-backed PR | PR title + repo name visible | placeholder text, enum codes, or missing diff |
-| Recruiter context graph links candidate ↔ repo by exact text | `evidence` spans present | fabricated PR, unrelated repo, or empty evidence |
-| Ground truth not leaked to candidate | candidate payload has no internal IDs | `pipelineId`, `workspacePersonId`, or raw scores visible |
+| Checkpoint                                                   | Pass                                  | Fail                                                     |
+| ------------------------------------------------------------ | ------------------------------------- | -------------------------------------------------------- |
+| Candidate intake accepts resume                              | 200/success                           | 4xx/5xx or validation error                              |
+| Matching gate returns `WAITING_FOR_MATCH` initially          | status shows waiting                  | immediate generic `CODE_REVIEW` with no repo             |
+| Deployed: gate resolves to `CODE_REVIEW` within 2 minutes    | real `githubPrTitle`/`githubRepoUrl`  | stays `WAITING_FOR_MATCH` or `BLOCKED`                   |
+| Challenge UI shows human-readable source-backed PR           | PR title + repo name visible          | placeholder text, enum codes, or missing diff            |
+| Recruiter context graph links candidate ↔ repo by exact text | `evidence` spans present              | fabricated PR, unrelated repo, or empty evidence         |
+| Ground truth not leaked to candidate                         | candidate payload has no internal IDs | `pipelineId`, `workspacePersonId`, or raw scores visible |
 
 ## Known local blockers
 

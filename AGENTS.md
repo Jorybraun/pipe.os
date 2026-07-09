@@ -21,10 +21,10 @@ Everything you need is reachable from here.
 
 ### Plans
 
-| Document                                                                                | Answers                                                                              |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [`docs/plans/phase0-subagent-execution-plan.md`](docs/plans/phase0-subagent-execution-plan.md) | Live Phase 0 cutover work — Subagents A–J                                            |
-| [`docs/plans/strategy-v2/README.md`](docs/plans/strategy-v2/README.md)                  | Master plan index — every Strategy v2 work item, phase-ordered (Phase 0 → 6) |
+| Document                                                                                       | Answers                                                                      |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| [`docs/plans/phase0-subagent-execution-plan.md`](docs/plans/phase0-subagent-execution-plan.md) | Live Phase 0 cutover work — Subagents A–J                                    |
+| [`docs/plans/strategy-v2/README.md`](docs/plans/strategy-v2/README.md)                         | Master plan index — every Strategy v2 work item, phase-ordered (Phase 0 → 6) |
 
 ---
 
@@ -132,6 +132,23 @@ npx playwright test                  # BDD tests
 cd workers/api && npx wrangler deploy --env production   # Deploy Worker
 cd workers/api && npx wrangler d1 migrations apply pipe-db --env production  # Apply DB migrations
 ```
+
+---
+
+## Local E2E / dogfood credentials
+
+When running authenticated Playwright specs or doing manual browser dogfood against `http://localhost:5173`, use the documented test recruiter account:
+
+- **Email:** `e2e-test@pipe.dev`
+- **Password:** `PipeE2E_Test2026!`
+
+Override with the `E2E_EMAIL` and `E2E_PASSWORD` environment variables before starting Playwright:
+
+```bash
+E2E_EMAIL=e2e-test@pipe.dev E2E_PASSWORD=PipeE2E_Test2026! npx playwright test
+```
+
+Playwright authentication state is written to `playwright/.auth/user.json` by `e2e/auth.setup.ts`. Reuse that file in the `authenticated` project; do not sign in with a real user account for local dogfood.
 
 ---
 

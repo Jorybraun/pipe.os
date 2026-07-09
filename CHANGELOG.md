@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Agent handoff and E2E credentials
+
+- Documented the local E2E/dogfood recruiter login in `AGENTS.md` (`e2e-test@pipe.dev` / `PipeE2E_Test2026!`) and updated `docs/playbooks/matching.md` to reference it, so agents do not sign in with real user accounts during local dogfood.
+
 ### Added — Dogfood playbooks
 
 - Added `docs/playbooks/README.md` and `docs/playbooks/matching.md` to make local validation more discoverable. The matching playbook gives repeatable steps, fast Playwright checks, manual `curl` recipes, pass/fail criteria, and the known local-AI-binding blockers for candidate-to-repo matching.
