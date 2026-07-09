@@ -1,6 +1,19 @@
+import dotenv from 'dotenv';
+
+dotenv.config({ path: '.env.local' });
+dotenv.config({ path: '.env' });
+
 const APP_BASE = (process.env.APP_BASE || 'https://app-dev.hire-pipe.com').replace(/\/$/, '');
-const BASIC_USER = process.env.PIPE_DEV_BASIC_AUTH_USER || process.env.DEV_BASIC_AUTH_USER || '';
-const BASIC_PASSWORD = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD || process.env.DEV_BASIC_AUTH_PASSWORD || '';
+const BASIC_USER = process.env.PIPE_APP_DEV_BASIC_AUTH_USER
+  || process.env.APP_DEV_BASIC_AUTH_USER
+  || process.env.PIPE_DEV_BASIC_AUTH_USER
+  || process.env.DEV_BASIC_AUTH_USER
+  || '';
+const BASIC_PASSWORD = process.env.PIPE_APP_DEV_BASIC_AUTH_PASSWORD
+  || process.env.APP_DEV_BASIC_AUTH_PASSWORD
+  || process.env.PIPE_DEV_BASIC_AUTH_PASSWORD
+  || process.env.DEV_BASIC_AUTH_PASSWORD
+  || '';
 const EXPECT_EMAIL_SENT = process.env.EXPECT_EMAIL_SENT !== '0';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
 
@@ -8,7 +21,7 @@ function assertEnv() {
   if (!REMOTE) return;
   if (!BASIC_USER || !BASIC_PASSWORD) {
     throw new Error(
-      'Set PIPE_DEV_BASIC_AUTH_USER and PIPE_DEV_BASIC_AUTH_PASSWORD to smoke deployed app-dev.',
+      'Set PIPE_APP_DEV_BASIC_AUTH_USER/PASSWORD, APP_DEV_BASIC_AUTH_USER/PASSWORD, or PIPE_DEV_BASIC_AUTH_USER/PASSWORD to smoke deployed app-dev.',
     );
   }
 }

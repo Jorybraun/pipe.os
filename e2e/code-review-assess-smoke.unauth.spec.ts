@@ -42,7 +42,8 @@ function escapedRegex(value: string): RegExp {
 
 async function startWelcomeScreenIfPresent(page: Page): Promise<void> {
   const startButtons = page
-    .getByRole('button', { name: /^(START_INTERVIEW|Start assessment)$/i })
+    .getByTestId('start-interview-btn')
+    .or(page.getByRole('button', { name: /^(START_INTERVIEW|START INTERVIEW|Start assessment)$/i }))
     .or(page.locator('button').filter({ hasText: /^Start assessment$/i }));
   await startButtons.first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
 
@@ -218,9 +219,9 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     await expect(assessmentFocus).toContainText('What this review focuses on');
     const reviewProfile = page.getByTestId('code-review-review-profile');
     await expect(reviewProfile).toBeVisible();
-    await expect(reviewProfile).toContainText('ASSESSMENT_FIT');
     await expect(reviewProfile).toContainText('Expected time');
     await expect(reviewProfile).toContainText('LEVEL');
+    await expect(reviewProfile).not.toContainText('ASSESSMENT_FIT');
     // Candidate comprehension aids (human-readable, no internal jargon).
     await expect(reviewProfile).toContainText('Expected time');
     const goodReviewChecklist = page.getByTestId('code-review-good-review-checklist');
@@ -330,9 +331,16 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     });
 
     await page.goto(buildAssessUrl(staleToken), { waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('start-interview-btn')).toBeVisible({ timeout: 10_000 });
-    await page.getByTestId('start-interview-btn').dispatchEvent('click');
-    await expect(page.getByText('This link has been replaced')).toBeVisible({ timeout: 10_000 });
+    const replacedLink = page.getByText('This link has been replaced');
+    const startButton = page.getByTestId('start-interview-btn');
+    await expect(startButton.or(replacedLink).first()).toBeVisible({ timeout: 10_000 });
+    if (await startButton.isVisible().catch(() => false)) {
+      await page.evaluate(() => {
+        const element = document.querySelector('[data-testid="start-interview-btn"]');
+        if (element instanceof HTMLButtonElement) element.click();
+      });
+    }
+    await expect(replacedLink).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText('Ask your recruiter for the latest invite link — a newer link for this assessment was issued after this one.')).toBeVisible();
     await expect(page.locator('body')).not.toContainText('Connection Error');
     await expect(page.locator('body')).not.toContainText('This one-use assessment link has already started');

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — CODE_REVIEW packet seed idempotency
+
+- Removed hardcoded `qualified_repos.id` values from the live review-packet input seed so app-dev can restore real `cloudflare/workers-sdk`, `mui/base-ui`, and `vercel/swr` crawler rows even when existing repo catalog rows already occupy the old seed IDs.
+- Added vetted `cloudflare/workers-sdk` PR `14118` and `14150` sample rows to the seed so the non-MUI Workers SDK matrix has eligible source-backed inputs instead of relying on the lower-quality `14435` candidate.
+- Added regression coverage for the app-dev collision mode where a legacy seed ID belongs to an unrelated repository.
+
 ### Added — Custom container challenge type (ADR-056)
 
 - Added `CUSTOM_CONTAINER` to the `challenges` `type` enum and `scheduled_interviews` `interview_type` enum via `migrations/0116_custom_container_type.sql`.

@@ -5,7 +5,6 @@
 -- decompose, and persist a real GitHub PR into the living context graph.
 
 INSERT INTO qualified_repos (
-  id,
   github_url,
   full_name,
   description,
@@ -42,7 +41,6 @@ INSERT INTO qualified_repos (
   readme_excerpt,
   root_tree_json
 ) VALUES (
-  973,
   'https://github.com/mui/base-ui',
   'mui/base-ui',
   'Base UI is a headless React component library with source-backed pull requests suitable for review graph decomposition.',
@@ -162,7 +160,6 @@ ON CONFLICT(repo_id, pr_number) DO UPDATE SET
 -- Base UI and Workers SDK. The packet builder dry-runs these PRs as
 -- production-ready with complete provenance, code changes, and regression tests.
 INSERT INTO qualified_repos (
-  id,
   github_url,
   full_name,
   description,
@@ -199,7 +196,6 @@ INSERT INTO qualified_repos (
   readme_excerpt,
   root_tree_json
 ) VALUES (
-  4271,
   'https://github.com/vercel/swr',
   'vercel/swr',
   'React Hooks for Data Fetching with source-backed pull requests suitable for CODE_REVIEW packet decomposition.',
@@ -471,7 +467,6 @@ ON CONFLICT(repo_id, pr_number) DO UPDATE SET
 -- Second real packet candidate used to prove automatic matching can measure
 -- contrast separation rather than selecting from a one-packet corpus.
 INSERT INTO qualified_repos (
-  id,
   github_url,
   full_name,
   description,
@@ -508,7 +503,6 @@ INSERT INTO qualified_repos (
   readme_excerpt,
   root_tree_json
 ) VALUES (
-  79,
   'https://github.com/cloudflare/workers-sdk',
   'cloudflare/workers-sdk',
   'Cloudflare Workers SDK and Wrangler source repository with source-backed pull requests suitable for review graph decomposition.',
@@ -572,6 +566,108 @@ ON CONFLICT(github_url) DO UPDATE SET
   admin_reason = excluded.admin_reason,
   readme_excerpt = excluded.readme_excerpt,
   root_tree_json = excluded.root_tree_json;
+
+INSERT INTO repo_sample_prs (
+  repo_id,
+  pr_number,
+  pr_url,
+  title,
+  merged_at,
+  resolves_issue_number,
+  changed_file_count,
+  modifies_tests,
+  additions,
+  deletions,
+  construct_slugs_json,
+  swe_bench_eligible,
+  changed_file_paths_json,
+  pr_narrative,
+  pr_narrative_embedding_json,
+  pr_narrative_version
+) VALUES (
+  (SELECT id FROM qualified_repos WHERE github_url = 'https://github.com/cloudflare/workers-sdk'),
+  14118,
+  'https://github.com/cloudflare/workers-sdk/pull/14118',
+  '[workflows-shared] Fix Uint8Array step outputs dragging backing ArrayBuffer in local Workflows',
+  '2026-06-18T15:18:00Z',
+  NULL,
+  3,
+  1,
+  331,
+  1,
+  '["typescript","workflows","uint8array","arraybuffer","local-dev","tests"]',
+  1,
+  '[".changeset/fix-workflows-uint8array-step-output.md","packages/workflows-shared/src/context.ts","packages/workflows-shared/tests/context.test.ts"]',
+  'The PR fixes local Workflows Uint8Array step output persistence so sliced typed-array views do not drag oversized backing ArrayBuffers into storage, with regression tests for tight and offset buffers.',
+  NULL,
+  'source-backed-e2e-v1'
+)
+ON CONFLICT(repo_id, pr_number) DO UPDATE SET
+  pr_url = excluded.pr_url,
+  title = excluded.title,
+  merged_at = excluded.merged_at,
+  resolves_issue_number = excluded.resolves_issue_number,
+  changed_file_count = excluded.changed_file_count,
+  modifies_tests = excluded.modifies_tests,
+  additions = excluded.additions,
+  deletions = excluded.deletions,
+  construct_slugs_json = excluded.construct_slugs_json,
+  swe_bench_eligible = excluded.swe_bench_eligible,
+  changed_file_paths_json = excluded.changed_file_paths_json,
+  pr_narrative = excluded.pr_narrative,
+  pr_narrative_embedding_json = excluded.pr_narrative_embedding_json,
+  pr_narrative_version = excluded.pr_narrative_version;
+
+INSERT INTO repo_sample_prs (
+  repo_id,
+  pr_number,
+  pr_url,
+  title,
+  merged_at,
+  resolves_issue_number,
+  changed_file_count,
+  modifies_tests,
+  additions,
+  deletions,
+  construct_slugs_json,
+  swe_bench_eligible,
+  changed_file_paths_json,
+  pr_narrative,
+  pr_narrative_embedding_json,
+  pr_narrative_version
+) VALUES (
+  (SELECT id FROM qualified_repos WHERE github_url = 'https://github.com/cloudflare/workers-sdk'),
+  14150,
+  'https://github.com/cloudflare/workers-sdk/pull/14150',
+  '[wrangler] fix: send Workflows schedules as { cron } objects on deploy',
+  '2026-06-02T08:14:32Z',
+  NULL,
+  3,
+  1,
+  17,
+  5,
+  '["typescript","wrangler","workflows","cron","deploy","tests"]',
+  1,
+  '[".changeset/fix-workflow-schedules-cron-mapping.md","packages/wrangler/src/__tests__/deploy/workflows.test.ts","packages/wrangler/src/triggers/deploy.ts"]',
+  'The PR fixes Wrangler deploy schedule serialization for Workflows by sending schedule entries as { cron } objects and adds deploy regression coverage around scheduled workflows.',
+  NULL,
+  'source-backed-e2e-v1'
+)
+ON CONFLICT(repo_id, pr_number) DO UPDATE SET
+  pr_url = excluded.pr_url,
+  title = excluded.title,
+  merged_at = excluded.merged_at,
+  resolves_issue_number = excluded.resolves_issue_number,
+  changed_file_count = excluded.changed_file_count,
+  modifies_tests = excluded.modifies_tests,
+  additions = excluded.additions,
+  deletions = excluded.deletions,
+  construct_slugs_json = excluded.construct_slugs_json,
+  swe_bench_eligible = excluded.swe_bench_eligible,
+  changed_file_paths_json = excluded.changed_file_paths_json,
+  pr_narrative = excluded.pr_narrative,
+  pr_narrative_embedding_json = excluded.pr_narrative_embedding_json,
+  pr_narrative_version = excluded.pr_narrative_version;
 
 INSERT INTO repo_sample_prs (
   repo_id,
