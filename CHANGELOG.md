@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Dogfood playbooks
+
+- Added `docs/playbooks/README.md` and `docs/playbooks/matching.md` to make local validation more discoverable. The matching playbook gives repeatable steps, fast Playwright checks, manual `curl` recipes, pass/fail criteria, and the known local-AI-binding blockers for candidate-to-repo matching.
+
 ### Removed — Stale e2e specs
 
 - Deleted `e2e/culture-waiting-for-match.unauth.spec.ts`; the product no longer has a separate discovery/culture assessment flow, and the spec contradicted the current `CandidateAssessmentPage` fail-closed behavior for `WAITING_FOR_MATCH` challenges.
