@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Custom container challenge type (ADR-056)
+
+- Added `CUSTOM_CONTAINER` to the `challenges` `type` enum and `scheduled_interviews` `interview_type` enum via `migrations/0116_custom_container_type.sql`.
+- Introduced `workers/api/src/lib/interviewFactory.ts` to centralize `scheduled_interviews` + `assessment_sessions` creation for custom container challenges.
+- `POST /api/v1/candidates` and `POST /api/v1/scheduling/interviews` can both create `CUSTOM_CONTAINER` interviews via `challengeId`.
+- Dev container launch now reads `server_config.verificationCommand` from the challenge and passes it to `DevContainerDO` via the `__init` payload.
+- Added public `POST /rpc/dev-container/verify` callback so the container can report verification results and, on success, record a `final_submission` event.
+- `get-stage-config` and `get-challenge` serve `CUSTOM_CONTAINER` candidates as a `CODE_IMPLEMENTATION` workspace challenge.
+- Extended `src/components/Pipeline/ChallengeWizard.tsx` with a `CUSTOM_CONTAINER` challenge type and fields for repo URL, branch, container image, and verification command.
+- Added `workers/api/seed/accessibility-challenge.sql` to seed a sample senior accessibility audit `CUSTOM_CONTAINER` challenge.
+
 ### Removed — Hard-coded semantic taxonomies (ADR-043)
 
 - Removed `CANDIDATE_EXACT_MECHANISM_SEGMENTS` from `workers/api/src/lib/challengeMatching/d1Matcher.ts`.

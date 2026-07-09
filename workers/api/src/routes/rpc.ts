@@ -23,6 +23,7 @@ import {
 import { review } from './assessment/review';
 import { repo } from './assessment/repo';
 import { devContainer, devContainerProxyPublic } from './assessment/devContainer';
+import { customContainerVerify } from './assessment/customContainerVerify';
 import { fetchGitHubDiff } from '../lib/fetchGitHubDiff';
 import { cultureCandidate } from './screening/culture';
 import { scoreImplementationSubmission } from '../lib/implementationScorer/implementationScorer';
@@ -4995,5 +4996,10 @@ rpcPublic.route('/culture', cultureCandidate);
 // The client calls POST /rpc/dev-container/:sessionId/exchange-token (authed)
 // to get a token, then loads the iframe at /rpc/dev-container-proxy/:sessionId/?exchangeToken=...
 rpcPublic.route('/dev-container-proxy', devContainerProxyPublic);
+
+// Custom container verification callback. The container runs PIPE_TEST_COMMAND
+// and reports the result to this public endpoint so it can be recorded as a
+// test_run event and, on success, finalize the assessment session.
+rpcPublic.route('/dev-container/verify', customContainerVerify);
 
 export { rpcPublic, rpcAuth };

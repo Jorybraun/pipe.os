@@ -18,9 +18,11 @@ import {
   ArrowLeft,
   Loader2,
   Zap,
+  Container,
 } from 'lucide-react';
 import { useChallengeMutations } from '../../hooks/useChallengeMutations';
 import { useStageRefetch } from '../../contexts/StageRefetchContext';
+import type { ChallengeType } from '../../lib/api/types';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -31,6 +33,8 @@ interface StagedChallenge {
   instructions: string;
   config: Record<string, unknown>;
   serverConfig?: Record<string, unknown>;
+  devContainerRepoUrl?: string;
+  devContainerChallengeBranch?: string;
   source: 'custom';
 }
 
@@ -55,6 +59,7 @@ const TYPE_BADGE_COLORS: Record<string, string> = {
   QUIZ_MCQ: '#4ade80',
   QUIZ_SHORT_ANSWER: '#fbbf24',
   CODE_REVIEW: '#60a5fa',
+  CUSTOM_CONTAINER: '#f472b6',
 };
 
 // ─── Sub-components ─────────────────────────────────────────────────────────
@@ -68,7 +73,9 @@ function TypeBadge({ type }: { type: string }): JSX.Element {
         ? 'MCQ'
         : type === 'QUIZ_SHORT_ANSWER'
           ? 'LONG-FORM'
-          : type;
+          : type === 'CUSTOM_CONTAINER'
+            ? 'CONTAINER'
+            : type;
   return (
     <span
       style={{
@@ -98,29 +105,62 @@ function CustomCreator({
   onBack: () => void;
 }): JSX.Element {
   const [selectedType, setSelectedType] = useState<
-    'QUIZ_MCQ' | 'CODE_IMPLEMENTATION' | 'QUIZ_SHORT_ANSWER' | null
+    'QUIZ_MCQ' | 'CODE_IMPLEMENTATION' | 'QUIZ_SHORT_ANSWER' | 'CUSTOM_CONTAINER' | null
   >(null);
   const [title, setTitle] = useState('');
   const [instructions, setInstructions] = useState('');
+  const [devContainerRepoUrl, setDevContainerRepoUrl] = useState('');
+  const [devContainerChallengeBranch, setDevContainerChallengeBranch] = useState('main');
+  const [containerImage, setContainerImage] = useState('');
+  const [verificationCommand, setVerificationCommand] = useState('');
 
   const handleCreate = useCallback(() => {
     if (!selectedType || !title.trim()) return;
-    onAdd({
-      id: `custom-${Date.now()}`,
-      type: selectedType,
-      title: title.trim(),
-      instructions: instructions.trim() || title.trim(),
-      config:
-        selectedType === 'QUIZ_MCQ'
-          ? { question: instructions.trim() || title.trim(), options: [], correctOptionId: '' }
-          : selectedType === 'QUIZ_SHORT_ANSWER'
-            ? { question: instructions.trim() || title.trim(), inputMode: 'text' }
-            : {},
-      source: 'custom',
-    });
+    const trimmedRepoUrl = devContainerRepoUrl.trim();
+    const trimmedBranch = devContainerChallengeBranch.trim() || 'main';
+    const trimmedVerification = verificationCommand.trim();
+    const trimmedImage = containerImage.trim();
+
+    if (selectedType === 'CUSTOM_CONTAINER') {
+      if (!trimmedRepoUrl) return;
+      onAdd({
+        id: `custom-${Date.now()}`,
+        type: selectedType,
+        title: title.trim(),
+        instructions: instructions.trim() || title.trim(),
+        config: { expectedArtifacts: [] },
+        serverConfig: {
+          containerImage: trimmedImage,
+          verificationCommand: trimmedVerification,
+          groundTruth: {},
+          rubric: { dimensions: [] },
+        },
+        devContainerRepoUrl: trimmedRepoUrl,
+        devContainerChallengeBranch: trimmedBranch,
+        source: 'custom',
+      });
+    } else {
+      onAdd({
+        id: `custom-${Date.now()}`,
+        type: selectedType,
+        title: title.trim(),
+        instructions: instructions.trim() || title.trim(),
+        config:
+          selectedType === 'QUIZ_MCQ'
+            ? { question: instructions.trim() || title.trim(), options: [], correctOptionId: '' }
+            : selectedType === 'QUIZ_SHORT_ANSWER'
+              ? { question: instructions.trim() || title.trim(), inputMode: 'text' }
+              : {},
+        source: 'custom',
+      });
+    }
     setTitle('');
     setInstructions('');
-  }, [selectedType, title, instructions, onAdd]);
+    setDevContainerRepoUrl('');
+    setDevContainerChallengeBranch('main');
+    setContainerImage('');
+    setVerificationCommand('');
+  }, [selectedType, title, instructions, devContainerRepoUrl, devContainerChallengeBranch, containerImage, verificationCommand, onAdd]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -152,14 +192,26 @@ function CustomCreator({
       {/* Type picker */}
       <div>
         <label style={labelStyle}>CHALLENGE_TYPE</label>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {(['QUIZ_MCQ', 'CODE_IMPLEMENTATION', 'QUIZ_SHORT_ANSWER'] as const).map((type) => {
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {(['QUIZ_MCQ', 'CODE_IMPLEMENTATION', 'QUIZ_SHORT_ANSWER', 'CUSTOM_CONTAINER'] as const).map((type) => {
             const isActive = selectedType === type;
             const color = TYPE_BADGE_COLORS[type] ?? '#fff';
             const Icon =
-              type === 'QUIZ_MCQ' ? CircleDot : type === 'CODE_IMPLEMENTATION' ? Code2 : MessageSquare;
+              type === 'QUIZ_MCQ'
+                ? CircleDot
+                : type === 'CODE_IMPLEMENTATION'
+                  ? Code2
+                  : type === 'CUSTOM_CONTAINER'
+                    ? Container
+                    : MessageSquare;
             const label =
-              type === 'QUIZ_MCQ' ? 'MCQ' : type === 'CODE_IMPLEMENTATION' ? 'CODE' : 'LONG-FORM';
+              type === 'QUIZ_MCQ'
+                ? 'MCQ'
+                : type === 'CODE_IMPLEMENTATION'
+                  ? 'CODE'
+                  : type === 'CUSTOM_CONTAINER'
+                    ? 'CONTAINER'
+                    : 'LONG-FORM';
             return (
               <button
                 key={type}
@@ -251,9 +303,99 @@ function CustomCreator({
               {'\u2318\u21B5'} to add
             </div>
           </div>
+
+          {selectedType === 'CUSTOM_CONTAINER' && (
+            <>
+              <div>
+                <label style={labelStyle}>REPO URL</label>
+                <input
+                  type="text"
+                  value={devContainerRepoUrl}
+                  onChange={(e) => setDevContainerRepoUrl(e.target.value)}
+                  placeholder="https://github.com/owner/repo"
+                  style={{
+                    ...mono,
+                    width: '100%',
+                    padding: '9px 12px',
+                    background: 'var(--pipe-surface)',
+                    border: '1px solid var(--pipe-border)',
+                    borderRadius: 6,
+                    color: 'var(--pipe-text)',
+                    fontSize: 10,
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>BRANCH</label>
+                <input
+                  type="text"
+                  value={devContainerChallengeBranch}
+                  onChange={(e) => setDevContainerChallengeBranch(e.target.value)}
+                  placeholder="main"
+                  style={{
+                    ...mono,
+                    width: '100%',
+                    padding: '9px 12px',
+                    background: 'var(--pipe-surface)',
+                    border: '1px solid var(--pipe-border)',
+                    borderRadius: 6,
+                    color: 'var(--pipe-text)',
+                    fontSize: 10,
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>CONTAINER IMAGE</label>
+                <input
+                  type="text"
+                  value={containerImage}
+                  onChange={(e) => setContainerImage(e.target.value)}
+                  placeholder="node:20-slim"
+                  style={{
+                    ...mono,
+                    width: '100%',
+                    padding: '9px 12px',
+                    background: 'var(--pipe-surface)',
+                    border: '1px solid var(--pipe-border)',
+                    borderRadius: 6,
+                    color: 'var(--pipe-text)',
+                    fontSize: 10,
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>VERIFICATION COMMAND</label>
+                <input
+                  type="text"
+                  value={verificationCommand}
+                  onChange={(e) => setVerificationCommand(e.target.value)}
+                  placeholder="npm run test:accessibility"
+                  style={{
+                    ...mono,
+                    width: '100%',
+                    padding: '9px 12px',
+                    background: 'var(--pipe-surface)',
+                    border: '1px solid var(--pipe-border)',
+                    borderRadius: 6,
+                    color: 'var(--pipe-text)',
+                    fontSize: 10,
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+            </>
+          )}
+
           <button
             onClick={handleCreate}
-            disabled={!title.trim()}
+            disabled={!title.trim() || (selectedType === 'CUSTOM_CONTAINER' && !devContainerRepoUrl.trim())}
             style={{
               ...mono,
               display: 'flex',
@@ -424,11 +566,13 @@ export function ChallengeWizard({ stageId, onClose }: ChallengeWizardProps): JSX
       for (let i = 0; i < stagedItems.length; i++) {
         const item = stagedItems[i]!;
         await createChallenge(stageId, {
-          type: item.type as 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER',
+          type: item.type as ChallengeType,
           title: item.title,
           instructions: item.instructions,
           config: item.config,
           ...(item.serverConfig ? { serverConfig: item.serverConfig } : {}),
+          ...(item.devContainerRepoUrl ? { devContainerRepoUrl: item.devContainerRepoUrl } : {}),
+          ...(item.devContainerChallengeBranch ? { devContainerChallengeBranch: item.devContainerChallengeBranch } : {}),
           order: i,
         });
       }
