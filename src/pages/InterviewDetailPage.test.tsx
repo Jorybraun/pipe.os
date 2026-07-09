@@ -4577,6 +4577,54 @@ describe('InterviewDetailPage', () => {
     expect(screen.getByTestId('person-route-echo')).toHaveTextContent('person-graph-1');
   });
 
+  it('opens the person cockpit route when living context exists before person id projection catches up', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        candidateId: 'candidate-with-pending-person-projection',
+        contactId: null,
+        livingContext: {
+          person: {
+            personId: '',
+            workspacePersonId: '',
+            applicationId: 'application-1',
+            displayName: 'Ada Candidate',
+            primaryEmail: 'ada@example.com',
+            primaryPhone: null,
+            relationshipSummary: null,
+            applicationStatus: null,
+            pipelineId: null,
+            roles: [],
+          },
+          summary: {
+            interactionCount: 1,
+            artifactCount: 1,
+            contextRecordCount: 1,
+            assertionCount: 0,
+            signalCount: 0,
+            sourceSpanCount: 1,
+          },
+          interactions: [],
+          artifacts: [],
+          contextRecords: [],
+          assertions: [],
+          signals: [],
+          relationships: [],
+        },
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    fireEvent.click(screen.getAllByTestId('interview-open-person-profile')[0]!);
+
+    expect(screen.getByTestId('person-route-echo')).toHaveTextContent('candidate-with-pending-person-projection');
+    const state = screen.getByTestId('person-route-state').textContent ?? '';
+    expect(state).toContain('livingContext');
+    expect(state).toContain('candidate-with-pending-person-projection');
+  });
+
   it('passes a compact code-review decision when opening the person profile', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({

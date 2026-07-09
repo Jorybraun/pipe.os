@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Raised direct and dense source-backed concept overlap above extractor-noise dilution so Workers SDK candidates with exact provenance can receive real CODE_REVIEW assignments instead of a safe `PROFILE_RECEIVED` fallback.
 - Kept started `/assess` sessions recoverable after the one-use invite token is claimed by caching only the bearer session, raw invite token, and non-sensitive candidate display fields.
 - Updated the code-review app-dev smoke to accept the human-readable review profile labels rendered by the candidate assessment surface.
+- Routed recruiter person-profile actions into the person cockpit whenever living context is present, even before the person-id projection catches up on app-dev.
 
 ### Added — Custom container challenge type (ADR-056)
 

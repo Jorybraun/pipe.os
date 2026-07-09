@@ -4517,7 +4517,9 @@ export default function InterviewDetailPage(): JSX.Element {
     ? `/people/${interview.livingContext.person.personId}`
     : interview.contactId
       ? `/people/${interview.contactId}`
-      : interview.candidateId
+      : interview.livingContext && interview.candidateId
+        ? `/people/${interview.candidateId}`
+        : interview.candidateId
         ? `/candidates/${interview.candidateId}`
         : null;
   const relatedEvidenceTotal = interview.relatedEvidenceInterviews?.length ?? 0;
