@@ -5,4 +5,5 @@
  * Only src/main.tsx (bootstrap) and src/App.tsx use these implementations.
  */
 
-export { ClerkAuthGate, ClerkAuthWrapper, DevProxyAuthWrapper, useClerkAuth } from './auth';
+export { ClerkAuthGate, ClerkAuthWrapper } from './auth';
+export { useAuth as useClerkAuth } from '../DataContext';

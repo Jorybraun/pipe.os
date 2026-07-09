@@ -34,6 +34,11 @@ export interface LiquidMetalCardProps {
    * Optional click handler.
    */
   onClick?: (() => void) | undefined;
+
+  /**
+   * Optional test id forwarded to the root element.
+   */
+  'data-testid'?: string;
 }
 
 /**
@@ -55,6 +60,7 @@ export function LiquidMetalCard({
   style = {},
   className = '',
   onClick,
+  'data-testid': dataTestId,
 }: LiquidMetalCardProps): JSX.Element {
   const variants: Record<LiquidMetalCardVariant, { background: string; border: string; backdropFilter?: string }> = {
     default: {
@@ -105,6 +111,7 @@ export function LiquidMetalCard({
     <div
       onClick={onClick}
       className={className}
+      data-testid={dataTestId}
       style={{
         background: v.background,
         border: v.border,

@@ -27,6 +27,8 @@ function wrapper({ children }: { children: ReactNode }): JSX.Element {
     isLoading: false,
     signOut: async () => {},
     getSessionToken,
+    getToken: async () => 'test-token',
+    userId: 'user_1',
   };
   return createElement(PipeProviderRoot, {
     providers: {
@@ -44,27 +46,6 @@ describe('useRoomStatusNotifications', () => {
     vi.unstubAllGlobals();
     getSessionToken.mockClear();
     window.history.pushState({}, '', '/');
-  });
-
-  it('opens the room-status SSE stream without a bearer token when dev proxy auth is active', async () => {
-    window.history.pushState({}, '', '/interviews?devProxyAuth=1');
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
-    vi.stubGlobal('fetch', fetchMock);
-    const { useRoomStatusNotifications } = await import('./useRoomStatusNotifications');
-
-    renderHook(() => useRoomStatusNotifications(), { wrapper });
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(getSessionToken).not.toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/v1/scheduling/room-events',
-      expect.objectContaining({
-        headers: {
-          Accept: 'text/event-stream',
-        },
-      }),
-    );
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty('Authorization');
   });
 
   it('caps retained room-status updates from the SSE stream', async () => {

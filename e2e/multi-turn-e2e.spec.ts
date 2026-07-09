@@ -383,7 +383,7 @@ test.describe('§E.2 — Candidate leaves an inline comment', () => {
       await expect(page.locator('[data-testid="diff-content"]')).toBeVisible({ timeout: 10000 });
 
       // Before adding annotation — submit should NOT be available
-      const submitBtn = page.getByRole('button', { name: /SUBMIT_REVIEW/i });
+      const submitBtn = page.getByRole('button', { name: /SUBMIT REVIEW/i });
       await expect(submitBtn).not.toBeVisible({ timeout: 3000 });
 
       // Add an annotation
@@ -442,7 +442,7 @@ test.describe('§E.3 — Submit review triggers agent response', () => {
       await page.locator('[data-testid="save-annotation-btn"]').click();
 
       // Click SUBMIT_REVIEW and assert agent API succeeds
-      const submitBtn = page.getByRole('button', { name: /SUBMIT_REVIEW/i });
+      const submitBtn = page.getByRole('button', { name: /SUBMIT REVIEW/i });
       await expect(submitBtn).toBeVisible({ timeout: 5000 });
 
       const reviewSubmitPromise = page.waitForResponse(
@@ -516,7 +516,7 @@ test.describe('§E.4 — Approve/Request Changes verdict', () => {
       await page.locator('[data-testid="annotation-input"]').fill('Critical bug: missing null guard');
       await page.locator('[data-testid="save-annotation-btn"]').click();
 
-      const submitReviewBtn = page.getByRole('button', { name: /SUBMIT_REVIEW/i });
+      const submitReviewBtn = page.getByRole('button', { name: /SUBMIT REVIEW/i });
       await expect(submitReviewBtn).toBeVisible({ timeout: 5000 });
 
       const submitPromise = page.waitForResponse(
@@ -532,14 +532,14 @@ test.describe('§E.4 — Approve/Request Changes verdict', () => {
       await expect(page.locator('[data-testid="conversation-thread"]')).toBeVisible({ timeout: 30000 });
 
       // REVIEW_VERDICT section should be visible after agent responds
-      await expect(page.getByText('REVIEW_VERDICT')).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText('YOUR VERDICT')).toBeVisible({ timeout: 5000 });
 
       // Three verdict options present
       await expect(page.getByText('APPROVE')).toBeVisible();
-      await expect(page.getByText('REQUEST_CHANGES')).toBeVisible();
+      await expect(page.getByText('REQUEST CHANGES')).toBeVisible();
 
       // Select REQUEST_CHANGES
-      const requestChangesBtn = page.getByRole('button').filter({ hasText: 'REQUEST_CHANGES' });
+      const requestChangesBtn = page.getByRole('button').filter({ hasText: 'REQUEST CHANGES' });
       await requestChangesBtn.click();
 
       // Write review summary
@@ -547,7 +547,7 @@ test.describe('§E.4 — Approve/Request Changes verdict', () => {
       await summaryInput.fill('The null check bug must be fixed before merging. Token validation is incomplete.');
 
       // SUBMIT_VERDICT button should be visible
-      const submitVerdictBtn = page.getByRole('button', { name: /SUBMIT_VERDICT/i });
+      const submitVerdictBtn = page.getByRole('button', { name: /SUBMIT VERDICT/i });
       await expect(submitVerdictBtn).toBeVisible({ timeout: 5000 });
       await submitVerdictBtn.click();
 
@@ -603,7 +603,7 @@ test.describe('§E.5 — Follow-up reply flow', () => {
         (resp) => resp.url().includes('/rpc/review/submit'),
         { timeout: 30000 },
       );
-      await page.getByRole('button', { name: /SUBMIT_REVIEW/i }).click();
+      await page.getByRole('button', { name: /SUBMIT REVIEW/i }).click();
 
       const r1Resp = await r1Promise;
       expect(r1Resp.ok(), `Submit review failed: ${r1Resp.status()} — ${await r1Resp.text().catch(() => 'no body')}`).toBe(true);
@@ -620,7 +620,7 @@ test.describe('§E.5 — Follow-up reply flow', () => {
       await replyTextarea.fill('Can you also handle the case where token is an empty string?');
 
       // SUBMIT_RESPONSE button should appear
-      const submitResponseBtn = page.getByRole('button', { name: /SUBMIT_RESPONSE/i });
+      const submitResponseBtn = page.getByRole('button', { name: /SUBMIT RESPONSE/i });
       await expect(submitResponseBtn).toBeVisible({ timeout: 5000 });
 
       const r2Promise = page.waitForResponse(
@@ -699,7 +699,7 @@ test.describe('§E.6 — Full end-to-end candidate journey', () => {
       await expect(page.locator('[data-testid="annotation-badge-4"]')).toBeVisible();
 
       // ── Step 4: Submit review → agent responds ──
-      const submitReviewBtn = page.getByRole('button', { name: /SUBMIT_REVIEW/i });
+      const submitReviewBtn = page.getByRole('button', { name: /SUBMIT REVIEW/i });
       await expect(submitReviewBtn).toBeVisible({ timeout: 5000 });
 
       const r1Promise = page.waitForResponse(
@@ -727,7 +727,7 @@ test.describe('§E.6 — Full end-to-end candidate journey', () => {
       await expect(replyTextarea).toBeVisible({ timeout: 5000 });
       await replyTextarea.fill('Please also check the async code path for the same issue.');
 
-      const submitResponseBtn = page.getByRole('button', { name: /SUBMIT_RESPONSE/i });
+      const submitResponseBtn = page.getByRole('button', { name: /SUBMIT RESPONSE/i });
       await expect(submitResponseBtn).toBeVisible();
 
       const r2Promise = page.waitForResponse(
@@ -744,10 +744,10 @@ test.describe('§E.6 — Full end-to-end candidate journey', () => {
 
       // ── Step 6: Submit verdict ──
       // Verdict section should be visible
-      await expect(page.getByText('REVIEW_VERDICT')).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText('YOUR VERDICT')).toBeVisible({ timeout: 5000 });
 
       // Select REQUEST_CHANGES
-      await page.getByRole('button').filter({ hasText: 'REQUEST_CHANGES' }).click();
+      await page.getByRole('button').filter({ hasText: 'REQUEST CHANGES' }).click();
 
       // Write summary
       const summaryTextarea = page.getByPlaceholder(/Summarize your code review/i);
@@ -757,7 +757,7 @@ test.describe('§E.6 — Full end-to-end candidate journey', () => {
       );
 
       // Submit verdict
-      const submitVerdictBtn = page.getByRole('button', { name: /SUBMIT_VERDICT/i });
+      const submitVerdictBtn = page.getByRole('button', { name: /SUBMIT VERDICT/i });
       await expect(submitVerdictBtn).toBeVisible({ timeout: 5000 });
 
       const verdictPromise = page.waitForResponse(

@@ -103,6 +103,8 @@ export function useAuth(): AuthProvider {
       isLoading: true,
       signOut: async () => {},
       getSessionToken: async () => null,
+      getToken: async () => '',
+      userId: '',
     };
   }
   return ctx.auth;

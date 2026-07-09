@@ -22,7 +22,7 @@ import {
   Phone,
   Mail,
 } from 'lucide-react';
-import { useAuth as useClerkAuth } from '@clerk/react';
+import { useClerkAuth } from '../../providers/clerk';
 import { createApiClient } from '../../lib/api/client';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 import type { SchedulingConnectionInfo, ProviderEventType } from '../../hooks/useSchedulingConnection';

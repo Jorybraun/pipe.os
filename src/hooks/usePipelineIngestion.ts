@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth as useClerkAuth } from '@clerk/react';
+import { useClerkAuth } from '../providers/clerk';
 import { createApiClient } from '../lib/api/client';
 import { ApiError } from '../lib/api/types';
 

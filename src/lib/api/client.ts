@@ -16,13 +16,10 @@
  */
 
 import { ApiError, type ApiErrorBody } from './types';
-import { takeDevProxyApiJsonPrefetch } from './devProxyPrefetch';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
 const DEFAULT_BASE_URL = '';
-const DEV_PROXY_PREFETCH_GRACE_MS = 1500;
-const PREFETCH_TIMED_OUT = Symbol('PREFETCH_TIMED_OUT');
 
 function resolveApiUrl(baseUrl: string, path: string): string {
   if (/^https?:\/\//i.test(path)) {
@@ -125,30 +122,9 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     throw new ApiError(code, message, response.status);
   }
 
-  async function awaitPrefetchWithGrace<T>(prefetched: Promise<T>): Promise<T | typeof PREFETCH_TIMED_OUT> {
-    return await Promise.race([
-      prefetched,
-      new Promise<typeof PREFETCH_TIMED_OUT>((resolve) => {
-        window.setTimeout(() => resolve(PREFETCH_TIMED_OUT), DEV_PROXY_PREFETCH_GRACE_MS);
-      }),
-    ]);
-  }
-
   // ─── Public methods ─────────────────────────────────────────────────────────
 
   async function get<T>(path: string): Promise<T> {
-    const prefetched = takeDevProxyApiJsonPrefetch<T>(path);
-    if (prefetched) {
-      try {
-        const prefetchedResult = await awaitPrefetchWithGrace(prefetched);
-        if (prefetchedResult !== PREFETCH_TIMED_OUT) {
-          return prefetchedResult;
-        }
-      } catch {
-        // Fall through to a normal fetch if the speculative request failed.
-      }
-    }
-
     const headers = await authHeader();
     const response = await fetch(resolveApiUrl(baseUrl, path), {
       method: 'GET',

@@ -54,7 +54,7 @@ interface IngestionRow {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 async function getAuthToken(page: Page): Promise<string> {
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState("domcontentloaded");
   const cookies = await page.context().cookies();
   const sessionCookie = cookies.find((c) => c.name === '__session');
   if (!sessionCookie) {

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed — Stale e2e specs
+
+- Deleted `e2e/culture-waiting-for-match.unauth.spec.ts`; the product no longer has a separate discovery/culture assessment flow, and the spec contradicted the current `CandidateAssessmentPage` fail-closed behavior for `WAITING_FOR_MATCH` challenges.
+- Deleted `e2e/prefetch.e2e.spec.ts`; it tested an older issue-body-prefetch worker on `localhost:8788` with a missing `e2e/helpers.ts` and a `/api/refresh-issues` endpoint that no longer exists in the current worker routes.
+
+### Fixed — Stale candidate session e2e assertions
+
+- Updated `e2e/assess-session-isolation.unauth.spec.ts` so session-isolation assertions no longer expect internal candidate IDs or invite tokens in `sessionStorage`, matching the candidate-session opacity changes that only persist the session token on the client.
+
+### Security — Removed frontend dev proxy auth bypass
+
+- Deleted `src/lib/auth/devProxyAuth.ts`, `src/lib/api/devProxyPrefetch.ts`, and their tests.
+- Removed the `?devProxyAuth=1` query-param bypass path from `main.tsx`, `App.tsx`, `ClerkAuthWrapper`, `useApiClient`, `createApiClient`, and the SSE notification hooks. The app now requires `VITE_CLERK_PUBLISHABLE_KEY` and authenticates through Clerk for recruiter routes.
+- Re-exported `useAuth` from `providers/clerk` as `useClerkAuth` so consumers receive stable auth context instead of rebuilding Clerk-derived `getToken` closures on every render.
+- Added ADR-055 documenting the removal and rationale.
+
+### Fixed — Clerk authentication context error
+
+- Fixed `useAuth can only be used within the <ClerkProvider /> component` error by ensuring all components use the local `useClerkAuth` from the providers module instead of directly importing from `@clerk/react`.
+- Updated `AuthProvider` interface to include optional `getToken` and `userId` properties to support Clerk-specific auth methods.
+- Updated all affected files: `App.tsx`, `CandidateIntakeModal.tsx`, `CodeReviewEditor.tsx`, `SecureVideoPlayer.tsx`, `PhoneCallDrawer.tsx`, `IntegrationsSettings.tsx`, `StageConfigPanel.tsx`, and all hooks using Clerk auth.
+- Updated test mocks in `useApiClient.test.ts`, `useBookingNotifications.test.ts`, `useRoomStatusNotifications.test.ts`, and `providers.test.ts` to include the new optional properties.
+
+### Fixed — CODE_REVIEW candidate jargon sweep
+
+- Removed the remaining internal SCREAMING_SNAKE labels from candidate-facing code review surfaces: `ASSESSMENT_FIT` → `WHAT TO EXPECT`, `CALIBRATION_RISK` → `LARGER THAN TYPICAL`, `PULL_REQUEST` → `PULL REQUEST`, `BASE_COMMIT`/`REVIEW_VERDICT`/`REVIEW_SUMMARY`/`SUBMISSION_STATS`/`REVIEW_READY`/`FETCHING_DIFF` → plain labels (`CodeReviewChallenge`, `VerdictPanel`, `ConversationPanel`, `SubmissionPanel`, `ReviewSessionPage`, `ProblemPanel`, `DiffPanel`, `PierreDiffViewer`, `DiffReviewCanvas`, `ReviewLeftPanel`).
+- Candidate flow chrome now reads as product copy instead of enum codes: welcome button `START INTERVIEW`, stage header `ASSESSMENT STAGE`, footer `SUBMIT`/`NEXT`/`READY TO PROCEED`, loaders `PREPARING YOUR SESSION…`/`LOADING YOUR TASK…`/`PREPARING YOUR REVIEW SESSION…`, retry button `RETRY CONNECTION`, inline `Submission failed — …` (`StageShell`, `CandidateAssessmentPage`, `WelcomeScreen`), and the intake stage drops `CANDIDATE_INTAKE_PROTOCOL`/`INTAKE_STATUS` for `GETTING STARTED`/`STATUS`.
+- Replaced the latent candidate-visible `WAITING_FOR_MATCH_RENDERED_AT_PAGE_LEVEL` guard string in `ChallengeRegistry` with candidate-safe copy, and reworded the candidate AI-use note so it explains transparent capture without circular phrasing (kept the asserted `AI tools` copy).
+- Added an `assessment-terminal-error` testid to the terminal invite-error card (via an optional `data-testid` passthrough on `LiquidMetalCard`) plus a mocked invalid-link Playwright scenario, so the 404 terminal state (`Invalid Invite Link`) is provable alongside the stale-link card.
+- Updated every asserting spec in lockstep: `e2e/code-review-assess-smoke.unauth.spec.ts`, `e2e/standalone-code-review-mvp.spec.ts`, `e2e/code-review-recruiter-detail-smoke.spec.ts`, `e2e/multi-turn-e2e.spec.ts`, `e2e/candidate-assessment.spec.ts`, `src/pages/InterviewDetailPage.test.tsx`, `src/pages/CandidateAssessmentPage.test.tsx`, `src/components/Assessment/__tests__/SubmissionPanel.test.tsx`.
+- Added `docs/plans/acceptance-code-review-experience.md`, the Playwright acceptance checklist mapping the candidate <30s / recruiter <60s criteria, state coverage, and hard-rule negative assertions to executable specs and smoke lanes.
+
 ### Added — CODE_REVIEW challenge surface copy pass
 
 - De-jargonized the candidate CODE_REVIEW challenge surface by replacing seven internal packet and empty-state tokens with human copy, adding an expected-time hint, a strong-review checklist, and an AI-use transparency note on the challenge screen.
@@ -73,6 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Invite creation no longer loses the open invite modal mid-create: `SchedulingDashboard` now renders `InviteCreationModal` in its loading and error branches too, so the post-create refetch (and SSE-notification refetches) can no longer unmount the modal and silently discard the success view with the assessment/guest link. Proven by the new "keeps the open invite modal mounted while the interview list refetches" unit test in `SchedulingDashboard.test.tsx`.
 - Local open-source assessment containers now receive a Docker-reachable Worker callback URL, so workspace finalization can persist submitted commit evidence during app-dev smokes.
 - Open-source workspace dev smoke now accepts source-backed AI bridge traces as captured AI transparency proof instead of requiring the missing-AI-use limitation when real bridge telemetry exists.
 - Devin auth-needed smoke coverage now fails unless recruiter detail and list progress expose persisted `agent_status` evidence, protecting AI-use transparency from silently falling back to diagnostic-only proof.

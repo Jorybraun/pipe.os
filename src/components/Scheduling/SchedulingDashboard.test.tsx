@@ -263,6 +263,48 @@ describe('SchedulingDashboard interview ordering', () => {
     expect(cardNames()).toEqual(['Oldest invite', 'Middle invite', 'Newest invite']);
   });
 
+  it('keeps the open invite modal mounted while the interview list refetches', () => {
+    const hookValue = {
+      interviews,
+      isLoading: false,
+      isLoadingMore: false,
+      error: null,
+      total: interviews.length,
+      hasMore: false,
+      facets: null,
+      updateStatus: vi.fn(),
+      sendInvite: vi.fn(),
+      refetch: vi.fn().mockResolvedValue(undefined),
+      loadMore: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.useScheduledInterviews.mockReturnValue(hookValue);
+    mocks.useBookingNotifications.mockReturnValue({
+      notifications: [],
+      isConnected: false,
+      clearNotifications: vi.fn(),
+    });
+
+    const view = render(
+      <MemoryRouter initialEntries={['/interviews']}>
+        <SchedulingDashboard />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /NEW INTERVIEW/i }));
+    expect(screen.getByTestId('invite-modal')).toBeInTheDocument();
+
+    // Creating an invite triggers refetch(), which flips the hook into its
+    // loading state. The open modal (and its success/link view) must survive.
+    mocks.useScheduledInterviews.mockReturnValue({ ...hookValue, isLoading: true });
+    view.rerender(
+      <MemoryRouter initialEntries={['/interviews']}>
+        <SchedulingDashboard />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('invite-modal')).toBeInTheDocument();
+  });
+
   it('shows paged interview counts and loads more history on demand', () => {
     const loadMore = vi.fn().mockResolvedValue(undefined);
 

@@ -6,7 +6,6 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { isDevProxyRecruiterAuthBypassEnabled } from '../lib/auth/devProxyAuth';
 import { useAuth } from '../providers/DataContext';
 
 const MAX_RETAINED_ROOM_STATUS_UPDATES = 100;
@@ -37,16 +36,15 @@ function apiBaseUrl(): string {
 }
 
 export function useRoomStatusNotifications(): UseRoomStatusNotificationsResult {
-  const bypassClerkToken = isDevProxyRecruiterAuthBypassEnabled();
   const auth = useAuth();
   const getSessionToken = auth.getSessionToken;
-  const getTokenRef = useRef<() => Promise<string | null>>(async () => null);
+  const getTokenRef = useRef<() => Promise<string | null>>(getSessionToken);
   const [updates, setUpdates] = useState<RoomStatusNotification[]>([]);
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    getTokenRef.current = bypassClerkToken ? async () => null : getSessionToken;
-  }, [bypassClerkToken, getSessionToken]);
+    getTokenRef.current = getSessionToken;
+  }, [getSessionToken]);
 
   useEffect(() => {
     let cancelled = false;

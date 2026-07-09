@@ -20,7 +20,7 @@ import {
 import { LiquidMetalCard } from "..";
 import { FieldGroup, TextInput } from "../ui/form";
 import { useCandidateCreate } from "../../hooks/useCandidateCreate";
-import { useAuth as useClerkAuth } from "@clerk/react";
+import { useClerkAuth } from "../../providers/clerk";
 import { useTheme } from "../../contexts/ThemeContext";
 import { createApiClient } from "../../lib/api/client";
 

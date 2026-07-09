@@ -70,16 +70,11 @@ test.describe('CODE_REVIEW assess session isolation', () => {
         inviteToken: window.sessionStorage.getItem('pipe_session_invite_token'),
         candidate: JSON.parse(window.sessionStorage.getItem('pipe_session_candidate') ?? '{}') as { id?: string; name?: string },
       })),
-      { message: 'sessionStorage should be rebound to candidate B' },
+      { message: 'sessionStorage should hold token B and no stale invite/candidate details' },
     ).toEqual({
       sessionToken: 'session-token-b',
-      inviteToken: 'invite-token-b',
-      candidate: {
-        id: 'candidate-b',
-        pipelineId: null,
-        status: 'IN_PROGRESS',
-        name: 'Fresh Candidate B',
-      },
+      inviteToken: null,
+      candidate: {},
     });
   });
 });

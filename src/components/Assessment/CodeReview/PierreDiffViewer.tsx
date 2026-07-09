@@ -371,7 +371,7 @@ function PierrePatchFile({
               letterSpacing: '0.12em',
             }}
           >
-            LOADING_DIFF_RENDERER...
+            LOADING DIFF VIEWER...
           </div>
         )}
       >
@@ -424,7 +424,7 @@ export function PierreDiffViewer({
           fontSize: 12,
         }}
       >
-        NO_DIFF_DATA_AVAILABLE
+        No code changes to show yet.
       </div>
     );
   }

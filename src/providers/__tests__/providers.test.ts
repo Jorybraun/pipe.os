@@ -67,6 +67,8 @@ function createMockAuthProvider(): AuthProvider {
     isLoading: false,
     signOut: vi.fn().mockResolvedValue(undefined),
     getSessionToken: vi.fn().mockResolvedValue('mock-token'),
+    getToken: vi.fn().mockResolvedValue('mock-token'),
+    userId: 'user-1',
   };
 }
 

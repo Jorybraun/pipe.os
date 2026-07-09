@@ -10,7 +10,6 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { isDevProxyRecruiterAuthBypassEnabled } from '../lib/auth/devProxyAuth';
 import { useAuth } from '../providers/DataContext';
 
 const MAX_RETAINED_BOOKING_NOTIFICATIONS = 50;
@@ -34,14 +33,13 @@ interface UseBookingNotificationsResult {
 }
 
 export function useBookingNotifications(): UseBookingNotificationsResult {
-  const bypassClerkToken = isDevProxyRecruiterAuthBypassEnabled();
   const auth = useAuth();
   const getSessionToken = auth.getSessionToken;
-  const getTokenRef = useRef<() => Promise<string | null>>(async () => null);
+  const getTokenRef = useRef<() => Promise<string | null>>(getSessionToken);
 
   useEffect(() => {
-    getTokenRef.current = bypassClerkToken ? async () => null : getSessionToken;
-  }, [bypassClerkToken, getSessionToken]);
+    getTokenRef.current = getSessionToken;
+  }, [getSessionToken]);
 
   const [notifications, setNotifications] = useState<BookingNotification[]>([]);
   const [isConnected, setIsConnected] = useState(false);

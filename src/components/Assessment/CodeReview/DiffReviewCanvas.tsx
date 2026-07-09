@@ -228,7 +228,7 @@ export function DiffReviewCanvas({
               cursor: 'pointer',
             }}
           >
-            SAVE_ANNOTATION
+            SAVE COMMENT
           </button>
         </div>
       );
@@ -241,7 +241,7 @@ export function DiffReviewCanvas({
     return (
       <LiquidMetalCard variant="dark" style={{ padding: 40, textAlign: 'center' }}>
         <div style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 12 }}>
-          NO_SNIPPETS_AVAILABLE_FOR_REVIEW
+          No code is available to review yet.
         </div>
       </LiquidMetalCard>
     );
@@ -252,7 +252,7 @@ export function DiffReviewCanvas({
       <LiquidMetalCard variant="dark" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--pipe-surface)' }}>
           <div>
-            <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>CODE_REVIEW_DIFF_VIEW</div>
+            <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>CODE UNDER REVIEW</div>
             <div style={{ color: 'var(--pipe-text, #fff)', fontSize: 14, fontWeight: 700 }}>{currentSnippet.title || 'Untitled Snippet'}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
@@ -285,7 +285,7 @@ export function DiffReviewCanvas({
             </Diff>
           ) : (
             <div style={{ padding: 40 }}>
-              <div style={{ color: '#f87171', fontSize: 11, marginBottom: 20, fontFamily: 'Space Mono' }}>DIFF_PARSER_FAILED_SHOWING_RAW_CODE</div>
+              <div style={{ color: '#f87171', fontSize: 11, marginBottom: 20, fontFamily: 'Space Mono' }}>Diff view unavailable — showing the raw code instead.</div>
               <pre style={{ color: 'var(--pipe-text, #fff)', fontSize: 13, fontFamily: 'Space Mono', lineHeight: 1.6 }}>
                 {currentSnippet.code}
               </pre>
@@ -295,7 +295,7 @@ export function DiffReviewCanvas({
 
         <div style={{ padding: '20px 24px', borderTop: '1px solid var(--pipe-border)', background: 'var(--pipe-surface)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
-            CLICK_LINE_NUMBER_TO_ANNOTATE
+            Click a line number to add a comment
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={handlePrev} disabled={currentSnippetIndex === 0} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--pipe-border)', color: currentSnippetIndex === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)', fontSize: 9, fontFamily: '"Space Mono", monospace', cursor: currentSnippetIndex === 0 ? 'not-allowed' : 'pointer' }}>PREVIOUS</button>

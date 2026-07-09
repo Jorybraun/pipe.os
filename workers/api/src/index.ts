@@ -106,10 +106,14 @@ app.use(
         'https://www.pipe.dev',
         'https://pipe.build',
         'https://www.pipe.build',
+        'https://hire-pipe.com',
+        'https://www.hire-pipe.com',
         'https://app.hire-pipe.com',
         'https://room.hire-pipe.com',
         'https://app-dev.hire-pipe.com',
         'https://room-dev.hire-pipe.com',
+        // Marketing site Cloudflare Pages previews (project: pipe-marketing)
+        /https:\/\/.*\.pipe-marketing\.pages\.dev$/,
         'https://pipe-video-room-dev.pages.dev',
         // Cloudflare Pages preview URLs follow this pattern
         /https:\/\/.*\.pipe-os\.pages\.dev$/,

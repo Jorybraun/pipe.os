@@ -2328,7 +2328,7 @@ test.describe('§3.10 — Submission failure shows error message to candidate', 
     await beginBtn.click();
 
     // Wait for challenge to load
-    await expect(page.getByText('ASSESSMENT_STAGE')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('ASSESSMENT STAGE')).toBeVisible({ timeout: 15000 });
 
     // Intercept submission RPC and force a 500
     await page.route('**/rpc/submit-challenge-response', (route) => {
@@ -2348,7 +2348,7 @@ test.describe('§3.10 — Submission failure shows error message to candidate', 
       await optionBtn.click();
     }
 
-    const submitBtn = page.getByRole('button', { name: /NEXT_CHALLENGE|FINAL_SUBMIT/i });
+    const submitBtn = page.getByRole('button', { name: /^(NEXT|SUBMIT)$/i });
     await expect(submitBtn).toBeEnabled({ timeout: 10000 });
     await submitBtn.click();
 
@@ -2361,7 +2361,7 @@ test.describe('§3.10 — Submission failure shows error message to candidate', 
     await expect(page.getByText('Submitted.')).not.toBeVisible();
 
     // The button should return to enabled state so the candidate can retry
-    await expect(page.getByRole('button', { name: /NEXT_CHALLENGE|FINAL_SUBMIT|RETRY/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: /^(NEXT|SUBMIT|RETRY)/i })).toBeVisible({ timeout: 10000 });
 
     await candidateCtx.close();
   });
@@ -2413,7 +2413,7 @@ test.describe('§3.11 — CODE_IMPLEMENTATION challenge uses full-bleed layout',
     await beginBtn.click();
 
     // Wait for the challenge to render
-    await expect(page.getByText('ASSESSMENT_STAGE')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('ASSESSMENT STAGE')).toBeVisible({ timeout: 15000 });
 
     // The <main> content area should not have maxWidth: 1200px
     // It should be full-bleed (flex, no maxWidth constraint)
@@ -2532,7 +2532,7 @@ test.describe('§3.12 — CODE_IMPLEMENTATION candidate journey (editor → run 
     await beginBtn.click();
 
     // Wait for challenge to load
-    await expect(page.getByText('ASSESSMENT_STAGE')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('ASSESSMENT STAGE')).toBeVisible({ timeout: 15000 });
 
     // Problem description should be visible
     await expect(page.getByText(/adds two numbers/i)).toBeVisible({ timeout: 10000 });
@@ -2621,7 +2621,7 @@ test.describe('§3.12 — CODE_IMPLEMENTATION candidate journey (editor → run 
     await expect(beginBtn).toBeVisible({ timeout: 15000 });
     await beginBtn.click();
 
-    await expect(page.getByText('ASSESSMENT_STAGE')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('ASSESSMENT STAGE')).toBeVisible({ timeout: 15000 });
 
     // Click RUN
     const runBtn = page.getByRole('button', { name: /RUN/i });
@@ -2681,7 +2681,7 @@ test.describe('§3.12 — CODE_IMPLEMENTATION candidate journey (editor → run 
     await expect(beginBtn).toBeVisible({ timeout: 15000 });
     await beginBtn.click();
 
-    await expect(page.getByText('ASSESSMENT_STAGE')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('ASSESSMENT STAGE')).toBeVisible({ timeout: 15000 });
 
     // Track submission API call
     let submissionSent = false;
@@ -2691,8 +2691,8 @@ test.describe('§3.12 — CODE_IMPLEMENTATION candidate journey (editor → run 
       }
     });
 
-    // The FINAL_SUBMIT button should be visible (single challenge = last challenge)
-    const submitBtn = page.getByRole('button', { name: /FINAL_SUBMIT/i });
+    // The SUBMIT button should be visible (single challenge = last challenge)
+    const submitBtn = page.getByRole('button', { name: /^SUBMIT$/i });
     await expect(submitBtn).toBeVisible({ timeout: 10000 });
 
     // CODE_IMPLEMENTATION is always submittable — click submit
@@ -2747,7 +2747,7 @@ test.describe('§3.12 — CODE_IMPLEMENTATION candidate journey (editor → run 
     await expect(beginBtn).toBeVisible({ timeout: 15000 });
     await beginBtn.click();
 
-    await expect(page.getByText('ASSESSMENT_STAGE')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('ASSESSMENT STAGE')).toBeVisible({ timeout: 15000 });
 
     // Intercept submission and force error
     await page.route('**/rpc/submit-challenge-response', (route) => {
@@ -2758,7 +2758,7 @@ test.describe('§3.12 — CODE_IMPLEMENTATION candidate journey (editor → run 
       });
     });
 
-    const submitBtn = page.getByRole('button', { name: /FINAL_SUBMIT/i });
+    const submitBtn = page.getByRole('button', { name: /^SUBMIT$/i });
     await expect(submitBtn).toBeVisible({ timeout: 10000 });
     await submitBtn.click();
 
