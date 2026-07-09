@@ -320,11 +320,10 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
     const cachedSessionMatchesInvite = Boolean(
       cachedToken
-      && cachedCandidateJson
       && (!normalizedInviteToken || cachedInviteToken === normalizedInviteToken),
     );
 
-    if (normalizedInviteToken && cachedToken && cachedCandidateJson && cachedInviteToken !== normalizedInviteToken) {
+    if (normalizedInviteToken && cachedToken && cachedInviteToken && cachedInviteToken !== normalizedInviteToken) {
       sessionStorage.removeItem('pipe_session_token');
       sessionStorage.removeItem('pipe_session_candidate');
       sessionStorage.removeItem('pipe_session_invite_token');
@@ -339,15 +338,24 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     try {
       let candidate: ResolvedCandidate;
 
-      if (cachedSessionMatchesInvite && cachedToken && cachedCandidateJson) {
+      if (cachedSessionMatchesInvite && cachedToken) {
         try {
-          const parsed = JSON.parse(cachedCandidateJson) as Record<string, unknown>;
-          if (typeof parsed.id === 'string' && (typeof parsed.pipelineId === 'string' || parsed.pipelineId === null)) {
+          const parsed = cachedCandidateJson
+            ? JSON.parse(cachedCandidateJson) as Record<string, unknown>
+            : {};
+          if (
+            (typeof parsed.id === 'string' || typeof parsed.id === 'undefined')
+            && (
+              typeof parsed.pipelineId === 'string'
+              || parsed.pipelineId === null
+              || typeof parsed.pipelineId === 'undefined'
+            )
+          ) {
             candidate = {
-              id: parsed.id as string,
-              pipelineId: (parsed.pipelineId as string | null) ?? null,
-              status: (parsed.status as string) ?? null,
-              name: (parsed.name as string) ?? null,
+              ...(typeof parsed.id === 'string' ? { id: parsed.id } : {}),
+              pipelineId: typeof parsed.pipelineId === 'string' ? parsed.pipelineId : null,
+              status: typeof parsed.status === 'string' ? parsed.status : null,
+              name: typeof parsed.name === 'string' ? parsed.name : null,
             };
             sessionTokenRef.current = cachedToken;
           } else {
@@ -369,8 +377,16 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
         sessionTokenRef.current = resolved.sessionToken;
         sessionStorage.setItem('pipe_session_token', resolved.sessionToken);
-        sessionStorage.removeItem('pipe_session_invite_token');
-        sessionStorage.removeItem('pipe_session_candidate');
+        if (normalizedInviteToken) {
+          sessionStorage.setItem('pipe_session_invite_token', normalizedInviteToken);
+        } else {
+          sessionStorage.removeItem('pipe_session_invite_token');
+        }
+        sessionStorage.setItem('pipe_session_candidate', JSON.stringify({
+          pipelineId: null,
+          status: resolved.status ?? null,
+          name: resolved.name ?? null,
+        }));
 
         candidate = {
           status: resolved.status,

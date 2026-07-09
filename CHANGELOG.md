@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added regression coverage for the app-dev collision mode where a legacy seed ID belongs to an unrelated repository.
 - Made the CODE_REVIEW packet-catalog dev smoke resolve app-dev's D1 database by default instead of inheriting a generic `CLOUDFLARE_D1_DATABASE_ID` that can point at production.
 - Raised direct and dense source-backed concept overlap above extractor-noise dilution so Workers SDK candidates with exact provenance can receive real CODE_REVIEW assignments instead of a safe `PROFILE_RECEIVED` fallback.
+- Kept started `/assess` sessions recoverable after the one-use invite token is claimed by caching only the bearer session, raw invite token, and non-sensitive candidate display fields.
 
 ### Added — Custom container challenge type (ADR-056)
 

@@ -29,16 +29,84 @@ describe('useAssessment', () => {
       status: 'INVITED',
       name: 'Ada Candidate',
     });
-    expect(sessionStorage.getItem('pipe_session_invite_token')).toBeNull();
-    expect(sessionStorage.getItem('pipe_session_candidate')).toBeNull();
+    expect(sessionStorage.getItem('pipe_session_invite_token')).toBe('invite-token');
+    expect(sessionStorage.getItem('pipe_session_candidate')).toBe(JSON.stringify({
+      pipelineId: null,
+      status: 'INVITED',
+      name: 'Ada Candidate',
+    }));
     expect(JSON.stringify(sessionStorage)).not.toContain('candidate-1');
     expect(JSON.stringify(sessionStorage)).not.toContain('pipeline-1');
-    expect(JSON.stringify(sessionStorage)).not.toContain('invite-token');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/rpc/resolve-token'),
       expect.objectContaining({
         body: JSON.stringify({ inviteToken: 'invite-token' }),
+      }),
+    );
+  });
+
+  it('reuses a cached started session without internal candidate ids after the one-use invite is claimed', async () => {
+    sessionStorage.setItem('pipe_session_token', 'started-session-token');
+    sessionStorage.setItem('pipe_session_invite_token', 'invite-token');
+    sessionStorage.setItem('pipe_session_candidate', JSON.stringify({
+      pipelineId: null,
+      status: 'IN_PROGRESS',
+      name: 'Ada Candidate',
+    }));
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          isComplete: false,
+          stageId: 'standalone-code-review',
+          candidateId: 'candidate-1',
+          stageTitle: 'Code Review',
+          mode: 'ASYNC',
+          challenges: [{ type: 'CODE_REVIEW', order: 0, title: 'Code Review' }],
+          currentIndex: 0,
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'challenge-1',
+          type: 'CODE_REVIEW',
+          title: 'Code Review',
+          instructions: 'Review the source-backed pull request.',
+          cachedDiffJson: { files: [] },
+        }),
+      } as Response);
+    globalThis.fetch = fetchMock;
+
+    const { result } = renderHook(() => useAssessment('invite-token'));
+
+    await waitFor(() => expect(result.current.candidate?.name).toBe('Ada Candidate'));
+    expect(result.current.error).toBeNull();
+    expect(result.current.candidate).toEqual({
+      pipelineId: null,
+      status: 'IN_PROGRESS',
+      name: 'Ada Candidate',
+    });
+
+    await act(async () => {
+      await result.current.onStart();
+    });
+
+    await waitFor(() => expect(result.current.challengeContent?.type).toBe('CODE_REVIEW'));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/rpc/resolve-token'),
+      expect.anything(),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('/rpc/get-stage-config'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer started-session-token',
+        }),
       }),
     );
   });
