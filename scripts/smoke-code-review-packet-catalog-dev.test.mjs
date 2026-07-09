@@ -30,6 +30,10 @@ describe('CODE_REVIEW packet catalog readiness smoke', () => {
         minReviewProfileReadyPackets: 5,
       },
     });
+
+    expect(parseOptions([], {
+      CLOUDFLARE_D1_DATABASE_ID: 'production-db',
+    }).databaseId).toBe('0abe92df-9296-46f5-9f9d-a1fb1bcd3be1');
   });
 
   it('passes a catalog with enough source-backed packet breadth and review profiles', () => {

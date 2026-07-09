@@ -12,6 +12,32 @@ const DEFAULT_THRESHOLDS = {
   minProductionReadyPullRequests: 3,
   minReviewProfileReadyPackets: 2,
 };
+const DEFAULT_DEV_D1_DATABASE_ID = '0abe92df-9296-46f5-9f9d-a1fb1bcd3be1';
+
+function resolveAppDevDatabaseId({
+  env = process.env,
+  configPath = 'workers/api/wrangler.jsonc',
+  readFile = readFileSync,
+} = {}) {
+  const explicit = env.CODE_REVIEW_RELIABILITY_D1_DATABASE_ID
+    || env.MATCHING_EVALUATION_D1_DATABASE_ID
+    || env.CODE_REVIEW_EXPERT_SEED_D1_DATABASE_ID
+    || env.PIPE_APP_DEV_D1_DATABASE_ID
+    || env.APP_DEV_D1_DATABASE_ID;
+  if (explicit) return explicit;
+
+  try {
+    const text = readFile(configPath, 'utf8');
+    const devDbMatch = text.match(
+      /"database_name"\s*:\s*"pipe-db-test"[\s\S]{0,160}?"database_id"\s*:\s*"([^"]+)"/,
+    );
+    if (devDbMatch?.[1]) return devDbMatch[1];
+  } catch {
+    // Fall through to the known app-dev D1 id used by api-dev.hire-pipe.com.
+  }
+
+  return DEFAULT_DEV_D1_DATABASE_ID;
+}
 
 function valueFor(argv, flag) {
   const inline = argv.find((arg) => arg.startsWith(`${flag}=`));
@@ -32,10 +58,7 @@ function positiveInteger(value, fallback) {
 export function parseOptions(argv = process.argv.slice(2), env = process.env) {
   return {
     databaseId: valueFor(argv, '--database-id')
-      || env.CODE_REVIEW_RELIABILITY_D1_DATABASE_ID
-      || env.MATCHING_EVALUATION_D1_DATABASE_ID
-      || env.CLOUDFLARE_D1_DATABASE_ID
-      || '',
+      || resolveAppDevDatabaseId({ env }),
     requirePass: hasFlag(argv, '--require-pass'),
     thresholds: {
       minProductionReadyPackets: positiveInteger(
@@ -110,7 +133,7 @@ export async function wranglerD1Query({
 } = {}) {
   if (!databaseId) {
     throw new Error(
-      'Missing required D1 database id; pass --database-id or set CODE_REVIEW_RELIABILITY_D1_DATABASE_ID.',
+      'Missing required app-dev D1 database id; pass --database-id or set CODE_REVIEW_RELIABILITY_D1_DATABASE_ID.',
     );
   }
 
@@ -167,7 +190,7 @@ async function d1Query({
   const apiToken = requiredEnv(env, 'CLOUDFLARE_API_TOKEN');
   if (!databaseId) {
     throw new Error(
-      'Missing required D1 database id; pass --database-id or set CODE_REVIEW_RELIABILITY_D1_DATABASE_ID.',
+      'Missing required app-dev D1 database id; pass --database-id or set CODE_REVIEW_RELIABILITY_D1_DATABASE_ID.',
     );
   }
 
