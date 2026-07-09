@@ -506,7 +506,7 @@ export function WelcomeScreen({
         <button
           data-testid="start-interview-btn"
           onClick={onStart}
-          disabled={isStarting}
+          aria-disabled={isStarting}
           style={{
             width: '100%',
             display: 'flex',

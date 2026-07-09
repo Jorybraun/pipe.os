@@ -990,7 +990,7 @@ function StandaloneReviewMatchPanel({
   match: StandaloneReviewMatchRecord | null;
 }): JSX.Element | null {
   if (!match) return null;
-  const primaryEvidence = match.evidence.slice(0, 3);
+  const primaryEvidence = match.evidence;
   const excludedPackets = match.diagnostics.excludedPackets.slice(0, 4);
   const evaluatedChallenges = match.diagnostics.evaluatedChallenges.slice(0, 4);
   const recalledPacketIds = match.diagnostics.recalledPacketIds.slice(0, 6);

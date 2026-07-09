@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed — Hard-coded semantic taxonomies (ADR-043)
+
+- Removed `CANDIDATE_EXACT_MECHANISM_SEGMENTS` from `workers/api/src/lib/challengeMatching/d1Matcher.ts`.
+- Removed `HIGH_SIGNAL_TOKENS`, `TOKEN_ALIASES`, and `CONCEPT_PREFIXES` from `workers/api/src/lib/livingContext/conceptSemanticMatch.ts`; token matching now uses 50% token overlap instead of a hard-coded high-signal whitelist.
+- Removed `COMPACT_TERM_ALIASES` from `workers/api/src/lib/challengeMatching/engine.ts`.
+- Removed `RAW_EVIDENCE_LANGUAGE_SEGMENTS`, `softwareMechanism`, and `languageLike` priority regexes from `workers/api/src/lib/candidateDiscovery/resumeDecomposition.ts`.
+- Updated affected unit tests to no longer assert removed alias/stop-word behavior.
+
 ### Added — Agent handoff and E2E credentials
 
 - Documented the local E2E/dogfood recruiter login in `AGENTS.md` (`e2e-test@pipe.dev` / `PipeE2E_Test2026!`) and updated `docs/playbooks/matching.md` to reference it, so agents do not sign in with real user accounts during local dogfood.
@@ -2534,6 +2542,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rewrote CLAUDE.md as pure navigation hub + agent instructions (no content duplication)
 - Rewrote root README.md (50 lines)
 - Updated internal links across migration docs, knowledge docs, and source files
+
+### Added — Custom container interview factory
+
+- Added `workers/api/src/lib/interviewFactory.ts` with a strategy registry for `InterviewStrategy` implementations, so adding a new `interview_type` no longer requires editing `scheduling.ts` and `candidates.ts` SQL.
+- Wired `CUSTOM_CONTAINER` as both an `interview_type` and a `challenge` type; `createCustomContainerAssessmentSession` reuses the existing dev-container runtime with a generic verification command and a pluggable scorer.
+- Added D1 migrations `0116_custom_container_type.sql` and `0117_enable_living_context_read.sql` to support the custom container type and the living-context read gate.
+- Added `e2e/custom-container-interview.spec.ts` as the BDD test for the custom container interview factory.
+- Added `knowledge/docs/decisions/current/ADR-056-interview-factory-and-custom-container-challenges.md` documenting the factory and `CUSTOM_CONTAINER` design.
+
+### Fixed — Source-backed standalone CODE_REVIEW evidence rendering
+
+- Removed the arbitrary 3-item cap in `LivingContextGraph` primary evidence so `standalone-review-evidence` displays all aligned source-backed bridges, not just the first three ordered by demand id.
+- Raised `SCHEDULED_CODE_REVIEW_SOURCE_TEXT_MAX_LENGTH` in `workers/api/src/routes/cockpit/scheduling.ts` from 240 to 400 so repo source snippets sent to the recruiter detail page contain the full `Workflow names must be unique per account.` phrase.
+- Removed the `EVIDENCE_HYPEREDGES` debug `console.log` from `e2e/standalone-code-review-mvp.spec.ts` to keep e2e output clean.
 
 ## [0.0.1] - 2026-04-22
 

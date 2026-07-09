@@ -782,11 +782,18 @@ interface StandaloneDevContainerRow {
   id: string;
   status: string;
   created_at: string | null;
-  interview_type: 'DEV_CONTAINER_CHALLENGE' | 'OPEN_SOURCE_BUG_FIX';
+  interview_type: 'DEV_CONTAINER_CHALLENGE' | 'OPEN_SOURCE_BUG_FIX' | 'CUSTOM_CONTAINER';
   matched_repo_id: number | null;
   github_repo_url: string | null;
   github_pr_number: number | null;
+  challenge_id: string | null;
   submission_json: string | null;
+}
+
+function isStandaloneDevContainerRow(
+  assessment: StandaloneReviewRow | StandaloneDevContainerRow | null,
+): assessment is StandaloneDevContainerRow {
+  return Boolean(assessment && 'interview_type' in assessment);
 }
 
 interface CandidateAssessmentSessionRow {
@@ -795,7 +802,7 @@ interface CandidateAssessmentSessionRow {
   state: string;
 }
 
-interface CandidateAssessmentProgressPayload {
+export interface CandidateAssessmentProgressPayload {
   mode: string;
   state: string;
   stage: AssessmentProgressSnapshot['stage'];
@@ -1691,10 +1698,10 @@ async function getPendingDevContainerChallenge(
 ): Promise<StandaloneDevContainerRow | null> {
   try {
     return await db.prepare(
-      `SELECT id, status, created_at, interview_type, matched_repo_id, github_repo_url, github_pr_number, submission_json
+      `SELECT id, status, created_at, interview_type, matched_repo_id, github_repo_url, github_pr_number, challenge_id, submission_json
        FROM scheduled_interviews
        WHERE candidate_id = ?1
-         AND interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')
+         AND interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX', 'CUSTOM_CONTAINER')
          AND stage_id IS NULL
          AND status NOT IN ('COMPLETED', 'CANCELLED')
        ORDER BY created_at DESC LIMIT 1`,
@@ -1905,7 +1912,7 @@ async function assessmentSessionsTableExists(db: D1Database): Promise<boolean> {
   return row?.name === 'assessment_sessions';
 }
 
-async function loadLatestAssessmentSessionForCandidate(
+export async function loadLatestAssessmentSessionForCandidate(
   db: D1Database,
   candidateId: string,
 ): Promise<CandidateAssessmentSessionRow | null> {
@@ -1915,7 +1922,7 @@ async function loadLatestAssessmentSessionForCandidate(
        FROM assessment_sessions s
        LEFT JOIN scheduled_interviews si ON si.id = s.interview_id
       WHERE s.state <> 'CANCELLED'
-        AND s.mode IN ('OPEN_SOURCE_BUG_FIX', 'DEV_CONTAINER_REPO_TASK', 'DEV_CONTAINER_CHALLENGE')
+        AND s.mode IN ('OPEN_SOURCE_BUG_FIX', 'DEV_CONTAINER_REPO_TASK', 'DEV_CONTAINER_CHALLENGE', 'CUSTOM_CONTAINER')
         AND (s.candidate_id = ?1 OR si.candidate_id = ?1)
       ORDER BY s.created_at DESC
       LIMIT 1`,
@@ -1935,7 +1942,7 @@ function candidateSafeAssessmentEvidenceSnippets(
   });
 }
 
-function serializeCandidateAssessmentProgress(
+export function serializeCandidateAssessmentProgress(
   progress: AssessmentProgressSnapshot,
 ): CandidateAssessmentProgressPayload {
   const challengeSourceRefType = progress.challenge?.sourceRefType ?? null;
@@ -2013,6 +2020,25 @@ function serializeCandidateAssessmentProgress(
         })
       : null,
   };
+}
+
+export async function loadCandidateAssessmentProgress(
+  db: D1Database,
+  candidateId: string,
+): Promise<CandidateAssessmentProgressPayload | null> {
+  const assessmentSession = await loadLatestAssessmentSessionForCandidate(db, candidateId);
+  if (!assessmentSession) return null;
+
+  try {
+    const progress = await new RepoTaskInterviewSessionStore(db).loadProgress(assessmentSession.id);
+    return serializeCandidateAssessmentProgress(progress);
+  } catch (error) {
+    console.error('[loadCandidateAssessmentProgress] failed:', {
+      candidateId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 function candidateAssessmentErrorResponse(message: string, status = 422): Response {
@@ -3180,11 +3206,10 @@ rpcAuth.post('/get-stage-config', async (c) => {
     const standaloneAssessment = await getPendingStandaloneAssessment(c.env.DB, candidateId);
 
     // Standalone code-review interview: serve the assessment only after a
-    // source-backed repo/PR assignment exists. Intake/matching stays upstream.
-    if (standaloneAssessment && !('interview_type' in standaloneAssessment)) {
-      if (needsResume) {
-        return c.json(candidateIntakeQueuedComplete('Profile received'));
-      }
+    // source-backed repo/PR assignment exists and the CV intake is complete.
+    // If the candidate still needs to upload a CV, fall through to the shared
+    // talent-pool-intake response below.
+    if (standaloneAssessment && !('interview_type' in standaloneAssessment) && !needsResume) {
       const hasReadyAssignment = await hasReadyStandaloneCodeReviewAssignment(
         c.env.DB,
         candidateId,
@@ -3210,6 +3235,18 @@ rpcAuth.post('/get-stage-config', async (c) => {
     // the challenge stage. When the repo has not been assigned yet, candidate
     // evidence is still required for source-backed matching.
     if (!needsResume && standaloneAssessment && 'interview_type' in standaloneAssessment) {
+      if (standaloneAssessment.interview_type === 'CUSTOM_CONTAINER') {
+        return c.json({
+          isComplete: false,
+          stageId: 'standalone-custom-container',
+          candidateId,
+          stageTitle: 'Custom Container Challenge',
+          mode: 'ASYNC',
+          timeLimit: null,
+          challenges: [{ type: 'CODE_IMPLEMENTATION', order: 0, title: 'Custom Container Challenge' }],
+          currentIndex: 0,
+        });
+      }
       const isOpenSourceBugFix = standaloneAssessment.interview_type === 'OPEN_SOURCE_BUG_FIX';
       let matchedOpenSourceAssignment: StandaloneReviewMatchResult | null = null;
       if (!standaloneAssessment.github_repo_url) {
@@ -3542,17 +3579,7 @@ rpcAuth.post('/get-challenge', async (c) => {
   if (!pipelineId) {
     const standaloneAssessment = await getPendingStandaloneAssessment(c.env.DB, candidateId);
     const needsCvIntake = await candidateNeedsCvIntake(c.env.DB, candidateId);
-    if (
-      needsCvIntake
-      && standaloneAssessment
-      && !('interview_type' in standaloneAssessment)
-    ) {
-      return c.json(profileReceivedChallengeContent());
-    }
-    if (
-      needsCvIntake
-      && (!standaloneAssessment || 'interview_type' in standaloneAssessment)
-    ) {
+    if (needsCvIntake) {
       return c.json(INTAKE_CHALLENGE_CONTENT);
     }
 
@@ -3629,6 +3656,40 @@ rpcAuth.post('/get-challenge', async (c) => {
         reviewProfile: null,
         devContainerRepoUrl: repoUrl,
       });
+    }
+
+    if (
+      isStandaloneDevContainerRow(standaloneAssessment)
+      && standaloneAssessment.interview_type === 'CUSTOM_CONTAINER'
+      && standaloneAssessment.challenge_id
+    ) {
+      const challenge = await c.env.DB.prepare(
+        `SELECT title, instructions, dev_container_repo_url, dev_container_challenge_branch
+         FROM challenges
+         WHERE id = ?1
+         LIMIT 1`,
+      ).bind(standaloneAssessment.challenge_id).first<{
+        title: string;
+        instructions: string | null;
+        dev_container_repo_url: string | null;
+        dev_container_challenge_branch: string | null;
+      }>();
+      if (challenge && challenge.dev_container_repo_url) {
+        return c.json({
+          id: `standalone-custom-container-${standaloneAssessment.id}`,
+          type: 'CODE_IMPLEMENTATION',
+          title: challenge.title,
+          instructions: challenge.instructions ?? 'Complete the custom container challenge in the workspace provided below.',
+          config: JSON.stringify({ starterCode: '' }),
+          cachedDiffJson: null,
+          githubPrTitle: null,
+          githubPrNumber: null,
+          githubRepoUrl: challenge.dev_container_repo_url,
+          githubPrDescription: null,
+          reviewProfile: null,
+          devContainerRepoUrl: challenge.dev_container_repo_url,
+        });
+      }
     }
 
     if (!standaloneAssessment) {

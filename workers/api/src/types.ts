@@ -314,7 +314,7 @@ export interface StageRow {
 export interface ChallengeRow {
   id: string;
   stage_id: string;
-  type: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP' | 'INTAKE' | 'AGENT_INTERVIEW';
+  type: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'CUSTOM_CONTAINER' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP' | 'INTAKE' | 'AGENT_INTERVIEW';
   sort_order: number;
   title: string;
   instructions: string | null;
@@ -1061,7 +1061,7 @@ export interface ApiError {
 export interface ChallengeResponse {
   id: string;
   stageId: string;
-  type: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP' | 'INTAKE' | 'AGENT_INTERVIEW';
+  type: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'CUSTOM_CONTAINER' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP' | 'INTAKE' | 'AGENT_INTERVIEW';
   order: number;
   title: string;
   instructions: string | null;

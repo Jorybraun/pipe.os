@@ -7,7 +7,7 @@ export interface MatchableConceptEvidence {
 export interface ConceptEvidenceMatch<Row extends MatchableConceptEvidence> {
   row: Row;
   overlapTokens: string[];
-  matchKind: 'exact' | 'high_signal' | 'token_overlap';
+  matchKind: 'exact' | 'token_overlap';
 }
 
 interface ConceptProfile {
@@ -15,17 +15,6 @@ interface ConceptProfile {
   normalizedKey: string;
   tokens: Set<string>;
 }
-
-const CONCEPT_PREFIXES = new Set([
-  'artifact',
-  'framework',
-  'lang',
-  'skill',
-  'structure',
-  'term',
-  'tool',
-  'verification',
-]);
 
 const STOP_TOKENS = new Set([
   'a',
@@ -96,49 +85,6 @@ const STOP_TOKENS = new Set([
   'with',
 ]);
 
-const HIGH_SIGNAL_TOKENS = new Set([
-  'arraybuffer',
-  'arraybufferlike',
-  'arraybufferview',
-  'cron',
-  'durableobject',
-  'microtask',
-  'normalizeforstorage',
-  'onopenchange',
-  'popover',
-  'schedule',
-  'schedules',
-  'sqlite',
-  'typedarray',
-  'uint8array',
-  'usepopoverroot',
-  'workflow',
-  'workflows',
-  'wrangler',
-]);
-
-const TOKEN_ALIASES = new Map<string, readonly string[]>([
-  ['arraybuffer', ['arraybuffer', 'array', 'buffer']],
-  ['arraybufferlike', ['arraybufferlike', 'arraybuffer', 'array', 'buffer']],
-  ['arraybuffertyped', ['arraybuffer', 'typedarray', 'typed', 'array', 'buffer']],
-  ['arraybufferview', ['arraybufferview', 'arraybuffer', 'array', 'buffer', 'view']],
-  ['cloudflareworkerssdk', ['cloudflare', 'workers', 'worker', 'sdk', 'runtime', 'wrangler']],
-  ['debuggeduint8arrayarraybuffer', ['uint8array', 'arraybuffer', 'typedarray', 'array', 'buffer']],
-  ['durableobjects', ['durableobject', 'durable', 'objects']],
-  ['javascriptestrunner', ['javascript', 'test', 'runner']],
-  ['javascripttestrunner', ['javascript', 'test', 'runner']],
-  ['normalizeforstorage', ['normalizeforstorage', 'normalize', 'storage', 'persist', 'persistence']],
-  ['onopenchange', ['onopenchange', 'open', 'change', 'popover']],
-  ['patientclickthreshold', ['patient', 'click', 'threshold', 'popover']],
-  ['reacttypescriptpopup', ['react', 'typescript', 'popup', 'popover']],
-  ['sdkruntimeswrangler', ['sdk', 'runtime', 'runtimes', 'wrangler', 'workers']],
-  ['typedarray', ['typedarray', 'typed', 'array', 'buffer']],
-  ['uint8array', ['uint8array', 'typedarray', 'typed', 'array', 'buffer']],
-  ['uint8arrayarraybuffer', ['uint8array', 'arraybuffer', 'typedarray', 'array', 'buffer']],
-  ['usepopoverroot', ['usepopoverroot', 'popover', 'root']],
-  ['workerssdkruntimes', ['workers', 'worker', 'sdk', 'runtime', 'runtimes', 'wrangler']],
-]);
-
 function stripConceptPrefixes(value: string): string {
   let result = value.trim();
   let changed = true;
@@ -146,11 +92,8 @@ function stripConceptPrefixes(value: string): string {
     changed = false;
     const separatorIndex = result.indexOf(':');
     if (separatorIndex > 0) {
-      const prefix = result.slice(0, separatorIndex).toLowerCase();
-      if (CONCEPT_PREFIXES.has(prefix)) {
-        result = result.slice(separatorIndex + 1);
-        changed = true;
-      }
+      result = result.slice(separatorIndex + 1);
+      changed = true;
     }
   }
   return result;
@@ -167,19 +110,15 @@ function addToken(tokens: Set<string>, token: string): void {
     const singular = normalized.slice(0, -1);
     if (!STOP_TOKENS.has(singular)) tokens.add(singular);
   }
-
-  const aliases = TOKEN_ALIASES.get(normalized);
-  if (aliases) {
-    for (const alias of aliases) {
-      if (!STOP_TOKENS.has(alias)) tokens.add(alias);
-    }
-  }
 }
 
 function tokenizeValue(value: string): Set<string> {
   const tokens = new Set<string>();
   const stripped = stripConceptPrefixes(value);
-  const camelSpaced = stripped.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+  const camelSpaced = stripped
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([a-zA-Z])(\d)/g, '$1 $2')
+    .replace(/(\d)([a-zA-Z])/g, '$1 $2');
   const compact = stripped.toLowerCase().replace(/[^a-z0-9]+/g, '');
   if (compact.length > 1) addToken(tokens, compact);
 
@@ -242,12 +181,9 @@ function classifyProfileMatch(
     return { matched: false, overlapTokens, matchKind: 'token_overlap' };
   }
 
-  if (overlapTokens.some((token) => HIGH_SIGNAL_TOKENS.has(token))) {
-    return { matched: true, overlapTokens, matchKind: 'high_signal' };
-  }
-
+  const demandTokenCount = demand.tokens.size;
   return {
-    matched: overlapTokens.length >= 2,
+    matched: demandTokenCount > 0 && overlapTokens.length / demandTokenCount >= 0.5,
     overlapTokens,
     matchKind: 'token_overlap',
   };
@@ -299,12 +235,6 @@ export function scoreableDemandConcepts(concepts: string[]): string[] {
     : conceptsWithTokens;
 
   if (candidateConcepts.length <= 12) return candidateConcepts;
-
-  const highSignalConcepts = candidateConcepts.filter((concept) => {
-    const profile = buildConceptProfile(concept);
-    return [...profile.tokens].some((token) => HIGH_SIGNAL_TOKENS.has(token));
-  });
-  if (highSignalConcepts.length > 0) return highSignalConcepts;
 
   const multiTokenConcepts = candidateConcepts.filter((concept) => {
     const profile = buildConceptProfile(concept);

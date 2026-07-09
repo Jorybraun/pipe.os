@@ -592,30 +592,41 @@ devContainer.post('/launch', async (c) => {
   let challengeTtl: number | null = null;
   let repoGitUrl: string | null = null;
   let challengeBranch: string | null = null;
+  let verificationCommand: string | null = null;
   if (challengeId) {
     const meta = await getChallengeTtlMeta(c.env.DB, challengeId, candidateId);
     if (meta) {
       challengeTtl = meta.dev_container_ttl_seconds;
       repoGitUrl = meta.repo_git_url;
       challengeBranch = meta.challenge_branch;
+      verificationCommand = meta.verification_command;
     }
   }
 
   // For pipeline-free candidates (standalone dev container challenge),
-  // look up the repo URL from the scheduled_interviews table.
+  // look up the repo URL from the scheduled_interviews table, or from the
+  // linked challenge for CUSTOM_CONTAINER interviews.
   if (!pipelineId && !repoGitUrl) {
     const interview = await c.env.DB.prepare(
-      `SELECT github_repo_url, github_pr_number
+      `SELECT github_repo_url, github_pr_number, challenge_id
        FROM scheduled_interviews
        WHERE candidate_id = ?1
-         AND interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')
+         AND interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX', 'CUSTOM_CONTAINER')
          AND stage_id IS NULL
          AND status NOT IN ('COMPLETED', 'CANCELLED')
        ORDER BY created_at DESC LIMIT 1`,
-    ).bind(candidateId).first<{ github_repo_url: string | null; github_pr_number: number | null }>();
+    ).bind(candidateId).first<{ github_repo_url: string | null; github_pr_number: number | null; challenge_id: string | null }>();
 
     if (interview?.github_repo_url) {
       repoGitUrl = interview.github_repo_url;
+    } else if (interview?.challenge_id) {
+      const meta = await getChallengeTtlMeta(c.env.DB, interview.challenge_id, candidateId);
+      if (meta) {
+        challengeTtl = challengeTtl ?? meta.dev_container_ttl_seconds;
+        repoGitUrl = meta.repo_git_url;
+        challengeBranch = meta.challenge_branch;
+        verificationCommand = meta.verification_command;
+      }
     }
   }
 
@@ -710,6 +721,7 @@ devContainer.post('/launch', async (c) => {
         ttlSeconds: effective.ttlSeconds,
         repoGitUrl,
         challengeBranch,
+        verificationCommand,
         agentType: 'devin',
         agentApiKey: c.env.DEVIN_API_KEY ?? null,
         agentOrgId: c.env.DEVIN_ORG_ID ?? null,

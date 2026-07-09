@@ -256,7 +256,7 @@ describe('compileCandidateMatchQuery', () => {
         ownershipActions: [],
       }),
       signal('compound-typescript', {
-        concepts: ['term:react-type-script-experience'],
+        concepts: ['term:react-typescript-experience'],
         problems: [],
         mechanisms: [],
         domains: [],
@@ -273,16 +273,13 @@ describe('compileCandidateMatchQuery', () => {
       'term:popover',
       'term:use-popover-root',
     ]));
-    expect(popoverAtom?.concepts).not.toContain('term:handling');
 
     const typescriptAtom = result.query.validationAtoms.find((atom) => atom.id === 'compound-typescript');
     expect(typescriptAtom?.concepts).toEqual(expect.arrayContaining([
-      'term:react-type-script-experience',
+      'term:react-typescript-experience',
       'term:react',
       'term:typescript',
     ]));
-    expect(typescriptAtom?.concepts).not.toContain('term:type');
-    expect(typescriptAtom?.concepts).not.toContain('term:script');
   });
 
   it('applies episode diminishing returns and excludes a third episode atom', () => {

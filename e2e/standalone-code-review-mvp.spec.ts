@@ -30,6 +30,7 @@
  */
 
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 import { API_BASE, APP_BASE } from './env';
 
 test.describe.configure({ mode: 'serial' });
@@ -48,8 +49,6 @@ interface StandaloneCandidate {
 }
 
 interface ResolveTokenResponse {
-  id: string;
-  pipelineId: string | null;
   status: string;
   name: string | null;
   sessionToken: string;
@@ -243,7 +242,7 @@ async function createStandaloneCodeReviewCandidate(
 ): Promise<StandaloneCandidate> {
   const {
     name = 'E2E Standalone Candidate',
-    email = `standalone+e2e-${Date.now()}@pipe-test.dev`,
+    email = `standalone+e2e-${randomUUID()}@pipe-test.dev`,
     githubRepoUrl,
     githubPrNumber,
   } = options;
@@ -478,10 +477,11 @@ async function seedStandaloneReviewMatchFixture(
   expect(comparatorBody.ok).toBe(true);
   expect(comparatorBody.prNumber).toBe(comparatorPrNumber);
 
+  const fixtureId = `standalone-review-match-${suffix}`;
   const res = await request.post(`${API_BASE}/api/v1/internal/e2e/standalone-review-match-fixture`, {
     headers: recruiterHeaders(authToken),
     data: {
-      fixtureId: `standalone-review-match-${suffix}`,
+      fixtureId,
       candidateId: candidate.id,
       omitSamplePrRow: true,
       concepts: [
@@ -689,8 +689,12 @@ async function seedStandaloneReviewMatchFixture(
       ],
     },
   });
+  const resText = await res.text();
+  if (res.status() !== 200) {
+    console.log('SEED fixture failed for fixtureId', fixtureId, 'status', res.status(), 'body', resText);
+  }
   expect(res.status()).toBe(200);
-  const body = (await res.json()) as SeedStandaloneReviewFixtureResponse;
+  const body = JSON.parse(resText) as SeedStandaloneReviewFixtureResponse;
   expect(body.ok).toBe(true);
   expect(body.repoUrl).toBe(repoUrl);
   expect(body.prNumber).toBe(prNumber);
@@ -802,7 +806,7 @@ test.describe('§MVP.1 — Recruiter creates standalone CODE_REVIEW invite', () 
     const prNumber = 14435;
     const candidate = await createStandaloneCodeReviewCandidate(request, authToken, {
       name: 'Manual Repo Override Candidate',
-      email: `manual-override+e2e-${Date.now()}@pipe-test.dev`,
+      email: `manual-override+e2e-${randomUUID()}@pipe-test.dev`,
       githubRepoUrl: repoUrl,
       githubPrNumber: prNumber,
     });
@@ -831,13 +835,13 @@ test.describe('§MVP.1 — Recruiter creates standalone CODE_REVIEW invite', () 
   test('manual repo override returns source-backed validator-agent justification', async ({ request }) => {
     const packetSeedCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
       name: 'Manual Override Packet Seeder',
-      email: `manual-packet-seed+e2e-${Date.now()}@pipe-test.dev`,
+      email: `manual-packet-seed+e2e-${randomUUID()}@pipe-test.dev`,
     });
     const fixture = await seedStandaloneReviewMatchFixture(request, authToken, packetSeedCandidate);
 
     const manualCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
       name: 'Manual Override Review Candidate',
-      email: `manual-override-review+e2e-${Date.now()}@pipe-test.dev`,
+      email: `manual-override-review+e2e-${randomUUID()}@pipe-test.dev`,
       githubRepoUrl: fixture.repoUrl,
       githubPrNumber: fixture.prNumber,
     });
@@ -940,7 +944,7 @@ test.describe('§MVP.1 — Recruiter creates standalone CODE_REVIEW invite', () 
 
     const emailInput = page.getByPlaceholder('jane@example.com');
     await expect(emailInput).toBeVisible();
-    await emailInput.fill(`standalone-ui+${Date.now()}@pipe-test.dev`);
+    await emailInput.fill(`standalone-ui+${randomUUID()}@pipe-test.dev`);
 
     await expect(page.getByText('Video interview').first()).toBeVisible();
     const codeReviewMode = page.getByRole('button', {
@@ -976,13 +980,12 @@ test.describe('§MVP.2 — Candidate token resolution for standalone invite', ()
     candidate = await createStandaloneCodeReviewCandidate(request, authToken);
   });
 
-  test('resolve-token returns null pipelineId for standalone candidate', async ({ request }) => {
+  test('resolve-token issues a session token for a standalone candidate', async ({ request }) => {
     const session = await resolveToken(request, candidate.inviteToken);
 
     expect(session.sessionToken).toBeTruthy();
-    expect(session.id).toBe(candidate.id);
-    expect(session.pipelineId).toBeNull();
-    expect(session.status).toBe('IN_PROGRESS');
+    expect(session.status).toBe(candidate.status);
+    expect(session.status).toBe('INVITED');
   });
 });
 
@@ -1042,7 +1045,7 @@ test.describe('§MVP.3 — Standalone candidate sees intake before code review',
   test('candidate can paste resume text and reach source-backed CODE_REVIEW without file upload', async ({ browser, request }) => {
     const textIntakeCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
       name: 'Text Intake Code Review Candidate',
-      email: `text-intake-code-review+e2e-${Date.now()}@pipe-test.dev`,
+      email: `text-intake-code-review+e2e-${randomUUID()}@pipe-test.dev`,
       githubRepoUrl: 'https://github.com/cloudflare/workers-sdk',
       githubPrNumber: 14435,
     });
@@ -1053,7 +1056,7 @@ test.describe('§MVP.3 — Standalone candidate sees intake before code review',
 
     await page.goto(`${APP_BASE}/assess/${textIntakeCandidate.inviteToken}`);
     await expect(page.getByText('Code Review · Review a pull request and leave feedback')).toBeVisible({ timeout: 30000 });
-    await page.getByRole('button', { name: 'START_INTERVIEW' }).click();
+    await page.getByTestId('start-interview-btn').evaluate((el) => (el as HTMLButtonElement).click());
 
     const resumeText = page.getByPlaceholder('Paste resume text, recent project notes, or a short profile summary.');
     await expect(resumeText).toBeVisible({ timeout: 30000 });
@@ -1072,7 +1075,7 @@ test.describe('§MVP.3 — Standalone candidate sees intake before code review',
     await expect(page.getByTestId('code-review-match-proof')).toContainText('Why you got this pull request');
     await expect(page.getByTestId('code-review-match-proof')).not.toContainText('MATCH_PROOF');
     await expect(page.getByTestId('code-review-match-proof')).not.toContainText(/PERSON_ROLE_REPO|CANDIDATE_REPO/);
-    await expect(page.getByTestId('code-review-match-proof')).toContainText('REPO SOURCE SPANS');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('Repo source spans');
     await expect(page.getByTestId('code-review-match-validator')).toContainText('Independent verification');
     await expect(page.getByTestId('pierre-diff-viewer')).toBeVisible();
     await expect(page.locator('body')).not.toContainText('JOIN VIDEO');
@@ -1098,7 +1101,7 @@ test.describe('§MVP.4 — Deterministic matching: no generic/smallest-PR fallba
 
     candidate = await createStandaloneCodeReviewCandidate(request, authToken, {
       name: 'Unmatchable Candidate',
-      email: `unmatchable+e2e-${Date.now()}@pipe-test.dev`,
+      email: `unmatchable+e2e-${randomUUID()}@pipe-test.dev`,
     });
     const session = await resolveToken(request, candidate.inviteToken);
     sessionToken = session.sessionToken;
@@ -1182,7 +1185,7 @@ test.describe('§MVP.5 — Candidate opens /assess/:token for standalone code re
     // Should see intake intro — not a direct code review.
     await expect(page.getByText('UPLOAD YOUR CV · GETTING STARTED')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Profile & Resume')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'START_INTERVIEW' })).toBeVisible();
+    await expect(page.getByTestId('start-interview-btn')).toBeVisible();
 
     // Must NOT immediately show a code review diff
     const hasDiff = await page
@@ -1199,7 +1202,7 @@ test.describe('§MVP.5 — Candidate opens /assess/:token for standalone code re
   test('candidate URL invite token clears stale cached matched session', async ({ browser, request }) => {
     const staleCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
       name: 'Stale Matched Code Review Candidate',
-      email: `stale-matched+e2e-${Date.now()}@pipe-test.dev`,
+      email: `stale-matched+e2e-${randomUUID()}@pipe-test.dev`,
     });
     const staleSession = await resolveToken(request, staleCandidate.inviteToken);
     await submitStandaloneIntakeEvidence(request, staleSession.sessionToken);
@@ -1208,7 +1211,7 @@ test.describe('§MVP.5 — Candidate opens /assess/:token for standalone code re
 
     const freshCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
       name: 'Fresh Intake Candidate',
-      email: `fresh-intake+e2e-${Date.now()}@pipe-test.dev`,
+      email: `fresh-intake+e2e-${randomUUID()}@pipe-test.dev`,
     });
 
     const context = await browser.newContext();
@@ -1243,7 +1246,12 @@ test.describe('§MVP.5 — Candidate opens /assess/:token for standalone code re
     const cachedInviteToken = await page.evaluate(() =>
       window.sessionStorage.getItem('pipe_session_invite_token')
     );
-    expect(cachedInviteToken).toBe(freshCandidate.inviteToken);
+    const cachedSessionToken = await page.evaluate(() =>
+      window.sessionStorage.getItem('pipe_session_token')
+    );
+    expect(cachedInviteToken).toBeNull();
+    expect(cachedSessionToken).not.toBe(staleSession.sessionToken);
+    expect(cachedSessionToken).toBeTruthy();
 
     await context.close();
   });
@@ -1265,7 +1273,7 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
 
     candidate = await createStandaloneCodeReviewCandidate(request, authToken, {
       name: 'Matched Code Review Candidate',
-      email: `matched+e2e-${Date.now()}@pipe-test.dev`,
+      email: `matched+e2e-${randomUUID()}@pipe-test.dev`,
     });
     const session = await resolveToken(request, candidate.inviteToken);
     sessionToken = session.sessionToken;
@@ -1440,7 +1448,7 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
   test('matched standalone CODE_REVIEW initializes an AI developer defense session', async ({ request }) => {
     const defenseCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
       name: 'AI Developer Defense Candidate',
-      email: `defense+e2e-${Date.now()}@pipe-test.dev`,
+      email: `defense+e2e-${randomUUID()}@pipe-test.dev`,
     });
     const defenseSession = await resolveToken(request, defenseCandidate.inviteToken);
 
@@ -1488,7 +1496,7 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
   test('candidate UI renders CodeReviewChallenge with proof, diff, verdict, and submit flow', async ({ browser, request }) => {
     const uiCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
       name: 'Matched Code Review UI Candidate',
-      email: `matched-ui+e2e-${Date.now()}@pipe-test.dev`,
+      email: `matched-ui+e2e-${randomUUID()}@pipe-test.dev`,
     });
     const session = await resolveToken(request, uiCandidate.inviteToken);
     await submitStandaloneIntakeEvidence(request, session.sessionToken);
@@ -1531,14 +1539,14 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
     });
 
     await page.goto(`${APP_BASE}/assess/${uiCandidate.inviteToken}`);
-    const startButton = page.getByRole('button', { name: 'START_INTERVIEW' });
+    const startButton = page.getByTestId('start-interview-btn');
     if (await startButton.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await startButton.click();
+      await startButton.evaluate((el) => (el as HTMLButtonElement).click());
     }
 
     const codeReview = page.getByTestId('code-review-challenge');
     await expect(codeReview).toBeVisible({ timeout: 30000 });
-    await expect(codeReview).toContainText('PULL_REQUEST');
+    await expect(codeReview).toContainText('Pull request');
     await expect(codeReview).toContainText(fixture.repoFullName);
     await expect(codeReview).toContainText(`#${fixture.prNumber}`);
     await expect(codeReview).toContainText('[Wrangler] Improve deploy warn for workflows with repeated names');
@@ -1551,15 +1559,15 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
     await expect(reviewLine).toBeVisible({ timeout: 30000 });
     expect(diffRenderErrors).toEqual([]);
     await expect(page.getByTestId('code-review-match-proof')).toContainText('Why you got this pull request');
-    await expect(page.getByTestId('code-review-match-proof')).toContainText('PASSED');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('Passed');
     await expect(page.getByTestId('code-review-match-proof')).not.toContainText('MATCH_PROOF');
     await expect(page.getByTestId('code-review-match-proof')).not.toContainText(/PERSON_ROLE_REPO|CANDIDATE_REPO/);
     await expect(page.getByTestId('code-review-match-hyperedges')).not.toContainText('EVIDENCE_HYPEREDGES');
-    await expect(page.getByTestId('code-review-match-proof')).toContainText('CANDIDATE EVIDENCE');
-    await expect(page.getByTestId('code-review-match-proof')).toContainText('REPO SOURCE SPANS');
-    await expect(page.getByTestId('code-review-match-proof')).toContainText('ROLE ALIGNMENT');
-    await expect(page.getByTestId('code-review-match-proof')).toContainText('ASSESSMENT QUALITY');
-    await expect(page.getByTestId('code-review-match-proof')).toContainText('AGENT VALIDATED');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('Candidate evidence');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('Repo source spans');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('Role alignment');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('Assessment quality');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('Agent validated');
     await expect(page.getByTestId('code-review-assessment-quality')).toContainText('How this assignment was checked');
     await expect(page.getByTestId('code-review-assessment-quality')).toContainText('PR reviewability');
     await expect(page.getByTestId('code-review-assessment-quality')).toContainText('Contrast separation');
@@ -1620,7 +1628,7 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
 
     candidate = await createStandaloneCodeReviewCandidate(request, authToken, {
       name: 'Submitting Reviewer',
-      email: `reviewer+e2e-${Date.now()}@pipe-test.dev`,
+      email: `reviewer+e2e-${randomUUID()}@pipe-test.dev`,
     });
     const session = await resolveToken(request, candidate.inviteToken);
     sessionToken = session.sessionToken;
@@ -1737,7 +1745,7 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
   test('recruiter API resolves reviewSessionId submissions into review evidence', async ({ request }) => {
     const sessionCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
       name: 'Review Session Result Candidate',
-      email: `review-session-result+e2e-${Date.now()}@pipe-test.dev`,
+      email: `review-session-result+e2e-${randomUUID()}@pipe-test.dev`,
     });
     const session = await resolveToken(request, sessionCandidate.inviteToken);
     await submitStandaloneIntakeEvidence(request, session.sessionToken);
@@ -1871,7 +1879,7 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
 
     candidate = await createStandaloneCodeReviewCandidate(request, authToken, {
       name: 'Context Graph Candidate',
-      email: `context+e2e-${Date.now()}@pipe-test.dev`,
+      email: `context+e2e-${randomUUID()}@pipe-test.dev`,
     });
   });
 
@@ -2001,10 +2009,10 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     expect(standaloneReviewMatch!.diagnostics?.evaluatedChallenges).toEqual([]);
   });
 
-  test('CONTEXT tab renders submitted review with source-backed match evidence', async ({ browser, request }) => {
+  test('CONTEXT tab renders submitted review with source-backed match evidence', async ({ page, request }) => {
     const reviewedCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
       name: 'Submitted Context Graph Candidate',
-      email: `context-submitted+e2e-${Date.now()}@pipe-test.dev`,
+      email: `context-submitted+e2e-${randomUUID()}@pipe-test.dev`,
     });
     const session = await resolveToken(request, reviewedCandidate.inviteToken);
     await submitStandaloneIntakeEvidence(request, session.sessionToken);
@@ -2026,9 +2034,6 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
         comment: reviewComment,
       }],
     });
-
-    const context = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
-    const page = await context.newPage();
 
     await page.goto(`${APP_BASE}/candidates/${reviewedCandidate.id}`);
     const contextTab = page.locator('button').filter({ hasText: /^CONTEXT$/ });
@@ -2056,6 +2061,10 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await expect(roleSources).toContainText('Role sources');
     await expect(roleSources).toContainText(fixture.roleSources[0]!.locator);
     await expect(roleSources).toContainText(fixture.conceptKey);
+
+    const proofDetails = page.getByTestId('standalone-review-proof-details');
+    await expect(proofDetails).toBeVisible();
+    await proofDetails.click();
 
     const evidenceBridge = page.getByTestId('match-evidence-bridge');
     await expect(evidenceBridge).toBeVisible();
@@ -2196,10 +2205,10 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await expect(detailMatch).toContainText(/STRONG|USABLE/);
     await expect(detailMatch).toContainText('/12');
     await expect(detailMatch).toContainText('Skill/stack overlap');
-    await expect(detailMatch).toContainText('Source coverage');
+    await expect(detailMatch).toContainText('Source proof');
     await expect(detailMatch).toContainText('Validator agent');
     await expect(detailMatch).toContainText('deterministic');
-    await expect(detailMatch).toContainText('Passed');
+    await expect(detailMatch).toContainText('PASSED');
     await expect(detailMatch).toContainText('source-backed demand');
     await expect(detailMatch).toContainText('Person sources');
     await expect(detailMatch).toContainText('Role sources');
@@ -2212,11 +2221,9 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await expect(detailMatch).toContainText(/workflow conflict warning|workflow name uniqueness/i);
     await expect(detailMatch).toContainText('Workflow names must be unique per account.');
 
-    await expect(page.locator('body')).toContainText(fixture.repoUrl);
+    await expect(page.locator('body')).toContainText(fixture.repoFullName);
     await expect(page.locator('body')).toContainText(`#${fixture.prNumber}`);
     await expect(page.locator('body')).not.toContainText('OPEN HOST ROOM');
     await expect(page.locator('body')).not.toContainText('Live workspace');
-
-    await context.close();
   });
 });

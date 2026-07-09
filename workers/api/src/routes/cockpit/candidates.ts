@@ -43,6 +43,9 @@ import {
   loadSourceBackedReviewPacketById,
 } from '../../lib/review/sourceBackedReviewDiff';
 import { INTERVIEW_TYPE_VALUES } from './scheduling';
+import { createCustomContainerAssessmentSession } from '../../lib/interviewFactory';
+import { loadCandidateAssessmentProgress } from '../rpc';
+import type { CandidateAssessmentProgressPayload } from '../rpc';
 import type { Env, Variables } from '../../types';
 
 export {
@@ -1203,6 +1206,7 @@ const createStandaloneCandidateSchema = z.object({
   name: z.string().min(1, 'name is required').max(200),
   email: z.string().email('valid email required'),
   interviewType: z.enum(INTERVIEW_TYPE_VALUES).optional(),
+  challengeId: z.string().trim().min(1).optional(),
   scheduledAt: z.string().optional(),
   schedulingProvider: z.enum(['CALENDLY', 'CAL_COM', 'MANUAL']).optional(),
   schedulingUrl: z.string().optional(),
@@ -1216,6 +1220,7 @@ const createStandaloneCandidateSchema = z.object({
   const supportsRepoOverride = value.interviewType === 'CODE_REVIEW'
     || value.interviewType === 'DEV_CONTAINER_CHALLENGE'
     || value.interviewType === 'OPEN_SOURCE_BUG_FIX';
+  const isCustomContainer = value.interviewType === 'CUSTOM_CONTAINER';
   if (hasRepoUrl !== hasPrNumber) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -1228,6 +1233,20 @@ const createStandaloneCandidateSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: 'Manual repo override is only supported for workspace-backed assessment interviews.',
       path: ['interviewType'],
+    });
+  }
+  if (isCustomContainer && !value.challengeId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'CUSTOM_CONTAINER interviews require a challengeId.',
+      path: ['challengeId'],
+    });
+  }
+  if (isCustomContainer && (hasRepoUrl || hasPrNumber)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'CUSTOM_CONTAINER interviews cannot use a manual repo override.',
+      path: ['githubRepoUrl'],
     });
   }
 });
@@ -1247,6 +1266,7 @@ candidateOps.post('/', async (c) => {
     name,
     email,
     interviewType,
+    challengeId,
     scheduledAt,
     message: customMessage,
     skipEmail,
@@ -1334,10 +1354,10 @@ candidateOps.post('/', async (c) => {
         `INSERT INTO scheduled_interviews (
            id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
            status, scheduled_at, scheduling_provider, scheduling_url, sync_source,
-           github_repo_url, github_pr_number,
+           github_repo_url, github_pr_number, challenge_id,
            created_at, updated_at
          )
-         VALUES (?, ?, NULL, NULL, ?, ?, 'INVITED', ?, ?, ?, 'MANUAL', ?, ?, ?, ?)`
+         VALUES (?, ?, NULL, NULL, ?, ?, 'INVITED', ?, ?, ?, 'MANUAL', ?, ?, ?, ?, ?)`
       )
       .bind(
         interviewId,
@@ -1349,10 +1369,27 @@ candidateOps.post('/', async (c) => {
         parsed.data.schedulingUrl ?? null,
         githubRepoUrl ?? null,
         githubPrNumber ?? null,
+        interviewType === 'CUSTOM_CONTAINER' ? (challengeId ?? null) : null,
         now,
         now,
       )
       .run();
+
+    if (interviewType === 'CUSTOM_CONTAINER' && challengeId) {
+      try {
+        await createCustomContainerAssessmentSession({
+          db,
+          userId,
+          candidateId: id,
+          interviewId,
+          challengeId,
+          createdAt: now,
+        });
+      } catch (err) {
+        console.error('[candidates.create] custom container assessment session failed:', err);
+        throw err;
+      }
+    }
   }
 
   // Fire-and-forget invitation email
@@ -2706,6 +2743,8 @@ candidateOps.get('/:candidateId', async (c) => {
     }
   }
 
+  const assessmentProgress = await loadCandidateAssessmentProgress(db, candidateId);
+
   return c.json({
     candidate: {
       id: candidate.id,
@@ -2735,6 +2774,7 @@ candidateOps.get('/:candidateId', async (c) => {
     stages: stagesWithChallenges,
     phoneCalls,
     scheduledInterviews,
+    assessmentProgress,
     ingestion,
     standaloneReviewMatch,
     profileSections,

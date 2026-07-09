@@ -1098,6 +1098,7 @@ async function seedRepoChallenge(input: {
 
   const { challengeInput, structuralFacts } = await buildFixtureChallengeInput({ fixtureId, seed, now });
   const packet = await buildChallengePacket(challengeInput);
+  console.error('[e2eSeed] packet size:', JSON.stringify(packet).length, 'fixtureId:', fixtureId);
   if (!packet.quality.eligible) {
     const failedGates = packet.quality.gates
       .filter((gate) => !gate.passed)

@@ -83,11 +83,6 @@ const OPEN_TERM_STOP_SEGMENTS = new Set([
   'state',
 ]);
 
-const COMPACT_TERM_ALIASES = new Map<string, string>([
-  ['type-script', 'typescript'],
-  ['java-script', 'javascript'],
-]);
-
 function openTermSegments(value: string): string[] {
   const splitCamel = value.replace(/([a-z0-9])([A-Z])/g, '$1-$2');
   return splitCamel
@@ -101,7 +96,7 @@ function addDerivedTerm(terms: Set<string>, value: string): void {
   const normalizedValue = value.trim().toLowerCase().replace(/[^a-z0-9+#]+/g, '-').replace(/^-|-$/g, '');
   if (!normalizedValue || normalizedValue.length < 3) return;
   if (OPEN_TERM_STOP_SEGMENTS.has(normalizedValue)) return;
-  terms.add(`term:${COMPACT_TERM_ALIASES.get(normalizedValue) ?? normalizedValue}`);
+  terms.add(`term:${normalizedValue}`);
 }
 
 function singularSegment(segment: string): string | null {
@@ -146,13 +141,8 @@ function expandOpenTermConcept(concept: string): string[] {
 
   const rawValue = canonical.slice('term:'.length);
   const expanded = new Set<string>([canonical]);
-  const aliased = COMPACT_TERM_ALIASES.get(rawValue);
-  if (aliased) expanded.add(`term:${aliased}`);
 
   const segments = openTermSegments(rawValue);
-  const compactSegments = segments.map((segment) =>
-    COMPACT_TERM_ALIASES.get(segment) ?? segment
-  );
   for (let index = 0; index < segments.length; index += 1) {
     const segment = segments[index]!;
     const next = segments[index + 1];
@@ -161,15 +151,10 @@ function expandOpenTermConcept(concept: string): string[] {
     if (segment === 'use' && next && afterNext) {
       addDerivedTerm(expanded, `${segment}-${next}-${afterNext}`);
     }
-    if (next) {
-      const pair = `${segment}-${next}`;
-      const pairAlias = COMPACT_TERM_ALIASES.get(pair);
-      if (pairAlias) expanded.add(`term:${pairAlias}`);
-    }
   }
   for (let size = 2; size <= 3; size += 1) {
-    for (let index = 0; index <= compactSegments.length - size; index += 1) {
-      const phraseSegments = compactSegments.slice(index, index + size);
+    for (let index = 0; index <= segments.length - size; index += 1) {
+      const phraseSegments = segments.slice(index, index + size);
       addDerivedTerm(expanded, phraseSegments.join('-'));
       const variantPhrase = phraseSegments.map((segment) => segmentVariants(segment)[0] ?? segment).join('-');
       addDerivedTerm(expanded, variantPhrase);

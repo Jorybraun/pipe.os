@@ -86,6 +86,7 @@ export interface SimpleJobDescriptionRoleContextResponse {
 export type ChallengeType =
   | 'CODE_REVIEW'
   | 'CODE_IMPLEMENTATION'
+  | 'CUSTOM_CONTAINER'
   | 'QUIZ_MCQ'
   | 'QUIZ_SHORT_ANSWER'
   | 'FOLLOW_UP'

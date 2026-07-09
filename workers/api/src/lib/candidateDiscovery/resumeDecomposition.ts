@@ -126,14 +126,6 @@ const RAW_EVIDENCE_STOPWORDS = new Set([
   'with',
 ]);
 
-const RAW_EVIDENCE_LANGUAGE_SEGMENTS = new Set([
-  'javascript',
-  'java',
-  'script',
-  'typescript',
-  'type',
-]);
-
 function nowEpoch(): number {
   return Math.floor(Date.now() / 1000);
 }
@@ -446,7 +438,6 @@ function rawReviewEvidenceDistinctiveSegments(term: OpenSemanticTermRecord): str
     .filter((segment) =>
       segment.length >= 3
       && !RAW_EVIDENCE_STOPWORDS.has(segment)
-      && !RAW_EVIDENCE_LANGUAGE_SEGMENTS.has(segment)
     );
 }
 
@@ -478,12 +469,10 @@ function diversifyRawReviewEvidenceTerms(
 }
 
 function rawReviewEvidenceHasTechnicalShape(term: OpenSemanticTermRecord): boolean {
-  const canonical = term.canonical_key.replace(/^term:/, '');
   return /[a-z][A-Z]/.test(term.surface)
     || /\b[A-Z]{2,}\b/.test(term.surface)
     || /[A-Za-z0-9]+-[A-Za-z0-9]+/.test(term.surface)
-    || /[./#]/.test(term.surface)
-    || /(^|-)javascript(-|$)|(^|-)typescript(-|$)|(^|-)type-script(-|$)/.test(canonical);
+    || /[./#]/.test(term.surface);
 }
 
 function rawReviewEvidenceTermPriority(term: OpenSemanticTermRecord): number {
@@ -491,13 +480,10 @@ function rawReviewEvidenceTermPriority(term: OpenSemanticTermRecord): number {
   const segmentCount = canonical.split('-').filter(Boolean).length;
   const compactPhrase = segmentCount >= 2 && segmentCount <= 3 ? 30 : 0;
   const longMechanism = segmentCount === 4 ? 12 : 0;
-  const languageLike = /(^|-)javascript(-|$)|(^|-)typescript(-|$)|(^|-)type-script(-|$)/.test(canonical) ? 8 : 0;
   const technicalShape = rawReviewEvidenceHasTechnicalShape(term) ? 80 : 0;
-  const mechanismSurface = canonical.replace(/-/g, ' ');
-  const softwareMechanism = /\b(api|apis|cli|configuration|cron|deploy|deployments|queue|queues|regression|routing|runtime|schedule|schedules|sdk|stack|stacks|test|tests|trace|traces|workflow|workflows)\b/.test(mechanismSurface) ? 24 : 0;
   const distinctiveSegmentBonus = Math.min(24, rawReviewEvidenceDistinctiveSegments(term).length * 6);
   const tooLongPenalty = Math.max(0, segmentCount - 4) * 4;
-  return Math.max(technicalShape, languageLike) + softwareMechanism + compactPhrase + longMechanism + distinctiveSegmentBonus - tooLongPenalty;
+  return technicalShape + compactPhrase + longMechanism + distinctiveSegmentBonus - tooLongPenalty;
 }
 
 function rawReviewEvidenceNodes(

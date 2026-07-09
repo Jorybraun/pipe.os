@@ -413,6 +413,20 @@ export interface ChallengeTtlRow {
   dev_container_ttl_seconds: number | null;
   repo_git_url: string | null;
   challenge_branch: string | null;
+  verification_command: string | null;
+}
+
+function verificationCommandFromServerConfig(serverConfig: string | null): string | null {
+  if (!serverConfig) return null;
+  try {
+    const parsed = JSON.parse(serverConfig) as Record<string, unknown>;
+    if (typeof parsed.verificationCommand === 'string' && parsed.verificationCommand.trim() !== '') {
+      return parsed.verificationCommand.trim();
+    }
+  } catch {
+    // ignore malformed JSON
+  }
+  return null;
 }
 
 /**
@@ -430,12 +444,13 @@ export async function getChallengeTtlMeta(
   candidateId?: string | null,
 ): Promise<ChallengeTtlRow | null> {
   if (candidateId) {
-    return db
+    const row = await db
       .prepare(
         `SELECT ch.id,
                 ch.dev_container_ttl_seconds,
                 COALESCE(cca.github_repo_url, ch.dev_container_repo_url) AS repo_git_url,
-                ch.dev_container_challenge_branch AS challenge_branch
+                ch.dev_container_challenge_branch AS challenge_branch,
+                ch.server_config
          FROM challenges ch
          LEFT JOIN candidate_challenge_assignment cca
            ON cca.challenge_id = ch.id AND cca.candidate_id = ?2
@@ -443,21 +458,32 @@ export async function getChallengeTtlMeta(
          LIMIT 1`,
       )
       .bind(challengeId, candidateId)
-      .first<ChallengeTtlRow>();
+      .first<Omit<ChallengeTtlRow, 'verification_command'> & { server_config: string | null }>();
+    if (!row) return null;
+    return {
+      ...row,
+      verification_command: verificationCommandFromServerConfig(row.server_config),
+    };
   }
 
-  return db
+  const row = await db
     .prepare(
       `SELECT id,
               dev_container_ttl_seconds,
               dev_container_repo_url AS repo_git_url,
-              dev_container_challenge_branch AS challenge_branch
+              dev_container_challenge_branch AS challenge_branch,
+              server_config
        FROM challenges
        WHERE id = ?1
        LIMIT 1`,
     )
     .bind(challengeId)
-    .first<ChallengeTtlRow>();
+    .first<Omit<ChallengeTtlRow, 'verification_command'> & { server_config: string | null }>();
+  if (!row) return null;
+  return {
+    ...row,
+    verification_command: verificationCommandFromServerConfig(row.server_config),
+  };
 }
 
 // ─── Exchange tokens for iframe auth ───────────────────────────────────────

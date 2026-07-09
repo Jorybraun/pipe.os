@@ -48,6 +48,7 @@ import {
 } from '../../lib/livingContext';
 import { AssessmentLayerStore, type AssessmentEvidenceSourceRefInput } from '../../lib/assessmentLayer/persistence';
 import { recordAssessmentCandidateProfileEvidence } from '../../lib/assessmentLayer/candidateProfileEvidence';
+import { createCustomContainerAssessmentSession } from '../../lib/interviewFactory';
 import {
   MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL,
   RepoTaskInterviewSessionStore,
@@ -232,17 +233,19 @@ export const INTERVIEW_TYPE_VALUES = [
   'CODE_REVIEW',
   'DEV_CONTAINER_CHALLENGE',
   'OPEN_SOURCE_BUG_FIX',
+  'CUSTOM_CONTAINER',
 ] as const;
 
 type InterviewTypeValue = typeof INTERVIEW_TYPE_VALUES[number];
 
 function isWorkspaceAssessmentInterviewType(value: string | null | undefined): value is Extract<
   InterviewTypeValue,
-  'CODE_REVIEW' | 'DEV_CONTAINER_CHALLENGE' | 'OPEN_SOURCE_BUG_FIX'
+  'CODE_REVIEW' | 'DEV_CONTAINER_CHALLENGE' | 'OPEN_SOURCE_BUG_FIX' | 'CUSTOM_CONTAINER'
 > {
   return value === 'CODE_REVIEW'
     || value === 'DEV_CONTAINER_CHALLENGE'
-    || value === 'OPEN_SOURCE_BUG_FIX';
+    || value === 'OPEN_SOURCE_BUG_FIX'
+    || value === 'CUSTOM_CONTAINER';
 }
 
 function isAssessmentOnlyInviteInterviewType(value: string | null | undefined): value is 'CODE_REVIEW' {
@@ -791,6 +794,7 @@ const createInterviewSchema = z.object({
   matchedRepoId: z.number().int().positive().nullable().optional(),
   githubRepoUrl: z.string().trim().url().nullable().optional(),
   githubPrNumber: z.number().int().positive().nullable().optional(),
+  challengeId: z.string().trim().min(1).optional(),
   challengeBaseCommitSha: z.string().trim().regex(GIT_COMMIT_SHA_PATTERN, 'challengeBaseCommitSha must be a 40-character Git commit SHA.').optional(),
   challengeTitle: z.string().trim().min(1).max(240).optional(),
   challengeInstructions: z.string().trim().min(1).max(5000).optional(),
@@ -821,6 +825,33 @@ const createInterviewSchema = z.object({
   // manual override. When no repo is specified, matching selects a source-backed
   // challenge from candidate evidence at runtime.
   if (isWorkspaceAssessmentInterviewType(value.interviewType)) {
+    if (value.interviewType === 'CUSTOM_CONTAINER') {
+      if (!value.challengeId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'challengeId is required for CUSTOM_CONTAINER interviews.',
+          path: ['challengeId'],
+        });
+      }
+      if (
+        value.githubRepoUrl
+        || value.githubPrNumber
+        || value.matchedRepoId
+        || value.challengeBaseCommitSha
+        || value.challengeTitle
+        || value.challengeInstructions
+        || value.challengeSuccessCriteria?.length
+        || value.challengeExpectedEvidence?.length
+        || value.challengeVerificationCommand
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'CUSTOM_CONTAINER interviews use the challengeId field, not manual repo overrides or challenge packet fields.',
+          path: ['interviewType'],
+        });
+      }
+      return;
+    }
     const hasMatchedRepo = value.matchedRepoId != null && value.matchedRepoId > 0;
     const hasRepoUrl = Boolean(value.githubRepoUrl);
     const hasPrNumber = Boolean(value.githubPrNumber);
@@ -1606,7 +1637,7 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
-const SCHEDULED_CODE_REVIEW_SOURCE_TEXT_MAX_LENGTH = 240;
+const SCHEDULED_CODE_REVIEW_SOURCE_TEXT_MAX_LENGTH = 400;
 
 function compactScheduledCodeReviewSourceText(value: string | undefined): string | undefined {
   if (!value) return undefined;
@@ -8775,6 +8806,7 @@ schedulingAuth.post('/interviews', async (c) => {
     matchedRepoId,
     githubRepoUrl,
     githubPrNumber,
+    challengeId,
     challengeBaseCommitSha,
     challengeTitle,
     challengeInstructions,
@@ -8906,9 +8938,9 @@ schedulingAuth.post('/interviews', async (c) => {
         title, description,
         interview_type, meeting_type, scheduled_at, scheduling_provider,
         scheduling_url, recipient_name, recipient_email, sync_source,
-        matched_repo_id, github_repo_url, github_pr_number,
+        matched_repo_id, github_repo_url, github_pr_number, challenge_id,
         recruiter_notes, job_description, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id, candidateId ?? null, pipelineId ?? null, stageId ?? null, userId,
@@ -8917,6 +8949,7 @@ schedulingAuth.post('/interviews', async (c) => {
       schedulingProvider ?? null, sanitizedSchedulingUrl,
       recipientName ?? null, recipientEmail?.trim().toLowerCase() ?? null,
       matchedRepoId ?? null, effectiveGithubRepoUrl, effectiveGithubPrNumber,
+      effectiveInterviewType === 'CUSTOM_CONTAINER' ? (challengeId ?? null) : null,
       recruiterNotes ?? null, jobDescription ?? null,
       now, now,
     )
@@ -8985,6 +9018,15 @@ schedulingAuth.post('/interviews', async (c) => {
       packet: matchedOpenSourceChallengePacket,
       createdAt: now,
     });
+  } else if (effectiveInterviewType === 'CUSTOM_CONTAINER' && challengeId && effectiveCandidateId) {
+    assessmentProgress = (await createCustomContainerAssessmentSession({
+      db,
+      userId,
+      candidateId: effectiveCandidateId,
+      interviewId: id,
+      challengeId,
+      createdAt: now,
+    })).progress;
   }
   assessmentProgress = normalizeScheduledAssessmentProgressAssignmentTrust(assessmentProgress);
 
@@ -9424,7 +9466,8 @@ schedulingAuth.post('/invite-email-preview', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
   }
 
-  const interviewType = parsed.data.interviewType ?? 'VIDEO';
+  const requestedInterviewType = parsed.data.interviewType ?? 'VIDEO';
+  const interviewType = isInviteEmailInterviewType(requestedInterviewType) ? requestedInterviewType : 'VIDEO';
   const email = composeInviteEmail({
     interviewType,
     delivery: resolveInviteEmailDelivery({

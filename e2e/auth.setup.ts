@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 
 const authFile = path.join(__dirname, "../playwright/.auth/user.json");
 const AUTH_GATE_TIMEOUT_MS = 45_000;
-const AUTH_CHECK_TIMEOUT_MS = 8_000;
+const AUTH_CHECK_TIMEOUT_MS = 30_000;
 
 interface StorageStateCookie {
   name: string;

@@ -8,6 +8,7 @@ type Clock = () => string;
 
 export type AssessmentSessionMode =
   | 'CODE_REVIEW'
+  | 'CUSTOM_CONTAINER'
   | 'DEV_CONTAINER_CHALLENGE'
   | 'DEV_CONTAINER_REPO_TASK'
   | 'OPEN_SOURCE_BUG_FIX'

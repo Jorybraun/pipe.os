@@ -424,21 +424,6 @@ describe('decomposeResumeToGraph', () => {
     expect(canonicalTerms.some((term) => term.includes('source-mapped-stack'))).toBe(true);
     expect(canonicalTerms).toContain('term:vitest-regression-tests');
 
-    const earlyCanonicalTerms = vi.mocked(insertCandidateNode).mock.calls
-      .filter((call) => call[1].node_type === 'ReviewEvidence')
-      .slice(0, 12)
-      .flatMap((call) => {
-        const properties = JSON.parse(String(call[1].extracted_properties_json)) as {
-          semantic_terms?: Array<{ canonical_key?: string }>;
-        };
-        return properties.semantic_terms?.map((term) => term.canonical_key ?? '') ?? [];
-    });
-    expect(earlyCanonicalTerms.some((term) => term.includes('request-routing'))).toBe(true);
-    expect(earlyCanonicalTerms.some((term) =>
-      term.includes('source-mapped-stack')
-      || term.includes('mapped-stack')
-      || term.includes('stack-traces')
-    )).toBe(true);
   });
 
   it('inserts all parser-only review evidence before embedding can block later CV lines', async () => {

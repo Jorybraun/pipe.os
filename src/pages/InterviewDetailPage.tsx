@@ -2364,10 +2364,13 @@ function workspaceAssessmentHiringReadout(input: {
   ].filter((item): item is WorkspaceAssessmentReadoutItem => Boolean(item));
 }
 
-function sourceRefText(ref: CodeReviewMatchSourceRef | null | undefined): string | null {
+function sourceRefText(
+  ref: CodeReviewMatchSourceRef | null | undefined,
+  maxLength = 400,
+): string | null {
   if (!ref) return null;
-  return compactEvidenceText(ref.exactText ?? '')
-    ?? compactEvidenceText(ref.locator ?? '')
+  return compactEvidenceText(ref.exactText ?? '', maxLength)
+    ?? compactEvidenceText(ref.locator ?? '', maxLength)
     ?? null;
 }
 

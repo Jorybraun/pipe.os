@@ -881,6 +881,26 @@ function assertAssessmentBranchName(branchName: string): void {
   }
 }
 
+function isValidBaseRef(value: string): boolean {
+  if (COMMIT_SHA_PATTERN.test(value)) return true;
+  if (
+    value.length === 0
+    || value.length > 255
+    || !SAFE_BRANCH_PATTERN.test(value)
+    || value.startsWith('/')
+    || value.endsWith('/')
+    || value.includes('..')
+    || value.includes('//')
+    || value.includes('@{')
+    || value.endsWith('.')
+    || value.endsWith('.lock')
+    || value.split('/').some((segment) => segment.startsWith('.'))
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function normalizeCommitUrl(value: string | null | undefined, commitSha: string): string | null {
   if (!value) return null;
   let url: URL;
@@ -1544,7 +1564,7 @@ export function challengePacketContract(
     isComplete: false,
     missingFields: [] as string[],
     hasRepositoryUrl: hasValidGitHubRepositoryUrl(repositoryUrl),
-    hasBaseCommitSha: Boolean(baseCommitSha && COMMIT_SHA_PATTERN.test(baseCommitSha)),
+    hasBaseCommitSha: Boolean(baseCommitSha && isValidBaseRef(baseCommitSha)),
     hasTask: Boolean(task),
     hasSuccessCriteria: successCriteria.length > 0,
     hasExpectedEvidence: expectedEvidence.length > 0,
