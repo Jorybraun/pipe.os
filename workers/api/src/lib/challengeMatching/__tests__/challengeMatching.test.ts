@@ -1550,6 +1550,91 @@ describe('fake semantics and fallback removal (HAS-86)', () => {
     expect(explanation.assessmentQuality.verdict).toBe('USABLE');
   });
 
+  it('accepts source-backed Workers SDK matches when broad extracted concepts dilute exact overlap', () => {
+    const workersTerms = [
+      'term:runtime',
+      'term:wrangler',
+      'term:workflows',
+      'term:durable-object',
+      'term:typed-array',
+    ];
+    const broadCandidateTerms = [
+      'term:cloudflare-workers-sdk',
+      'term:typescript',
+      'term:edge-platform',
+      'term:serverless-runtime',
+      'term:request-routing',
+      'term:deployment-pipeline',
+      'term:test-harness',
+      'term:compatibility-date',
+      'term:configuration',
+      'term:observability',
+      'term:queue-processing',
+    ];
+    const broadDemandTerms = [
+      'term:workers-sdk',
+      'term:pull-request-review',
+      'term:package-workspace',
+      'term:regression-tests',
+      'term:ci-fixtures',
+      'term:source-map',
+      'term:runtime-binding',
+      'term:developer-experience',
+      'term:miniflare',
+      'term:vitest',
+      'term:release-note',
+    ];
+    const compiled = compile(workersTerms.map((term) =>
+      signal(term.replace('term:', 'workers-'), {
+        narrative: `Source-backed resume evidence for ${term}.`,
+        evidenceLevel: 'used',
+        evidenceStrength: 0.85,
+        confidence: 0.85,
+        concepts: [term, ...broadCandidateTerms],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+        embedding: undefined,
+      })
+    ));
+    const packet = challenge('workers-sdk-broad-overlap', workersTerms.map((term, index) =>
+      demand(term.replace('term:', 'demand-'), 0.2, {
+        family: `workers-family-${index}`,
+        narrative: `Review a source-backed Workers SDK PR demand for ${term}.`,
+        concepts: [term, ...broadDemandTerms],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+        embedding: undefined,
+        roleRequirement: true,
+        highWeightRoleRequirement: index === 0,
+      })
+    ), {
+      id: 'workers-sdk-broad-overlap',
+      repoId: 'cloudflare/workers-sdk',
+      prNumber: 14150,
+      concepts: [...workersTerms, ...broadDemandTerms],
+    });
+
+    const alignment = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
+    const ranked = rankReviewChallenges(compiled.query, [alignment]);
+    const explanation = explainChallengeMatch(alignment);
+
+    expect(alignment.candidateEvidenceAlignment).toBeGreaterThanOrEqual(0.07);
+    expect(alignment.candidateEvidenceAlignment).toBeLessThan(0.50);
+    expect(alignment.roleRelevance).toBeGreaterThanOrEqual(0.60);
+    expect(alignment.provenanceComplete).toBe(true);
+    expect(alignment.stretchCount).toBe(0);
+    expect(alignment.eligible).toBe(true);
+    expect(alignment.rejectionReasons).toEqual([]);
+    expect(ranked.status).toBe('MATCHED');
+    expect(explanation.assessmentQuality.verdict).toBe('USABLE');
+  });
+
   it('accepts exact source-backed symbol evidence for roleless standalone review when corpus has one strong packet', () => {
     const compiled = compile([
       signal('use-popover-root', {

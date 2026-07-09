@@ -451,6 +451,22 @@ function sharedConceptSpecificity(atom: QueryAtom, demand: ChallengeDemand): num
     .reduce((max, concept) => Math.max(max, conceptSpecificity(concept)), 0);
 }
 
+function primaryAtomConcept(atom: QueryAtom): string | null {
+  const atomId = atom.id.trim().toLowerCase();
+  return normalized(atom.concepts).find((concept) => atomId.endsWith(`:${concept}`)) ?? null;
+}
+
+function sourceBackedConceptCorrespondenceFloor(atom: QueryAtom, demand: ChallengeDemand): number {
+  if (!hasCompleteSourceRefs(atom.sourceRefs) || !hasCompleteSourceRefs(demand.sourceRefs)) return 0;
+  const demandConcepts = new Set(normalized(demand.concepts));
+  const primaryConcept = primaryAtomConcept(atom);
+  if (primaryConcept && !demandConcepts.has(primaryConcept)) return 0;
+  const specificity = primaryConcept ? conceptSpecificity(primaryConcept) : sharedConceptSpecificity(atom, demand);
+  if (specificity >= 3) return 0.45;
+  if (specificity >= 2) return 0.32;
+  return 0;
+}
+
 function scorePair(
   atom: QueryAtom,
   demand: ChallengeDemand,
@@ -463,7 +479,10 @@ function scorePair(
   const semanticNarrative = semanticSimilarity(atom, demand);
   const pairScore: PairScore = {
     semanticNarrative: semanticNarrative ?? 0,
-    conceptCorrespondence: containmentRatio(atom.concepts, demand.concepts),
+    conceptCorrespondence: Math.max(
+      containmentRatio(atom.concepts, demand.concepts),
+      direct ? sourceBackedConceptCorrespondenceFloor(atom, demand) : 0,
+    ),
     problemMechanismCorrespondence: Math.max(
       intersectionRatio(atom.problems, demand.problems),
       intersectionRatio(atom.mechanisms, demand.mechanisms),

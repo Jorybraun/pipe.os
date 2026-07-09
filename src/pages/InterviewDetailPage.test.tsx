@@ -2808,7 +2808,10 @@ describe('InterviewDetailPage', () => {
     expect(assessmentAssignment).toHaveTextContent('Manual task assignment');
     expect(assessmentAssignment).toHaveTextContent('A recruiter supplied a repo-only task packet.');
     expect(assessmentAssignment).not.toHaveTextContent('PIPE-matched challenge');
-    expect(screen.queryByTestId('interview-code-review-decision-summary')).toBeNull();
+    const decision = screen.getByTestId('interview-code-review-decision-summary');
+    expect(decision).toHaveTextContent('No confident repo match yet');
+    expect(decision).toHaveTextContent('Manual task');
+    expect(decision).toHaveTextContent('Do not rely on score yet');
   });
 
   it('keeps manual scored PR proof wording honest and deduped', async () => {
@@ -3152,6 +3155,40 @@ describe('InterviewDetailPage', () => {
     expect(evidencePlan).toHaveTextContent('What good evidence looks like');
     expect(evidencePlan).toHaveTextContent('A short recorded or written answer with a concrete project, personal actions, technical constraints, and verification details.');
     expect(evidencePlan).toHaveTextContent('CREATE FOLLOW-UP ASSESSMENT');
+  });
+
+  it('keeps the code-review recruiter readout visible when a repo PR exists before match proof is persisted', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        matchedRepoId: null,
+        submissionJson: null,
+        completedAt: null,
+        assessmentSetup: {
+          status: 'reviewable_task_assigned',
+          kind: 'github_pr',
+          source: 'recruiter_manual_override',
+          blocksPositiveAssessment: true,
+          message: 'A reviewable PR is attached, but source-backed match proof is not persisted yet.',
+          lastDeliveredUrl: 'https://app-dev.hire-pipe.com/assess/half-created-token',
+          lastDeliveredUrlState: 'active',
+          lastDeliveredUrlMessage: null,
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    expect(screen.getByTestId('interview-code-review-assessment-report')).toHaveTextContent('Assessment report');
+    expect(screen.getByTestId('interview-code-review-decision-summary')).toHaveTextContent('mui/base-ui PR #973');
+    expect(screen.getByTestId('interview-code-review-hiring-readout')).toHaveTextContent('Hiring manager readout');
+    expect(screen.getByTestId('interview-code-review-hiring-readout')).toHaveTextContent('Manual PR');
+    expect(screen.getByTestId('interview-code-review-hiring-readout')).toHaveTextContent('Do not rely on score yet');
+    expect(screen.getByTestId('interview-code-review-decision-summary')).not.toHaveTextContent('Waiting for candidate review');
   });
 
   it('does not treat matched code-review packets without assessment quality as safe assignments', async () => {

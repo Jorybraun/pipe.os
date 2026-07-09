@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { type CSSProperties, type ReactNode } from 'react';
 import { LiquidMetalCard, type LiquidMetalCardVariant } from './LiquidMetalCard';
 import { SubTitle } from './SubTitle';
 
@@ -23,6 +23,9 @@ export interface SectionCardProps {
 
   /** Override body padding. Defaults to '32px'. */
   bodyPadding?: string | number;
+
+  /** Optional wrapper style overrides. */
+  style?: CSSProperties;
 
   /** Optional data-testid for the wrapper. */
   'data-testid'?: string;
@@ -53,10 +56,11 @@ export function SectionCard({
   children,
   variant = 'default',
   bodyPadding = '32px',
+  style,
   'data-testid': dataTestId,
 }: SectionCardProps): JSX.Element {
   return (
-    <LiquidMetalCard variant={variant} style={{ padding: 0, borderRadius: 16 }}>
+    <LiquidMetalCard variant={variant} style={{ padding: 0, borderRadius: 16, ...style }}>
       <div data-testid={dataTestId}>
         <div
           style={{

@@ -7,12 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Code-review recruiter readout
+
+- Kept the recruiter assessment report and decision cockpit visible for CODE_REVIEW interviews that have a concrete repo/PR assignment before durable match proof is persisted, and label that state as an unproven repo match rather than a candidate-started review.
+
+### Fixed — Candidate intake modal sizing
+
+- Bounded the candidate intake modal height, moved long form content into an internal scroll body, and pinned intake actions in a visible footer at compact desktop viewports.
+
+### Changed — Pipeline overview card chrome
+
+- Aligned the pipeline overview metric and interview-state cards with the recruiter interview detail surface: solid panels, tighter radii, compact spacing, and green active-state accents.
+
 ### Fixed — CODE_REVIEW packet seed idempotency
 
 - Removed hardcoded `qualified_repos.id` values from the live review-packet input seed so app-dev can restore real `cloudflare/workers-sdk`, `mui/base-ui`, and `vercel/swr` crawler rows even when existing repo catalog rows already occupy the old seed IDs.
 - Added vetted `cloudflare/workers-sdk` PR `14118` and `14150` sample rows to the seed so the non-MUI Workers SDK matrix has eligible source-backed inputs instead of relying on the lower-quality `14435` candidate.
 - Added regression coverage for the app-dev collision mode where a legacy seed ID belongs to an unrelated repository.
 - Made the CODE_REVIEW packet-catalog dev smoke resolve app-dev's D1 database by default instead of inheriting a generic `CLOUDFLARE_D1_DATABASE_ID` that can point at production.
+- Raised direct source-backed concept overlap above extractor-noise dilution so Workers SDK candidates with exact provenance can receive real CODE_REVIEW assignments instead of a safe `PROFILE_RECEIVED` fallback.
 
 ### Added — Custom container challenge type (ADR-056)
 

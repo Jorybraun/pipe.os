@@ -35,7 +35,7 @@ export function CandidateIntakeModal({
   pipelineId,
   stageId,
   onClose,
-  onSuccess
+  onSuccess,
 }: CandidateIntakeModalProps) {
   const [step, setStep] = useState<"BASIC" | "PARSING" | "CONFIRM">("BASIC");
   const [name, setName] = useState("");
@@ -45,14 +45,24 @@ export function CandidateIntakeModal({
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [skipEmail, setSkipEmail] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [createdCandidateId, setCreatedCandidateId] = useState<string | null>(null);
+  const [createdCandidateId, setCreatedCandidateId] = useState<string | null>(
+    null,
+  );
   const [inviteToken, setInviteToken] = useState<string | null>(null);
-  const [scheduledInterviewId, setScheduledInterviewId] = useState<string | null>(null);
+  const [scheduledInterviewId, setScheduledInterviewId] = useState<
+    string | null
+  >(null);
   const [meetingUrl, setMeetingUrl] = useState<string | null>(null);
-  const [scheduledEmailSent, setScheduledEmailSent] = useState<boolean | null>(null);
-  const [scheduledEmailError, setScheduledEmailError] = useState<string | null>(null);
+  const [scheduledEmailSent, setScheduledEmailSent] = useState<boolean | null>(
+    null,
+  );
+  const [scheduledEmailError, setScheduledEmailError] = useState<string | null>(
+    null,
+  );
   const [copied, setCopied] = useState(false);
-  const [resendStatus, setResendStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [resendStatus, setResendStatus] = useState<
+    "idle" | "sending" | "sent" | "error"
+  >("idle");
   const [parsedData, setParsedData] = useState<{
     name?: string;
     skills?: string[];
@@ -66,12 +76,16 @@ export function CandidateIntakeModal({
   const { create, isSubmitting: isCreating } = useCandidateCreate();
   const { getToken } = useClerkAuth();
   const { theme } = useTheme();
-  const isLight = theme.mode === 'light' || theme.mode === 'anatomy';
+  const isLight = theme.mode === "light" || theme.mode === "anatomy";
+  const modalTitle = step === "CONFIRM" ? "Profile received" : "Add candidate";
 
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://pipe.build';
-  const assessInviteUrl = inviteToken ? `${baseUrl}/assess/${inviteToken}` : '';
+  const baseUrl =
+    typeof window !== "undefined"
+      ? window.location.origin
+      : "https://pipe.build";
+  const assessInviteUrl = inviteToken ? `${baseUrl}/assess/${inviteToken}` : "";
   const inviteUrl = meetingUrl ?? assessInviteUrl;
-  const inviteKind = meetingUrl ? 'room' : 'assessment';
+  const inviteKind = meetingUrl ? "room" : "assessment";
 
   const prepareScheduledInterviewInvite = async (
     interviewId: string | null | undefined,
@@ -89,21 +103,26 @@ export function CandidateIntakeModal({
       emailError?: string;
       meetingUrl?: string | null;
       room?: { guestUrl?: string | null };
-    }>(
-      `/api/v1/scheduling/interviews/${interviewId}/invite`,
-      { email: recipientEmail.trim(), sendEmail },
-    );
+    }>(`/api/v1/scheduling/interviews/${interviewId}/invite`, {
+      email: recipientEmail.trim(),
+      sendEmail,
+    });
     const guestUrl = result.meetingUrl ?? result.room?.guestUrl ?? null;
     if (guestUrl) setMeetingUrl(guestUrl);
-    setScheduledEmailSent(typeof result.emailSent === 'boolean' ? result.emailSent : null);
+    setScheduledEmailSent(
+      typeof result.emailSent === "boolean" ? result.emailSent : null,
+    );
     setScheduledEmailError(result.emailError ?? null);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
-      if (selectedFile.type === "application/pdf" || 
-          selectedFile.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+      if (
+        selectedFile.type === "application/pdf" ||
+        selectedFile.type ===
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      ) {
         setFile(selectedFile);
         setError(null);
       } else {
@@ -120,7 +139,10 @@ export function CandidateIntakeModal({
     if (!url) return true;
     try {
       const parsed = new URL(url);
-      return parsed.hostname === 'www.linkedin.com' || parsed.hostname === 'linkedin.com';
+      return (
+        parsed.hostname === "www.linkedin.com" ||
+        parsed.hostname === "linkedin.com"
+      );
     } catch {
       return false;
     }
@@ -138,8 +160,8 @@ export function CandidateIntakeModal({
   };
 
   const handleResendEmail = async () => {
-    if (!createdCandidateId || resendStatus === 'sending') return;
-    setResendStatus('sending');
+    if (!createdCandidateId || resendStatus === "sending") return;
+    setResendStatus("sending");
     try {
       if (scheduledInterviewId) {
         const api = createApiClient({ getToken });
@@ -148,19 +170,23 @@ export function CandidateIntakeModal({
           emailError?: string;
           meetingUrl?: string | null;
           room?: { guestUrl?: string | null };
-        }>(
-          `/api/v1/scheduling/interviews/${scheduledInterviewId}/invite`,
-          { email: email.trim(), sendEmail: true },
-        );
+        }>(`/api/v1/scheduling/interviews/${scheduledInterviewId}/invite`, {
+          email: email.trim(),
+          sendEmail: true,
+        });
         const guestUrl = result.meetingUrl ?? result.room?.guestUrl ?? null;
         if (guestUrl) setMeetingUrl(guestUrl);
-        setScheduledEmailSent(typeof result.emailSent === 'boolean' ? result.emailSent : null);
+        setScheduledEmailSent(
+          typeof result.emailSent === "boolean" ? result.emailSent : null,
+        );
         setScheduledEmailError(result.emailError ?? null);
         if (result.emailError || result.emailSent === false) {
-          throw new Error(result.emailError ?? 'Email delivery is not configured');
+          throw new Error(
+            result.emailError ?? "Email delivery is not configured",
+          );
         }
-        setResendStatus('sent');
-        setTimeout(() => setResendStatus('idle'), 3000);
+        setResendStatus("sent");
+        setTimeout(() => setResendStatus("idle"), 3000);
         return;
       }
 
@@ -175,19 +201,19 @@ export function CandidateIntakeModal({
         {
           method: "POST",
           headers: token ? { Authorization: `Bearer ${token}` } : {},
-        }
+        },
       );
 
       if (!response.ok) {
         throw new Error(`Failed to resend invite (${response.status})`);
       }
 
-      setResendStatus('sent');
-      setTimeout(() => setResendStatus('idle'), 3000);
+      setResendStatus("sent");
+      setTimeout(() => setResendStatus("idle"), 3000);
     } catch (err) {
-      console.error('[CandidateIntake] Resend failed:', err);
-      setResendStatus('error');
-      setTimeout(() => setResendStatus('idle'), 3000);
+      console.error("[CandidateIntake] Resend failed:", err);
+      setResendStatus("error");
+      setTimeout(() => setResendStatus("idle"), 3000);
     }
   };
 
@@ -218,11 +244,19 @@ export function CandidateIntakeModal({
         if (!result) throw new Error("Failed to create candidate");
         setCreatedCandidateId(result.id);
         setInviteToken(result.inviteToken);
-        await prepareScheduledInterviewInvite(result.scheduledInterview?.id, email, !skipEmail);
+        await prepareScheduledInterviewInvite(
+          result.scheduledInterview?.id,
+          email,
+          !skipEmail,
+        );
         setStep("CONFIRM");
       } catch (err) {
         console.error("[CandidateIntake] Error:", err);
-        setError(err instanceof Error ? err.message : "An error occurred during intake.");
+        setError(
+          err instanceof Error
+            ? err.message
+            : "An error occurred during intake.",
+        );
       } finally {
         setIsProcessing(false);
       }
@@ -247,7 +281,11 @@ export function CandidateIntakeModal({
       candidateId = createResult.id;
       setCreatedCandidateId(candidateId);
       setInviteToken(createResult.inviteToken);
-      await prepareScheduledInterviewInvite(createResult.scheduledInterview?.id, email, !skipEmail);
+      await prepareScheduledInterviewInvite(
+        createResult.scheduledInterview?.id,
+        email,
+        !skipEmail,
+      );
 
       // 2. Upload CV directly to the Worker, which stores it in R2.
       //    The Worker returns the R2 key and persists it on the candidate record.
@@ -273,15 +311,19 @@ export function CandidateIntakeModal({
           headers: token ? { Authorization: `Bearer ${token}` } : {},
           // Do NOT set Content-Type — browser must set the multipart boundary.
           body: formData,
-        }
+        },
       );
 
       if (!uploadResponse.ok) {
         let errMsg = `Upload failed (HTTP ${uploadResponse.status})`;
         try {
-          const body = (await uploadResponse.json()) as { error?: { message?: string } };
+          const body = (await uploadResponse.json()) as {
+            error?: { message?: string };
+          };
           if (body.error?.message) errMsg = body.error.message;
-        } catch { /* non-JSON body */ }
+        } catch {
+          /* non-JSON body */
+        }
         throw new Error(errMsg);
       }
 
@@ -303,11 +345,12 @@ export function CandidateIntakeModal({
       }
 
       setStep("CONFIRM");
-
     } catch (err) {
       // Reaches here if candidate creation or R2 upload failed.
       console.error("[CandidateIntake] Fatal intake error:", err);
-      setError(err instanceof Error ? err.message : "An error occurred during intake.");
+      setError(
+        err instanceof Error ? err.message : "An error occurred during intake.",
+      );
       setStep("BASIC");
     } finally {
       setIsProcessing(false);
@@ -315,261 +358,791 @@ export function CandidateIntakeModal({
   };
 
   return (
-    <div style={{
-      position: "fixed",
-      inset: 0,
-      zIndex: 1000,
-      background: isLight ? "rgba(0,0,0,0.35)" : "rgba(0,0,0,0.8)",
-      backdropFilter: "blur(8px)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: 20
-    }}>
-      <LiquidMetalCard 
-        variant={isLight ? "default" : "chrome"} 
-        style={{ 
-          width: "100%", 
-          maxWidth: 640, 
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1000,
+        background: isLight ? "rgba(0,0,0,0.35)" : "rgba(0,0,0,0.8)",
+        backdropFilter: "blur(8px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+      }}
+    >
+      <LiquidMetalCard
+        variant={isLight ? "default" : "chrome"}
+        style={{
+          width: "100%",
+          maxWidth: "min(640px, calc(100vw - 40px))",
+          maxHeight: "calc(100dvh - 40px)",
           padding: 0,
           overflow: "hidden",
-          background: isLight ? "var(--pipe-surface-solid, #ffffff)" : undefined,
-          boxShadow: isLight ? "0 24px 60px rgba(0,0,0,0.15)" : "0 24px 60px rgba(0,0,0,0.5)"
+          background: isLight
+            ? "var(--pipe-surface-solid, #ffffff)"
+            : undefined,
+          boxShadow: isLight
+            ? "0 24px 60px rgba(0,0,0,0.15)"
+            : "0 24px 60px rgba(0,0,0,0.5)",
         }}
       >
-        {/* Header */}
-        <div style={{
-          padding: "24px 32px",
-          borderBottom: "1px solid var(--pipe-border-light)",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center"
-        }}>
-          <div>
-            <div style={{ 
-              fontSize: 9, 
-              letterSpacing: "0.2em", 
-              color: "var(--pipe-text-dim)", 
-              fontFamily: "Space Mono",
-              marginBottom: 4
-            }}>
-              Candidate profile
-            </div>
-            <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--pipe-text, #fff)", margin: 0 }}>
-              {step === "CONFIRM" ? "Profile received" : "Add candidate"}
-            </h2>
-          </div>
-          <button 
-            onClick={onClose}
-            style={{ 
-              background: "none", 
-              border: "none", 
-              color: "var(--pipe-text-dim)", 
-              cursor: "pointer" 
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="candidate-intake-title"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            maxHeight: "calc(100dvh - 40px)",
+            overflow: "hidden",
+          }}
+        >
+          {/* Header */}
+          <div
+            style={{
+              padding: "18px 24px",
+              borderBottom: "1px solid var(--pipe-border-light)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexShrink: 0,
             }}
-           aria-label="Close">
-            <X size={20} />
-          </button>
-        </div>
-
-        <div style={{ padding: 40 }}>
-          {step === "BASIC" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-              {/* Basic Info */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-                <FieldGroup label="FULL_NAME">
-                  <TextInput 
-                    value={name} 
-                    onChange={setName} 
-                    placeholder="E.g. John Doe"
-                  />
-                </FieldGroup>
-                <FieldGroup label="EMAIL_ADDRESS">
-                  <TextInput 
-                    value={email} 
-                    onChange={setEmail} 
-                    placeholder="john@example.com"
-                  />
-                </FieldGroup>
-              </div>
-
-              {/* GitHub Handle */}
-              <div>
-                <label style={{
-                  display: "block",
-                  fontSize: 10,
-                  color: "var(--pipe-text-dim)",
-                  marginBottom: 12,
-                  fontFamily: "Space Mono",
-                  fontWeight: 600
-                }}>
-                  GITHUB_HANDLE (OPTIONAL)
-                </label>
-                <TextInput
-                  value={githubHandle}
-                  onChange={setGithubHandle}
-                  onBlur={handleGithubBlur}
-                  placeholder="username (not the full URL)"
-                  ariaLabel="GitHub handle"
-                />
-                <div style={{
-                  fontSize: 10,
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: 9,
+                  letterSpacing: "0.2em",
                   color: "var(--pipe-text-dim)",
                   fontFamily: "Space Mono",
-                  marginTop: 8,
-                  lineHeight: 1.5
-                }}>
-                  We&apos;ll use your public GitHub activity to enrich your profile. We only read public data you&apos;ve shared.
-                </div>
+                  marginBottom: 4,
+                }}
+              >
+                Candidate profile
               </div>
+              <h2
+                id="candidate-intake-title"
+                style={{
+                  fontSize: 18,
+                  fontWeight: 800,
+                  color: "var(--pipe-text, #fff)",
+                  margin: 0,
+                }}
+              >
+                {modalTitle}
+              </h2>
+            </div>
+            <button
+              onClick={onClose}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--pipe-text-dim)",
+                cursor: "pointer",
+              }}
+              aria-label="Close"
+            >
+              <X size={20} />
+            </button>
+          </div>
 
-              {/* LinkedIn URL */}
-              <div>
-                <label style={{
-                  display: "block",
-                  fontSize: 10,
-                  color: "var(--pipe-text-dim)",
-                  marginBottom: 12,
-                  fontFamily: "Space Mono",
-                  fontWeight: 600
-                }}>
-                  LINKEDIN_PROFILE (OPTIONAL)
-                </label>
-                <TextInput
-                  value={linkedinUrl}
-                  onChange={setLinkedinUrl}
-                  placeholder="https://linkedin.com/in/your-profile"
-                  ariaLabel="LinkedIn profile URL"
-                />
-              </div>
-
-              {/* Skip email toggle */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                padding: 12,
-                background: 'var(--pipe-surface)',
-                borderRadius: 4,
-                border: '1px solid var(--pipe-border-light)',
-              }}>
-                <button
-                  onClick={() => setSkipEmail((v) => !v)}
+          <div
+            data-testid="candidate-intake-body"
+            style={{
+              padding: 24,
+              overflowY: "auto",
+              flex: "1 1 auto",
+              minHeight: 0,
+            }}
+          >
+            {step === "BASIC" && (
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 20 }}
+              >
+                {/* Basic Info */}
+                <div
                   style={{
-                    width: 36,
-                    height: 20,
-                    borderRadius: 10,
-                    border: 'none',
-                    background: skipEmail ? '#34d399' : 'var(--pipe-border)',
-                    position: 'relative',
-                    cursor: 'pointer',
-                    transition: 'background 0.2s',
-                    flexShrink: 0,
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 16,
                   }}
-                  aria-label="Skip invitation email"
                 >
-                  <div style={{
-                    width: 16,
-                    height: 16,
-                    borderRadius: '50%',
-                    background: '#fff',
-                    position: 'absolute',
-                    top: 2,
-                    left: skipEmail ? 18 : 2,
-                    transition: 'left 0.2s',
-                  }} />
-                </button>
+                  <FieldGroup label="FULL_NAME">
+                    <TextInput
+                      value={name}
+                      onChange={setName}
+                      placeholder="E.g. John Doe"
+                    />
+                  </FieldGroup>
+                  <FieldGroup label="EMAIL_ADDRESS">
+                    <TextInput
+                      value={email}
+                      onChange={setEmail}
+                      placeholder="john@example.com"
+                    />
+                  </FieldGroup>
+                </div>
+
+                {/* GitHub Handle */}
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pipe-text)', fontFamily: 'Space Mono' }}>
-                    SKIP_INVITE_EMAIL
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: 10,
+                      color: "var(--pipe-text-dim)",
+                      marginBottom: 8,
+                      fontFamily: "Space Mono",
+                      fontWeight: 600,
+                    }}
+                  >
+                    GITHUB_HANDLE (OPTIONAL)
+                  </label>
+                  <TextInput
+                    value={githubHandle}
+                    onChange={setGithubHandle}
+                    onBlur={handleGithubBlur}
+                    placeholder="username (not the full URL)"
+                    ariaLabel="GitHub handle"
+                  />
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "var(--pipe-text-dim)",
+                      fontFamily: "Space Mono",
+                      marginTop: 6,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    We&apos;ll use your public GitHub activity to enrich your
+                    profile. We only read public data you&apos;ve shared.
                   </div>
-                  <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginTop: 2 }}>
-                    Generate link only — no email will be sent
+                </div>
+
+                {/* LinkedIn URL */}
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: 10,
+                      color: "var(--pipe-text-dim)",
+                      marginBottom: 8,
+                      fontFamily: "Space Mono",
+                      fontWeight: 600,
+                    }}
+                  >
+                    LINKEDIN_PROFILE (OPTIONAL)
+                  </label>
+                  <TextInput
+                    value={linkedinUrl}
+                    onChange={setLinkedinUrl}
+                    placeholder="https://linkedin.com/in/your-profile"
+                    ariaLabel="LinkedIn profile URL"
+                  />
+                </div>
+
+                {/* Skip email toggle */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "10px 12px",
+                    background: "var(--pipe-surface)",
+                    borderRadius: 4,
+                    border: "1px solid var(--pipe-border-light)",
+                  }}
+                >
+                  <button
+                    onClick={() => setSkipEmail((v) => !v)}
+                    style={{
+                      width: 36,
+                      height: 20,
+                      borderRadius: 10,
+                      border: "none",
+                      background: skipEmail ? "#34d399" : "var(--pipe-border)",
+                      position: "relative",
+                      cursor: "pointer",
+                      transition: "background 0.2s",
+                      flexShrink: 0,
+                    }}
+                    aria-label="Skip invitation email"
+                  >
+                    <div
+                      style={{
+                        width: 16,
+                        height: 16,
+                        borderRadius: "50%",
+                        background: "#fff",
+                        position: "absolute",
+                        top: 2,
+                        left: skipEmail ? 18 : 2,
+                        transition: "left 0.2s",
+                      }}
+                    />
+                  </button>
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: "var(--pipe-text)",
+                        fontFamily: "Space Mono",
+                      }}
+                    >
+                      SKIP_INVITE_EMAIL
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 9,
+                        color: "var(--pipe-text-dim)",
+                        fontFamily: "Space Mono",
+                        marginTop: 2,
+                      }}
+                    >
+                      Generate link only — no email will be sent
+                    </div>
+                  </div>
+                </div>
+
+                {/* CV Upload */}
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: 10,
+                      color: "var(--pipe-text-dim)",
+                      marginBottom: 8,
+                      fontFamily: "Space Mono",
+                    }}
+                  >
+                    CV_RESUME_UPLOAD (.PDF, .DOCX)
+                  </label>
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{
+                      border: isLight
+                        ? "1px dashed var(--pipe-border)"
+                        : "1px dashed rgba(255,255,255,0.1)",
+                      borderRadius: 8,
+                      padding: "28px 24px",
+                      textAlign: "center",
+                      cursor: "pointer",
+                      background: file
+                        ? "rgba(255,255,255,0.02)"
+                        : "transparent",
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      style={{ display: "none" }}
+                      accept=".pdf,.docx"
+                    />
+                    {file ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          gap: 10,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: "50%",
+                            background: "rgba(96, 165, 250, 0.1)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <FileText size={22} color="#60a5fa" />
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: "var(--pipe-text, #fff)",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {file.name}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: "var(--pipe-text-dim)",
+                            fontFamily: "Space Mono",
+                          }}
+                        >
+                          {(file.size / 1024 / 1024).toFixed(2)} MB •
+                          CLICK_TO_REPLACE
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          gap: 10,
+                        }}
+                      >
+                        <Upload size={28} color="var(--pipe-text-dim)" />
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "var(--pipe-text-dim)",
+                            fontFamily: "Space Mono",
+                          }}
+                        >
+                          DRAG_&_DROP_OR_CLICK_TO_UPLOAD
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {error && (
+                  <div
+                    style={{
+                      padding: 12,
+                      background: "rgba(248, 113, 113, 0.1)",
+                      border: "1px solid rgba(248, 113, 113, 0.2)",
+                      color: "#f87171",
+                      fontSize: 11,
+                      fontFamily: "Space Mono",
+                      borderRadius: 4,
+                    }}
+                  >
+                    ERROR: {error.toUpperCase()}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {step === "PARSING" && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 24,
+                  minHeight: 260,
+                }}
+              >
+                <div style={{ position: "relative" }}>
+                  <Loader2 size={48} color="#60a5fa" className="animate-spin" />
+                  <Sparkles
+                    size={24}
+                    color="#fbbf24"
+                    style={{
+                      position: "absolute",
+                      top: -10,
+                      right: -10,
+                      animation: "bounce 2s infinite",
+                    }}
+                  />
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "var(--pipe-text, #fff)",
+                      fontFamily: "Space Mono",
+                      marginBottom: 8,
+                    }}
+                  >
+                    ANALYZING_RESUME_VIA_AI
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "var(--pipe-text-dim)",
+                      fontFamily: "Space Mono",
+                      maxWidth: 300,
+                    }}
+                  >
+                    EXTRACTING_SKILLS_EXPERIENCE_AND_EDUCATION_DATA...
                   </div>
                 </div>
               </div>
+            )}
 
-              {/* CV Upload */}
-              <div>
-                <label style={{ 
-                  display: "block", 
-                  fontSize: 10, 
-                  color: "var(--pipe-text-dim)", 
-                  marginBottom: 12,
-                  fontFamily: "Space Mono"
-                }}>
-                  CV_RESUME_UPLOAD (.PDF, .DOCX)
-                </label>
-                <div 
-                  onClick={() => fileInputRef.current?.click()}
+            {step === "CONFIRM" && (
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 20 }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                  <div
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: "50%",
+                      background: "rgba(52, 211, 153, 0.1)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <CheckCircle size={24} color="#34d399" />
+                  </div>
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 800,
+                        color: "var(--pipe-text, #fff)",
+                      }}
+                    >
+                      {name}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "var(--pipe-text-muted)",
+                        fontFamily: "Space Mono",
+                      }}
+                    >
+                      {email}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Invite link + actions */}
+                <div
                   style={{
-                    border: isLight ? "1px dashed var(--pipe-border)" : "1px dashed rgba(255,255,255,0.1)",
+                    padding: 18,
+                    background: "var(--pipe-surface)",
                     borderRadius: 8,
-                    padding: 40,
-                    textAlign: "center",
-                    cursor: "pointer",
-                    background: file ? "rgba(255,255,255,0.02)" : "transparent",
-                    transition: "all 0.2s ease"
+                    border: "1px solid var(--pipe-border-light)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 12,
                   }}
                 >
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    onChange={handleFileChange}
-                    style={{ display: "none" }}
-                    accept=".pdf,.docx"
-                  />
-                  {file ? (
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-                      <div style={{ 
-                        width: 48, 
-                        height: 48, 
-                        borderRadius: "50%", 
-                        background: "rgba(96, 165, 250, 0.1)", 
-                        display: "flex", 
-                        alignItems: "center", 
-                        justifyContent: "center" 
-                      }}>
-                        <FileText size={24} color="#60a5fa" />
-                      </div>
-                      <div style={{ fontSize: 13, color: "var(--pipe-text, #fff)", fontWeight: 700 }}>
-                        {file.name}
-                      </div>
-                      <div style={{ fontSize: 10, color: "var(--pipe-text-dim)", fontFamily: "Space Mono" }}>
-                        {(file.size / 1024 / 1024).toFixed(2)} MB • CLICK_TO_REPLACE
-                      </div>
+                  <div
+                    style={{
+                      fontSize: 9,
+                      color: "var(--pipe-text-dim)",
+                      fontFamily: "Space Mono",
+                      marginBottom: 4,
+                    }}
+                  >
+                    <Mail size={10} style={{ marginRight: 6 }} /> INVITE_STATUS
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: skipEmail ? "#fbbf24" : "#34d399",
+                      fontFamily: "Space Mono",
+                    }}
+                  >
+                    {inviteKind === "room"
+                      ? scheduledEmailSent
+                        ? "Video room link ready — invite email sent"
+                        : scheduledEmailError
+                          ? "Video room link ready — email delivery failed"
+                          : skipEmail
+                            ? "Video room link generated — email not sent"
+                            : "Video room link ready — email not configured"
+                      : skipEmail
+                        ? "Invite link generated — email not sent"
+                        : "Invite email sent automatically"}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: 10,
+                      background: "rgba(0,0,0,0.2)",
+                      borderRadius: 4,
+                      border: "1px solid var(--pipe-border-light)",
+                    }}
+                  >
+                    <LinkIcon size={14} color="var(--pipe-text-dim)" />
+                    <div
+                      style={{
+                        flex: 1,
+                        fontSize: 11,
+                        color: "var(--pipe-text-muted)",
+                        fontFamily: "Space Mono",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {inviteUrl}
                     </div>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-                      <Upload size={32} color="var(--pipe-text-dim)" />
-                      <div style={{ fontSize: 12, color: "var(--pipe-text-dim)", fontFamily: "Space Mono" }}>
-                        DRAG_&_DROP_OR_CLICK_TO_UPLOAD
-                      </div>
+                    <button
+                      onClick={handleCopyLink}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "6px 10px",
+                        background: copied
+                          ? "rgba(52, 211, 153, 0.1)"
+                          : "var(--pipe-surface-hover)",
+                        border: `1px solid ${copied ? "#34d399" : "var(--pipe-border)"}`,
+                        borderRadius: 4,
+                        color: copied ? "#34d399" : "var(--pipe-text-dim)",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        fontFamily: "Space Mono",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <Copy size={12} />
+                      {copied ? "COPIED" : "COPY"}
+                    </button>
+                  </div>
+
+                  {scheduledEmailError && (
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "#f87171",
+                        fontFamily: "Space Mono",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {scheduledEmailError}
                     </div>
                   )}
+
+                  {scheduledInterviewId && (
+                    <a
+                      href={`/interviews/${scheduledInterviewId}`}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        background: "rgba(96, 165, 250, 0.10)",
+                        border: "1px solid rgba(96, 165, 250, 0.28)",
+                        borderRadius: 4,
+                        color: "#60a5fa",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        fontFamily: "Space Mono",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 8,
+                        textDecoration: "none",
+                      }}
+                    >
+                      OPEN INTERVIEW ROOM SETUP
+                    </a>
+                  )}
+
+                  {!skipEmail && (
+                    <button
+                      onClick={handleResendEmail}
+                      disabled={resendStatus === "sending"}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        background: "var(--pipe-surface-hover)",
+                        border: "1px solid var(--pipe-border)",
+                        borderRadius: 4,
+                        color:
+                          resendStatus === "sent"
+                            ? "#34d399"
+                            : resendStatus === "error"
+                              ? "#f87171"
+                              : "var(--pipe-text-dim)",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        fontFamily: "Space Mono",
+                        cursor:
+                          resendStatus === "sending" ? "default" : "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 8,
+                        opacity: resendStatus === "sending" ? 0.6 : 1,
+                      }}
+                    >
+                      {resendStatus === "sending" ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />{" "}
+                          SENDING...
+                        </>
+                      ) : resendStatus === "sent" ? (
+                        <>
+                          <CheckCircle size={14} /> EMAIL SENT
+                        </>
+                      ) : resendStatus === "error" ? (
+                        <>
+                          <AlertCircle size={14} /> FAILED — TRY AGAIN
+                        </>
+                      ) : (
+                        <>
+                          <Send size={14} /> RESEND INVITE EMAIL
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
+
+                {parsedData && (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr",
+                      gap: 18,
+                      padding: 18,
+                      background: "var(--pipe-surface)",
+                      borderRadius: 8,
+                      border: "1px solid var(--pipe-border-light)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "repeat(auto-fit, minmax(180px, 1fr))",
+                        gap: 16,
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 9,
+                            color: "var(--pipe-text-dim)",
+                            fontFamily: "Space Mono",
+                            marginBottom: 8,
+                          }}
+                        >
+                          <Briefcase size={10} style={{ marginRight: 6 }} />{" "}
+                          CURRENT_ROLE
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: "var(--pipe-text, #fff)",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {parsedData.currentRole || "Not specified"}
+                        </div>
+                      </div>
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 9,
+                            color: "var(--pipe-text-dim)",
+                            fontFamily: "Space Mono",
+                            marginBottom: 8,
+                          }}
+                        >
+                          <Activity size={10} style={{ marginRight: 6 }} />{" "}
+                          EXPERIENCE
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: "var(--pipe-text, #fff)",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {parsedData.yearsOfExperience || 0} Years
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 9,
+                          color: "var(--pipe-text-dim)",
+                          fontFamily: "Space Mono",
+                          marginBottom: 10,
+                        }}
+                      >
+                        <Shield size={10} style={{ marginRight: 6 }} />{" "}
+                        SKILLS_EXTRACTED
+                      </div>
+                      <div
+                        style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
+                      >
+                        {parsedData.skills?.map((skill: string) => (
+                          <span
+                            key={skill}
+                            style={{
+                              padding: "4px 10px",
+                              background: "var(--pipe-surface)",
+                              border: "1px solid var(--pipe-border)",
+                              borderRadius: 4,
+                              fontSize: 10,
+                              color: "var(--pipe-text-muted)",
+                              fontFamily: "Space Mono",
+                            }}
+                          >
+                            {skill.toUpperCase()}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 9,
+                          color: "var(--pipe-text-dim)",
+                          fontFamily: "Space Mono",
+                          marginBottom: 8,
+                        }}
+                      >
+                        <GraduationCap size={10} style={{ marginRight: 6 }} />{" "}
+                        EDUCATION
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--pipe-text-muted)",
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        {parsedData.education?.join(", ") ||
+                          "No education history found."}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-
-              {error && (
-                <div style={{ 
-                  padding: 12, 
-                  background: "rgba(248, 113, 113, 0.1)", 
-                  border: "1px solid rgba(248, 113, 113, 0.2)",
-                  color: "#f87171",
-                  fontSize: 11,
-                  fontFamily: "Space Mono",
-                  borderRadius: 4
-                }}>
-                  ERROR: {error.toUpperCase()}
-                </div>
-              )}
-
-              <button 
+            )}
+          </div>
+          {step === "BASIC" && (
+            <div
+              data-testid="candidate-intake-actions"
+              style={{
+                display: "grid",
+                gap: 10,
+                padding: "16px 24px 20px",
+                borderTop: "1px solid var(--pipe-border-light)",
+                background: isLight
+                  ? "rgba(255,255,255,0.92)"
+                  : "rgba(0,0,0,0.36)",
+                flexShrink: 0,
+              }}
+            >
+              <button
                 onClick={handleProcess}
                 disabled={isCreating || isProcessing || !name || !email}
                 style={{
                   width: "100%",
-                  padding: "16px",
+                  padding: "13px 16px",
                   background: "var(--pipe-text, #fff)",
                   color: "#000",
                   border: "none",
@@ -577,12 +1150,16 @@ export function CandidateIntakeModal({
                   fontSize: 12,
                   fontWeight: 800,
                   fontFamily: "Space Mono",
-                  cursor: (isCreating || isProcessing || !name || !email) ? "default" : "pointer",
+                  cursor:
+                    isCreating || isProcessing || !name || !email
+                      ? "default"
+                      : "pointer",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   gap: 12,
-                  opacity: (isCreating || isProcessing || !name || !email) ? 0.5 : 1
+                  opacity:
+                    isCreating || isProcessing || !name || !email ? 0.5 : 1,
                 }}
               >
                 {isCreating || isProcessing ? (
@@ -597,12 +1174,12 @@ export function CandidateIntakeModal({
                 )}
               </button>
 
-              <button 
+              <button
                 onClick={onClose}
                 disabled={isCreating || isProcessing}
                 style={{
                   width: "100%",
-                  padding: "16px",
+                  padding: "13px 16px",
                   background: "transparent",
                   color: "var(--pipe-text-dim)",
                   border: "1px solid var(--pipe-border)",
@@ -610,290 +1187,35 @@ export function CandidateIntakeModal({
                   fontSize: 12,
                   fontWeight: 800,
                   fontFamily: "Space Mono",
-                  cursor: (isCreating || isProcessing) ? "default" : "pointer",
+                  cursor: isCreating || isProcessing ? "default" : "pointer",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   gap: 12,
-                  opacity: (isCreating || isProcessing) ? 0.5 : 1
+                  opacity: isCreating || isProcessing ? 0.5 : 1,
                 }}
               >
                 CANCEL
               </button>
             </div>
           )}
-
-          {step === "PARSING" && (
-            <div style={{ 
-              display: "flex", 
-              flexDirection: "column", 
-              alignItems: "center", 
-              justifyContent: "center",
-              gap: 24,
-              minHeight: 300 
-            }}>
-              <div style={{ position: "relative" }}>
-                <Loader2 size={48} color="#60a5fa" className="animate-spin" />
-                <Sparkles 
-                  size={24} 
-                  color="#fbbf24" 
-                  style={{ 
-                    position: "absolute", 
-                    top: -10, 
-                    right: -10,
-                    animation: "bounce 2s infinite" 
-                  }} 
-                />
-              </div>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ 
-                  fontSize: 12, 
-                  fontWeight: 800, 
-                  color: "var(--pipe-text, #fff)", 
-                  fontFamily: "Space Mono",
-                  marginBottom: 8
-                }}>
-                  ANALYZING_RESUME_VIA_AI
-                </div>
-                <div style={{ 
-                  fontSize: 10, 
-                  color: "var(--pipe-text-dim)", 
-                  fontFamily: "Space Mono",
-                  maxWidth: 300
-                }}>
-                  EXTRACTING_SKILLS_EXPERIENCE_AND_EDUCATION_DATA...
-                </div>
-              </div>
-            </div>
-          )}
-
           {step === "CONFIRM" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                <div style={{ 
-                  width: 48, 
-                  height: 48, 
-                  borderRadius: "50%", 
-                  background: "rgba(52, 211, 153, 0.1)", 
-                  display: "flex", 
-                  alignItems: "center", 
-                  justifyContent: "center" 
-                }}>
-                  <CheckCircle size={24} color="#34d399" />
-                </div>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: "var(--pipe-text, #fff)" }}>
-                    {name}
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--pipe-text-muted)", fontFamily: "Space Mono" }}>
-                    {email}
-                  </div>
-                </div>
-              </div>
-
-              {/* Invite link + actions */}
-              <div style={{ 
-                padding: 24,
-                background: "var(--pipe-surface)",
-                borderRadius: 8,
-                border: "1px solid var(--pipe-border-light)",
-                display: "flex",
-                flexDirection: "column",
-                gap: 16
-              }}>
-                <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", fontFamily: "Space Mono", marginBottom: 4 }}>
-                  <Mail size={10} style={{ marginRight: 6 }} /> INVITE_STATUS
-                </div>
-                <div style={{ fontSize: 12, color: skipEmail ? '#fbbf24' : '#34d399', fontFamily: "Space Mono" }}>
-                  {inviteKind === 'room'
-                    ? scheduledEmailSent
-                      ? 'Video room link ready — invite email sent'
-                      : scheduledEmailError
-                        ? 'Video room link ready — email delivery failed'
-                        : skipEmail
-                          ? 'Video room link generated — email not sent'
-                          : 'Video room link ready — email not configured'
-                    : skipEmail
-                      ? 'Invite link generated — email not sent'
-                      : 'Invite email sent automatically'}
-                </div>
-
-                <div style={{ 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: 12,
-                  padding: 12,
-                  background: "rgba(0,0,0,0.2)",
-                  borderRadius: 4,
-                  border: "1px solid var(--pipe-border-light)"
-                }}>
-                  <LinkIcon size={14} color="var(--pipe-text-dim)" />
-                  <div style={{ 
-                    flex: 1,
-                    fontSize: 11, 
-                    color: "var(--pipe-text-muted)", 
-                    fontFamily: "Space Mono",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap"
-                  }}>
-                    {inviteUrl}
-                  </div>
-                  <button
-                    onClick={handleCopyLink}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "6px 12px",
-                      background: copied ? "rgba(52, 211, 153, 0.1)" : "var(--pipe-surface-hover)",
-                      border: `1px solid ${copied ? "#34d399" : "var(--pipe-border)"}`,
-                      borderRadius: 4,
-                      color: copied ? "#34d399" : "var(--pipe-text-dim)",
-                      fontSize: 10,
-                      fontWeight: 700,
-                      fontFamily: "Space Mono",
-                      cursor: "pointer",
-                      whiteSpace: "nowrap"
-                    }}
-                  >
-                    <Copy size={12} />
-                    {copied ? "COPIED" : "COPY"}
-                  </button>
-                </div>
-
-                {scheduledEmailError && (
-                  <div style={{ fontSize: 10, color: '#f87171', fontFamily: 'Space Mono', lineHeight: 1.5 }}>
-                    {scheduledEmailError}
-                  </div>
-                )}
-
-                {scheduledInterviewId && (
-                  <a
-                    href={`/interviews/${scheduledInterviewId}`}
-                    style={{
-                      width: "100%",
-                      padding: "12px",
-                      background: "rgba(96, 165, 250, 0.10)",
-                      border: "1px solid rgba(96, 165, 250, 0.28)",
-                      borderRadius: 4,
-                      color: "#60a5fa",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      fontFamily: "Space Mono",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      textDecoration: 'none',
-                    }}
-                  >
-                    OPEN INTERVIEW ROOM SETUP
-                  </a>
-                )}
-
-                {!skipEmail && (
-                  <button
-                    onClick={handleResendEmail}
-                    disabled={resendStatus === 'sending'}
-                    style={{
-                      width: "100%",
-                      padding: "12px",
-                      background: "var(--pipe-surface-hover)",
-                      border: "1px solid var(--pipe-border)",
-                      borderRadius: 4,
-                      color: resendStatus === 'sent' ? '#34d399' : resendStatus === 'error' ? '#f87171' : 'var(--pipe-text-dim)',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      fontFamily: "Space Mono",
-                      cursor: resendStatus === 'sending' ? 'default' : 'pointer',
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      opacity: resendStatus === 'sending' ? 0.6 : 1
-                    }}
-                  >
-                    {resendStatus === 'sending' ? (
-                      <><Loader2 size={14} className="animate-spin" /> SENDING...</>
-                    ) : resendStatus === 'sent' ? (
-                      <><CheckCircle size={14} /> EMAIL SENT</>
-                    ) : resendStatus === 'error' ? (
-                      <><AlertCircle size={14} /> FAILED — TRY AGAIN</>
-                    ) : (
-                      <><Send size={14} /> RESEND INVITE EMAIL</>
-                    )}
-                  </button>
-                )}
-              </div>
-
-              {parsedData && (
-                <div style={{ 
-                  display: "grid", 
-                  gridTemplateColumns: "1fr", 
-                  gap: 24,
-                  padding: 24,
-                  background: "var(--pipe-surface)",
-                  borderRadius: 8,
-                  border: "1px solid var(--pipe-border-light)"
-                }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-                    <div>
-                      <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", fontFamily: "Space Mono", marginBottom: 8 }}>
-                        <Briefcase size={10} style={{ marginRight: 6 }} /> CURRENT_ROLE
-                      </div>
-                      <div style={{ fontSize: 13, color: "var(--pipe-text, #fff)", fontWeight: 700 }}>
-                        {parsedData.currentRole || "Not specified"}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", fontFamily: "Space Mono", marginBottom: 8 }}>
-                        <Activity size={10} style={{ marginRight: 6 }} /> EXPERIENCE
-                      </div>
-                      <div style={{ fontSize: 13, color: "var(--pipe-text, #fff)", fontWeight: 700 }}>
-                        {parsedData.yearsOfExperience || 0} Years
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", fontFamily: "Space Mono", marginBottom: 12 }}>
-                      <Shield size={10} style={{ marginRight: 6 }} /> SKILLS_EXTRACTED
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {parsedData.skills?.map((skill: string) => (
-                        <span key={skill} style={{
-                          padding: "4px 10px",
-                          background: "var(--pipe-surface)",
-                          border: "1px solid var(--pipe-border)",
-                          borderRadius: 4,
-                          fontSize: 10,
-                          color: "var(--pipe-text-muted)",
-                          fontFamily: "Space Mono"
-                        }}>
-                          {skill.toUpperCase()}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", fontFamily: "Space Mono", marginBottom: 8 }}>
-                      <GraduationCap size={10} style={{ marginRight: 6 }} /> EDUCATION
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--pipe-text-muted)", lineHeight: 1.6 }}>
-                      {parsedData.education?.join(", ") || "No education history found."}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <button 
+            <div
+              data-testid="candidate-intake-actions"
+              style={{
+                padding: "16px 24px 20px",
+                borderTop: "1px solid var(--pipe-border-light)",
+                background: isLight
+                  ? "rgba(255,255,255,0.92)"
+                  : "rgba(0,0,0,0.36)",
+                flexShrink: 0,
+              }}
+            >
+              <button
                 onClick={() => onSuccess(createdCandidateId ?? "")}
                 style={{
                   width: "100%",
-                  padding: "16px",
+                  padding: "13px 16px",
                   background: "var(--pipe-text, #fff)",
                   color: "#000",
                   border: "none",
@@ -901,7 +1223,7 @@ export function CandidateIntakeModal({
                   fontSize: 12,
                   fontWeight: 800,
                   fontFamily: "Space Mono",
-                  cursor: "pointer"
+                  cursor: "pointer",
                 }}
               >
                 COMPLETE_INTAKE

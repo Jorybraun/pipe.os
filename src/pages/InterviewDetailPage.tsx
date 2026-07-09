@@ -2578,7 +2578,7 @@ function codeReviewVerdictLabel(
     case 'commented':
       return 'Candidate left review comments';
     default:
-      if (!verdict && match && !codeReviewMatchIsQualityGated(match)) {
+      if (!verdict && !codeReviewMatchIsQualityGated(match)) {
         return 'No confident repo match yet';
       }
       return verdict ? `Candidate submitted ${titleCaseToken(verdict)}` : 'Waiting for candidate review';
@@ -4662,14 +4662,20 @@ export default function InterviewDetailPage(): JSX.Element {
     setup: interview.assessmentSetup,
     assignmentTrust: assessmentProgress?.assignmentTrust,
   });
-  const hasStandaloneCodeReviewReadout = isCodeReviewInterview && Boolean(
+  const hasCodeReviewDecisionSurface = isCodeReviewInterview && Boolean(
     interview.codeReviewMatch
       || interview.codeReviewScore
-      || interview.submissionJson,
+      || interview.submissionJson
+      || hasConcreteReviewAssignment
+      || interview.assessmentSetup,
+  );
+  const hasCompletedCodeReviewDecision = isCodeReviewInterview && Boolean(
+    interview.codeReviewScore
+      || codeReviewSubmission,
   );
   const showsAssessmentProgress = usesWorkspaceInterview
     || Boolean(assessmentProgress)
-    || (Boolean(assessmentAssignment) && !hasStandaloneCodeReviewReadout);
+    || (Boolean(assessmentAssignment) && !hasCompletedCodeReviewDecision);
   const assessmentProgressStage = assessmentProgressDisplayLabel(assessmentProgress);
   const assessmentProgressNextAction = assessmentProgress?.readiness?.detail
     ?? assessmentProgress?.nextActionLabel
@@ -4906,7 +4912,7 @@ export default function InterviewDetailPage(): JSX.Element {
       text: codeReviewDecisionRisk.uncertainty.detail,
     },
   ].filter((item): item is { id: string; label: string; text: string } => Boolean(item.text));
-  const selectedCodeReviewDecision = isCodeReviewInterview && (codeReviewMatch || codeReviewScore || codeReviewSubmission)
+  const selectedCodeReviewDecision = hasCodeReviewDecisionSurface
     ? {
         decisionLabel: 'Code-review decision',
         sessionId: codeReviewScore?.reviewSessionId ?? null,
@@ -6082,7 +6088,7 @@ export default function InterviewDetailPage(): JSX.Element {
             decisionFormSlot={humanDecisionFormNode}
           />
         )}
-        {isCodeReviewInterview && (codeReviewMatch || codeReviewSubmission) && (
+        {selectedCodeReviewDecision && (
           <Section
             title="Recruiter decision"
             icon={<CheckCircle size={15} />}

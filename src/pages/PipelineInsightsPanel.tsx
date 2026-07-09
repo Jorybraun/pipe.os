@@ -27,6 +27,12 @@ import { useStageMutations } from '../hooks/useStageMutations';
 import type { PipelineShellContext } from './PipelineShellPage';
 import type { CandidatePersona } from '../lib/api/types';
 
+const PIPELINE_DETAIL_CARD_STYLE: React.CSSProperties = {
+  borderRadius: 8,
+  background: 'var(--pipe-surface-solid)',
+  boxShadow: '0 18px 42px var(--pipe-shadow)',
+};
+
 /**
  * The Six Domains model used by the Role Discovery interview. Order here is
  * the canonical render order.
@@ -69,25 +75,36 @@ function formatKsValue(value: unknown): string {
 function Metric({
   label,
   value,
+  tone = 'neutral',
 }: {
   label: string;
   value: string | number;
+  tone?: 'neutral' | 'success';
 }): JSX.Element {
   return (
     <div
       style={{
-        padding: '20px 24px',
-        background: 'var(--pipe-surface)',
-        border: '1px solid var(--pipe-border-light)',
-        borderRadius: 10,
+        display: 'grid',
+        alignContent: 'start',
+        gap: 8,
+        minHeight: 86,
+        padding: 12,
+        background:
+          tone === 'success'
+            ? 'linear-gradient(135deg, rgba(74,222,128,0.08), rgba(255,255,255,0.03) 62%)'
+            : 'rgba(255,255,255,0.03)',
+        border:
+          tone === 'success'
+            ? '1px solid rgba(74,222,128,0.30)'
+            : '1px solid var(--pipe-border)',
+        borderRadius: 6,
       }}
     >
       <div
         style={{
           fontSize: 8,
           letterSpacing: '0.2em',
-          color: 'var(--pipe-text-dim)',
-          marginBottom: 10,
+          color: tone === 'success' ? '#86efac' : 'var(--pipe-text-dim)',
           fontFamily: '"Space Mono", monospace',
         }}
       >
@@ -99,7 +116,7 @@ function Metric({
           fontWeight: 800,
           letterSpacing: '-0.02em',
           lineHeight: 1,
-          color: 'var(--pipe-text)',
+          color: tone === 'success' ? '#dcfce7' : 'var(--pipe-text)',
           fontFamily: '"Space Mono", monospace',
         }}
       >
@@ -372,6 +389,8 @@ export default function PipelineInsightsPanel(): JSX.Element {
           label="INTERVIEW_PLAN"
           icon={<Plus size={16} color="var(--pipe-text-dim)" />}
           meta="START HERE"
+          bodyPadding={18}
+          style={PIPELINE_DETAIL_CARD_STYLE}
         >
           <div
             style={{
@@ -468,6 +487,8 @@ export default function PipelineInsightsPanel(): JSX.Element {
         hasCandidates) && (
         <SectionCard
           variant="solid"
+          bodyPadding={18}
+          style={PIPELINE_DETAIL_CARD_STYLE}
           label={
             effectiveTab === 'persona'
               ? 'PERSON_CONTEXT'
@@ -716,12 +737,12 @@ export default function PipelineInsightsPanel(): JSX.Element {
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-              gap: 12,
+              gap: 10,
               marginBottom: 24,
             }}
           >
             <Metric label="PEOPLE" value={metrics.total} />
-            <Metric label="ACTIVE" value={metrics.inProgress} />
+            <Metric label="ACTIVE" value={metrics.inProgress} tone="success" />
             <Metric label="DONE" value={metrics.completed} />
             <Metric
               label="AVG SCORE"
@@ -766,10 +787,11 @@ export default function PipelineInsightsPanel(): JSX.Element {
                     display: 'flex',
                     alignItems: 'center',
                     gap: 16,
-                    padding: '12px 16px',
-                    background: 'var(--pipe-surface)',
-                    border: '1px solid var(--pipe-border-light)',
-                    borderRadius: 8,
+                    minHeight: 58,
+                    padding: '12px 14px',
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid var(--pipe-border)',
+                    borderRadius: 6,
                     cursor: 'pointer',
                     textAlign: 'left',
                     width: '100%',
@@ -801,7 +823,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
                     style={{
                       flex: 2,
                       height: 4,
-                      background: 'var(--pipe-surface-hover)',
+                      background: 'rgba(96,165,250,0.16)',
                       borderRadius: 2,
                       overflow: 'hidden',
                     }}
@@ -811,7 +833,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
                         width: `${pct}%`,
                         height: '100%',
                         background:
-                          'linear-gradient(90deg, rgba(74,222,128,0.3), rgba(74,222,128,0.7))',
+                          'linear-gradient(90deg, rgba(74,222,128,0.35), rgba(74,222,128,0.82))',
                       }}
                     />
                   </div>
@@ -975,6 +997,8 @@ export default function PipelineInsightsPanel(): JSX.Element {
           variant="solid"
           label="SOURCE_CONTEXT"
           icon={<Target size={16} color="var(--pipe-text-dim)" />}
+          bodyPadding={18}
+          style={PIPELINE_DETAIL_CARD_STYLE}
         >
           <div
             style={{
