@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed — Stale e2e specs
+
+- Deleted `e2e/culture-waiting-for-match.unauth.spec.ts`; the product no longer has a separate discovery/culture assessment flow, and the spec contradicted the current `CandidateAssessmentPage` fail-closed behavior for `WAITING_FOR_MATCH` challenges.
+- Deleted `e2e/prefetch.e2e.spec.ts`; it tested an older issue-body-prefetch worker on `localhost:8788` with a missing `e2e/helpers.ts` and a `/api/refresh-issues` endpoint that no longer exists in the current worker routes.
+
+### Fixed — Stale candidate session e2e assertions
+
+- Updated `e2e/assess-session-isolation.unauth.spec.ts` so session-isolation assertions no longer expect internal candidate IDs or invite tokens in `sessionStorage`, matching the candidate-session opacity changes that only persist the session token on the client.
+
 ### Security — Removed frontend dev proxy auth bypass
 
 - Deleted `src/lib/auth/devProxyAuth.ts`, `src/lib/api/devProxyPrefetch.ts`, and their tests.

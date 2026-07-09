@@ -1,5 +1,5 @@
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
-import { clerkSetup, setupClerkTestingToken } from "@clerk/testing/playwright";
+import { test, expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { clerk, clerkSetup, setupClerkTestingToken } from "@clerk/testing/playwright";
 import { API_BASE } from './env';
 
 /**
@@ -15,6 +15,104 @@ import { API_BASE } from './env';
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 let clerkTestSetup: Promise<void> | null = null;
+const AUTH_EMAIL = process.env.E2E_EMAIL?.trim() || "e2e-test@pipe.dev";
+const AUTH_SURFACE_TIMEOUT_MS = 12_000;
+const AUTH_ENTRY_PATH = "/roles";
+type AuthSurface = "signed-in" | "signed-out" | "pending";
+
+type AuthLocators = {
+  signOut: Locator;
+  signIn: Locator;
+  recruiterShell: Locator;
+};
+
+function authLocators(page: Page): AuthLocators {
+  return {
+    signOut: page.getByRole("button", { name: /sign out/i }),
+    signIn: page.getByTestId("auth-gate-sign-in"),
+    recruiterShell: page.getByRole("button", { name: /new interview/i }).first(),
+  };
+}
+
+async function waitForAuthSurface(page: Page, timeoutMs: number): Promise<AuthSurface> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { signOut, signIn, recruiterShell } = authLocators(page);
+
+    if ((await signOut.count()) > 0 || (await recruiterShell.count()) > 0) {
+      return "signed-in";
+    }
+    if ((await signIn.count()) > 0) {
+      return "signed-out";
+    }
+
+    await page.waitForTimeout(250);
+  }
+  return "pending";
+}
+
+async function hasSessionCookie(page: Page): Promise<boolean> {
+  const cookies = await page.context().cookies();
+  return cookies.some((cookie) => cookie.name === "__session" && cookie.value.length > 0);
+}
+
+async function signInViaUi(page: Page): Promise<void> {
+  const signInButton = page
+    .getByTestId("auth-gate-sign-in")
+    .or(page.getByRole("button", { name: /sign in/i }));
+
+  await signInButton.first().waitFor({ state: "visible", timeout: 12_000 });
+  await signInButton.first().click();
+
+  const emailInput = page.locator('input[name="identifier"]');
+  const passwordInput = page.locator('input[name="password"]');
+
+  const email = process.env.E2E_EMAIL?.trim() || "e2e-test@pipe.dev";
+  const password = process.env.E2E_PASSWORD?.trim() || "PipeE2E_Test2026!";
+
+  await emailInput.waitFor({ state: "visible", timeout: 15_000 });
+  await emailInput.fill(email);
+  const continueButton = page.getByRole("button", { name: /^continue$/i }).first();
+  await continueButton.click();
+
+  await passwordInput.waitFor({ state: "visible", timeout: 10_000 });
+  await passwordInput.fill(password);
+  await page.locator('button:has-text("Continue")').first().click();
+}
+
+async function ensureSignedInViaClerk(page: Page): Promise<void> {
+  let clerkSignInError: unknown;
+  try {
+    await clerk.signIn({
+      page,
+      emailAddress: AUTH_EMAIL,
+      setupClerkTestingTokenOptions: {
+        debug: process.env.NODE_ENV === "development",
+      },
+    });
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/already signed in/i.test(message)) {
+      return;
+    }
+    clerkSignInError = error;
+  }
+
+  const retryStatus = await waitForAuthSurface(page, 6_000);
+  if (retryStatus === "signed-in") {
+    return;
+  }
+
+  const signInButton = page.getByTestId("auth-gate-sign-in");
+  if ((await signInButton.count()) === 0 && retryStatus !== "signed-out") {
+    throw clerkSignInError instanceof Error
+      ? clerkSignInError
+      : new Error(String(clerkSignInError));
+  }
+
+  await signInViaUi(page);
+}
 
 async function ensureClerkAuthReady(page: Page): Promise<void> {
   if (!clerkTestSetup) {
@@ -22,6 +120,39 @@ async function ensureClerkAuthReady(page: Page): Promise<void> {
   }
   await clerkTestSetup;
   await setupClerkTestingToken({ page });
+
+  await page.goto(AUTH_ENTRY_PATH, { waitUntil: "domcontentloaded" });
+  await page.waitForLoadState("domcontentloaded");
+
+  const initialStatus = await waitForAuthSurface(page, AUTH_SURFACE_TIMEOUT_MS);
+  if (initialStatus === "signed-in") {
+    return;
+  }
+
+  const hasCookie = await hasSessionCookie(page);
+  let shouldAttemptSignIn = initialStatus === "signed-out" || !hasCookie;
+
+  if (initialStatus === "pending" && hasCookie) {
+    const restoredStatus = await waitForAuthSurface(page, AUTH_SURFACE_TIMEOUT_MS);
+    if (restoredStatus === "signed-in") {
+      return;
+    }
+    if (restoredStatus === "signed-out") {
+      // fall through to helper sign-in path for explicit recovery
+      shouldAttemptSignIn = true;
+    } else {
+      throw new Error("[listing.spec] Clerk auth did not resolve after session-cookie startup.");
+    }
+  }
+
+  if (shouldAttemptSignIn) {
+    await ensureSignedInViaClerk(page);
+  }
+
+  const finalStatus = await waitForAuthSurface(page, AUTH_SURFACE_TIMEOUT_MS * 2);
+  if (finalStatus !== "signed-in") {
+    throw new Error("[listing.spec] Clerk session is not active after authentication attempt.");
+  }
 }
 
 async function getAuthToken(page: Page): Promise<string> {
@@ -99,8 +230,6 @@ async function teardownPipeline(
 test.describe("Listing Page — navigation", () => {
   test.beforeEach(async ({ page }) => {
     await ensureClerkAuthReady(page);
-    await page.goto("/roles", { waitUntil: "domcontentloaded" });
-    await page.waitForLoadState("domcontentloaded");
   });
 
   test("NEW PLAN button navigates to /roles/new", async ({ page }) => {
@@ -120,8 +249,6 @@ test.describe("Listing Page — with seeded pipelines", () => {
 
   test.beforeEach(async ({ page }) => {
     await ensureClerkAuthReady(page);
-    await page.goto("/roles", { waitUntil: "domcontentloaded" });
-    await page.waitForLoadState("domcontentloaded");
   });
 
   test.afterEach(async ({ request, page }) => {
@@ -142,14 +269,16 @@ test.describe("Listing Page — with seeded pipelines", () => {
 
     await page.goto("/roles", { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("domcontentloaded");
+    await expect(page.getByRole("button", { name: /^new plan$/i })).toBeVisible({ timeout: 12000 });
 
     // Title visible in listing
     const title = page.getByRole("heading", { name: uniqueTitle });
+    const card = page.getByTestId(`pipeline-card-${pipeline.id}`);
+    await expect(card).toBeVisible({ timeout: 10000 });
     await expect(title).toBeVisible({ timeout: 10000 });
 
     // Candidate count rendered as "02" in RoleCard
-    const card = page.locator("text=" + uniqueTitle).locator("xpath=../..");
-    await expect(card.locator("text=02")).toBeVisible({ timeout: 5000 });
+    await expect(card.getByText("02")).toBeVisible({ timeout: 5000 });
   });
 
   test("searches by title", async ({ page, request }) => {
@@ -162,13 +291,15 @@ test.describe("Listing Page — with seeded pipelines", () => {
 
     await page.goto("/roles", { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("domcontentloaded");
+    await expect(page.getByRole("button", { name: /^new plan$/i })).toBeVisible({ timeout: 12000 });
 
     const searchInput = page.locator('input[placeholder="Search interview plans..."]');
+    await expect(searchInput).toBeVisible({ timeout: 12000 });
     await searchInput.fill(uniqueFrontend);
     await page.waitForTimeout(300);
 
-    await expect(page.locator(`text=${uniqueFrontend}`)).toBeVisible();
-    await expect(page.locator(`text=${uniqueBackend}`)).not.toBeVisible();
+    await expect(page.getByRole("heading", { name: uniqueFrontend })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { name: uniqueBackend })).not.toBeVisible();
   });
 
   test("deletes a pipeline via card menu", async ({ page, request }) => {
@@ -179,13 +310,14 @@ test.describe("Listing Page — with seeded pipelines", () => {
 
     await page.goto("/roles", { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("domcontentloaded");
+    await expect(page.getByRole("button", { name: /^new plan$/i })).toBeVisible({ timeout: 12000 });
 
     // Confirm pipeline is visible
-    await expect(page.locator(`text=${uniqueTitle}`)).toBeVisible();
+    const card = page.getByTestId(`pipeline-card-${pipeline.id}`);
+    await expect(card).toBeVisible({ timeout: 10000 });
 
     // Find the card containing our pipeline and click its actions menu
-    const card = page.locator("text=" + uniqueTitle).locator("xpath=../..");
-    const actionsBtn = card.locator('button[aria-label="Role context actions"]');
+    const actionsBtn = card.getByTestId(`pipeline-card-${pipeline.id}-actions`);
     await actionsBtn.click();
 
     // Accept the browser confirm dialog
@@ -193,6 +325,6 @@ test.describe("Listing Page — with seeded pipelines", () => {
     await card.getByRole("menuitem", { name: "DELETE" }).click();
 
     // Wait for the card to disappear
-    await expect(page.locator(`text=${uniqueTitle}`)).not.toBeVisible({ timeout: 10000 });
+    await expect(card).not.toBeVisible({ timeout: 10000 });
   });
 });

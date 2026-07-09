@@ -27,7 +27,7 @@ interface RoleCardProps {
 }
 
 export function RoleCard({
-  id: _id,
+  id,
   title,
   interviewSummary,
   contextSummary,
@@ -86,7 +86,11 @@ export function RoleCard({
     .toUpperCase();
 
   return (
-    <div style={{ marginBottom: 12, ...style }} className={className}>
+    <div
+      style={{ marginBottom: 12, ...style }}
+      className={className}
+      data-testid={`pipeline-card-${id}`}
+    >
       <LiquidMetalCard
         variant="solid"
         {...(onClick ? { onClick } : {})}
@@ -246,6 +250,7 @@ export function RoleCard({
           >
             <button
               aria-label="Role context actions"
+              data-testid={`pipeline-card-${id}-actions`}
               style={{
                 background: menuOpen ? "var(--pipe-surface-hover)" : "transparent",
                 border: "none",
