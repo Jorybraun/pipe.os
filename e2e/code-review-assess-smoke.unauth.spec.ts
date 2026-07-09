@@ -220,7 +220,7 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     const reviewProfile = page.getByTestId('code-review-review-profile');
     await expect(reviewProfile).toBeVisible();
     await expect(reviewProfile).toContainText('Expected time');
-    await expect(reviewProfile).toContainText('LEVEL');
+    await expect(reviewProfile).toContainText(/Level/i);
     await expect(reviewProfile).not.toContainText('ASSESSMENT_FIT');
     // Candidate comprehension aids (human-readable, no internal jargon).
     await expect(reviewProfile).toContainText('Expected time');
