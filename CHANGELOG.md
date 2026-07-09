@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added vetted `cloudflare/workers-sdk` PR `14118` and `14150` sample rows to the seed so the non-MUI Workers SDK matrix has eligible source-backed inputs instead of relying on the lower-quality `14435` candidate.
 - Added regression coverage for the app-dev collision mode where a legacy seed ID belongs to an unrelated repository.
 - Made the CODE_REVIEW packet-catalog dev smoke resolve app-dev's D1 database by default instead of inheriting a generic `CLOUDFLARE_D1_DATABASE_ID` that can point at production.
-- Raised direct source-backed concept overlap above extractor-noise dilution so Workers SDK candidates with exact provenance can receive real CODE_REVIEW assignments instead of a safe `PROFILE_RECEIVED` fallback.
+- Raised direct and dense source-backed concept overlap above extractor-noise dilution so Workers SDK candidates with exact provenance can receive real CODE_REVIEW assignments instead of a safe `PROFILE_RECEIVED` fallback.
 
 ### Added — Custom container challenge type (ADR-056)
 

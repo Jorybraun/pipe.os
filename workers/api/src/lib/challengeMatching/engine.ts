@@ -716,6 +716,11 @@ function sourceBackedSparseAlignment(input: {
     && input.alignments.length >= 2
     && candidateSourceCount >= 2
     && repoSourceCount >= 1;
+  const denseRoleBackedFloorPasses = input.candidateEvidenceAlignment >= 0.035
+    && input.alignments.length >= 5
+    && candidateSourceCount >= 5
+    && repoSourceCount >= 5
+    && input.roleRelevance >= 0.75;
   const roleGatePasses = !input.hasRoleRequirements
     || (
       input.roleRelevance >= 0.60
@@ -724,7 +729,7 @@ function sourceBackedSparseAlignment(input: {
   return roleGatePasses
     && input.alignments.length > 0
     && repoSourceCount >= 1
-    && (directExactFloorPasses || sparseMultiSpanFloorPasses)
+    && (directExactFloorPasses || sparseMultiSpanFloorPasses || denseRoleBackedFloorPasses)
     && input.challengeQuality >= 0.85
     && input.contextualSpecificity >= 0.75
     && input.hasNonGenericAlignment

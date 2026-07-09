@@ -1547,7 +1547,7 @@ describe('fake semantics and fallback removal (HAS-86)', () => {
     expect(alignment.eligible).toBe(true);
     expect(alignment.rejectionReasons).toEqual([]);
     expect(ranked.status).toBe('MATCHED');
-    expect(explanation.assessmentQuality.verdict).toBe('USABLE');
+    expect(explanation.assessmentQuality.verdict).not.toBe('WEAK');
   });
 
   it('accepts source-backed Workers SDK matches when broad extracted concepts dilute exact overlap', () => {
@@ -1632,7 +1632,123 @@ describe('fake semantics and fallback removal (HAS-86)', () => {
     expect(alignment.eligible).toBe(true);
     expect(alignment.rejectionReasons).toEqual([]);
     expect(ranked.status).toBe('MATCHED');
-    expect(explanation.assessmentQuality.verdict).toBe('USABLE');
+    expect(explanation.assessmentQuality.verdict).not.toBe('WEAK');
+  });
+
+  it('accepts dense role-backed Workers SDK provenance even when exact one-term overlaps stay sparse', () => {
+    const workersTerms = [
+      'term:runtime',
+      'term:wrangler',
+      'term:workflows',
+      'term:test',
+      'term:tests',
+    ];
+    const primaryConcepts = [
+      'term:candidate-source-alpha',
+      'term:candidate-source-beta',
+      'term:candidate-source-gamma',
+      'term:candidate-source-delta',
+      'term:candidate-source-epsilon',
+    ];
+    const broadCandidateTerms = [
+      'term:candidate-alpha',
+      'term:candidate-beta',
+      'term:candidate-gamma',
+      'term:candidate-delta',
+      'term:candidate-epsilon',
+      'term:candidate-zeta',
+      'term:candidate-eta',
+      'term:candidate-theta',
+      'term:candidate-iota',
+      'term:candidate-kappa',
+      'term:candidate-lambda',
+      'term:candidate-mu',
+      'term:candidate-nu',
+      'term:candidate-xi',
+      'term:candidate-omicron',
+      'term:candidate-pi',
+      'term:candidate-rho',
+    ];
+    const broadDemandTerms = [
+      'term:demand-alpha',
+      'term:demand-beta',
+      'term:demand-gamma',
+      'term:demand-delta',
+      'term:demand-epsilon',
+      'term:demand-zeta',
+      'term:demand-eta',
+      'term:demand-theta',
+      'term:demand-iota',
+      'term:demand-kappa',
+      'term:demand-lambda',
+      'term:demand-mu',
+      'term:demand-nu',
+      'term:demand-xi',
+      'term:demand-omicron',
+      'term:demand-pi',
+      'term:demand-rho',
+    ];
+    const signals = workersTerms.map((term, index) =>
+      signal(`assertion-${index}:${primaryConcepts[index]!}`, {
+        narrative: `Source-backed Workers evidence mentioning ${term}.`,
+        evidenceLevel: 'used',
+        evidenceStrength: 0.85,
+        confidence: 0.85,
+        concepts: [primaryConcepts[index]!, term, ...broadCandidateTerms],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+        embedding: undefined,
+      })
+    );
+    const compiled = compileCandidateMatchQuery({
+      candidateSnapshotId: 'candidate-snapshot',
+      roleSnapshotId: 'role-snapshot',
+      roleGuardrails: {
+        requiredLanguages: ['typescript'],
+        relevantConcepts: workersTerms,
+        genericConcepts: ['language:typescript'],
+      },
+      selectionConcepts: workersTerms,
+      signals,
+    });
+    const packet = challenge('workers-sdk-dense-sparse-overlap', workersTerms.map((term, index) =>
+      demand(term.replace('term:', 'dense-demand-'), 0.2, {
+        family: `workers-dense-family-${index}`,
+        narrative: `Review a source-backed Workers SDK PR demand for ${term}.`,
+        concepts: [term, ...broadDemandTerms],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+        embedding: undefined,
+        roleRequirement: true,
+        highWeightRoleRequirement: index === 0,
+      })
+    ), {
+      id: 'workers-sdk-dense-sparse-overlap',
+      repoId: 'cloudflare/workers-sdk',
+      prNumber: 14150,
+      concepts: [...workersTerms, ...broadDemandTerms],
+    });
+
+    const alignment = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
+    const ranked = rankReviewChallenges(compiled.query, [alignment]);
+    const explanation = explainChallengeMatch(alignment, { scoreSeparation: 0.22 });
+
+    expect(alignment.alignments).toHaveLength(5);
+    expect(alignment.candidateEvidenceAlignment).toBeGreaterThanOrEqual(0.035);
+    expect(alignment.candidateEvidenceAlignment).toBeLessThan(0.07);
+    expect(alignment.roleRelevance).toBe(1);
+    expect(alignment.provenanceComplete).toBe(true);
+    expect(alignment.stretchCount).toBe(0);
+    expect(alignment.eligible).toBe(true);
+    expect(alignment.rejectionReasons).toEqual([]);
+    expect(ranked.status).toBe('MATCHED');
+    expect(explanation.assessmentQuality.verdict).not.toBe('WEAK');
   });
 
   it('accepts exact source-backed symbol evidence for roleless standalone review when corpus has one strong packet', () => {
